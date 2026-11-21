@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -168,6 +169,34 @@ func TestPC02CheckTimeout(t *testing.T) {
 	}
 	if time.Since(began) > time.Second {
 		t.Fatalf("readiness waited %v for a hung check", time.Since(began))
+	}
+}
+
+func TestPC01IdleConnectionsAreClosed(t *testing.T) {
+	old := idleTimeout
+	idleTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { idleTimeout = old })
+	s := start(t, 0, nil)
+	for _, addr := range []string{s.admin, s.app} {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = conn.Close() }()
+		if _, err := io.WriteString(conn, "GET /version HTTP/1.1\r\nHost: x\r\n\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		br := bufio.NewReader(conn)
+		resp, err := http.ReadResponse(br, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		if _, err := br.ReadByte(); !errors.Is(err, io.EOF) {
+			t.Errorf("%s: idle keep-alive connection not closed by the server: %v", addr, err)
+		}
 	}
 }
 

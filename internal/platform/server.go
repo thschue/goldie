@@ -19,6 +19,16 @@ var ErrForced = errors.New("forced shutdown")
 // drain period (PC-08).
 const shutdownGrace = 30 * time.Second
 
+// Connection timeouts. Idle keep-alive connections are closed on both ports.
+// Probes are short, so the admin port also bounds each whole request and
+// response; the app port leaves body and write deadlines to role handlers,
+// some of which stream. Variables so tests can shorten them.
+var (
+	readHeaderTimeout = 10 * time.Second
+	idleTimeout       = 60 * time.Second
+	adminIOTimeout    = 10 * time.Second
+)
+
 // Server is the process skeleton: the app listener, the admin listener and
 // the drain sequence. Role handlers plug in through App.
 type Server struct {
@@ -94,8 +104,18 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 		_ = appLn.Close()
 		return listenError(EnvAdminAddr, err)
 	}
-	app := &http.Server{Handler: s.appHandler(), ReadHeaderTimeout: 10 * time.Second}
-	admin := &http.Server{Handler: s.adminHandler(), ReadHeaderTimeout: 10 * time.Second}
+	app := &http.Server{
+		Handler:           s.appHandler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+	admin := &http.Server{
+		Handler:           s.adminHandler(),
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       adminIOTimeout,
+		WriteTimeout:      adminIOTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 	closeAll := func() {
 		_ = app.Close()
 		_ = admin.Close()
