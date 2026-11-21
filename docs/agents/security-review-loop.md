@@ -272,6 +272,9 @@ First remove `security-review-in-progress`.
   - **External PR, a protected path touched, or CI not green:**
     - add `security-approved`, plus `needs-maintainer-approval` on the PR and the issue;
     - leave auto-merge off. The maintainer approves by merging.
+
+    The one exception is an own PR with no protected path that was held only because CI wasn't
+    green: a later tick may release it ([release CI holds](#tick)).
 - **Implementer-fixable** (`changes-requested`), for findings the reviewer couldn't fix itself:
   - disable auto-merge and convert the PR back to draft;
   - post a marker comment with an actionable rework list. For a security finding give its class,
