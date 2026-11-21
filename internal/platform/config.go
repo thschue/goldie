@@ -32,7 +32,8 @@ type Config struct {
 type Lookup func(key string) (string, bool)
 
 // LoadConfig reads and validates the configuration from the environment. All
-// problems are reported together, each naming its variable (PC-04).
+// problems are reported together, each naming its variable (PC-04) but never
+// its value, which may have been read from a _FILE (PC-05).
 func LoadConfig(lookup Lookup) (Config, error) {
 	var errs []error
 	str := func(name, def string) string {
@@ -58,17 +59,17 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	if raw := str(EnvDrainSeconds, ""); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 0 || n > 3600 {
-			errs = append(errs, fmt.Errorf("%s: %q is not an integer between 0 and 3600", EnvDrainSeconds, raw))
+			errs = append(errs, fmt.Errorf("%s: must be an integer between 0 and 3600", EnvDrainSeconds))
 		} else {
 			secs = n
 		}
 	}
 	cfg.DrainTimeout = time.Duration(secs) * time.Second
 	if !strings.Contains(cfg.Addr, ":") {
-		errs = append(errs, fmt.Errorf("%s: %q is not a host:port address", EnvAddr, cfg.Addr))
+		errs = append(errs, fmt.Errorf("%s: must be a host:port address", EnvAddr))
 	}
 	if !strings.Contains(cfg.AdminAddr, ":") {
-		errs = append(errs, fmt.Errorf("%s: %q is not a host:port address", EnvAdminAddr, cfg.AdminAddr))
+		errs = append(errs, fmt.Errorf("%s: must be a host:port address", EnvAdminAddr))
 	}
 	if cfg.Addr == cfg.AdminAddr && !strings.HasSuffix(cfg.Addr, ":0") { // :0 picks distinct ports
 		errs = append(errs, fmt.Errorf("%s and %s must differ: the admin port is never the public listener", EnvAddr, EnvAdminAddr))

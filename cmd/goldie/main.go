@@ -97,7 +97,7 @@ func runHealth(args []string) error {
 	}
 	host, port, err := net.SplitHostPort(cfg.AdminAddr)
 	if err != nil {
-		return fmt.Errorf("%s: %w", platform.EnvAdminAddr, err)
+		return fmt.Errorf("%s: must be a host:port address", platform.EnvAdminAddr)
 	}
 	switch host {
 	case "", "0.0.0.0", "::":

@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -219,6 +221,54 @@ func TestPC05LoadConfigAcceptsFileForm(t *testing.T) {
 	_, err := LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
 	if err == nil || !strings.Contains(err.Error(), "GOLDIE_LOG_LEVEL") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPC05ConfigErrorsNeverEchoValues(t *testing.T) {
+	// A value read through NAME_FILE may be secret, so a validation error names
+	// the variable and never repeats what it read, in either form.
+	const marker = "s3cret-marker"
+	path := t.TempDir() + "/value"
+	if err := os.WriteFile(path, []byte(marker+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{EnvAddr, EnvAdminAddr, EnvLogLevel, EnvDrainSeconds} {
+		for _, env := range []map[string]string{{name + "_FILE": path}, {name: marker}} {
+			_, err := LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%v: err = %v, want it to name %s", env, err, name)
+				continue
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Errorf("%v: error echoes the value: %v", env, err)
+			}
+		}
+	}
+}
+
+func TestPC05ListenErrorsNeverEchoAddress(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = busy.Close() }()
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		addr string
+	}{
+		{EnvAddr, Config{Addr: "127.0.0.1:99999", AdminAddr: "127.0.0.1:0"}, "99999"},
+		{EnvAdminAddr, Config{Addr: "127.0.0.1:0", AdminAddr: busy.Addr().String()}, busy.Addr().String()},
+	} {
+		srv := &Server{Config: tc.cfg, Logger: NewLogger(io.Discard, 0, "server")}
+		err := srv.Serve(context.Background(), nil)
+		if err == nil || !strings.Contains(err.Error(), tc.name) {
+			t.Errorf("%s: err = %v, want it to name the variable", tc.name, err)
+			continue
+		}
+		if strings.Contains(err.Error(), tc.addr) {
+			t.Errorf("%s: error echoes the address: %v", tc.name, err)
+		}
 	}
 }
 

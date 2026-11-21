@@ -1,7 +1,7 @@
 package platform
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -19,7 +19,8 @@ func ParseLevel(s string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	}
-	return 0, fmt.Errorf("%q is not one of debug, info, warn, error", s)
+	// The value is not echoed: it may have been read from a _FILE (PC-05).
+	return 0, errors.New("must be one of debug, info, warn, error")
 }
 
 // NewLogger returns a JSON logger writing to w. Every line carries ts,

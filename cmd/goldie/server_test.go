@@ -279,6 +279,18 @@ func TestPC08SecondSignalExitsImmediately(t *testing.T) {
 	}
 }
 
+func TestPC09HealthNeverEchoesAddress(t *testing.T) {
+	cmd := exec.Command(goldieBinary(t), "health")
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADMIN_ADDR=s3cret:mark:er"}
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "GOLDIE_ADMIN_ADDR") {
+		t.Fatalf("health with a bad address: %v %s, want non-zero naming the variable", err, out)
+	}
+	if strings.Contains(string(out), "s3cret") {
+		t.Fatalf("health echoes the address: %s", out)
+	}
+}
+
 func TestPC09HealthSubcommand(t *testing.T) {
 	p := startServer(t, "GOLDIE_DRAIN_SECONDS=30")
 	run := func(args ...string) error {

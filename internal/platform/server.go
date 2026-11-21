@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -30,6 +31,16 @@ type Server struct {
 	// OnListen, when set, is called with each bound address ("app" or
 	// "admin") before serving starts. Tests use it with port 0.
 	OnListen func(listener, addr string)
+}
+
+// listenError names the variable and keeps only the system error (such as
+// "bind: address already in use"); the address itself is not echoed (PC-05).
+func listenError(name string, err error) error {
+	var se *os.SyscallError
+	if errors.As(err, &se) {
+		return fmt.Errorf("%s: cannot listen: %w", name, se)
+	}
+	return fmt.Errorf("%s: cannot listen on this address", name)
 }
 
 func versionHandler(w http.ResponseWriter, _ *http.Request) {
@@ -76,12 +87,12 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 	}
 	appLn, err := net.Listen("tcp", s.Config.Addr)
 	if err != nil {
-		return fmt.Errorf("%s: cannot listen: %w", EnvAddr, err)
+		return listenError(EnvAddr, err)
 	}
 	adminLn, err := net.Listen("tcp", s.Config.AdminAddr)
 	if err != nil {
 		_ = appLn.Close()
-		return fmt.Errorf("%s: cannot listen: %w", EnvAdminAddr, err)
+		return listenError(EnvAdminAddr, err)
 	}
 	app := &http.Server{Handler: s.appHandler(), ReadHeaderTimeout: 10 * time.Second}
 	admin := &http.Server{Handler: s.adminHandler(), ReadHeaderTimeout: 10 * time.Second}
