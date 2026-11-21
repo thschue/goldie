@@ -61,7 +61,10 @@ internal/platform config, logging, admin port, readiness, drain, telemetry
    `ci:`, `chore:`, `perf:`, `style:`, `revert:`); CI's `lint-pr-title` enforces it. PRs are
    **squash-merged**, so the title becomes the commit message.
 3. Test first where it fits, at the highest seam (HTTP contract, CLI boundary, MCP protocol,
-   browser). Bugs found on the way are fixed with a regression test, not filed.
+   browser). Bugs found on the way are fixed with a regression test, not filed
+   ([fix it now](docs/agents/label-contract.md#fix-it-now)). A suspected vulnerability already on
+   `main` (MEDIUM or worse, or not yet rated) is never fixed or described in public; it goes to a
+   private draft advisory ([disclosure](docs/agents/label-contract.md#disclosure)).
 4. Before leaving draft: `./run check` is green, `docs/testing-checklist.md` is worked through, and
    the built-in `/security-review` has run on the diff.
 5. Paths listed under "Protected paths" in the [label contract](docs/agents/label-contract.md) never
