@@ -48,7 +48,7 @@ signal**. A loop trusts only two signals as coming from the maintainer:
 | `awaiting-security-review` | issue | worker, at hand-off | security-review, on every review outcome |
 | `security-review-in-progress` | PR | security-review, when it dispatches a reviewer | security-review, when it finishes the review |
 | `security-approved` | PR | security-review, on a clean review | security-review, when the head moves past the reviewed SHA |
-| `needs-maintainer-approval` | PR and issue | security-review, on a clean review of a PR that touches a [protected path](#protected-paths), was opened by an external author, or isn't [CI green](#ci-green) | security-review, once the PR is merged, when the head moves past the reviewed SHA, or when an own PR with no protected path was held only for CI and is now CI green on the reviewed SHA |
+| `needs-maintainer-approval` | PR and issue | security-review, on a clean review of a PR that touches a [protected path](#protected-paths), was opened by an external author, or isn't [CI green](#ci-green) | security-review, once the PR is merged, when the head moves past the reviewed SHA, or when an own PR with no protected path was held only for CI and is now CI green on the reviewed SHA ([release CI holds](./security-review-loop.md#tick)) |
 | `changes-requested` | PR and issue | security-review or pm-audit, on a hand-back | worker, when the rework PR is ready again |
 | `security-blocked` | PR | security-review, for a MEDIUM or worse finding in the PR's own code | worker, together with `changes-requested` |
 
@@ -169,7 +169,9 @@ the maintainer approves by merging:
 on it has completed with `success` (or `skipped`/`neutral` for a check that isn't required). No
 checks at all, a pending or queued check, or checks reported only for an older SHA mean **not
 green**. A loop never arms auto-merge on a PR that isn't CI green; it holds the PR for the
-maintainer instead (`needs-maintainer-approval`) and reports why.
+maintainer instead (`needs-maintainer-approval`) and reports why. An own PR held only for CI, with
+no protected path, is released by the security-review loop once it is CI green on the reviewed SHA
+([release CI holds](./security-review-loop.md#tick)); every other hold stays for the maintainer.
 
 ## Fix it now
 
