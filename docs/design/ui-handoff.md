@@ -513,7 +513,7 @@ Greeting: "Good morning / afternoon / evening, `<first name>`", taken from the G
 
 ### 9.1 Passes by design
 
-- **1.4.3 Contrast (minimum):** every text pair in §6.3 is ≥ 4.5 : 1. The lowest is 4.77 (`registered` chip).
+- **1.4.3 Contrast (minimum):** every text pair in §6.3 is ≥ 4.5 : 1. The lowest is 4.73 (muted text on the peak of the new-row flash).
 - **1.4.1 Use of colour:** states carry text or shape (Miss label, dashed draft, struck-through shadowed, shield for enforced, "not answering", "failing").
 - **2.2.2 Pause, Stop, Hide:** the live stream and feed update automatically for more than 5 s, and a **Pause** control is provided.
 - **2.3.3 / reduced motion:** particles, row flash and ping are disabled under `prefers-reduced-motion`. No flashing above 3 Hz.
