@@ -72,14 +72,20 @@ cmd_lint_fixture() {
 # vacuum lints the OpenAPI document. --fail-severity info makes any finding
 # (error, warning or info) fail the run, so "zero warnings" holds for the spec.
 # An explicit empty --config keeps a ./vacuum.conf.yaml or a user config from
-# changing the rules the gate applies. --remote=false keeps the check offline:
-# the spec is one self-contained file, so no $ref is fetched.
+# changing the rules the gate applies, and vacuum runs without any VACUUM_*
+# environment variable, which it would otherwise read as flag values.
+# --remote=false keeps the check offline: the spec is one self-contained file,
+# so no $ref is fetched.
 vacuum() {
 	cfgdir=$(mktemp -d) || die "cannot create a temporary directory for vacuum"
 	: >"$cfgdir/vacuum.conf.yaml"
+	pkg="github.com/daveshanley/vacuum@${VACUUM_VERSION}"
 	status=0
-	go run "github.com/daveshanley/vacuum@${VACUUM_VERSION}" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
-		--no-update-check --no-banner --no-style --details --fail-severity info "$@" || status=$?
+	(
+		for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+		exec go run "$pkg" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
+			--no-update-check --no-banner --no-style --details --fail-severity info "$@"
+	) || status=$?
 	rm -rf "$cfgdir"
 	return "$status"
 }
