@@ -1,7 +1,7 @@
 #!/bin/sh
 # goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
 #
-#   ./run check      everything CI runs: format, build, lint, lint fixture, tests
+#   ./run check      everything CI runs: format, build, lint, lint fixtures, spec lint, tests
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
 #   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
