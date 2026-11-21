@@ -26,7 +26,9 @@ Run one tick. Follow `goldie lookup agent-loops` for the label contract.
      ran on that exact SHA and all passed; no checks at all is not green;
    - **clean otherwise:** `security-approved` plus `needs-maintainer-approval`; a human merges;
    - **fixable, but not by the reviewer:** back to draft, a marker comment with the rework list (class and area for security,
-     never an exploit), `changes-requested`, and `ready-for-agent` on the issue;
+     never an exploit), `changes-requested`, and `ready-for-agent` on the issue only when the PR is
+     your own and the issue's author is trusted (owner, member, collaborator). Otherwise post the
+     rework comment only, with no issue labels;
    - **decision needed:** `needs-info` with a reason. After two hand-backs, use `reason=round-cap`.
 6. **Findings already on `main` are fixed now, not filed:** open the reviewer's fix as a found-fix
    PR, which a fresh reviewer then reviews. MEDIUM or worse go to a private draft security
