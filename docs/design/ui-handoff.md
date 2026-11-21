@@ -235,7 +235,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 
 | State | Behaviour | Copy | |
 |---|---|---|---|
-| Unauthenticated | Any route redirects to `/signin?next=<route>` and returns there after sign-in. | — | D |
+| Unauthenticated | Any route redirects to `/signin?next=<route>` and returns there after sign-in. `next` is honoured only as a same-origin path (a single leading `/`, no scheme, host, `//` or `\`); anything else falls back to `/`. | — | D |
 | Session expired | Non-blocking banner on the next API 401; the current view stays visible. | "Your session ended. **Sign in again** to keep going." | D |
 | Not a member | The sign-in page shows a danger alert. | "You're signed in to GitHub as `<login>`, but that account isn't in the `<org>` org. Ask your platform team for access." | C |
 | GitHub not configured | Only the access-token form is shown, with no divider. | — | D |
