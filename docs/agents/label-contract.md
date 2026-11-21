@@ -18,9 +18,12 @@ me="$(gh api user --jq .login)"   # stop the tick if this fails or returns empty
 ```
 
 Because the maintainer and the loops share one account, **a label change is never an identity
-signal**. The only signal a loop trusts as coming from the maintainer is an action GitHub
-attributes to an account with `admin` or `maintain` permission **and** that no loop performs. In
-practice that means merging a PR that carries `needs-maintainer-approval`.
+signal**. A loop trusts only two signals as coming from the maintainer:
+
+- **Merging** a PR that carries `needs-maintainer-approval`. No loop ever does that.
+- A **comment without a loop marker**, either by `$me` or by an account with `admin` or `maintain`
+  permission. Every comment a loop posts ends with a marker (see below), so an unmarked comment by
+  `$me` is the human.
 
 ## Triage labels
 
@@ -41,7 +44,7 @@ practice that means merging a PR that carries `needs-maintainer-approval`.
 
 | Label | On | Set by | Removed by |
 |---|---|---|---|
-| `implementation-in-progress` | issue | worker, when it claims (together with assignee `@me`) | worker, at hand-off or park; pm-audit, for a claim older than 24 h with no PR |
+| `implementation-in-progress` | issue | worker, when it claims (together with assignee `@me`) | worker, at hand-off or park; worker or pm-audit, for a claim older than 24 h with no PR |
 | `awaiting-security-review` | issue | worker, at hand-off | security-review, on every review outcome |
 | `security-review-in-progress` | PR | security-review, when it dispatches a reviewer | security-review, when it finishes the review |
 | `security-approved` | PR | security-review, on a clean review | security-review, when the head moves past the reviewed SHA |
@@ -54,7 +57,8 @@ labels: another loop may have moved the item since the poll.
 
 ## Markers
 
-A hand-back or review outcome is a PR comment ending in a marker:
+**Every** comment a loop posts ends in a marker. Notes that aren't review outcomes use
+`<!-- goldie-loop:<loop> note -->`. A hand-back or review outcome carries the reviewed SHA:
 
 ```html
 <!-- goldie-loop:security-review sha=<reviewed head sha> reason=<reason> -->
