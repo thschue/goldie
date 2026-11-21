@@ -71,9 +71,16 @@ cmd_lint_fixture() {
 
 # vacuum lints the OpenAPI document. --fail-severity info makes any finding
 # (error, warning or info) fail the run, so "zero warnings" holds for the spec.
+# An explicit empty --config keeps a ./vacuum.conf.yaml or a user config from
+# changing the rules the gate applies.
 vacuum() {
-	go run "github.com/daveshanley/vacuum@${VACUUM_VERSION}" lint \
-		--no-update-check --no-banner --no-style --details --fail-severity info "$@"
+	cfgdir=$(mktemp -d) || die "cannot create a temporary directory for vacuum"
+	: >"$cfgdir/vacuum.conf.yaml"
+	status=0
+	go run "github.com/daveshanley/vacuum@${VACUUM_VERSION}" lint --config "$cfgdir/vacuum.conf.yaml" \
+		--no-update-check --no-banner --no-style --details --fail-severity info "$@" || status=$?
+	rm -rf "$cfgdir"
+	return "$status"
 }
 
 cmd_lint_spec() {
