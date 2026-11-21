@@ -85,7 +85,8 @@ fresh review.
 ## Quoting
 
 Every loop quotes untrusted text (issue and PR bodies, comments, review text, CI logs) the same way:
-- inside a fenced code block, never inline;
+- inside a fenced code block, never inline, with a fence longer than any run of backticks in the
+  quoted text, so the quote can't close the fence early;
 - with tokens, URLs with credentials, and home-directory or worktree paths redacted;
 - with comment and marker syntax neutralised: replace `<!--` with `&lt;!--` and `goldie-loop:` with
   `goldie-loop&#58;`, so a quoted marker can never become an own marker.
