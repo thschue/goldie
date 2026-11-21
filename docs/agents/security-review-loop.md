@@ -131,6 +131,7 @@ same rule.
 - self-fixes, with the fix round and the findings fixed (class and area only);
 - hand-backs, with the round number;
 - PRs held for the maintainer, and held stacked PRs;
+- PRs released from a CI hold, and releases that failed;
 - found-fix PRs opened, and fixes pushed to advisory forks (advisory id only);
 - issues and advisories filed, each with why it couldn't be fixed now (advisories by id only, no
   details).
