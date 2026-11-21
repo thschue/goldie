@@ -74,6 +74,9 @@ same rule.
    reason is gone, nothing else would ever merge it. For each such PR, release it when **all** of
    these hold:
    - it is authored by `$me`;
+   - its base is `main`;
+   - it carries none of `security-review-in-progress`, `changes-requested`, `security-blocked` or
+     `needs-info`;
    - its latest own marker is a `goldie-loop:security-review` marker recording a clean outcome
      for exactly its current head SHA: not a `reason=self-fix`, hand-back, `needs-info` or
      pm-audit marker. Labels alone never prove a clean review
