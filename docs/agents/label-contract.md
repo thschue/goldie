@@ -140,8 +140,8 @@ A PR touching any of these never auto-merges. A clean review sets `needs-maintai
 the maintainer approves by merging:
 
 - **Agent guardrails:** `docs/agents/**`, `.claude/**` (commands, settings and hooks, agents,
-  skills), `CLAUDE.md`, `AGENTS.md`, `SECURITY.md`, and the loop and agent Items in
-  `examples/knowledge/**`.
+  skills), `CLAUDE.md`, `AGENTS.md`, `SECURITY.md`, and all of `examples/knowledge/**` (the loop
+  and agent Items, and the `agent-loops` article they defer to for the contract).
 - **Decision record:** `CONTEXT.md`, `docs/adr/**`, `docs/design/**`, `LICENSE`.
 - **Gates:** `run`, `docs/testing-checklist.md`, and linter configuration (`.golangci.*`, the web
   linter and formatter config).
