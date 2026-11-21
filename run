@@ -88,11 +88,19 @@ cmd_lint_spec() {
 	vacuum internal/contract/openapi.yaml
 }
 
-# The broken fixture must be rejected, or the spec linter is not doing its job.
+# The broken fixture must be rejected with lint findings (exit 1 and the
+# missing-operationId rule), or the spec linter is not doing its job. Any other
+# failure, such as a download or input error, fails this gate too.
 cmd_lint_spec_fixture() {
 	say "vacuum fixture (broken spec must be rejected)"
-	if vacuum testdata/openapi/broken.yaml >/dev/null 2>&1; then
+	status=0
+	out=$(vacuum testdata/openapi/broken.yaml 2>&1) || status=$?
+	if [ "$status" = 0 ]; then
 		die "broken OpenAPI fixture passed lint: the spec linter does not fire"
+	fi
+	if [ "$status" != 1 ] || ! printf '%s\n' "$out" | grep -q 'operation-operationId'; then
+		printf '%s\n' "$out" >&2
+		die "broken OpenAPI fixture failed for the wrong reason (exit $status, expected lint findings)"
 	fi
 }
 
