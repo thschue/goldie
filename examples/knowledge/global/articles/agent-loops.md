@@ -31,6 +31,22 @@ Three cooperating loops turn a well-groomed issue backlog into reviewed, merged 
 - **Vulnerabilities found on `main`** at MEDIUM or worse go to private security advisories, with the
   fix in the advisory's private fork, never to public issues or PRs.
 
+## Protected paths
+
+A PR touching any of these never auto-merges, whoever wrote it. A clean review adds
+`needs-maintainer-approval`, and only a human merges it:
+
+- agent guardrails: the loop docs and label contract, the agent tool's configuration directory
+  (commands, settings, hooks, agents, skills), agent instruction files, the security policy, and
+  all example knowledge, including these Items and this article;
+- the decision record: glossary, ADRs, design docs, the licence;
+- the gates: the check script, the testing checklist, linter and formatter configuration;
+- CI and release: all CI workflow and repository-automation configuration, release configuration;
+- dependencies: module and package manifests and their lockfiles;
+- deployment: Helm charts and Dockerfiles.
+
+"Touching" is measured by the files changed between the PR head and its merge base with `main`.
+
 ## The label contract
 
 | Label | Owner | Meaning |
