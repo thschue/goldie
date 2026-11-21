@@ -205,13 +205,14 @@ First remove `security-review-in-progress`.
   - **Fix cap:** at most two self-fix rounds per PR. After that, a non-clean outcome is a normal
     hand-back.
 - **Clean.**
-  - **Own PR, no protected path, CI green on the reviewed SHA:**
+  - **Own PR, no protected path, [CI green](./label-contract.md#ci-green) on the reviewed SHA**
+    (no checks at all is not green):
     - `gh pr ready`, then `gh pr merge <n> --auto --squash --match-head-commit <sha>`;
     - add `security-approved`.
 
     If the repository doesn't allow auto-merge, or the command fails, fall back to the next case and
     report it.
-  - **External PR, or a protected path touched:**
+  - **External PR, a protected path touched, or CI not green:**
     - add `security-approved`, plus `needs-maintainer-approval` on the PR and the issue;
     - leave auto-merge off. The maintainer approves by merging.
 - **Implementer-fixable** (`changes-requested`), for findings the reviewer couldn't fix itself:

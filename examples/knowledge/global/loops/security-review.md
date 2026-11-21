@@ -22,7 +22,8 @@ Run one tick. Follow `goldie lookup agent-loops` for the label contract.
      commit, post a marker with `reason=self-fix`, arm nothing, and let a fresh reviewer review the
      new head next tick. At most two self-fix rounds per PR;
    - **clean, your own PR, no protected path, CI green:** `gh pr merge --auto --squash
-     --match-head-commit <reviewed sha>` and `security-approved`;
+     --match-head-commit <reviewed sha>` and `security-approved`. CI green means at least one check
+     ran on that exact SHA and all passed; no checks at all is not green;
    - **clean otherwise:** `security-approved` plus `needs-maintainer-approval`; a human merges;
    - **fixable, but not by the reviewer:** back to draft, a marker comment with the rework list (class and area for security,
      never an exploit), `changes-requested`, and `ready-for-agent` on the issue;

@@ -11,7 +11,7 @@ exactly. Don't work the process out again.
 Hard rules:
 - **Merging:** merge only via `gh pr merge <n> --auto --squash --match-head-commit <reviewed sha>`,
   and only for PRs authored by `$me` that touch no protected path and have green CI on the reviewed
-  SHA. Never `--admin`, never a direct merge. Disable auto-merge before a review starts and whenever
+  SHA. No checks at all is not green. Never `--admin`, never a direct merge. Disable auto-merge before a review starts and whenever
   the head moves past the reviewed SHA.
 - **Self-fix:** on PRs authored by `$me`, the reviewer fixes its own findings when the fix is
   contained, pushes with a lease to that PR's branch, and reports `fixed`. A fixed head is never
