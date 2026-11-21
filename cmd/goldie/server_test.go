@@ -107,6 +107,11 @@ func startServer(t *testing.T, env ...string) *proc {
 			default:
 			}
 		}
+		if err := sc.Err(); err != nil {
+			p.allLogsLock.Lock()
+			p.allLogs = append(p.allLogs, "log capture stopped: "+err.Error())
+			p.allLogsLock.Unlock()
+		}
 		p.exited <- cmd.Wait()
 	}()
 	for p.app == "" || p.admin == "" {
