@@ -26,6 +26,11 @@ commenting and merging.
    and passes after. Re-run the gates and push with a lease.
    - Never change existing test expectations, dependencies, CI or release config, or protected
      paths the PR doesn't already touch. Never loosen a guardrail.
+   - **Fix all of it in one round:** every finding you can, LOW and nits included. Leave only what
+     needs a decision or breaks a rule, and say why.
+   - **Make no mistakes:** before pushing, fix every instance of each problem class across the PR,
+     keep every file that restates a rule consistent, and re-run all checks, so the fresh reviewer
+     finds nothing.
    - Hand back what you can't fix. Never report your own fix as `clean`; a fresh reviewer reviews
      it.
 

@@ -149,6 +149,20 @@ merge, comment, label or file anything: you report, and the orchestrator acts.
 8. <a id="fix-what-you-find"></a>**Fix what you find, own PRs only.** Fix each finding from steps
    5–7 yourself, at any severity: security findings, unmet acceptance criteria, gate failures this
    PR caused, and rebase fallout. Hand a finding back only when you can't fix it within these rules.
+   - **Fix all of it, in one round.** Fix every finding you can within these rules in this round,
+     at every severity, LOW and nits included (consistency, wording, stale references), not only
+     the blocking ones. Never leave a fixable finding for a later round. Leave a finding only when
+     it needs a maintainer decision, would break a "never" rule below, or doesn't fit the size
+     limit, and say why for each one.
+   - **Make no mistakes.** Before you push, check your fixes as hard as the fresh reviewer will,
+     so that it finds nothing:
+     - for each finding, search the whole PR for the same class of problem and fix every instance,
+       not only the one you spotted;
+     - re-read every section you changed in full, plus every file that restates the same rule (the
+       loop specs, the label contract, the commands, the example Items), and keep them consistent;
+     - check that no fix adds a contradiction, a loophole, a broken link or a stale reference;
+     - re-run all gates and checks on the final head;
+     - if you aren't sure a fix is right, don't push it; hand it back instead.
    - **Fix it when the fix is contained:**
      - it stays within the PR's scope and the issue's intent;
      - it needs no product, spec or security judgement;

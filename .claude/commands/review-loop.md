@@ -14,7 +14,10 @@ Hard rules:
   SHA. No checks at all is not green. Never `--admin`, never a direct merge. Disable auto-merge before a review starts and whenever
   the head moves past the reviewed SHA.
 - **Self-fix:** on PRs authored by `$me`, the reviewer fixes its own findings when the fix is
-  contained, pushes with a lease to that PR's branch, and reports `fixed`. A fixed head is never
+  contained, pushes with a lease to that PR's branch, and reports `fixed`. It fixes all findings
+  in one round, LOW and nits included, and checks its own fixes before pushing (every instance of
+  each problem class, every file that restates the rule, all checks re-run), so the fresh review
+  finds nothing. A fixed head is never
   approved by the reviewer that fixed it; a fresh reviewer reviews it on the next tick.
 - **External PRs** (author ≠ `$me`): read and review only. Never execute their code, never push to
   them, never arm them. A bug on `main` the reviewer reproduces itself while reviewing one may
