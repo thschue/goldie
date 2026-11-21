@@ -21,6 +21,19 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
+          # Module and build caches. `run` pins golangci-lint, which is built with
+          # `go run` and is not in go.sum, so a version bump must change the key.
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            run
+      - name: Cache golangci-lint analysis
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-lint-${{ runner.os }}-${{ hashFiles('run', '.golangci.yml', 'go.mod') }}
+          restore-keys: |
+            golangci-lint-${{ runner.os }}-
       - name: ./run check
         run: ./run check
 
