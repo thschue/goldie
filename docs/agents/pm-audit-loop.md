@@ -48,6 +48,9 @@ The product-owner loop. It owns the process around the other two loops:
 - **Trust.** Only issues authored by `OWNER`, `MEMBER` or `COLLABORATOR` may be triaged straight to
   `ready-for-agent`. An external issue that is otherwise ready goes to `ready-for-human`, or gets a
   `question` asking the maintainer to adopt it.
+- **Disclose privately.** A suspected vulnerability found while auditing follows the
+  [disclosure](./label-contract.md#disclosure) rule: report it to the user by class and area, never
+  in a public issue, comment or `question`.
 - **Own comments are marked.** Every comment this loop posts ends with
   `<!-- goldie-loop:pm-audit … -->`. An **unmarked** comment by `$me`, or a comment by an account
   with `admin` or `maintain` permission, is the maintainer speaking. Nobody else's comment counts as
