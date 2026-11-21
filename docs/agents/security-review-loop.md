@@ -81,8 +81,8 @@ same rule.
      for exactly its current head SHA: not a `reason=self-fix`, hand-back, `needs-info` or
      pm-audit marker. Labels alone never prove a clean review
      ([identity](./label-contract.md#identity));
-   - `git diff --name-only --no-renames origin/main...HEAD` touches no
-     [protected path](./label-contract.md#protected-paths);
+   - `git diff --name-only --no-renames origin/main...<head sha>`, run after fetching that SHA,
+     touches no [protected path](./label-contract.md#protected-paths);
    - it is CI green on exactly that SHA, now.
 
    Re-read the head and the labels right before writing. If the head moved, release nothing and
