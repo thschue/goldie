@@ -79,7 +79,7 @@ fresh review.
 - Canonical filter:
 
   ```sh
-  gh pr view <n> --json comments --jq "[.comments[] | select(.author.login == \"$me\" and (.body | test(\"<!-- goldie-loop:(security-review|pm-audit) sha=[0-9a-f]{40}[^\\\\n]*-->\\\\s*$\")))] | last"
+  gh pr view <n> --json comments --jq "[.comments[] | select(.author.login == \"$me\" and (.body | test(\"(\\\\A|\\\\n)<!-- goldie-loop:(security-review|pm-audit) sha=[0-9a-f]{40}[^\\\\n]*-->\\\\s*$\")))] | last"
   ```
 
 ## Quoting
