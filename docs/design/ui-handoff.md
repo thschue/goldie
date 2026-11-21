@@ -136,7 +136,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 - **Skills**: a card grid, sortable by **uses (30d)** (the default) or name, with a line naming the usage data source. Each card shows name, Scope, `requires_sync` badge, a "not used in 30 days" badge (published Items with zero uses, #32), uses (30d), description and slash command (`/goldie:<name>`). Script skills add the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents**: a list. Each row shows the materialised path `.claude/agents/goldie-<name>.md` and uses (30d).
 - **Loops**: a featured loop with interval/self-paced, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
-- **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34), and `goldie instructions apply`.
+- **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34; rendered with the same Markdown rules as articles, #21), and `goldie instructions apply`.
 
 ### 3.6 Activity (`/ops/activity`, operator)
 
@@ -186,7 +186,7 @@ From top to bottom:
     - Kind badge, identity `decision:<name>`, status, Scope, then the title (struck through when superseded).
     - **Accepted** decisions show a blue "Binding for agents" note. Every other status shows a neutral note explaining why agents don't follow it.
     - **Decision history**: the full supersession chain, oldest to newest, as buttons. Accepted decisions get a filled node, the others an outline node. The current one is highlighted.
-    - Context / Decision / Consequences, from the file's sections.
+    - Context / Decision / Consequences, from the file's sections, rendered with the same Markdown rules as articles (#21: raw HTML disabled, sanitised output).
     - Facts: Source, file path, format ("MADR, read without goldie frontmatter" / "Nygard…" / "goldie frontmatter"), keywords. Plus `goldie decisions show <name>`, the MCP tool `find_decisions`, and "View source in git ↗".
 - **Accepted decisions are visually distinct** (#23): solid blue status badge and a binding badge with a shield. Proposed decisions get a dashed card, superseded ones a struck-through muted title, rejected ones a muted title. This follows the lifecycle language in §4.
 - Search results (`/?q=`) include `kind=decision`, with an "accepted · binding for agents" badge. The Home page gets a **Decisions** Kind tile.
