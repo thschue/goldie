@@ -4,6 +4,7 @@
 |---|---|
 | Issue | thschue/goldie#20 (UI design handoff) — unblocks #21, #22, #23 |
 | Status | **Draft for approval**, v0.2 (2026-11-21): v0.2 completes the token set, adds the missing contrast pairs, and fixes the copy and artboard-count inconsistencies found in implementer review |
+| Screenshots | `docs/design/screenshots/` — gallery in §2.4 |
 | Prototype | Design canvas "Goldie Design Proposal": https://claude.ai/artifact/2qDw2RVLRTPwKkEwmmEChw (private until shared) |
 | Related | #12 + #22 (federated activity), #23 (assets + Decisions page), #31 (Grafana), #32 (usage figures), #33 (Secret-based Sources), #34 (Decisions as a Kind) |
 | Aligned with | Issue texts as of 2026-11-21 20:11 UTC — see §14 for the issue-by-issue mapping and open discrepancies |
@@ -71,6 +72,19 @@ The query string carries `project`, `q` and `kind`, so every view is linkable.
 
 Every screen ships in **both** themes. The canvas draws each in one theme only to save space.
 
+### 2.4 Screenshots
+
+Rendered from the prototype at 1440 px, each in the theme it was drawn in (see §2.3). Live views are a single moment, so the stream particles and counts are whatever was in flight. These are references, not pixel specs: where a screenshot and the text disagree, the text wins.
+
+| | |
+|---|---|
+| **Sign in** — GitHub, access token, not-a-member error<br>![Sign in](screenshots/signin.png) | **Home** — hero search, Kind tiles, project Items, what's new, setup steps<br>![Home](screenshots/home.png) |
+| **Item detail** — article, Resolution ladder, usage, details<br>![Article](screenshots/article.png) | **Agent assets** — skills sorted by uses (30d), reader view<br>![Agent assets](screenshots/assets.png) |
+| **Decisions** — accepted filter, binding badges, decision history<br>![Decisions](screenshots/decisions.png) | **Sources** — failing Secret Source first, origins, shadowed Items<br>![Sources](screenshots/sources.png) |
+| **Activity** — replica switcher, partial view, live stream, stats, Miss board, feed, detail<br>![Activity](screenshots/activity.png) | **Identity and tokens** — palette, contrast tables, type, badges, controls<br>![Identity and tokens](screenshots/main.png) |
+
+Not captured as screenshots: search results (`/?q=`), the Article lifecycle variants and the usage source variant (canvas tweaks), and the sampling indicator under load (canvas tweak). Open the prototype for these.
+
 ---
 
 ## 3. Layouts
@@ -81,6 +95,8 @@ Every screen ships in **both** themes. The canvas draws each in one theme only t
 - Content max widths: reading column 760 px (article), result list 940 px, ops pages full width.
 
 ### 3.2 Home (`/`, no query)
+
+![Home](screenshots/home.png)
 
 1. **Hero band** (brand gradient `--brand` → blue‑800): greeting, page question "What are you deciding today?", a 58 px search field, and suggestion chips ("Try: database · logging · retries · migration · feature flags"). `/` focuses the search field from anywhere.
 2. **Browse the golden path**: one tile per Kind (icon, name, one-line purpose, count). A tile opens results filtered to that Kind.
@@ -95,6 +111,8 @@ Every screen ships in **both** themes. The canvas draws each in one theme only t
 - Order: score, descending (exact keyword +4, name word +2, keyword substring +1). The `matched` text from the API is shown verbatim.
 
 ### 3.4 Item detail (`/items/article/:name`)
+
+![Item detail](screenshots/article.png)
 
 - Two columns: the article (Markdown, max 760 px), and an aside of at most 360 px.
 - The aside contains four cards:
@@ -111,6 +129,8 @@ Every screen ships in **both** themes. The canvas draws each in one theme only t
 
 ### 3.5 Agent assets (`/assets/:tab`)
 
+![Agent assets, Skills tab](screenshots/assets.png)
+
 - Header with a `goldie pull --dry-run` snippet, then tabs: Skills · Agents · Loops · Instructions.
 - **Skills**: a card grid, sortable by **uses (30d)** (the default) or name, with a line naming the usage data source. Each card shows name, Scope, `requires_sync` badge, a "not used in 30 days" badge (published Items with zero uses, #32), uses (30d), description and slash command (`/goldie:<name>`). Script skills add the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents**: a list. Each row shows the materialised path `.claude/agents/goldie-<name>.md` and uses (30d).
@@ -118,6 +138,8 @@ Every screen ships in **both** themes. The canvas draws each in one theme only t
 - **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34), and `goldie instructions apply`.
 
 ### 3.6 Activity (`/ops/activity`, operator)
+
+![Activity, dark theme](screenshots/activity.png)
 
 From top to bottom:
 
@@ -140,6 +162,8 @@ From top to bottom:
 
 ### 3.7 Sources (`/ops/sources`, operator)
 
+![Sources, dark theme](screenshots/sources.png)
+
 - Failing Sources first. The number shown is **preference order** (lower wins on collision): env Sources (`GOLDIE_SOURCES`, shorthands) first, then Kubernetes Secret Sources by `preference`, with ties broken by Secret name (#33).
 - A Source card shows the order number, name, an **origin chip** (`env GOLDIE_SOURCES` outline, or a lock icon with `Secret <namespace>/<name>`), status badge (healthy / failing · serving last good / errored), type, and Resync.
 - A failing card adds an error alert (identifier, revision, file, rule, and what to do next). Secret Sources are identified as `secret:<namespace>/<name>`.
@@ -149,6 +173,8 @@ From top to bottom:
 - "n shadowed Items" disclosure: `global · kind:name → shadowed_by → project · kind:name`.
 
 ### 3.8 Decisions (`/decisions`, #34, #23)
+
+![Decisions](screenshots/decisions.png)
 
 - Header: one line saying what decisions are, "**Accepted decisions are binding for agents:** if a change would contradict one, the agent stops and says so", and a `goldie decisions list` snippet.
 - **Status pills** with counts: accepted (default), proposed, superseded, deprecated, rejected, All. The default matches what agents get (accepted only); the others correspond to the API's `status=` filter.
@@ -265,6 +291,8 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 ---
 
 ## 6. Tokens
+
+![Identity and tokens sheet](screenshots/main.png)
 
 ### 6.1 Structure
 
