@@ -24,7 +24,8 @@ The product-owner loop. It owns the process around the other two loops:
 
 **PRs, narrowly:**
 - comments;
-- `gh run rerun` once per head SHA, for a classified flake or a stale run;
+- `gh run rerun` once per head SHA, for a classified flake or a stale run, and only on PRs authored
+  by `$me`. An external PR's run is never rerun or approved by a loop; report it instead;
 - the flow hand-back;
 - lifting `needs-info` whose reason it owns (`spec`, `product`, `conflict`);
 - closing a PR whose issue is closed or `wontfix`, or that a merged PR supersedes. External
@@ -112,9 +113,9 @@ List open PRs and the latest CI run on each head. For a red or missing gate, rea
 | Class | Action |
 |---|---|
 | Draft PR, gate red | Nothing; the worker is still on it |
-| Infra flake (runner, network, rate limit) | Rerun once per SHA. The rerun is evidence, not the fix: make sure a flake issue exists that same tick, by commenting on it or filing `needs-triage`. On the third PR with the same signature, add `priority` |
+| Infra flake (runner, network, rate limit) | Rerun once per SHA (own PRs only). The rerun is evidence, not the fix: make sure a flake issue exists that same tick, by commenting on it or filing `needs-triage`. On the third PR with the same signature, add `priority` |
 | Real failure on a ready PR | Hand back once per SHA (below) |
-| Stale or missing run | Rerun once, otherwise report it |
+| Stale or missing run | Rerun once on an own PR, otherwise report it |
 
 **Hand-back.**
 - **Preconditions:**
