@@ -1,4 +1,5 @@
 ---
+model: sonnet
 description: Run one issue-worker cycle (poll, claim, implement, hand off)
 ---
 

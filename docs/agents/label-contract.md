@@ -203,7 +203,7 @@ already on `main`. Filing an issue is the fallback for a fix that isn't containe
 
 | Loop | Cadence | Parallel work | Model |
 |---|---|---|---|
-| issue-worker | every 5 min | at most 2 issues with `implementation-in-progress` | implementer subagents: `sonnet` |
+| issue-worker | every 5 min | at most 2 issues with `implementation-in-progress` | the loop and its implementer subagents: `sonnet` |
 | security-review | every 5 min | at most 2 PRs with `security-review-in-progress` | the loop and its reviewer subagents: `opus` |
 | pm-audit | every 15 min | one tick; stops early when nothing changed since the last ledger entry | `opus` |
 
