@@ -1,0 +1,83 @@
+# golangci-lint v2 configuration. The depguard rules encode the module table
+# from CONTEXT.md and docs/adr/0001: dependencies between modules are one-way.
+# If a rule fires, fix the design; do not widen the rule.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    depguard:
+      rules:
+        engine:
+          files: ["**/internal/engine/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "engine is pure: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "engine is pure: it must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "engine is pure: it must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "engine is pure: it must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/contract, desc: "engine is pure: it must not import contract"}
+            - {pkg: github.com/thschue/goldie/internal/platform, desc: "engine is pure: it must not import platform"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "engine is pure: it must not import app"}
+        api:
+          files: ["**/internal/api/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "api must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "api must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "api must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "api must not import the composition root"}
+        ui:
+          files: ["**/internal/ui/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/engine, desc: "ui talks only to the API over HTTP: it must not import engine"}
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "ui talks only to the API over HTTP: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "ui talks only to the API over HTTP: it must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "ui talks only to the API over HTTP: it must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/contract, desc: "ui talks only to the API over HTTP: it must not import contract"}
+            - {pkg: github.com/thschue/goldie/internal/platform, desc: "ui talks only to the API over HTTP: it must not import platform"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "ui talks only to the API over HTTP: it must not import app"}
+        mcp:
+          files: ["**/internal/mcp/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/engine, desc: "mcp reaches the API only through the contract client: it must not import engine"}
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "mcp reaches the API only through the contract client: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "mcp must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "mcp must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "mcp must not import the composition root"}
+        cli:
+          files: ["**/internal/cli/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/engine, desc: "cli reaches the API only through the contract client: it must not import engine"}
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "cli reaches the API only through the contract client: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "cli must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "cli must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "cli must not import the composition root"}
+        contract:
+          files: ["**/internal/contract/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/engine, desc: "contract is the seam between modules: it must not import engine"}
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "contract is the seam between modules: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "contract is the seam between modules: it must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "contract is the seam between modules: it must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "contract is the seam between modules: it must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/platform, desc: "contract is the seam between modules: it must not import platform"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "contract is the seam between modules: it must not import app"}
+        platform:
+          files: ["**/internal/platform/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/engine, desc: "platform is cross-cutting: it must not import engine"}
+            - {pkg: github.com/thschue/goldie/internal/api, desc: "platform is cross-cutting: it must not import api"}
+            - {pkg: github.com/thschue/goldie/internal/ui, desc: "platform is cross-cutting: it must not import ui"}
+            - {pkg: github.com/thschue/goldie/internal/mcp, desc: "platform is cross-cutting: it must not import mcp"}
+            - {pkg: github.com/thschue/goldie/internal/cli, desc: "platform is cross-cutting: it must not import cli"}
+            - {pkg: github.com/thschue/goldie/internal/contract, desc: "platform is cross-cutting: it must not import contract"}
+            - {pkg: github.com/thschue/goldie/internal/app, desc: "platform is cross-cutting: it must not import app"}
