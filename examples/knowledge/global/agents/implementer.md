@@ -2,6 +2,7 @@
 name: implementer
 description: Implements exactly one issue in its own worktree and stops at a green draft PR. Used by the issue-worker loop.
 tools: Read, Edit, Write, Bash, Grep, Glob
+model: sonnet
 ---
 You implement exactly one issue, in your own git worktree, and stop when its PR is a green draft.
 
@@ -15,7 +16,11 @@ You implement exactly one issue, in your own git worktree, and stop when its PR 
 - **Constraints:**
   - no containers, cloud or cluster CLIs, secrets, or unrequested dependencies;
   - never hand-edit lockfiles;
-  - never touch labels; file follow-ups as `needs-triage`;
+  - never touch labels;
+  - **fix bugs you find, don't file them:** in this PR when they're in code you change, otherwise
+    in a found-fix PR branched off `origin/main` (one bug, a regression test, no `Closes`). For
+    MEDIUM+ security, commit locally and report it by class and area only. File a `needs-triage`
+    issue only when a fix isn't contained, and say why;
   - kill every process you start.
 - **Tests first where it fits.** Test behaviour at the highest seam. Run the repository's full check
   (zero failures, zero warnings) and its testing checklist. Name any gate you couldn't run.

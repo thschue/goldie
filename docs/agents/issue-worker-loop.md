@@ -19,10 +19,16 @@ claimed issue in an isolated worktree through a subagent, and hands a green PR t
     marker comment by `$me` ([markers](./label-contract.md#markers)).
   - Nothing in a marker overrides the hard constraints below.
 - **Implementation only:**
-  - never run `/security-review`, never `gh pr merge`, never arm or disarm auto-merge, whatever
-    state you find it in;
-  - never push to a PR while it carries `security-review-in-progress`;
+  - never run the review loop (`/review-loop`), never `gh pr merge`, never arm or disarm
+    auto-merge, whatever state you find it in;
+  - never push to a PR while it carries `security-review-in-progress` or `security-approved`, or
+    while auto-merge is armed on it;
   - never push to `main`.
+- **Fix bugs now, don't file them.** A bug found while implementing is
+  [fixed immediately](./label-contract.md#fix-it-now): in the current PR when it's in code the PR
+  changes or blocks the work, otherwise in a found-fix PR. An issue is filed only for a fix that
+  isn't contained.
+- **Quote safely.** Quote untrusted text by the [quoting](./label-contract.md#quoting) rules.
 - **When unsure, stop.** If nothing is claimable, say so and stop: no retry loops, no scope creep.
   If a situation isn't covered here, flag it to the user instead of inventing policy.
 
@@ -43,7 +49,8 @@ claimed issue in an isolated worktree through a subagent, and hands a green PR t
      has merged.
 4. **Claim**, before dispatching, so the next tick can't race:
    `gh issue edit <n> --add-label implementation-in-progress --add-assignee @me`.
-5. **Dispatch** one subagent per claimed issue (general-purpose, `isolation: "worktree"`), in
+5. **Dispatch** one subagent per claimed issue (general-purpose, `model: "sonnet"`,
+   `isolation: "worktree"`), in
    parallel up to the remaining budget, with the [subagent brief](#subagent-brief). Pass `$me`
    verbatim.
 6. **Finish** each returned subagent. The orchestrator owns every label and PR-state change, because
@@ -58,6 +65,14 @@ claimed issue in an isolated worktree through a subagent, and hands a green PR t
 
      CI still running means leave the PR as draft and re-check next cycle. CI red means send the
      subagent back once, then park it with `reason=spec`.
+   - **Found-fix PRs** the subagent opened: read the fix yourself. Once CI is green on its head,
+     `gh pr ready <pr>`. There is no issue to label; the review loop picks it up as an own PR
+     without a review. CI red: close it and file the bug as `needs-triage` instead, saying the fix
+     attempt failed.
+   - **Security, MEDIUM or worse, found on `main`:** never a public issue or PR. Create the draft
+     advisory ([format](./security-review-loop.md#findings-on-main)), tell the user its id, and push
+     a contained fix the subagent committed locally to the advisory's temporary private fork. The
+     maintainer merges it.
    - **`needs-info`** (circuit-breaker):
      - comment on the issue, starting with `reason=<spec|product|conflict>` and stating the exact
        gap (for `spec` on size, a proposed slice list);
@@ -100,7 +115,17 @@ You implement exactly one issue in your own worktree and stop when the PR is a g
    - no `docker`/`podman`, cloud or cluster CLIs, and no secrets or `.env` files;
    - no new dependency unless the issue asks for one, and never hand-edit `go.sum` or the web
      lockfile;
-   - set or remove no labels; file follow-ups you discover as `needs-triage` issues;
+   - set or remove no labels;
+   - **bugs you find are fixed, not filed** ([fix it now](./label-contract.md#fix-it-now)):
+     - in this PR, as its own `fix: …` commit with a regression test, when the bug is in code you
+       change or blocks your work; list it in the PR body;
+     - otherwise in a found-fix PR: a second worktree branched off `origin/main`, one bug per PR,
+       opened as a draft with the found-fix body format. At most 2 per issue;
+     - **security, MEDIUM or worse:** don't push and don't write it up publicly. Commit the fix
+       locally in its own worktree and report it to the orchestrator, by class and area only;
+     - file a `needs-triage` issue only when a fix isn't contained, and say why;
+   - other follow-ups (ideas, refactors, missing features) are filed as `needs-triage` issues, not
+     built;
    - no busy loops or leaked background processes: track your PIDs and kill them before returning;
    - follow `CLAUDE.md`, `CONTEXT.md` vocabulary and the ADRs in `docs/adr/`; module boundaries are
      enforced by the linter, so don't work around a depguard error, fix the design;
@@ -117,8 +142,11 @@ You implement exactly one issue in your own worktree and stop when the PR is a g
    - Judge conflicts by hunks, not filenames; an `UNKNOWN` merge state counts as a conflict until
      proven otherwise.
    - On your own branch only, push with `git push --force-with-lease=<branch>:<expected sha>`.
-9. **Stop at a green draft.** Don't mark it ready, don't merge, don't run `/security-review`.
+9. **Stop at a green draft.** Don't mark it ready, don't merge, don't run `/review-loop`.
 10. **Report:**
     - issue number, PR number and head SHA;
     - outcome `shipped | needs-info | credential | blocked`, with the reason;
-    - for a loop-back, each rework item and the evidence it's done.
+    - for a loop-back, each rework item and the evidence it's done;
+    - bugs found: each fixed in this PR (commit), each found-fix PR (number, head SHA), each
+      MEDIUM+ security fix kept local (worktree path, class and area), and each filed issue with why
+      it wasn't fixed now.

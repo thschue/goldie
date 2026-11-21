@@ -8,12 +8,15 @@ operation; inside a clone it infers the repository from the remote.
 - **Sequencing lives in GitHub, not in a roadmap file.** Architecture decisions go in `docs/adr/`.
   Issue-specific context goes in the issue body and comments. Blocking relationships are native
   issue dependencies, and an epic's parts are native sub-issues.
-- **One PR closes exactly one issue** (`Closes #<n>` in the body). Open it as a **draft before the
+- **One PR closes exactly one issue** (`Closes #<n>` in the body). The exception is a
+  [found-fix PR](./label-contract.md#fix-it-now), which fixes one bug found while working and closes
+  no issue. Open it as a **draft before the
   first line of code**, title it with a Conventional Commit type (`feat:`, `fix:`, `docs:`,
   `refactor:`, `test:`, `build:`, `ci:`, `chore:`, `perf:`, `style:`, `revert:`), and
   **squash-merge** it. The `lint-pr-title` check enforces the title.
 - Before a PR leaves draft, work through `docs/testing-checklist.md` (added by the bootstrap issue)
-  and run `/security-review`.
+  and run the built-in `/security-review` on your diff (not `/review-loop`, which is the review
+  loop).
 
 ## Recipes
 

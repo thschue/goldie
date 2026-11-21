@@ -1,4 +1,5 @@
 ---
+model: opus
 description: Run one PM-audit tick (flow, audit, triage, planning) over open issues and PRs
 ---
 

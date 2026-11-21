@@ -22,7 +22,9 @@ Run one cycle. Follow `goldie lookup agent-loops` for the label contract.
      `awaiting-security-review`, and clear the claim;
    - **needs-info**: comment `reason=<spec|product|conflict>` with the exact gap or a slice proposal,
      swap the claim for `needs-info`, and close the draft;
-   - **credential**: keep the worktree and draft, and tell the human what scope is missing.
+   - **credential**: keep the worktree and draft, and tell the human what scope is missing;
+   - **found-fix PRs** for bugs the implementer found: mark them ready once CI is green. MEDIUM+
+     security goes to a private draft advisory and its private fork, never public.
 7. Clean up: release claims older than 24 h that have no PR, and remove merged worktrees.
 
 Never run a security review, never merge, never touch auto-merge, and never push to a PR under
