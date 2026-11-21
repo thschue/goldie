@@ -40,5 +40,7 @@ Changing a clause is a decision: update this file and, when it is hard to revers
 - `goldie health` probes `/livez` on the local admin port (`--ready` probes `/readyz`) and exits
   non-zero unless it answers 200. Use plain `health` for liveness probes: it stays green while draining.
 - The first SIGTERM or SIGINT starts the drain; a second one exits immediately with a non-zero code.
+  After the drain, in-flight requests get up to 30 s to finish; past that the server exits non-zero.
+  Set the pod's termination grace period above `GOLDIE_DRAIN_SECONDS` plus that 30 s.
 - PC-10 (generated docs) and PC-11 (image) have their own issues; this table is hand-written until
   `./run regen` generates it.
