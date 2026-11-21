@@ -177,7 +177,9 @@ merge, comment, label or file anything: you report, and the orchestrator acts.
      the contained fix with its regression test and run the gates. Push it as
      `fix/found-<slug>`, at most 2 per review. Don't open the PR; report the branch. For MEDIUM or
      worse security, don't push anywhere: commit locally, report the worktree path, and let the
-     orchestrator push to the advisory fork.
+     orchestrator push to the advisory fork. That holds even when the bug sits in code the PR
+     changes: MEDIUM or worse security already on `main` is never fixed in the PR
+     ([disclosure](./label-contract.md#disclosure)).
 9. **Report:**
    - the reviewed SHA, conflicts resolved, and the new head if you pushed;
    - outcome `clean | fixed | changes-requested | security-blocked | needs-info | blocked`;

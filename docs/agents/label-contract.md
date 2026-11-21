@@ -181,7 +181,9 @@ already on `main`. Filing an issue is the fallback for a fix that isn't containe
   - it needs no dependency, CI, release or [protected-path](#protected-paths) change.
 - **Where the fix goes:**
   - **in the current PR**, as its own commit, when the bug is in code the PR changes or blocks
-    the PR's work (the reviewer does this only on own PRs);
+    the PR's work (the reviewer does this only on own PRs). MEDIUM or worse security that is
+    already on `main` never goes here, even in code the PR changes; it takes the advisory path
+    below;
   - **otherwise in a new found-fix PR**: one bug per PR, branched off `origin/main` in a separate
     worktree, titled `fix: <what>` (or `fix(security): <class> in <area>` for LOW security). The
     body has Problem, Evidence and Fix sections, ends "Found by the <loop> loop while working on
