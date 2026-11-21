@@ -48,7 +48,7 @@ signal**. A loop trusts only two signals as coming from the maintainer:
 | `awaiting-security-review` | issue | worker, at hand-off | security-review, on every review outcome |
 | `security-review-in-progress` | PR | security-review, when it dispatches a reviewer | security-review, when it finishes the review |
 | `security-approved` | PR | security-review, on a clean review | security-review, when the head moves past the reviewed SHA |
-| `needs-maintainer-approval` | PR and issue | security-review, on a clean review of a PR that touches a [protected path](#protected-paths), was opened by an external author, or isn't [CI green](#ci-green) | security-review, once the PR is merged |
+| `needs-maintainer-approval` | PR and issue | security-review, on a clean review of a PR that touches a [protected path](#protected-paths), was opened by an external author, or isn't [CI green](#ci-green) | security-review, once the PR is merged, or when the head moves past the reviewed SHA |
 | `changes-requested` | PR and issue | security-review or pm-audit, on a hand-back | worker, when the rework PR is ready again |
 | `security-blocked` | PR | security-review, for a MEDIUM or worse finding in the PR's own code | worker, together with `changes-requested` |
 

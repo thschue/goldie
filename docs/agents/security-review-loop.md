@@ -64,6 +64,11 @@ same rule.
    the latest own marker:
    - disable auto-merge, remove `security-approved`, and re-queue the PR;
    - if there is no own marker at all, disable auto-merge only where `enabledBy == $me`.
+
+   Do the same for every PR carrying `security-approved` or `needs-maintainer-approval`, armed or
+   not, whose head differs from the latest own marker's SHA: remove both labels and re-queue it, so
+   the maintainer never sees an approval on a head nobody reviewed. The re-review sets them again
+   if they still apply.
 4. **Poll** open PRs against `main`. The closing issue comes from `Closes|Fixes|Resolves #<n>`.
    - **Skip** a PR when any of these hold:
      - it's a release PR or a dependency-bot PR (report only);
