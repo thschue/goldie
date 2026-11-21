@@ -1,0 +1,109 @@
+#!/bin/sh
+# goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
+#
+#   ./run check      everything CI runs: format, build, lint, lint fixture, tests
+#   ./run test       go test ./... (extra arguments are passed to go test)
+#   ./run lint       golangci-lint on the module
+#   ./run regen      regenerate generated code (nothing to generate yet)
+#   ./run versions   print the toolchain versions this repository expects
+#
+# `./run check` must exit 0 with no output from the linters ("zero warnings").
+set -eu
+
+GOLANGCI_LINT_VERSION=v2.15.0
+
+cd "$(dirname "$0")"
+ROOT=$(pwd)
+
+say() { printf '==> %s\n' "$*"; }
+die() { printf 'run: %s\n' "$*" >&2; exit 1; }
+
+# golangci-lint: use the pinned version from PATH when present, else run it
+# through the Go module proxy (cached after the first call).
+golangci() {
+	if command -v golangci-lint >/dev/null 2>&1 &&
+		golangci-lint version 2>&1 | grep -q "version ${GOLANGCI_LINT_VERSION#v}"; then
+		golangci-lint "$@"
+	else
+		go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}" "$@"
+	fi
+}
+
+cmd_fmt() {
+	say "gofmt"
+	unformatted=$(gofmt -l cmd internal testdata 2>&1) || die "gofmt failed: $unformatted"
+	if [ -n "$unformatted" ]; then
+		printf '%s\n' "$unformatted" >&2
+		die "files above are not gofmt-formatted (run: gofmt -w <file>)"
+	fi
+}
+
+cmd_build() {
+	say "go build"
+	go build ./...
+}
+
+cmd_lint() {
+	say "golangci-lint"
+	golangci run --config "$ROOT/.golangci.yml" ./...
+}
+
+# The fixture is a nested module full of deliberate import-rule violations.
+# The linter must report every one of them as a depguard issue, and nothing else.
+cmd_lint_fixture() {
+	say "depguard fixture (violations must be reported)"
+	violations=$(grep -rl 'Deliberate violation' testdata/depguard | wc -l | tr -d ' ')
+	out=$(cd testdata/depguard && golangci run --config "$ROOT/.golangci.yml" --output.text.colors=false ./... 2>&1) && {
+		printf '%s\n' "$out" >&2
+		die "depguard fixture passed lint: the import rules do not fire"
+	}
+	reported=$(printf '%s\n' "$out" | grep -c '(depguard)' || true)
+	others=$(printf '%s\n' "$out" | grep -E '\.go:[0-9]+' | grep -vc '(depguard)' || true)
+	if [ "$reported" != "$violations" ] || [ "$others" != 0 ]; then
+		printf '%s\n' "$out" >&2
+		die "fixture expects $violations depguard issues and no others; got $reported depguard, $others other"
+	fi
+}
+
+cmd_test() {
+	say "go test"
+	go test -count=1 "$@" ./...
+}
+
+cmd_regen() {
+	say "regen: nothing to generate yet"
+	# Generators (OpenAPI types and server, TypeScript types, component docs)
+	# register here as their issues land. `check` then verifies no drift.
+}
+
+cmd_versions() {
+	printf 'go (module requires): %s\n' "$(awk '$1 == "go" {print $2}' go.mod)"
+	printf 'go (installed):       %s\n' "$(go version)"
+	printf 'golangci-lint (pinned): %s\n' "$GOLANGCI_LINT_VERSION"
+}
+
+cmd_check() {
+	cmd_fmt
+	cmd_build
+	cmd_lint
+	cmd_lint_fixture
+	cmd_test
+	say "check passed"
+}
+
+usage() {
+	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+[ $# -ge 1 ] || { usage; exit 2; }
+sub=$1
+shift
+case "$sub" in
+check) cmd_check ;;
+test) cmd_test "$@" ;;
+lint) cmd_lint ;;
+regen) cmd_regen ;;
+versions) cmd_versions ;;
+help | -h | --help) usage ;;
+*) usage >&2; exit 2 ;;
+esac

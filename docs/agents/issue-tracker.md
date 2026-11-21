@@ -14,7 +14,7 @@ operation; inside a clone it infers the repository from the remote.
   first line of code**, title it with a Conventional Commit type (`feat:`, `fix:`, `docs:`,
   `refactor:`, `test:`, `build:`, `ci:`, `chore:`, `perf:`, `style:`, `revert:`), and
   **squash-merge** it. The review loop checks the title.
-- Before a PR leaves draft, work through `docs/testing-checklist.md` (added by the bootstrap issue)
+- Before a PR leaves draft, work through `docs/testing-checklist.md`
   and run the built-in `/security-review` on your diff (not `/review-loop`, which is the review
   loop).
 
