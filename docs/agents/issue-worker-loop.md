@@ -136,8 +136,6 @@ You implement exactly one issue in your own worktree and stop when the PR is a g
 7. **Gates:** targeted tests, then `./run check` must exit 0 with zero warnings, then work through
    `docs/testing-checklist.md`. If a gate needs something your sandbox lacks, say so explicitly; never
    skip it silently. CI is authoritative.
-   - Until the bootstrap issue has landed there is no `./run`; only the bootstrap issue itself is
-     workable then, and it defines its own gates.
 8. **Rebase** onto `origin/main` before finishing.
    - Judge conflicts by hunks, not filenames; an `UNKNOWN` merge state counts as a conflict until
      proven otherwise.
