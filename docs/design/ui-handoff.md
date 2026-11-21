@@ -93,6 +93,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 - Top bar 64 px. Side nav 240–260 px. Content is fluid, with page padding of 32–40 px (desktop).
 - Content max widths: reading column 760 px (article), result list 940 px, ops pages full width.
+- **External links (↗)** are built only from `https:` or `http:` URLs. Links derived from a Source URL ("View source in git", "Start this article in the Source repo") never carry its credentials: userinfo is stripped, and a link that can't be built that way is hidden. Values inserted into a URL template (the `trace_id` in `GOLDIE_TRACE_URL_TEMPLATE`) are percent-encoded.
 
 ### 3.2 Home (`/`, no query)
 
