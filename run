@@ -4,6 +4,8 @@
 #   ./run check      everything CI runs: format, build, lint, lint fixture, tests
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
+#   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
+#   ./run lint-spec-fixture  prove vacuum rejects testdata/openapi/broken.yaml
 #   ./run regen      regenerate generated code (nothing to generate yet)
 #   ./run versions   print the toolchain versions this repository expects
 #
@@ -11,6 +13,8 @@
 set -eu
 
 GOLANGCI_LINT_VERSION=v2.15.0
+# OpenAPI linter (MIT), run through `go run` like golangci-lint.
+VACUUM_VERSION=v0.42.3
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -65,6 +69,26 @@ cmd_lint_fixture() {
 	fi
 }
 
+# vacuum lints the OpenAPI document. --fail-severity info makes any finding
+# (error, warning or info) fail the run, so "zero warnings" holds for the spec.
+vacuum() {
+	go run "github.com/daveshanley/vacuum@${VACUUM_VERSION}" lint \
+		--no-update-check --no-banner --no-style --details --fail-severity info "$@"
+}
+
+cmd_lint_spec() {
+	say "vacuum (OpenAPI spec)"
+	vacuum internal/contract/openapi.yaml
+}
+
+# The broken fixture must be rejected, or the spec linter is not doing its job.
+cmd_lint_spec_fixture() {
+	say "vacuum fixture (broken spec must be rejected)"
+	if vacuum testdata/openapi/broken.yaml >/dev/null 2>&1; then
+		die "broken OpenAPI fixture passed lint: the spec linter does not fire"
+	fi
+}
+
 cmd_test() {
 	say "go test"
 	go test -count=1 "$@" ./...
@@ -80,6 +104,7 @@ cmd_versions() {
 	printf 'go (module requires): %s\n' "$(awk '$1 == "go" {print $2}' go.mod)"
 	printf 'go (installed):       %s\n' "$(go version)"
 	printf 'golangci-lint (pinned): %s\n' "$GOLANGCI_LINT_VERSION"
+	printf 'vacuum (pinned):        %s\n' "$VACUUM_VERSION"
 }
 
 cmd_check() {
@@ -87,12 +112,14 @@ cmd_check() {
 	cmd_build
 	cmd_lint
 	cmd_lint_fixture
+	cmd_lint_spec
+	cmd_lint_spec_fixture
 	cmd_test
 	say "check passed"
 }
 
 usage() {
-	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
@@ -102,6 +129,8 @@ case "$sub" in
 check) cmd_check ;;
 test) cmd_test "$@" ;;
 lint) cmd_lint ;;
+lint-spec) cmd_lint_spec ;;
+lint-spec-fixture) cmd_lint_spec_fixture ;;
 regen) cmd_regen ;;
 versions) cmd_versions ;;
 help | -h | --help) usage ;;

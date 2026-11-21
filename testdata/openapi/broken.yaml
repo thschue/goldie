@@ -1,0 +1,18 @@
+# Deliberately broken OpenAPI document. `./run lint-spec-fixture` requires the
+# spec linter to reject it; `./run lint-spec` never looks here. It has no
+# description, contact, license, tags, operationId or examples, and it points
+# at a schema that does not exist.
+openapi: 3.1.0
+info:
+  title: Broken
+  version: 0.0.0
+paths:
+  /broken:
+    get:
+      responses:
+        "200":
+          description: Broken.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoesNotExist"

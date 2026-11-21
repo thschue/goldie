@@ -1,0 +1,57 @@
+// Package app is the composition root. It wires modules into roles and is the
+// only code that may reach the server from the client side (embedded server).
+package app
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/thschue/goldie/internal/contract"
+)
+
+// PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
+// serves the OpenAPI document at /openapi.yaml and /openapi.json; anything
+// else is the not-found envelope. Platform stays unaware of the contract:
+// this is where the two meet.
+func PublicHandler() (http.Handler, error) {
+	jsonSpec, err := contract.SpecJSON()
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/openapi.yaml", staticGet("application/yaml", contract.SpecYAML()))
+	mux.Handle("/openapi.json", staticGet("application/json", jsonSpec))
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "no such endpoint")
+	})
+	return mux, nil
+}
+
+// staticGet serves a fixed body for GET and HEAD and rejects other methods.
+func staticGet(contentType string, body []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(body)
+		}
+	})
+}
+
+// writeError writes the error envelope {"error":{code,message,details}}.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
+		"code":    code,
+		"message": message,
+		"details": map[string]any{},
+	}})
+}

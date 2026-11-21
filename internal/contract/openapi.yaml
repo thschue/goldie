@@ -1,0 +1,101 @@
+openapi: 3.1.0
+info:
+  title: Goldie API
+  summary: Golden-path knowledge for humans and agents.
+  description: |
+    The public HTTP API of the goldie server. This document is the contract:
+    the Go and TypeScript types are generated from it, and it is served by the
+    server itself at `/openapi.yaml` and `/openapi.json`.
+
+    The admin endpoints (`/livez`, `/readyz`, `/version`) live on the separate
+    admin port and are not part of this document.
+  version: 0.1.0
+  contact:
+    name: Goldie maintainers
+    url: https://github.com/thschue/goldie
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: /
+    description: The public listener that served this document.
+tags:
+  - name: contract
+    description: The API contract itself.
+paths:
+  /openapi.yaml:
+    get:
+      operationId: getOpenAPIYAML
+      tags:
+        - contract
+      summary: Get the OpenAPI document as YAML
+      description: Returns this document in YAML form.
+      responses:
+        "200":
+          description: The OpenAPI document in YAML form.
+          content:
+            application/yaml:
+              schema:
+                type: string
+              example: "openapi: 3.1.0"
+        default:
+          $ref: "#/components/responses/Error"
+  /openapi.json:
+    get:
+      operationId: getOpenAPIJSON
+      tags:
+        - contract
+      summary: Get the OpenAPI document as JSON
+      description: Returns this document in JSON form. It is equivalent to the YAML form.
+      responses:
+        "200":
+          description: The OpenAPI document in JSON form.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                openapi: 3.1.0
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  schemas:
+    ErrorEnvelope:
+      type: object
+      description: The body of every error response.
+      required:
+        - error
+      properties:
+        error:
+          $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      description: One error. It never contains addresses, paths or stack traces.
+      required:
+        - code
+        - message
+        - details
+      properties:
+        code:
+          type: string
+          description: A stable, machine-readable error code.
+          examples:
+            - not_found
+        message:
+          type: string
+          description: A short, human-readable explanation.
+          examples:
+            - no such endpoint
+        details:
+          type: object
+          description: Structured context for the error. Empty when there is none.
+          additionalProperties: true
+          examples:
+            - {}
+  responses:
+    Error:
+      description: An error, in the error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
