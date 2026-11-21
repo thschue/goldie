@@ -85,9 +85,16 @@ same rule.
      [protected path](./label-contract.md#protected-paths);
    - it is CI green on exactly that SHA, now.
 
-   Then remove `needs-maintainer-approval` from the PR and the issue, and run
-   `gh pr merge <n> --auto --squash --match-head-commit <sha>`. A PR held for a protected path, or
-   opened by an external author, is never released this way. It stays for the maintainer.
+   Re-read the head and the labels right before writing. If the head moved, release nothing and
+   leave the PR to the drift check. Otherwise, in this order:
+   1. `gh pr ready <n>` if the PR is a draft;
+   2. remove `needs-maintainer-approval` from the PR and from its closing issue, if any, so that no
+      loop ever merges a PR that carries it;
+   3. `gh pr merge <n> --auto --squash --match-head-commit <reviewed sha>`.
+
+   If any step fails, or the repository doesn't allow auto-merge, put `needs-maintainer-approval`
+   back on the PR and the issue, leave auto-merge off, and report it. A PR held for a protected
+   path, or opened by an external author, is never released this way. It stays for the maintainer.
 4. **Poll** open PRs against `main`. The closing issue comes from `Closes|Fixes|Resolves #<n>`.
    - **Skip** a PR when any of these hold:
      - it's a release PR or a dependency-bot PR (report only);
