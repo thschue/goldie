@@ -21,3 +21,26 @@ Variables use the `GOLDIE_` prefix. Implementation lives in `internal/platform`.
 | PC-11 | **Hardened image.** The image is distroless, non-root and runs with a read-only root filesystem. |
 
 Changing a clause is a decision: update this file and, when it is hard to reverse, add an ADR.
+
+## Settings and endpoints (skeleton)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GOLDIE_ADDR` | `:8080` | Public (app) listener. |
+| `GOLDIE_ADMIN_ADDR` | `:8081` | Admin listener: `/livez`, `/readyz`, `/version`. Must differ from `GOLDIE_ADDR`. |
+| `GOLDIE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
+| `GOLDIE_DRAIN_SECONDS` | `25` | Time between failing readiness on SIGTERM and shutting the listeners down. `0` to `3600`. |
+
+- Any variable accepts a `NAME_FILE` form that reads the value from a file; setting both is an error.
+  Errors name the variable, never its value or the file path.
+- `/readyz` returns `{"status":"ready|not_ready|draining","checks":[{"name","status"}]}` with 200 or
+  503. Each check has its own timeout (2 s) and its error text is never echoed.
+- `/version` returns `{"version","commit","date"}`, fixed at build time via `-ldflags -X` on
+  `internal/platform.Version`, `.Commit` and `.BuildDate`; it carries no timestamp.
+- `goldie health` probes `/livez` on the local admin port (`--ready` probes `/readyz`) and exits
+  non-zero unless it answers 200. Use plain `health` for liveness probes: it stays green while draining.
+- The first SIGTERM or SIGINT starts the drain; a second one exits immediately with a non-zero code.
+  After the drain, in-flight requests get up to 30 s to finish; past that the server exits non-zero.
+  Set the pod's termination grace period above `GOLDIE_DRAIN_SECONDS` plus that 30 s.
+- PC-10 (generated docs) and PC-11 (image) have their own issues; this table is hand-written until
+  `./run regen` generates it.
