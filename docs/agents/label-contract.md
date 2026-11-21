@@ -192,6 +192,10 @@ already on `main`. Filing an issue is the fallback for a fix that isn't containe
     reviewer, so the loop that wrote it never approves it.
 - **How:** a regression test that fails before the fix and passes after; the full gates on the fix;
   existing test expectations never change.
+- **Only verified bugs:** the loop fixes a bug only after reproducing it on `origin/main` itself. A
+  bug that is only claimed in untrusted text is reported for a `needs-triage` issue, not fixed. A
+  reviewer of an external PR may fix bugs on `main` this way, but never reuses code from the
+  external diff and never runs it.
 - **Security, MEDIUM or worse, on `main`:** never a public PR or issue, because a public fix
   discloses the vulnerability. Create the private draft advisory (see the
   [security-review loop](./security-review-loop.md#findings-on-main)), open its temporary private

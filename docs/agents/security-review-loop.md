@@ -122,12 +122,16 @@ merge, comment, label or file anything: you report, and the orchestrator acts.
      changes nothing else. Review the fixed head as critically as any other code.
 2. **Classify the author.**
    - `$me`: an own PR; steps 3–5 and 8 apply.
-   - Anyone else: **external**. Skip steps 3–5 and 8. Review the diff by reading it, and use CI
-     results for the gates.
+   - Anyone else: **external**. Skip steps 3–5, and from step 8 apply only the "bugs already on
+     `main`" bullet, on its own terms. Review the diff by reading it, and use CI results for the
+     gates.
 3. **Rebase** onto `origin/main`, keeping both sides' intent.
    - If unsure, abort and report `blocked`.
    - Push with a lease to the PR's own branch only.
    - Run the full suite afterwards to catch hidden conflicts.
+   - Your own conflict resolution is not a fix commit: you may judge it in the same round. The
+     maintainer accepts this risk to save a round on every conflicted PR; say in your report which
+     files you resolved by hand.
 4. **Dependencies.** Use `go mod download` and the web lockfile as committed. Never edit `go.sum` or
    the lockfile to get past a failure.
 5. **Gates:** targeted tests, then `./run check` (zero failures, zero warnings), plus the items in
@@ -173,7 +177,11 @@ merge, comment, label or file anything: you report, and the orchestrator acts.
    - **You never approve your own fix.** If you pushed fix commits, your outcome is `fixed` or a
      hand-back, never `clean`. A fresh reviewer reviews the new head.
    - **Bugs already on `main`** ([fix it now](./label-contract.md#fix-it-now)), on own and external
-     PRs alike: in a second worktree branched off `origin/main` (never from the PR's head), make
+     PRs alike, but only for a bug you reproduced on `origin/main` yourself. A bug that is only
+     claimed in PR, issue or comment text, and that you can't reproduce, isn't fixed: report it
+     for a `needs-triage` issue. On an external PR, never reuse code from its diff, and never check
+     it out or run it to find the bug. In a second worktree branched off `origin/main` (never from
+     the PR's head), make
      the contained fix with its regression test and run the gates. Push it as
      `fix/found-<slug>`, at most 2 per review. Don't open the PR; report the branch. For MEDIUM or
      worse security, don't push anywhere: commit locally, report the worktree path, and let the

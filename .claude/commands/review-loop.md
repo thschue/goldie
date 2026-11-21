@@ -17,7 +17,8 @@ Hard rules:
   contained, pushes with a lease to that PR's branch, and reports `fixed`. A fixed head is never
   approved by the reviewer that fixed it; a fresh reviewer reviews it on the next tick.
 - **External PRs** (author ≠ `$me`): read and review only. Never execute their code, never push to
-  them, never arm them.
+  them, never arm them. A bug on `main` the reviewer reproduces itself while reviewing one may
+  still get a found-fix PR off `main`, never built from the external diff.
 - **Pushing:** never push to `main` or to another PR's branch, and never force-push without a lease.
   Never add the implementer's labels.
 - **Findings on `main`:** fixed now in a found-fix PR, not filed. MEDIUM or worse become a draft
