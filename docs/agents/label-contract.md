@@ -153,8 +153,9 @@ the maintainer approves by merging:
   skills), `CLAUDE.md`, `AGENTS.md`, `SECURITY.md`, and all of `examples/knowledge/**` (the loop
   and agent Items, and the `agent-loops` article they defer to for the contract).
 - **Decision record:** `CONTEXT.md`, `docs/adr/**`, `docs/design/**`, `LICENSE`.
-- **Gates:** `run`, `docs/testing-checklist.md`, and linter configuration (`.golangci.*`, the web
-  linter and formatter config).
+- **Gates:** `run`, `docs/testing-checklist.md`, linter configuration (`.golangci.*`, the web
+  linter and formatter config), and the depguard fixture (`testdata/depguard/**`) that proves the
+  import rules fire.
 - **CI and release:** `.github/**` (workflows, actions, CODEOWNERS, dependabot), release
   configuration (`release-please-config.json`, `.goreleaser.*`).
 - **Dependencies:** `go.mod`, `go.sum`, `web/package.json` and the lockfile beside it.
