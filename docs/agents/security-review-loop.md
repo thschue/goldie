@@ -304,7 +304,7 @@ Check whatever the change touches:
 - **HTTP API:**
   - each handler's role check matches `openapi.yaml`, with no drift between spec and router;
   - input validation and size limits, `http.Server` timeouts;
-  - no stack traces, addresses or hostnames in errors (PC-14).
+  - no stack traces, addresses or hostnames in errors.
 - **MCP:**
   - the same authentication as the API, with no unauthenticated tool;
   - tools can't reach files, shell or Secrets;

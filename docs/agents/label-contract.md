@@ -131,7 +131,7 @@ at most two self-fix rounds per PR, after which security-review hands back norma
 
 Only these actors may set `ready-for-agent` on an issue that has never had it:
 
-- the maintainer, directly or through the `/to-tickets`, `/to-spec` or triage skills;
+- the maintainer, directly or through the triage skills;
 - **pm-audit**, after the readiness gate, and only for issues whose author is `OWNER`, `MEMBER` or
   `COLLABORATOR`;
 - **security-review**, for LOW and hardening findings it files itself (only when it can't
