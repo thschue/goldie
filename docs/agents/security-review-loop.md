@@ -69,10 +69,11 @@ same rule.
    not, whose head differs from the latest own marker's SHA: remove both labels and re-queue it, so
    the maintainer never sees an approval on a head nobody reviewed. The re-review sets them again
    if they still apply.
-   **Release CI holds.** A clean PR was held with `security-approved` and `needs-maintainer-approval`
-   only because it wasn't [CI green](./label-contract.md#ci-green) when it was reviewed. Once the
-   reason is gone, nothing else would ever merge it. For each such PR, release it when **all** of
-   these hold:
+
+   **Release CI holds** (after the drift check). A clean PR may have been held with
+   `security-approved` and `needs-maintainer-approval` only because it wasn't
+   [CI green](./label-contract.md#ci-green) when it was reviewed. Once that reason is gone, nothing
+   else would ever merge it. Release such a PR only when **all** of these hold:
    - it is authored by `$me`;
    - its base is `main`;
    - it carries none of `security-review-in-progress`, `changes-requested`, `security-blocked` or
