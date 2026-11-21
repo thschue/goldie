@@ -74,7 +74,10 @@ same rule.
    reason is gone, nothing else would ever merge it. For each such PR, release it when **all** of
    these hold:
    - it is authored by `$me`;
-   - its head equals the SHA in the latest own marker (the drift check above just verified it);
+   - its latest own marker is a `goldie-loop:security-review` marker recording a clean outcome
+     for exactly its current head SHA: not a `reason=self-fix`, hand-back, `needs-info` or
+     pm-audit marker. Labels alone never prove a clean review
+     ([identity](./label-contract.md#identity));
    - `git diff --name-only --no-renames origin/main...HEAD` touches no
      [protected path](./label-contract.md#protected-paths);
    - it is CI green on exactly that SHA, now.
