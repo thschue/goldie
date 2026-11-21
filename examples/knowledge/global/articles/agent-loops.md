@@ -56,7 +56,8 @@ A PR touching any of these never auto-merges, whoever wrote it. A clean review a
 | `security-review-in-progress` | security-review | a reviewer is on it |
 | `security-approved` | security-review | clean review of the current head |
 | `needs-maintainer-approval` | security-review | clean, but a human must merge |
-| `changes-requested`, `security-blocked` | security-review or pm-audit | handed back |
+| `changes-requested` | security-review or pm-audit | handed back |
+| `security-blocked` | security-review | handed back for a MEDIUM or worse finding |
 | `needs-info` + `reason=` | any loop | parked on a named gap |
 
 Each loop runs one tick per invocation: `/loop 5m /issue-worker`, `/loop 5m /review-loop`,
