@@ -35,6 +35,19 @@ func RepositoryRoot(dir string) (root string, ok bool) {
 	return root, ok
 }
 
+// IsSourceRepository reports whether root has the layout of a goldie Source:
+// a global/articles or a projects/ directory at its root.
+func IsSourceRepository(root string) bool {
+	// The Source layout is owned by internal/engine/source.go (articlesDir,
+	// loadFS); keep these markers in step with it.
+	for _, marker := range []string{filepath.Join("global", "articles"), "projects"} {
+		if fi, err := os.Stat(filepath.Join(root, marker)); err == nil && fi.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // WriteConfig writes root/.goldie/config.yaml holding `project: <id>`, with id
 // normalised as a typed Project is. root must be a repository root that is not
 // a Source. It never overwrites or opens an existing config, never follows a
@@ -45,10 +58,8 @@ func WriteConfig(root, id string) error {
 	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
 		return ErrNotRepository
 	}
-	for _, marker := range []string{filepath.Join("global", "articles"), "projects"} {
-		if fi, err := os.Stat(filepath.Join(root, marker)); err == nil && fi.IsDir() {
-			return ErrSourceRepository
-		}
+	if IsSourceRepository(root) {
+		return ErrSourceRepository
 	}
 	id, err := normaliseConfigured(strings.TrimSpace(id))
 	if err != nil {

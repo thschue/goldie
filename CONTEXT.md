@@ -80,7 +80,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 | UI | `internal/ui` | Vue SPA, embedded, talking only to the API |
 | MCP | `internal/mcp` | Talks to the API only through the client |
 | CLI | `internal/cli` | Talks to the API only through the client |
-| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), the decoding of error responses (`ParseOK`, `DecodeAPIError`), and client-side Project detection (`internal/contract/project`) |
+| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), the decoding of error responses (`ParseOK`, `DecodeAPIError`), and client-side Project detection and the writing of `.goldie/config.yaml` that `goldie init` does (`internal/contract/project`) |
 | Platform | `internal/platform` | Config, logging, admin port, readiness, drain, telemetry |
 | Composition root | `internal/app` | Wires modules into roles; the only client-side code that may reach the server (embedded server) |
 

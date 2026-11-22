@@ -13,15 +13,26 @@ import (
 	"github.com/thschue/goldie/internal/contract/project"
 )
 
-// initRefusals words the refusals of project.WriteConfig for goldie init.
-var initRefusals = map[error]string{
-	project.ErrConfigExists:     ".goldie/config.yaml already exists at the repository root; goldie init never overwrites it",
-	project.ErrSymlink:          ".goldie at the repository root is a symlink; goldie init never follows it",
-	project.ErrNotRepository:    errInitNoRepo,
-	project.ErrSourceRepository: "this is a Source repository (global/articles or projects/ at its root): goldie init is for a project repository",
-}
+const (
+	errInitNoRepo = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root"
+	errInitSource = "this is a Source repository (global/articles or projects/ at its root): goldie init is for a project repository"
+)
 
-const errInitNoRepo = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root"
+// initRefusal words a refusal of project.WriteConfig for goldie init, or
+// returns "" for any other error.
+func initRefusal(err error) string {
+	switch {
+	case errors.Is(err, project.ErrConfigExists):
+		return ".goldie/config.yaml already exists at the repository root; goldie init never overwrites it"
+	case errors.Is(err, project.ErrSymlink):
+		return ".goldie at the repository root is a symlink; goldie init never follows it"
+	case errors.Is(err, project.ErrNotRepository):
+		return errInitNoRepo
+	case errors.Is(err, project.ErrSourceRepository):
+		return errInitSource
+	}
+	return ""
+}
 
 // initProject writes .goldie/config.yaml at the repository root with the
 // Project found as status finds it, then says whether the server holds it. A
@@ -35,6 +46,9 @@ func (c *commander) initProject(ctx context.Context) error {
 	if !ok {
 		return errors.New(errInitNoRepo)
 	}
+	if project.IsSourceRepository(root) { // before detection: a Source needs no Project
+		return errors.New(errInitSource)
+	}
 	proj, err := c.projectIn(dir)
 	if err != nil {
 		return err
@@ -46,10 +60,8 @@ func (c *commander) initProject(ctx context.Context) error {
 		return errors.New("no Project found: set --project or " + EnvProject + ", or add an upstream or origin remote")
 	}
 	if err := project.WriteConfig(root, proj.ID); err != nil {
-		for refusal, msg := range initRefusals {
-			if errors.Is(err, refusal) {
-				return errors.New(msg)
-			}
+		if msg := initRefusal(err); msg != "" {
+			return errors.New(msg)
 		}
 		return fmt.Errorf("cannot write .goldie/config.yaml at the repository root: %w", err)
 	}
@@ -65,7 +77,8 @@ func (c *commander) initProject(ctx context.Context) error {
 		b.WriteString("Registered: yes\n")
 	default:
 		b.WriteString("Registered: no\n")
-		// The same hint the API gives for an unregistered Project.
+		// The same copy as unregisteredHint in internal/api/read.go and the
+		// hint example in internal/contract/openapi.yaml: keep them in step.
 		fmt.Fprintf(&b, "Hint: To register it, add a projects/%s/ directory to one of goldie's Sources, usually through the platform team.\n", proj.ID)
 	}
 	_, err = fmt.Fprint(c.out, b.String())
