@@ -65,11 +65,11 @@ func TestCheck(t *testing.T) {
 func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 	op := func(id string) map[string]any { return map[string]any{"operationId": id} }
 	doc := map[string]any{"paths": map[string]any{
-		"/items/{id}":         map[string]any{"get": op("byID"), "delete": op("del")},
+		"/items/{id}":         map[string]any{"get": op("byID"), "delete": op("del"), "post": op("postByID")},
 		"/items/search":       map[string]any{"get": op("search")},
 		"/items/{id}/{name}":  map[string]any{"get": op("idName")},
 		"/items/{id}/details": map[string]any{"get": op("details")},
-		"/{kind}/search":      map[string]any{"get": op("kindSearch")},
+		"/{kind}/search":      map[string]any{"get": op("kindSearch"), "post": op("postKind")},
 	}}
 	for name, tc := range map[string]struct {
 		method, path string
@@ -79,7 +79,7 @@ func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 		"literal beats template":              {"get", "/items/search", "search", "#/paths/~1items~1search/get"},
 		"template when no literal matches":    {"get", "/items/42", "byID", "#/paths/~1items~1{id}/get"},
 		"literal in a later segment wins":     {"get", "/items/42/details", "details", "#/paths/~1items~1{id}~1details/get"},
-		"earlier literal segment wins":        {"get", "/items/search", "search", "#/paths/~1items~1search/get"},
+		"earlier literal segment wins":        {"post", "/items/search", "postByID", "#/paths/~1items~1{id}/post"},
 		"template in a later segment":         {"get", "/items/42/other", "idName", "#/paths/~1items~1{id}~1{name}/get"},
 		"most specific path lacks the method": {"delete", "/items/search", "del", "#/paths/~1items~1{id}/delete"},
 		"no matching path offers the method":  {"put", "/items/search", "", ""},
