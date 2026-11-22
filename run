@@ -6,7 +6,9 @@
 #   ./run lint       golangci-lint on the module
 #   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
 #   ./run lint-spec-fixture  prove vacuum rejects testdata/openapi/broken.yaml
-#   ./run regen      regenerate generated code (nothing to generate yet)
+#   ./run regen      regenerate generated code (OpenAPI Go types and strict server)
+#   ./run regen-check  fail if generated code differs from a fresh generation
+#   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run versions   print the toolchain versions this repository expects
 #
 # `./run check` must exit 0 with no output from the linters ("zero warnings").
@@ -15,6 +17,9 @@ set -eu
 GOLANGCI_LINT_VERSION=v2.15.0
 # OpenAPI linter (MIT), run through `go run` like golangci-lint.
 VACUUM_VERSION=v0.42.3
+# OpenAPI Go code generator (Apache-2.0), run through `go run`. Its generated
+# code imports github.com/oapi-codegen/runtime, which is in go.mod.
+OAPI_CODEGEN_VERSION=v2.9.0
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -116,10 +121,55 @@ cmd_test() {
 	go test -count=1 "$@" ./...
 }
 
+# Generated files, relative to the repository root.
+CONTRACT_SPEC=internal/contract/openapi.yaml
+CONTRACT_CONFIG=internal/contract/oapi-codegen.yaml
+CONTRACT_GEN=internal/contract/contract.gen.go
+
+# oapi_codegen <spec> <output>: generate Go types and the strict server from
+# <spec> into <output>. Generation is written to a temporary file first, so a
+# failed run never leaves a truncated generated file behind.
+oapi_codegen() {
+	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
+	if go run "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}" \
+		-config "$CONTRACT_CONFIG" "$1" >"$tmp"; then
+		cat "$tmp" >"$2"
+		rm -f "$tmp"
+	else
+		rm -f "$tmp"
+		die "oapi-codegen failed for $1"
+	fi
+}
+
 cmd_regen() {
-	say "regen: nothing to generate yet"
-	# Generators (OpenAPI types and server, TypeScript types, component docs)
-	# register here as their issues land. `check` then verifies no drift.
+	say "regen: oapi-codegen $OAPI_CODEGEN_VERSION"
+	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN"
+	# TypeScript types and component docs register here as their issues land.
+}
+
+# drift <spec>: succeed when the committed generated code equals a fresh
+# generation from <spec>.
+drift() {
+	fresh=$(mktemp) || die "cannot create a temporary file for the drift check"
+	status=0
+	oapi_codegen "$1" "$fresh"
+	cmp -s "$fresh" "$CONTRACT_GEN" || status=1
+	rm -f "$fresh"
+	return "$status"
+}
+
+cmd_regen_check() {
+	say "regen drift check (generated code must match the spec)"
+	drift "$CONTRACT_SPEC" || die "$CONTRACT_GEN is out of date with $CONTRACT_SPEC (run: ./run regen)"
+}
+
+# The drifted fixture is a spec the committed generated code was not made from:
+# the drift check must flag it, or it cannot catch a stale generated file.
+cmd_regen_fixture() {
+	say "regen drift fixture (a drifted spec must be flagged)"
+	if drift testdata/openapi/drifted.yaml; then
+		die "drift check did not fire for testdata/openapi/drifted.yaml"
+	fi
 }
 
 cmd_versions() {
@@ -127,6 +177,7 @@ cmd_versions() {
 	printf 'go (installed):       %s\n' "$(go version)"
 	printf 'golangci-lint (pinned): %s\n' "$GOLANGCI_LINT_VERSION"
 	printf 'vacuum (pinned):        %s\n' "$VACUUM_VERSION"
+	printf 'oapi-codegen (pinned):  %s\n' "$OAPI_CODEGEN_VERSION"
 }
 
 cmd_check() {
@@ -136,12 +187,14 @@ cmd_check() {
 	cmd_lint_fixture
 	cmd_lint_spec
 	cmd_lint_spec_fixture
+	cmd_regen_check
+	cmd_regen_fixture
 	cmd_test
 	say "check passed"
 }
 
 usage() {
-	sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
@@ -154,6 +207,8 @@ lint) cmd_lint ;;
 lint-spec) cmd_lint_spec ;;
 lint-spec-fixture) cmd_lint_spec_fixture ;;
 regen) cmd_regen ;;
+regen-check) cmd_regen_check ;;
+regen-fixture) cmd_regen_fixture ;;
 versions) cmd_versions ;;
 help | -h | --help) usage ;;
 *) usage >&2; exit 2 ;;
