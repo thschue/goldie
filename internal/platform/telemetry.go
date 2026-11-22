@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
@@ -39,6 +40,11 @@ type Telemetry struct {
 	tp *sdktrace.TracerProvider
 	lp *sdklog.LoggerProvider
 
+	// endpoints holds each exporting signal's collector as scheme://host,
+	// for the startup report. Userinfo, path and query are never kept.
+	endpoints map[string]string
+	notice    *sdkNotice
+
 	once sync.Once
 	err  error
 }
@@ -49,7 +55,7 @@ type Telemetry struct {
 // goldie.mode, so extra cannot override them; service.name may be overridden.
 // goldie.mode is "all" until server roles are split (#24).
 func telemetryResource(serviceName string, extra map[string]string) *resource.Resource {
-	name := "goldie"
+	name := defaultServiceName
 	if v := extra["service.name"]; v != "" {
 		name = v
 	}
@@ -71,6 +77,11 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 	)
 	return resource.NewSchemaless(attrs...)
 }
+
+// defaultServiceName is the service.name resource attribute when neither
+// OTEL_SERVICE_NAME nor OTEL_RESOURCE_ATTRIBUTES sets one. The settings
+// registry renders it as the default of OTEL_SERVICE_NAME.
+const defaultServiceName = "goldie"
 
 // defaultSpanAttributeValueLimit caps each span attribute value when
 // OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT is unset (the SDK default is
@@ -174,7 +185,7 @@ func parseTraceSettings(get func(string) string) (traceSettings, error) {
 // newTelemetry wires the providers around the given exporters. Batch
 // processors keep export off the request path; Shutdown flushes them.
 func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
-	t := &Telemetry{}
+	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
 	if spans != nil {
 		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
 			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
@@ -194,6 +205,9 @@ const (
 	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
 	envOTelService  = "OTEL_SERVICE_NAME"
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// otlpProtocol is the only protocol built in.
+	otlpProtocol = "http/protobuf"
 
 	// defaultOTLPEndpoint is the Go SDK's own default when no endpoint is
 	// set. It is https, so a header such as an API token is never sent in
@@ -310,6 +324,12 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
 	)
+	// The SDK parses the OTEL_* variables goldie does not (timeouts, TLS file
+	// paths, batch and log record limits) while the exporters are built, and
+	// prints a rejected value. Its logger is replaced first, so nothing it
+	// says reaches stderr; goldie reports a fixed warning instead.
+	notice := &sdkNotice{}
+	notice.install()
 	// The endpoint and headers are always passed, defaults included, so the
 	// SDK's own reading of the process environment is overridden.
 	headersOf := func(signal string) map[string]string {
@@ -330,7 +350,22 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	return newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs), nil
+	t := newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs)
+	t.notice = notice
+	for _, name := range t.signals() {
+		t.endpoints[name] = redactEndpoint(otlpEndpoint(endpoints, name))
+	}
+	return t, nil
+}
+
+// redactEndpoint reduces a collector URL to scheme://host: the userinfo, path
+// and query can carry credentials (PC-05).
+func redactEndpoint(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(invalid)"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // otlpEndpoint is the endpoint URL for signal: the configured one, or the
@@ -343,10 +378,22 @@ func otlpEndpoint(endpoints map[string]string, signal string) string {
 }
 
 // parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the
-// OpenTelemetry spec and the SDK define it. The error never contains the text.
-// A malformed escape is an error here: left to the SDK's own env parser, it
+// OpenTelemetry spec and the SDK define it. Keys must be HTTP header names. A
+// malformed escape is an error here: left to the SDK's own env parser, it
 // would print the raw value to stderr.
 func parseOTLPHeaders(s string) (map[string]string, error) {
+	return parseKeyValues(s, func(k string) error {
+		if !isHeaderToken(k) {
+			return errors.New("keys must be HTTP header names (RFC 7230 tokens)")
+		}
+		return nil
+	})
+}
+
+// parseKeyValues parses "k=v,k2=v2" with percent-encoded values, the format of
+// the OTLP headers and OTEL_RESOURCE_ATTRIBUTES variables. checkKey, if set,
+// vets each trimmed key. The errors never contain the text.
+func parseKeyValues(s string, checkKey func(string) error) (map[string]string, error) {
 	out := map[string]string{}
 	for _, pair := range strings.Split(s, ",") {
 		k, v, ok := strings.Cut(pair, "=")
@@ -354,8 +401,10 @@ func parseOTLPHeaders(s string) (map[string]string, error) {
 		if !ok || k == "" {
 			return nil, errors.New("must be comma-separated key=value pairs")
 		}
-		if !isHeaderToken(k) {
-			return nil, errors.New("keys must be HTTP header names (RFC 7230 tokens)")
+		if checkKey != nil {
+			if err := checkKey(k); err != nil {
+				return nil, err
+			}
 		}
 		dv, err := url.PathUnescape(v)
 		if err != nil {
@@ -393,44 +442,97 @@ func parseResourceAttributes(s string) (map[string]string, error) {
 	if s == "" {
 		return nil, nil
 	}
-	out := map[string]string{}
-	for _, pair := range strings.Split(s, ",") {
-		k, v, ok := strings.Cut(pair, "=")
-		k = strings.TrimSpace(k)
-		if !ok || k == "" {
-			return nil, errors.New("must be comma-separated key=value pairs")
-		}
-		dv, err := url.PathUnescape(v)
-		if err != nil {
-			return nil, errors.New("values must be percent-encoded")
-		}
-		out[k] = strings.TrimSpace(dv)
-	}
-	return out, nil
+	return parseKeyValues(s, nil)
 }
 
 // Enabled reports whether any signal is exported.
 func (t *Telemetry) Enabled() bool { return t != nil && (t.tp != nil || t.lp != nil) }
 
-// ReportErrorsTo routes the SDK's export errors to the logger. The errors
-// themselves are not logged: they carry the collector URL, which can hold
-// credentials (PC-05). Reports are limited to one a minute.
-func (t *Telemetry) ReportErrorsTo(l *slog.Logger) {
+// signals lists the signals that export, in a fixed order.
+func (t *Telemetry) signals() []string {
+	var out []string
+	if t.tp != nil {
+		out = append(out, "traces")
+	}
+	if t.lp != nil {
+		out = append(out, "logs")
+	}
+	return out
+}
+
+// Report logs the effective telemetry configuration at startup (PC-06): the
+// enabled signals, the protocol and each collector as scheme://host only.
+// Headers, userinfo, path and query are never logged.
+func (t *Telemetry) Report(l *slog.Logger) {
 	if !t.Enabled() {
 		return
 	}
-	var mu sync.Mutex
-	var last time.Time
-	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if time.Since(last) < time.Minute {
-			return
+	args := []any{"signals", strings.Join(t.signals(), ","), "protocol", otlpProtocol}
+	for _, name := range t.signals() {
+		if e := t.endpoints[name]; e != "" {
+			args = append(args, name+"_endpoint", e)
 		}
-		last = time.Now()
-		l.Warn("telemetry export failed; check the OTEL_EXPORTER_OTLP_* settings and the collector")
-	}))
+	}
+	l.Info("telemetry enabled", args...)
 }
+
+// sdkNotice replaces the OpenTelemetry global logger and error handler. What
+// the SDK says about a rejected value or a failed export carries the value or
+// the collector URL, which can hold credentials (PC-05), so the text is never
+// logged: one fixed warning is, at most once a minute. A report made before a
+// logger is attached (while the exporters are built) is delivered on attach.
+type sdkNotice struct {
+	mu      sync.Mutex
+	logger  *slog.Logger
+	last    time.Time
+	pending bool
+}
+
+const sdkNoticeMessage = "the OpenTelemetry SDK reported a problem; its text is withheld because it can contain secrets; check the OTEL_* settings and the collector"
+
+func (n *sdkNotice) install() {
+	otel.SetLogger(logr.New(sdkSink{n}))
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) { n.note() }))
+}
+
+func (n *sdkNotice) note() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.logger == nil {
+		n.pending = true
+		return
+	}
+	n.warn()
+}
+
+// warn logs the notice unless one went out in the last minute. n.mu is held.
+func (n *sdkNotice) warn() {
+	if time.Since(n.last) < time.Minute {
+		return
+	}
+	n.last = time.Now()
+	n.logger.Warn(sdkNoticeMessage)
+}
+
+func (n *sdkNotice) attach(l *slog.Logger) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.logger = l
+	if n.pending {
+		n.pending = false
+		n.warn()
+	}
+}
+
+// sdkSink is the logr sink behind otel.SetLogger. It keeps no text.
+type sdkSink struct{ n *sdkNotice }
+
+func (sdkSink) Init(logr.RuntimeInfo)            {}
+func (sdkSink) Enabled(level int) bool           { return level <= 1 } // errors and warnings
+func (s sdkSink) Info(int, string, ...any)       { s.n.note() }
+func (s sdkSink) Error(error, string, ...any)    { s.n.note() }
+func (s sdkSink) WithValues(...any) logr.LogSink { return s }
+func (s sdkSink) WithName(string) logr.LogSink   { return s }
 
 // spanName is the HTTP method only: the path is unbounded, and routes belong
 // to the handlers behind this wrap. Unknown methods collapse to HTTP.
@@ -459,13 +561,20 @@ func (t *Telemetry) WrapHandler(h http.Handler) http.Handler {
 }
 
 // WrapLogger adds the OTel log bridge next to l's own handler, so stdout
-// keeps the PC-07 shape and records also flow to OTLP.
+// keeps the PC-07 shape and records also flow to OTLP. It also routes the
+// SDK's reports to the returned logger (see sdkNotice). component is the one
+// NewLogger was given.
 func (t *Telemetry) WrapLogger(l *slog.Logger, component string) *slog.Logger {
-	if t == nil || t.lp == nil {
+	if !t.Enabled() {
+		return l
+	}
+	t.notice.install()
+	t.notice.attach(l)
+	if t.lp == nil {
 		return l
 	}
 	bridge := otelslog.NewHandler("goldie", otelslog.WithLoggerProvider(t.lp)).
-		WithAttrs([]slog.Attr{slog.String("component", component), slog.String("version", Version)})
+		WithAttrs(identityAttrs(component))
 	return slog.New(slog.NewMultiHandler(l.Handler(), levelGate{Handler: bridge, gate: l.Handler()}))
 }
 

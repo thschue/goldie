@@ -398,13 +398,13 @@ func TestTelemetryReportErrorsToRedactsAndRateLimits(t *testing.T) {
 	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), nil)
 	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
 	out := &syncBuffer{}
-	tel.ReportErrorsTo(NewLogger(out, 0, "server"))
+	tel.WrapLogger(NewLogger(out, 0, "server"), "server")
 
 	otel.Handle(errors.New(`Post "http://user:pw@collector:4318/v1/traces": dial failed`))
 	otel.Handle(errors.New(`Post "http://user:pw@collector:4318/v1/traces": dial failed`))
 
 	got := out.String()
-	if n := strings.Count(got, "telemetry export failed"); n != 1 {
+	if n := strings.Count(got, "OpenTelemetry SDK reported"); n != 1 {
 		t.Errorf("got %d warnings, want exactly 1 (rate limit): %s", n, got)
 	}
 	for _, bad := range []string{"user:pw", "collector:4318", "dial failed"} {
@@ -656,8 +656,7 @@ func TestTelemetryRefusesEndpointsTheSDKWouldPrint(t *testing.T) {
 }
 
 // Well-formed headers are accepted and the SDK has nothing to complain about.
-func TestTelemetryValidHeadersLeaveOTelLoggerSilent(t *testing.T) {
-	sink := captureOTelLogger(t)
+func TestTelemetryValidHeadersLeaveSDKReportSilent(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
 	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Basic%20abc,X-Api_Token.1=v")
 	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "x-logs=1")
@@ -665,8 +664,10 @@ func TestTelemetryValidHeadersLeaveOTelLoggerSilent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v", err)
 	}
+	out := &syncBuffer{}
+	tel.WrapLogger(NewLogger(out, 0, "server"), "server")
 	_ = tel.Shutdown(context.Background())
-	if got := sink.String(); got != "" {
-		t.Errorf("otel logger was not silent: %q", got)
+	if got := out.String(); got != "" {
+		t.Errorf("logger was not silent: %q", got)
 	}
 }
