@@ -51,6 +51,70 @@ var cleanCases = []struct {
 	{"other format characters", "a\u00adb\u180ec\ufff9d\ufffbe\u2062f\u206ag", "abcdefg", "abcdefg"},
 	{"a forged line in a single-line field", "name\n- id: forged", "name\n- id: forged", "name - id: forged"},
 	{"empty", "", "", ""},
+	// #163: Hangul fillers and variation selectors are not Cf, but they are
+	// invisible, so server text could hide characters behind them. Each sits
+	// between visible characters that must survive.
+	{"Hangul choseong filler U+115F", "aᅟb", "ab", "ab"},
+	{"Hangul jungseong filler U+1160", "aᅠb", "ab", "ab"},
+	{"Hangul filler U+3164", "aㅤb", "ab", "ab"},
+	{"halfwidth Hangul filler U+FFA0", "aﾠb", "ab", "ab"},
+	{"Hangul fillers between Hangul syllables", "한ᅟᅠ글ㅤﾠ판", "한글판", "한글판"},
+	{"variation selectors U+FE00 to U+FE0F", "a︀b︁c︇d︎e️f", "abcdef", "abcdef"},
+	{"variation selectors supplement U+E0100 to U+E01EF", "a\U000E0100b\U000E0101c\U000E0150d\U000E01EEe\U000E01EFf",
+		"abcdef", "abcdef"},
+	{"a variation selector after an emoji and a CJK ideograph", "❤️ 葛\U000E0100!", "❤ 葛!", "❤ 葛!"},
+	{"every Hangul filler and variation selector at both ends", "ᅟ️\U000E01EFxㅤ\U000E0100︀ﾠᅠ",
+		"x", "x"},
+	{"hidden fillers in a forged line", "nameㅤ\n️- id: forged", "name\n- id: forged", "name - id: forged"},
+	{"the visible neighbours of each range survive", "ᅞᅡㅣㅥﾟﾡ︐❣",
+		"ᅞᅡㅣㅥﾟﾡ︐❣", "ᅞᅡㅣㅥﾟﾡ︐❣"},
+}
+
+// hiddenFiller is what #163 adds to what neither client may pass on: the
+// Hangul fillers and both blocks of variation selectors.
+func hiddenFiller(r rune) bool {
+	switch {
+	case r == 0x115f, r == 0x1160, r == 0x3164, r == 0xffa0:
+		return true
+	case r >= 0xfe00 && r <= 0xfe0f, r >= 0xe0100 && r <= 0xe01ef:
+		return true
+	}
+	return false
+}
+
+// Every rune of both ranges is dropped, one at a time, with a visible
+// character on each side that survives.
+func TestCleanDropsEveryHangulFillerAndVariationSelector(t *testing.T) {
+	var hidden []rune
+	for r := rune(0); r <= unicode.MaxRune; r++ {
+		if hiddenFiller(r) {
+			hidden = append(hidden, r)
+		}
+	}
+	if len(hidden) != 4+16+240 {
+		t.Fatalf("hiddenFiller covers %d runes, want %d", len(hidden), 4+16+240)
+	}
+	for name, f := range map[string]func(string) string{"CleanText": contract.CleanText, "CleanLine": contract.CleanLine} {
+		for _, r := range hidden {
+			in := "x" + string(r) + "y"
+			if got := f(in); got != "xy" {
+				t.Errorf("%s(%q) = %q, want %q", name, in, got, "xy")
+			}
+		}
+	}
+}
+
+func FuzzCleanDropsHangulFillersAndVariationSelectors(f *testing.F) {
+	for _, c := range cleanCases {
+		f.Add(c.in)
+	}
+	f.Fuzz(func(t *testing.T, in string) {
+		for name, clean := range map[string]func(string) string{"CleanText": contract.CleanText, "CleanLine": contract.CleanLine} {
+			if got := clean(in); strings.ContainsFunc(got, hiddenFiller) {
+				t.Fatalf("%s(%q) = %q keeps a Hangul filler or variation selector", name, in, got)
+			}
+		}
+	})
 }
 
 func TestCleanTextKeepsLayoutAndDropsControlAndFormatCharacters(t *testing.T) {

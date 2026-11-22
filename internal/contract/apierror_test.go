@@ -100,3 +100,22 @@ func TestDecodeAPIErrorReadsRetryAfterWhateverTheBody(t *testing.T) {
 		t.Errorf("DecodeAPIError(503) = %#v, want %#v", got, want)
 	}
 }
+
+// #163 (from #223): Wait words APIError.RetryAfter for a person or an agent,
+// and is empty when there is no wait to pass on.
+func TestAPIErrorWaitWordsTheWaitInWholeSeconds(t *testing.T) {
+	for _, c := range []struct {
+		retryAfter int
+		want       string
+	}{
+		{0, ""},
+		{1, "1 second"},
+		{2, "2 seconds"},
+		{3600, "3600 seconds"},
+	} {
+		e := contract.APIError{Status: http.StatusTooManyRequests, RetryAfter: c.retryAfter}
+		if got := e.Wait(); got != c.want {
+			t.Errorf("APIError{RetryAfter: %d}.Wait() = %q, want %q", c.retryAfter, got, c.want)
+		}
+	}
+}
