@@ -60,8 +60,9 @@ and running `./run regen`.
   (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
   off (404). It is registered on the same mux as the API, so the auth of #11 covers it.
 - `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and
-  `GOLDIE_API_TOKEN`, best set as `GOLDIE_API_TOKEN_FILE`; without either it exits non-zero naming the
-  variable. Every path under `/api/` requires `Authorization: Bearer <token>`, compared in constant
+  `GOLDIE_API_TOKEN`, best set as `GOLDIE_API_TOKEN_FILE`; without either, or with a token shorter
+  than 32 bytes (`openssl rand -hex 32` makes one), it exits non-zero naming the variable and never
+  echoing the token or its length. Every path under `/api/` requires `Authorization: Bearer <token>`, compared in constant
   time, and answers 401 in the error envelope otherwise. The startup report shows the token as
   `(redacted)`. Until #11, the token does not cover `/openapi.*` or `/swagger-ui`. This single token
   stands in for ADR 0008's named tokens with Roles, which #11 brings; like every config variable,

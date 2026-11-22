@@ -4,13 +4,19 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
 
-// CheckToken validates a configured API token. It must be non-empty and
-// printable ASCII without spaces, so that it survives an Authorization
-// header unchanged. Errors never contain the token.
+// MinTokenLength is the shortest API token CheckToken accepts, in bytes. It
+// keeps a guessable token out of production; `openssl rand -hex 32` gives 64.
+const MinTokenLength = 32
+
+// CheckToken validates a configured API token. It must be printable ASCII
+// without spaces, so that it survives an Authorization header unchanged, and
+// at least MinTokenLength bytes long. Errors never contain the token, any
+// part of it, or its length.
 func CheckToken(token string) error {
 	if token == "" {
 		return errors.New("is not set: the API needs a token")
@@ -19,6 +25,9 @@ func CheckToken(token string) error {
 		if c := token[i]; c <= ' ' || c > '~' {
 			return errors.New("must be printable ASCII without spaces")
 		}
+	}
+	if len(token) < MinTokenLength {
+		return fmt.Errorf("must be at least %d bytes: generate one with `openssl rand -hex 32`", MinTokenLength)
 	}
 	return nil
 }

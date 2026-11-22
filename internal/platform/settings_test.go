@@ -89,7 +89,7 @@ func TestSwaggerUIEnabledSetting(t *testing.T) {
 }
 
 func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
-	const token = "file-token-0123456789"
+	const token = "file-token-0123456789abcdef0123456789"
 	path := t.TempDir() + "/token"
 	if err := os.WriteFile(path, []byte(token+"\r\n"), 0o600); err != nil {
 		t.Fatal(err)

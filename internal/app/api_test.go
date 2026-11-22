@@ -14,7 +14,7 @@ import (
 
 // testToken is the API token of the test server; testContent is its dir Source.
 const (
-	testToken   = "test-token-0123456789abcdef"
+	testToken   = "test-token-0123456789abcdef0123456789"
 	testContent = "testdata/content"
 )
 
@@ -309,7 +309,7 @@ func TestAPIOnlyAnswersGet(t *testing.T) {
 }
 
 func TestPublicHandlerFailsFastOnBadSettings(t *testing.T) {
-	const marker = "s3cret marker"
+	const marker = "s3cret marker 0123456789abcdef0123" // long enough that the space is what fails
 	broken := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(broken, "global", "articles"), 0o755); err != nil {
 		t.Fatal(err)
@@ -325,7 +325,8 @@ func TestPublicHandlerFailsFastOnBadSettings(t *testing.T) {
 	}{
 		"no token":           {Options{ContentDir: testContent}, platform.EnvAPIToken, ""},
 		"token with a space": {Options{ContentDir: testContent, APIToken: marker}, platform.EnvAPIToken, marker},
-		"token with a tab":   {Options{ContentDir: testContent, APIToken: "abc\tdef"}, platform.EnvAPIToken, "abc"},
+		"token with a tab":   {Options{ContentDir: testContent, APIToken: "abc\tdef0123456789abcdef0123456789"}, platform.EnvAPIToken, "abc"},
+		"token too short":    {Options{ContentDir: testContent, APIToken: testToken[:31]}, platform.EnvAPIToken, testToken[:31]},
 		"no content dir":     {Options{APIToken: testToken}, platform.EnvContentDir, ""},
 		"missing content":    {Options{APIToken: testToken, ContentDir: missing}, platform.EnvContentDir, missing},
 		"invalid article":    {Options{APIToken: testToken, ContentDir: broken}, platform.EnvContentDir, broken},
