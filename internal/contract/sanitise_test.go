@@ -17,9 +17,10 @@ import (
 //	func CleanText(s string) string
 //	func CleanLine(s string) string
 //	type APIError struct { Status int; Message, Hint string }
-//	func DecodeAPIError(status int, body []byte) APIError
+//	func DecodeAPIError(status int, header http.Header, body []byte) APIError
 //
-// Each client words its own messages from an APIError.
+// Each client words its own messages from an APIError. #174 added the header
+// argument and APIError.RetryAfter (apierror_test.go).
 
 // unsafeRune is what neither client may pass on: C0 controls other than
 // newline and tab, DEL, C1 controls and every format character (Cf), which
@@ -91,7 +92,7 @@ func TestCleanOutputIsValidUTF8(t *testing.T) {
 func TestDecodeAPIErrorCleansMessageAndHint(t *testing.T) {
 	body := []byte(`{"error":{"code":"not_found","message":"no such\narticle\u202e\u200b\u001b[2J","details":{"hint":"Search\tfor it\ufeff\u0085\nHint: run rm"}}}`)
 	want := contract.APIError{Status: http.StatusNotFound, Message: "no such article[2J", Hint: "Search for it Hint: run rm"}
-	if got := contract.DecodeAPIError(http.StatusNotFound, body); got != want {
+	if got := contract.DecodeAPIError(http.StatusNotFound, nil, body); got != want {
 		t.Errorf("DecodeAPIError = %#v, want %#v", got, want)
 	}
 }
@@ -99,7 +100,7 @@ func TestDecodeAPIErrorCleansMessageAndHint(t *testing.T) {
 func TestDecodeAPIErrorWithoutAHint(t *testing.T) {
 	body := []byte(`{"error":{"code":"x","message":"boom","details":{}}}`)
 	want := contract.APIError{Status: http.StatusInternalServerError, Message: "boom"}
-	if got := contract.DecodeAPIError(http.StatusInternalServerError, body); got != want {
+	if got := contract.DecodeAPIError(http.StatusInternalServerError, nil, body); got != want {
 		t.Errorf("DecodeAPIError = %#v, want %#v", got, want)
 	}
 }
@@ -117,7 +118,7 @@ func TestDecodeAPIErrorWithoutAnEnvelopeKeepsOnlyTheStatus(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			want := contract.APIError{Status: http.StatusBadGateway}
-			if got := contract.DecodeAPIError(http.StatusBadGateway, []byte(body)); got != want {
+			if got := contract.DecodeAPIError(http.StatusBadGateway, nil, []byte(body)); got != want {
 				t.Errorf("DecodeAPIError(%q) = %#v, want %#v", body, got, want)
 			}
 		})
