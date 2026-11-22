@@ -2,8 +2,8 @@
 
 # Goldie configuration reference
 
-Configuration is environment only (PC-04). Every variable also accepts a `NAME_FILE` form
-that reads the value from a file; setting both is an error (PC-05).
+Configuration is environment only (PC-04). Every variable in the table below also accepts
+a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -38,3 +38,13 @@ accept a _FILE form; for any other OTEL_* name it is an error.
 | `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `1024` | Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path. |
 | `OTEL_SERVICE_NAME` | `goldie` | Overrides the service.name resource attribute. |
 | `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override. |
+
+## Client commands
+
+`goldie search`, `lookup`, `status` and `version` read these variables.
+Only GOLDIE_TOKEN has a _FILE form (GOLDIE_TOKEN_FILE); the client reads no other _FILE variable.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GOLDIE_ADDR` | (none) | Server URL, http:// or https://, that the client commands talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address. |
+| `GOLDIE_TOKEN` | (none) | Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup and status send; --token overrides it. status works without it. |

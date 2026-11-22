@@ -45,6 +45,18 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
 
+// EnvToken is the API token the client commands send. It is a secret, so it
+// also has a _FILE form (PC-05).
+const EnvToken = "GOLDIE_TOKEN"
+
+// ClientSettings lists the variables the client commands (search, lookup,
+// status, version) read. They are not server configuration: LoadConfig
+// ignores them, and the reference renders them in a table of their own.
+var ClientSettings = []SettingSpec{
+	{EnvAddr, "", "Server URL, http:// or https://, that the client commands talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
+	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup and status send; --token overrides it. status works without it."},
+}
+
 // def returns the registered default of a variable. A variable missing from
 // the registry is a programming error, so it panics at the first LoadConfig.
 func def(name string) string {
@@ -64,16 +76,9 @@ func ConfigReference(settings []SettingSpec) []byte {
 	var b strings.Builder
 	b.WriteString("<!-- Generated from the settings registry in internal/platform/settings.go by `./run regen`. Do not edit. -->\n\n")
 	b.WriteString("# Goldie configuration reference\n\n")
-	b.WriteString("Configuration is environment only (PC-04). Every variable also accepts a `NAME_FILE` form\n")
-	b.WriteString("that reads the value from a file; setting both is an error (PC-05).\n\n")
-	b.WriteString("| Variable | Default | Meaning |\n|---|---|---|\n")
-	for _, s := range rows {
-		d := "(none)"
-		if s.Default != "" {
-			d = "`" + cell(s.Default) + "`"
-		}
-		b.WriteString("| `" + cell(s.Name) + "` | " + d + " | " + cell(s.Meaning) + " |\n")
-	}
+	b.WriteString("Configuration is environment only (PC-04). Every variable in the table below also accepts\n")
+	b.WriteString("a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).\n\n")
+	table(&b, rows)
 	b.WriteString("\n## OpenTelemetry\n\n")
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
@@ -82,15 +87,24 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
 	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
+	table(&b, TelemetrySettings)
+	b.WriteString("\n## Client commands\n\n")
+	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables.\n")
+	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
+	table(&b, ClientSettings)
+	return []byte(b.String())
+}
+
+// table renders settings as a Markdown table, in the given order.
+func table(b *strings.Builder, rows []SettingSpec) {
 	b.WriteString("| Variable | Default | Meaning |\n|---|---|---|\n")
-	for _, s := range TelemetrySettings {
+	for _, s := range rows {
 		d := "(none)"
 		if s.Default != "" {
 			d = "`" + cell(s.Default) + "`"
 		}
 		b.WriteString("| `" + cell(s.Name) + "` | " + d + " | " + cell(s.Meaning) + " |\n")
 	}
-	return []byte(b.String())
 }
 
 // cell makes registry text safe inside a Markdown table cell or code span:
