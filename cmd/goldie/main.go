@@ -107,6 +107,8 @@ func runServer(out io.Writer) error {
 		APIToken:   cfg.APIToken,
 		APITokens:  cfg.APITokens,
 		RateLimit:  cfg.RateLimit,
+
+		MinClientVersion: cfg.MinClientVersion,
 	})
 	if err != nil {
 		return handlerError(err)

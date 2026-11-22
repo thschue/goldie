@@ -30,6 +30,7 @@ type publicMux struct {
 	mux     *http.ServeMux
 	tokens  *api.Tokens
 	limiter *api.RateLimiter
+	gate    *clientGate
 	routes  []route
 }
 
@@ -46,16 +47,17 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newPublicMuxWith(snap, tokens, limiter)
+	return newPublicMuxWith(snap, tokens, limiter, nil)
 }
 
-// newPublicMuxWith is newPublicMux guarded by a token set and a rate limiter.
-func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter) (*publicMux, error) {
+// newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
+// version (nil for none) and a rate limiter.
+func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *clientGate) (*publicMux, error) {
 	srv, err := api.NewServer(snap)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
 	srv.Register(m)
 	return m, nil
 }
@@ -99,8 +101,9 @@ var openPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 // guard adds the Swagger UI Content-Security-Policy when path is under
 // /swagger-ui, 405s included, and leaves the OpenAPI documents open. Every
 // other path, /api/ and any operation the spec adds later, is behind the
-// tokens and then the per-token rate limit: a new route fails closed, and a
-// request the tokens reject never counts against a bucket. Every operation
+// tokens, then the minimum client version, then the per-token rate limit: a
+// new route fails closed, a request the tokens reject learns nothing of the
+// gate, and neither a 401 nor a 426 counts against a bucket. Every operation
 // today is open to readers; an operator-only one (sync, activity) passes
 // api.RoleOperator when it lands.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -110,7 +113,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	case openPaths[path]:
 		return h
 	}
-	return m.tokens.Require(api.RoleReader, m.limiter.Limit(h))
+	return m.tokens.Require(api.RoleReader, m.gate.require(m.limiter.Limit(h)))
 }
 
 // RateLimitRejections returns a copy of the requests rejected by the rate
@@ -156,6 +159,8 @@ type Options struct {
 	APIToken   string // one operator token, the shorthand (GOLDIE_API_TOKEN)
 	APITokens  string // name:role:token lines (GOLDIE_API_TOKENS)
 	RateLimit  string // per-token limit, "" for the default (GOLDIE_RATE_LIMIT)
+
+	MinClientVersion string // oldest goldie client served, "" for no gate (GOLDIE_MIN_CLIENT_VERSION)
 }
 
 // rateLimiter builds the per-token limiter from GOLDIE_RATE_LIMIT. Errors name
@@ -254,6 +259,10 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{err}
 	}
+	gate, err := newClientGate(opts.MinClientVersion)
+	if err != nil {
+		return nil, &ConfigError{err}
+	}
 	if opts.ContentDir == "" {
 		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
 	}
@@ -261,7 +270,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
-	m, err := newPublicMuxWith(snap, tokens, limiter)
+	m, err := newPublicMuxWith(snap, tokens, limiter, gate)
 	if err != nil {
 		return nil, err
 	}

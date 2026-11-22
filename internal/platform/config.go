@@ -24,6 +24,8 @@ const (
 	EnvAPITokens  = "GOLDIE_API_TOKENS" // secret: never logged
 
 	EnvRateLimit = "GOLDIE_RATE_LIMIT"
+
+	EnvMinClientVersion = "GOLDIE_MIN_CLIENT_VERSION"
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -42,6 +44,8 @@ type Config struct {
 	APITokens  string // name:role:token lines, as read; secret
 
 	RateLimit string // the per-token request limit, as written (ParseRateLimit)
+
+	MinClientVersion string // the oldest X-Goldie-Client version served, as written; "" for no gate
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -88,6 +92,12 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.RateLimit = str(EnvRateLimit, def(EnvRateLimit))
 	if _, err := ParseRateLimit(cfg.RateLimit); err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvRateLimit, err))
+	}
+	cfg.MinClientVersion = str(EnvMinClientVersion, def(EnvMinClientVersion))
+	if cfg.MinClientVersion != "" {
+		if _, err := ParseSemver(cfg.MinClientVersion); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", EnvMinClientVersion, err))
+		}
 	}
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
@@ -144,6 +154,7 @@ func (c Config) Report(l *slog.Logger) {
 		EnvAPIToken, redacted(c.APIToken),
 		EnvAPITokens, redacted(c.APITokens),
 		EnvRateLimit, c.RateLimit,
+		EnvMinClientVersion, c.MinClientVersion,
 	)
 }
 
