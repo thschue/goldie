@@ -86,3 +86,10 @@ linters:
           files: ["$all", "!$test"]
           deny:
             - {pkg: github.com/thschue/goldie/internal/contract/contracttest, desc: "contracttest is test-only: import it from _test.go files, never from production code"}
+        project-detection:
+          # The server never detects a Project from its own working directory (#107, #233): it would
+          # leak the server's own repo and scope answers wrongly. Only the stdio MCP role detects, on
+          # the user's machine, so only internal/app/mcpstdio.go may import the package in app.
+          files: ["**/internal/api/**", "**/internal/engine/**", "**/internal/app/**", "!**/internal/app/mcpstdio.go"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/contract/project, desc: "the server must not detect a Project from its own working directory: only internal/app/mcpstdio.go (the stdio role) may import contract/project"}
