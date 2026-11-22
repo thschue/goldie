@@ -8,10 +8,10 @@ import (
 )
 
 func TestServerTextCannotForgeLinesOrHideCharacters(t *testing.T) {
-	if got := line("name\n- id: forged‮\x1b[2J"); strings.ContainsAny(got, "\n‮\x1b") {
+	if got := line("name\n- id: forged\u202e\x1b[2J"); strings.ContainsAny(got, "\n\u202e\x1b") {
 		t.Errorf("line kept unsafe characters: %q", got)
 	}
-	if got := clean("a\nb\tc⁦\x00"); got != "a\nb\tc" {
+	if got := clean("a\nb\tc\u2066\x00"); got != "a\nb\tc" {
 		t.Errorf("clean = %q", got)
 	}
 }
