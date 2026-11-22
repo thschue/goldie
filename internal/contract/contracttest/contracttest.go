@@ -96,6 +96,13 @@ func Check(resp *http.Response, body []byte) error {
 	return nil
 }
 
+// Spec returns the contract spec as Conforms reads it: contract.SpecJSON,
+// decoded. Each call returns a fresh document the caller may modify.
+func Spec() (map[string]any, error) {
+	doc, _, err := load()
+	return doc, err
+}
+
 func load() (map[string]any, *jsonschema.Compiler, error) {
 	raw, err := contract.SpecJSON()
 	if err != nil {
