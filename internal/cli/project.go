@@ -359,7 +359,7 @@ func normaliseRemote(raw string) (id string, ok bool) {
 		return "", false
 	}
 	id = strings.ToLower(host + "/" + path)
-	if strings.IndexFunc(id, func(r rune) bool { return unsafe(r) || r == ' ' }) >= 0 || !validProjectID(id) {
+	if !validProjectID(id) { // its ASCII-only rule also keeps out control and bidi runes
 		return "", false
 	}
 	return id, true
