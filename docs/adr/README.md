@@ -17,3 +17,4 @@ Consequences.
 - [0011. Versioning policy: additive-only contract](0011-versioning-policy.md)
 - [0012. Agent loops: mechanical gates, a PR-centric handoff and review lenses](0012-agent-loop-gates-and-handoff.md)
 - [0013. The reviewer judges changes to the task runner](0013-reviewer-judges-check-tooling-changes.md)
+- [0014. The error envelope always carries a next-step hint](0014-error-envelope-always-carries-a-hint.md)

@@ -88,11 +88,25 @@ components:
           examples:
             - no such endpoint
         details:
-          type: object
-          description: Structured context for the error. Empty when there is none.
-          additionalProperties: true
+          description: Next-step hints for the caller.
+          $ref: "#/components/schemas/ErrorDetails"
+    ErrorDetails:
+      type: object
+      description: |
+        Next-step hints for the caller, and nothing else. It never echoes the
+        request and never contains addresses, ports, hostnames, paths or stack
+        traces. It is required, so a client can always read it, and always
+        carries a hint.
+      additionalProperties: false
+      required:
+        - hint
+      properties:
+        hint:
+          type: string
+          minLength: 1
+          description: What the caller can do next.
           examples:
-            - {}
+            - Check the request path against the OpenAPI document.
   responses:
     Error:
       x-go-name: ErrorResponse

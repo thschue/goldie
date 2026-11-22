@@ -22,15 +22,24 @@ type Error struct {
 	// Examples: not_found
 	Code string `json:"code"`
 
-	// Details Structured context for the error. Empty when there is none.
-	//
-	// Examples: {}
-	Details map[string]any `json:"details"`
+	// Details Next-step hints for the caller.
+	Details ErrorDetails `json:"details"`
 
 	// Message A short, human-readable explanation.
 	//
 	// Examples: no such endpoint
 	Message string `json:"message"`
+}
+
+// ErrorDetails Next-step hints for the caller, and nothing else. It never echoes the
+// request and never contains addresses, ports, hostnames, paths or stack
+// traces. It is required, so a client can always read it, and always
+// carries a hint.
+type ErrorDetails struct {
+	// Hint What the caller can do next.
+	//
+	// Examples: Check the request path against the OpenAPI document.
+	Hint string `json:"hint"`
 }
 
 // ErrorEnvelope The body of every error response.

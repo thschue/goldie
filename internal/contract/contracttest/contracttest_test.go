@@ -1,0 +1,56 @@
+package contracttest
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func response(method, path string, status int, contentType, body string) (*http.Response, []byte) {
+	req := httptest.NewRequest(method, path, nil)
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", contentType)
+	rec.WriteHeader(status)
+	resp := rec.Result()
+	resp.Request = req
+	return resp, []byte(body)
+}
+
+const goodError = `{"error":{"code":"not_found","message":"no such endpoint","details":{"hint":"Try again."}}}`
+
+func TestCheck(t *testing.T) {
+	for name, tc := range map[string]struct {
+		method, path string
+		status       int
+		contentType  string
+		body         string
+		wantErr      string // empty means the response conforms
+	}{
+		"declared yaml response":        {"GET", "/openapi.yaml", 200, "application/yaml", "openapi: 3.1.0", ""},
+		"declared json response":        {"GET", "/openapi.json", 200, "application/json", `{"openapi":"3.1.0"}`, ""},
+		"default error on an operation": {"POST", "/openapi.json", 405, "application/json", goodError, ""},
+		"unknown path is an error":      {"GET", "/nope", 404, "application/json", goodError, ""},
+		"unknown path answered 200":     {"GET", "/nope", 200, "application/json", `{}`, "not a client error"},
+		"wrong content type":            {"GET", "/openapi.json", 200, "text/plain", `{}`, "not declared"},
+		"error without details hint": {"GET", "/nope", 404, "application/json",
+			`{"error":{"code":"x","message":"y","details":{}}}`, "hint"},
+		"error with extra details": {"GET", "/nope", 404, "application/json",
+			`{"error":{"code":"x","message":"y","details":{"hint":"z","addr":"10.0.0.1"}}}`, "addr"},
+		"error that is not the envelope": {"GET", "/nope", 404, "application/json", `{"message":"x"}`, "error"},
+		"body that is not JSON":          {"GET", "/openapi.json", 200, "application/json", `nope`, "not JSON"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, body := response(tc.method, tc.path, tc.status, tc.contentType, tc.body)
+			err := Check(resp, body)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("unexpected mismatch: %v", err)
+			case tc.wantErr != "" && err == nil:
+				t.Errorf("conformed, want a mismatch mentioning %q", tc.wantErr)
+			case tc.wantErr != "" && !strings.Contains(err.Error(), tc.wantErr):
+				t.Errorf("error %q does not mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}

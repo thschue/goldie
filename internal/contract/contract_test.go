@@ -21,7 +21,7 @@ func (stub) GetOpenAPIJSON(context.Context, GetOpenAPIJSONRequestObject) (GetOpe
 
 func (stub) GetOpenAPIYAML(context.Context, GetOpenAPIYAMLRequestObject) (GetOpenAPIYAMLResponseObject, error) {
 	return GetOpenAPIYAMLdefaultJSONResponse{
-		Body:       ErrorEnvelope{Error: Error{Code: "boom", Message: "boom", Details: map[string]any{}}},
+		Body:       ErrorEnvelope{Error: Error{Code: "boom", Message: "boom", Details: ErrorDetails{Hint: "boom"}}},
 		StatusCode: http.StatusTeapot,
 	}, nil
 }
