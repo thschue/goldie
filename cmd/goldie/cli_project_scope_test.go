@@ -16,7 +16,7 @@ import (
 )
 
 // Acceptance tests for #121: search and lookup send the resolved Project as
-// project=, and an unregistered Project gets the global answer plus the
+// project=, and an unregistered Project gets global guidance only plus the
 // server's hint, which status shows too. The server is the real handler over
 // the example content, which registers github.com/acme/shop and holds a shop
 // article platform/deploy that overrides the global one.
@@ -378,7 +378,7 @@ func TestCLIInvalidEnvProjectBlocksSearchBeforeAnyRequest(t *testing.T) {
 // hint names no HTTP route and no client command.
 
 func wantRegisterHint(id string) string {
-	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+	return "The Project " + id + " is not registered on this server, so this is global guidance only. " +
 		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
 }
 

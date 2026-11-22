@@ -21,31 +21,34 @@ var badSearch = envelope("bad_request", "missing or invalid search words",
 
 // badProject is the 400 envelope for a project parameter that is not a ProjectId.
 var badProject = envelope("bad_request", "invalid project",
-	"Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to search all global content.")
+	"Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to get global guidance only.")
 
 // unregisteredHint tells a caller that named a Project this server does not
 // hold that it got the global answer (ADR 0014), and how to register it. The
 // id is already validated as a ProjectId, so it holds no markup or whitespace.
 func unregisteredHint(id string) string {
-	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+	return "The Project " + id + " is not registered on this server, so this is global guidance only. " +
 		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
 }
 
-// scopeHint validates the optional project parameter. It returns the Project
-// to resolve for, the hint when it is not registered, and false when the
-// parameter is not a ProjectId.
-func scopeHint(snap *engine.Snapshot, project *contract.ProjectId) (proj string, hint *string, ok bool) {
+// validProject reports whether the optional project parameter is absent or a
+// ProjectId. It needs no Snapshot, so it runs before the not-ready check.
+func validProject(project *contract.ProjectId) bool {
+	return project == nil || contract.ValidProjectID(*project)
+}
+
+// scopeHint resolves the optional project parameter, already checked by
+// validProject. It returns the Project to resolve for and the hint when it is
+// not registered.
+func scopeHint(snap *engine.Snapshot, project *contract.ProjectId) (proj string, hint *string) {
 	if project == nil {
-		return "", nil, true
-	}
-	if !contract.ValidProjectID(*project) {
-		return "", nil, false
+		return "", nil
 	}
 	if scope, registered := snap.Project(*project); registered {
-		return scope, nil, true
+		return scope, nil
 	}
 	h := unregisteredHint(*project)
-	return "", &h, true
+	return "", &h
 }
 
 // searchPattern is the pattern the generated router registers the search
@@ -97,18 +100,20 @@ func (s *Server) Register(m contract.ServeMux) {
 
 // SearchArticles answers GET /api/v1/search.
 func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
-	snap := s.provider()
-	if snap == nil {
-		return contract.SearchArticles503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
-	}
+	// Input that can never succeed is a 400 before and after the first load,
+	// so a caller is not told to retry it.
 	q := req.Params.Q
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
 	}
-	proj, hint, ok := scopeHint(snap, req.Params.Project)
-	if !ok {
+	if !validProject(req.Params.Project) {
 		return contract.SearchArticles400JSONResponse(badProject), nil
 	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.SearchArticles503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, hint := scopeHint(snap, req.Params.Project)
 	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
 	for _, h := range snap.SearchIn(proj, q) {
 		res.Results = append(res.Results, contract.SearchHit{
@@ -128,14 +133,14 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 // decoded, so a nested id sent as one %2F-encoded segment keeps its "/"
 // (ADR 0016).
 func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObject) (contract.GetArticleResponseObject, error) {
+	if !validProject(req.Params.Project) {
+		return contract.GetArticle400JSONResponse(badProject), nil
+	}
 	snap := s.provider()
 	if snap == nil {
 		return contract.GetArticle503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
 	}
-	proj, hint, valid := scopeHint(snap, req.Params.Project)
-	if !valid {
-		return contract.GetArticle400JSONResponse(badProject), nil
-	}
+	proj, hint := scopeHint(snap, req.Params.Project)
 	a, ok := snap.ArticleIn(proj, req.Id)
 	if !ok {
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",

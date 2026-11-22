@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/contract/project"
@@ -27,10 +28,10 @@ var sourceWords = map[project.Source]string{
 	project.SourceOrigin:   sourceOrigin,
 }
 
-// resolveProject detects the Project of dir with project.Detect. A Project the
+// detectProject detects the Project of dir with project.Detect. A Project the
 // user gave but that is unusable is reported with the words of its source as a
 // prefix.
-func resolveProject(dir, flagValue, envValue string) (project.Detected, error) {
+func detectProject(dir, flagValue, envValue string) (project.Detected, error) {
 	d, err := project.Detect(dir, flagValue, envValue)
 	var se *project.SourceError
 	if errors.As(err, &se) {
@@ -39,8 +40,12 @@ func resolveProject(dir, flagValue, envValue string) (project.Detected, error) {
 	return d, err
 }
 
-// describe is the status line for a Project.
-func describe(p project.Detected) string {
+// describeProject is the text of the Project line: the problem when there is
+// one, else the Project or what was found.
+func describeProject(p project.Detected, problem string) string {
+	if problem != "" {
+		return "problem: " + problem
+	}
 	if p.ID == "" && p.Rejected != "" {
 		return remoteHint(p)
 	}
@@ -48,6 +53,16 @@ func describe(p project.Detected) string {
 		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"
 	}
 	return fmt.Sprintf("%s (from %s)", contract.CleanLine(p.ID), sourceWords[p.Source])
+}
+
+// project detects the Project for the working directory.
+func (c *commander) project() (project.Detected, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return project.Detected{}, errors.New("cannot read the working directory")
+	}
+	envValue, _ := c.env.Lookup(EnvProject)
+	return detectProject(dir, c.s.project, envValue)
 }
 
 // projectHint is the text of the rejected-remote hint, or "" when no remote was
