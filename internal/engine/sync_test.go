@@ -289,3 +289,14 @@ func TestRedactSchemelessUserinfo(t *testing.T) {
 		}
 	}
 }
+
+// A word with @ inside a quoted credential must not cut the quote short.
+func TestRedactQuotedCredentialWithAt(t *testing.T) {
+	msg := `password='correct horse battery@staple' rejected`
+	got := redact(msg)
+	for _, leak := range []string{"correct", "horse", "battery", "staple"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("redact(%q) = %q leaks %q", msg, got, leak)
+		}
+	}
+}

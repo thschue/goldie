@@ -136,11 +136,13 @@ const (
 var redactions = []*regexp.Regexp{
 	// URLs, userinfo included.
 	regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`),
-	// Userinfo without a scheme (user:password@host) and email addresses.
-	regexp.MustCompile(`\S+@\S+`),
 	// A credential-like name (also inside an identifier such as api_key or
 	// GOLDIE_TOKEN), an optional auth scheme, and the value, quoted or not.
 	regexp.MustCompile(`(?i)[\w.-]*(token|passw(or)?d|pwd|secret|key|authorization|bearer|credential|cookie|session)[\w.-]*\s*[:=]?\s*((bearer|basic|token)\s+)?("[^"]*"|'[^']*'|\S+)`),
+	// Userinfo without a scheme (user:password@host) and email addresses.
+	// It runs after the credential pattern so it cannot swallow the closing
+	// quote of a quoted value.
+	regexp.MustCompile(`\S+@\S+`),
 	// Bare tokens: known prefixes, and any long unbroken run.
 	regexp.MustCompile(`\b(gh[pousr]_|github_pat_|glpat-)\w+`),
 	regexp.MustCompile(`[A-Za-z0-9_+=-]{32,}`),
