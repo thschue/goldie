@@ -40,7 +40,9 @@ are asked only about **security and product direction**, never about mechanical 
 - **Stop the line:** a red `main` comes before new work.
 - **Get things done:** finish before starting, do in-scope work now instead of filing it, decide
   what the record answers, and hand off only complete rework lists.
-- **Order of work:** bugs, security and `priority` first; everything else oldest first.
+- **Order of work:** bugs, security and `priority` first; everything else oldest first. Work that
+  unblocks the most gets `priority`, cut to the smallest unblocking slice, and is pushed through
+  first, because others wait on it.
 
 The repository's loop specs and label contract are the authoritative rules. In goldie, they are in
 `docs/agents/`.

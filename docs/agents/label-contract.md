@@ -35,6 +35,16 @@ In every loop, items labelled `bug`, `security` or `priority` go first (for a PR
 PR or on the issue it closes). Everything else is worked **oldest first**: issues by `createdAt`, PRs
 by when they were marked ready.
 
+**Unblockers may jump the queue, and then go fast.** Work that unblocks the most other open work
+gets `priority` from pm-audit, so it may be started before older work. Because others wait on it,
+it moves through as fast as possible:
+- pm-audit slices it down to the smallest change that unblocks the waiting issues, and the rest
+  becomes ordinary work;
+- the worker claims it in the next tick, ahead of older issues, and does nothing beyond the slice;
+- the review loop reviews it, and the worker reworks it, before anything else that isn't a bug or
+  security;
+- pm-audit reports any unblocker not merged within a day as a stall, with what holds it.
+
 ## Identity
 
 All loops run under the maintainer's `gh` identity, resolved once per tick:
