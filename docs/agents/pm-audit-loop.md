@@ -61,8 +61,10 @@ in this repository, so a question the loop can answer, it answers. Asking is the
 
 **Critical list (the only tier-3 items):**
 - security posture, secrets and credentials;
-- publishing a release (merging a release PR); fixing release *configuration* to match the record is
-  tier 1;
+- **releasing is the maintainer's decision:** when to release, which version, and what goes into
+  it. No loop merges, approves or arms a release PR, or proposes a release date. Filing an issue
+  to make release *configuration* match the record (for example `0.x` versions, ADR 0011) is tier
+  1; its PR is gated, so the maintainer merges it;
 - deleting user data, or removing a user-facing feature;
 - external commitments, licensing or cost;
 - closing an external contributor's PR.

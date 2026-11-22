@@ -28,8 +28,10 @@ authoritative and this is its summary.
   - tier 1: the record answers it, even indirectly: act and record;
   - tier 2: reversible but not in the record: announce, then act after 8 h unless the maintainer
     objects;
-  - tier 3, only for security, secrets, publishing a release, data deletion, licensing and cost,
-    external commitments and closing external contributors' PRs: escalate with a recommendation.
+  - tier 3, only for security, secrets, data deletion, licensing and cost, external commitments
+    and closing external contributors' PRs: escalate with a recommendation;
+  - releasing (when, which version, what goes in) is always the maintainer's; never merge or
+    approve a release PR.
 
   Hand the maintainer actions, never questions you could answer. File process gaps as issues.
 - **Keep the worker fed:** at least 3 claimable issues on 2 independent tracks. Remove dependency
