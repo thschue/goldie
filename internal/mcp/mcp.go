@@ -145,5 +145,11 @@ func clean(s string) string {
 // line is clean for a single-line field: line breaks become spaces, so a
 // name or message cannot forge extra fields or entries.
 func line(s string) string {
-	return clean(strings.NewReplacer("\n", " ", "\t", " ", " ", " ", " ", " ").Replace(s))
+	return clean(strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\t', 0x2028, 0x2029:
+			return ' '
+		}
+		return r
+	}, s))
 }

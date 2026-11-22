@@ -16,6 +16,12 @@ func TestServerTextCannotForgeLinesOrHideCharacters(t *testing.T) {
 	}
 }
 
+func TestLineTurnsUnicodeLineSeparatorsIntoSpaces(t *testing.T) {
+	if got := line("a\u2028b\u2029c"); got != "a b c" {
+		t.Errorf("line = %q, want %q", got, "a b c")
+	}
+}
+
 func TestAPIErrorWithoutAnEnvelopeNamesOnlyTheStatus(t *testing.T) {
 	err := apiError(&http.Response{StatusCode: http.StatusBadGateway}, []byte("<html>http://10.0.0.1/internal</html>"))
 	if got := err.Error(); got != "the knowledge server answered 502 Bad Gateway" {
