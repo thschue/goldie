@@ -169,6 +169,33 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 	<-stopped
 }
 
+func TestRedactLeavesNoCredentialsOrAddresses(t *testing.T) {
+	for _, tc := range []struct{ msg, leak string }{
+		{"Authorization: Bearer SECRET0 rejected", "SECRET0"},
+		{"api_key=SECRET1 failed", "SECRET1"},
+		{"client_secret=SECRET2", "SECRET2"},
+		{"GOLDIE_TOKEN=SECRET3", "SECRET3"},
+		{"access_token: SECRET4", "SECRET4"},
+		{"x-api-key: SECRET5", "SECRET5"},
+		{`password="two SECRET6"`, "SECRET6"},
+		{"using ghp_SECRET7abcdefghij0123456789abcd", "SECRET7"},
+		{"auth with Zm9vYmFyU0VDUkVUOGJhenF1eHF1dXgxMjM0NTY3", "Zm9vYmFy"},
+		{"dial tcp 10.1.2.3:443: connect: connection refused", "10.1.2.3"},
+		{"dial tcp [fd00::1]:22: i/o timeout", "fd00::1"},
+		{"dial tcp fd00::1: refused", "fd00::1"},
+		{"lookup git.internal.corp: no such host", "internal.corp"},
+		{"connect localhost:8080 refused", "localhost:8080"},
+		{"read C:\\Users\\x\\file", "Users"},
+	} {
+		if got := redact(tc.msg); strings.Contains(got, tc.leak) {
+			t.Errorf("redact(%q) = %q leaks %q", tc.msg, got, tc.leak)
+		}
+	}
+	if got := redact("boom"); got != "boom" {
+		t.Errorf("redact(%q) = %q; a plain message must pass", "boom", got)
+	}
+}
+
 // panicSource serves good once, then panics with a secret-bearing value.
 type panicSource struct{ calls int }
 

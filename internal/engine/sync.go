@@ -139,17 +139,33 @@ const (
 	errLoadPanicked = syncError("source load panicked")
 )
 
-var (
-	urlRe  = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`)
-	credRe = regexp.MustCompile(`(?i)\b(token|password|passwd|secret|key|authorization|bearer)\b\s*[:=]?\s*\S+`)
-	pathRe = regexp.MustCompile(`[^\s"'` + "`" + `]*[/\\][^\s"'` + "`" + `]*`)
-)
+// The patterns run in order and err on the side of redacting too much: a
+// redacted word costs a little detail, a leaked one may cost a credential.
+var redactions = []*regexp.Regexp{
+	// URLs, userinfo included.
+	regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`),
+	// A credential-like name (also inside an identifier such as api_key or
+	// GOLDIE_TOKEN), an optional auth scheme, and the value, quoted or not.
+	regexp.MustCompile(`(?i)[\w.-]*(token|passw(or)?d|pwd|secret|key|authorization|bearer|credential|cookie|session)[\w.-]*\s*[:=]?\s*((bearer|basic|token)\s+)?("[^"]*"|'[^']*'|\S+)`),
+	// Bare tokens: known prefixes, and any long unbroken run.
+	regexp.MustCompile(`\b(gh[pousr]_|github_pat_|glpat-)\w+`),
+	regexp.MustCompile(`[A-Za-z0-9_+=-]{32,}`),
+	// Path-like words.
+	regexp.MustCompile(`[^\s"'` + "`" + `]*[/\\][^\s"'` + "`" + `]*`),
+	// Addresses: bracketed or bare IPv6, then dotted names and IPv4, then
+	// host:port.
+	regexp.MustCompile(`\[[^\]\s]*\](:\d+)?`),
+	regexp.MustCompile(`(?i)\b[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}\b`),
+	regexp.MustCompile(`[\w-]+(\.[\w-]+)+(:\d+)?`),
+	regexp.MustCompile(`[\w-]+:\d+\b`),
+}
 
-// redact strips URLs, credential-looking values and path-like words from a
-// message, so a Source error is safe to show on a status endpoint.
+// redact strips URLs, credential-looking values, bare tokens, path-like words
+// and network addresses from a message, so a Source error is safe to show on a
+// status endpoint.
 func redact(msg string) string {
-	msg = urlRe.ReplaceAllString(msg, "[redacted]")
-	msg = credRe.ReplaceAllString(msg, "[redacted]")
-	msg = pathRe.ReplaceAllString(msg, "[redacted]")
+	for _, re := range redactions {
+		msg = re.ReplaceAllString(msg, "[redacted]")
+	}
 	return msg
 }
