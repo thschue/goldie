@@ -128,7 +128,8 @@ CONTRACT_GEN=internal/contract/contract.gen.go
 
 # oapi_codegen <spec> <output>: generate Go types and the strict server from
 # <spec> into <output>. Generation is written to a temporary file first, so a
-# failed run never leaves a truncated generated file behind.
+# failed run never leaves a truncated generated file behind. It returns
+# non-zero on failure, so the caller can clean up before it dies.
 oapi_codegen() {
 	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
 	if go run "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}" \
@@ -136,13 +137,13 @@ oapi_codegen() {
 		rm -f "$tmp"
 	else
 		rm -f "$tmp"
-		die "oapi-codegen failed for $1"
+		return 1
 	fi
 }
 
 cmd_regen() {
 	say "regen: oapi-codegen $OAPI_CODEGEN_VERSION"
-	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN"
+	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN" || die "oapi-codegen failed for $CONTRACT_SPEC"
 	# TypeScript types and component docs register here as their issues land.
 }
 
@@ -151,8 +152,11 @@ cmd_regen() {
 # be compared, so the fixture never passes for the wrong reason.
 drift() {
 	fresh=$(mktemp) || die "cannot create a temporary file for the drift check"
+	if ! oapi_codegen "$1" "$fresh"; then
+		rm -f "$fresh"
+		die "oapi-codegen failed for $1"
+	fi
 	status=0
-	oapi_codegen "$1" "$fresh"
 	cmp -s "$fresh" "$CONTRACT_GEN" || status=$?
 	rm -f "$fresh"
 	[ "$status" -le 1 ] || die "cannot compare $CONTRACT_GEN with a fresh generation (cmp exit $status)"
