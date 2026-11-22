@@ -8,10 +8,14 @@ exit 0 with zero warnings. Reviewers use the same list.
 - [ ] Tests exercise external behaviour at the highest seam named in the issue: HTTP request and
       response, command output and files written, MCP messages, or a rendered page. They do not assert
       on internals. The exception is pure table tests for search scoring and Resolution rules.
-- [ ] Each new test fails without the change (red first) and passes with it.
+- [ ] Each new test fails without the change (red first) and passes with it: `./run red-check`
+      fails the tests on `origin/main`, or the PR says why a test pins existing behaviour.
 - [ ] Existing test expectations were not changed to make the suite pass.
 - [ ] No test depends on the network, the wall clock without a fake, or another test's state.
-- [ ] No new dependency unless the issue asks for one; `go.sum` and lockfiles are untouched by hand.
+- [ ] No new dependency or pinned tool unless the issue asks for one, each with a
+      [dependency brief](agents/label-contract.md#dependency-brief); `go.sum` and lockfiles are
+      untouched by hand. `./run vuln` is clean.
+- [ ] `./run gate origin/main HEAD` was run, and its reasons are in the PR body.
 - [ ] Docs changed in the same PR where behaviour, config, vocabulary or a decision changed.
 
 ## Hostile input
@@ -22,6 +26,7 @@ exit 0 with zero warnings. Reviewers use the same list.
 - [ ] Source content is treated as untrusted: invalid content is rejected while the last good
       Snapshot keeps serving; archives with absolute paths, `..` or symlinks are rejected.
 - [ ] Markdown is rendered without raw HTML and sanitised.
+- [ ] A new parser of hostile input (Source URL, archive path, Markdown, YAML) has a Go fuzz target.
 - [ ] Query text stays out of metric labels (and out of spans unless `GOLDIE_TELEMETRY_QUERY_TEXT`).
 
 ## API and contract
@@ -30,7 +35,8 @@ exit 0 with zero warnings. Reviewers use the same list.
       agree in both directions.
 - [ ] Errors use the `{"error":{code,message,details}}` envelope, with a next-step hint in `details`
       and no addresses, paths or stack traces.
-- [ ] The change is additive for `/api/v1` and the MCP contract (see CONTRIBUTING.md).
+- [ ] The change is additive for `/api/v1` and the MCP contract (see CONTRIBUTING.md); `./run gate`
+      reports no breaking contract change.
 - [ ] `./run regen` produces no diff.
 
 ## Auth and security
@@ -54,5 +60,9 @@ exit 0 with zero warnings. Reviewers use the same list.
 
 ## UI
 
-- [ ] The UI work follows an approved design handoff; states from the handoff have component tests.
-- [ ] Light and dark themes, keyboard use and WCAG 2.1 AA spot checks pass.
+- [ ] The UI work follows an approved design handoff (§13 of `docs/design/ui-handoff.md`).
+- [ ] **Matches the handoff**: the screen implements the layout, components, states (§5), copy (§8)
+      and breakpoints (§7) of the handoff; component tests cover every state marked for that
+      component; Playwright covers the screen at 375 / 768 / 1280 in light and dark, with an axe run
+      that has zero violations, and CI uploads the screenshots for the UX review.
+- [ ] Every changed flow works keyboard-only with visible focus; no state is shown by colour alone.
