@@ -61,7 +61,22 @@ func runServer(out io.Writer) error {
 	}
 	level, _ := platform.ParseLevel(cfg.LogLevel) // validated by LoadConfig
 	logger := platform.NewLogger(out, level, "server")
+	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv)
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	// Serve flushes telemetry in the drain; this covers early returns.
+	defer func() {
+		fctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tel.Shutdown(fctx)
+	}()
+	logger = tel.WrapLogger(logger, "server")
+	tel.ReportErrorsTo(logger)
 	cfg.Report(logger)
+	if tel.Enabled() {
+		logger.Info("telemetry enabled")
+	}
 
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
@@ -86,7 +101,7 @@ func runServer(out io.Writer) error {
 	if err != nil {
 		return handlerError(err)
 	}
-	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public}
+	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public, Telemetry: tel}
 	return srv.Serve(ctx, force)
 }
 

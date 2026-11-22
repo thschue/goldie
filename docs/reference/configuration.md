@@ -14,3 +14,23 @@ that reads the value from a file; setting both is an error (PC-05).
 | `GOLDIE_DRAIN_SECONDS` | `25` | Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600. |
 | `GOLDIE_LOG_LEVEL` | `info` | Log level: debug, info, warn or error. |
 | `GOLDIE_SWAGGER_UI_ENABLED` | `true` | Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404. |
+
+## OpenTelemetry
+
+Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
+endpoint is set. These variables keep their standard names and are read as defined by
+OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request
+headers and query strings are not recorded.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OTEL_SDK_DISABLED` | (none) | true turns telemetry off even when an endpoint is set. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https). Setting it, or a signal endpoint, turns on trace and log export. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | (none) | Collector URL for traces only. |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | (none) | Collector URL for logs only. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | (none) | Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | (none) | Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms). |
+| `OTEL_TRACES_EXPORTER` | (none) | otlp or none. none turns off trace export. |
+| `OTEL_LOGS_EXPORTER` | (none) | otlp or none. none turns off log export. |
+| `OTEL_SERVICE_NAME` | `goldie` | Overrides the service.name resource attribute. |
+| `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes. goldie always sets service.version and goldie.mode (all). |
