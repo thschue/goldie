@@ -84,10 +84,20 @@ func runServer(out io.Writer) error {
 		APIToken:   cfg.APIToken,
 	})
 	if err != nil {
-		return fmt.Errorf("invalid configuration:\n%w", err)
+		return handlerError(err)
 	}
 	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public}
 	return srv.Serve(ctx, force)
+}
+
+// handlerError labels a PublicHandler failure: a settings problem is invalid
+// configuration, anything else is an internal failure to build the handler.
+func handlerError(err error) error {
+	var cfgErr *app.ConfigError
+	if errors.As(err, &cfgErr) {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	return fmt.Errorf("build public handler: %w", err)
 }
 
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz

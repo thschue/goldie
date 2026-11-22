@@ -86,6 +86,15 @@ func withCSP(h http.Handler) http.Handler {
 	})
 }
 
+// ConfigError is a PublicHandler failure the operator fixes through a setting:
+// a missing or malformed token, or content that is missing or does not load.
+// Any other PublicHandler error is internal.
+type ConfigError struct{ err error }
+
+func (e *ConfigError) Error() string { return e.err.Error() }
+
+func (e *ConfigError) Unwrap() error { return e.err }
+
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
 // loads the dir Source and serves the API under /api/, every path of which
 // requires the token; the OpenAPI document at /openapi.yaml and
@@ -95,14 +104,14 @@ func withCSP(h http.Handler) http.Handler {
 // stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
 	if err := api.CheckToken(opts.APIToken); err != nil {
-		return nil, fmt.Errorf("%s %w", platform.EnvAPIToken, err)
+		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvAPIToken, err)}
 	}
 	if opts.ContentDir == "" {
-		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
+		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
 	}
 	snap, err := engine.NewDirSource(opts.ContentDir).Load()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
+		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
 	routes, err := publicRoutes(snap, opts.APIToken)
 	if err != nil {

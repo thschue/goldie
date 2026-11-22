@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -219,6 +220,7 @@ func TestArticleLookup(t *testing.T) {
 		"/api/v1/articles/platform%2fnotes":   "platform/notes",
 		"/api/v1/articles/agent%2Dloops":      "agent-loops",
 		"/api/v1/articles/platform%2Fdeploy/": "",
+		"/api/v1/articles/platform/deploy":    "", // ADR 0016: a bare "/" is not a lookup
 	} {
 		resp, body := apiGet(t, srv.URL+path)
 		if wantID == "" {
@@ -332,6 +334,10 @@ func TestPublicHandlerFailsFastOnBadSettings(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tc.varName) {
 			t.Errorf("%s: err = %v, want it to name %s", name, err, tc.varName)
 			continue
+		}
+		var cfgErr *ConfigError
+		if !errors.As(err, &cfgErr) {
+			t.Errorf("%s: err = %v, want a *ConfigError so the caller can label it", name, err)
 		}
 		if tc.hidden != "" && strings.Contains(err.Error(), tc.hidden) {
 			t.Errorf("%s: error echoes a value: %v", name, err)
