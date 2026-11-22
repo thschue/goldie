@@ -14,42 +14,50 @@ type SettingSpec struct {
 	Name    string // environment variable, GOLDIE_ prefixed (PC-04)
 	Default string // value used when the variable is unset or empty
 	Meaning string // one-line description; plain text, escaped when rendered
+
+	// Secret marks a value that is never logged: the startup report redacts
+	// it, the reference prints the NAME_FILE note, and among the
+	// TelemetrySettings only Secret rows accept a _FILE form (PC-05, PC-06).
+	Secret bool
 }
 
 // Settings lists every configuration variable. To add one, add its Env
-// constant and a row here, then run `./run regen`.
+// constant, a row here (Secret if its value must never be logged) and its
+// value in Config.effective, then run `./run regen`.
 var Settings = []SettingSpec{
-	{EnvAddr, ":8080", "Public (app) listener."},
-	{EnvAdminAddr, ":8081", "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
-	{EnvLogLevel, "info", "Log level: debug, info, warn or error."},
-	{EnvDrainSeconds, "25", "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
-	{EnvSwaggerUIEnabled, "true", "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
-	{EnvContentDir, "", "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
-	{EnvAPIToken, "", "goldie server needs this or GOLDIE_API_TOKENS, not both. Secret: set it with GOLDIE_API_TOKEN_FILE. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
-	{EnvAPITokens, "", "goldie server needs this or GOLDIE_API_TOKEN, not both. Secret: set it with GOLDIE_API_TOKENS_FILE. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes, and must not start with sha256:, which marks a hash. Blank lines and lines starting with # are ignored. A bad line stops the server, naming the line number, never the token."},
-	{EnvRateLimit, "20/s,burst=40", "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers, and the rate is at most 1e9 per second (60000000000/m). The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An MCP tool call counts twice: once for the /mcp request and once for the API request it makes. Every client using the GOLDIE_API_TOKEN shorthand shares one bucket, under the token name api-token. A malformed value stops the server and goldie health."},
-	{EnvMinClientVersion, "", "The oldest goldie client the server serves, as a semantic version such as 1.4.0 (MAJOR.MINOR.PATCH, optionally -<prerelease>, without a leading v). The goldie CLI sends X-Goldie-Client: goldie/<version> on every request; on every /api/ path and on /mcp, a client whose version is older (semver precedence, so a prerelease is older than its release) is answered 426 in the error envelope, code upgrade_required, with a hint naming this minimum. Requests without the header, or whose header is not goldie/<semver> (curl, other tools, a dev build), are let through: the header is a courtesy, not a credential. Requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. Unset, there is no gate. A value that is not a semantic version stops the server and goldie health."},
-	{EnvTelemetryClientInfo, "false", "true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on."},
+	{Name: EnvAddr, Default: ":8080", Meaning: "Public (app) listener."},
+	{Name: EnvAdminAddr, Default: ":8081", Meaning: "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
+	{Name: EnvLogLevel, Default: "info", Meaning: "Log level: debug, info, warn or error."},
+	{Name: EnvDrainSeconds, Default: "25", Meaning: "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
+	{Name: EnvSwaggerUIEnabled, Default: "true", Meaning: "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
+	{Name: EnvContentDir, Meaning: "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
+	{Name: EnvAPIToken, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKENS, not both. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
+	{Name: EnvAPITokens, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKEN, not both. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes, and must not start with sha256:, which marks a hash. Blank lines and lines starting with # are ignored. GOLDIE_API_TOKENS_FILE keeps every line and drops only the trailing newline. A bad line stops the server, naming the line number, never the token."},
+	{Name: EnvRateLimit, Default: "20/s,burst=40", Meaning: "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers, and the rate is at most 1e9 per second (60000000000/m). The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An MCP tool call counts twice: once for the /mcp request and once for the API request it makes. Every client using the GOLDIE_API_TOKEN shorthand shares one bucket, under the token name api-token. A malformed value stops the server and goldie health."},
+	{Name: EnvMinClientVersion, Meaning: "The oldest goldie client the server serves, as a semantic version such as 1.4.0 (MAJOR.MINOR.PATCH, optionally -<prerelease>, without a leading v). The goldie CLI sends X-Goldie-Client: goldie/<version> on every request; on every /api/ path and on /mcp, a client whose version is older (semver precedence, so a prerelease is older than its release) is answered 426 in the error envelope, code upgrade_required, with a hint naming this minimum. Requests without the header, or whose header is not goldie/<semver> (curl, other tools, a dev build), are let through: the header is a courtesy, not a credential. Requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. Unset, there is no gate. A value that is not a semantic version stops the server and goldie health."},
+	{Name: EnvTelemetryClientInfo, Default: "false", Meaning: "true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
 // They keep their standard names, so they are not GOLDIE_ prefixed and are not
 // part of Config; SetupTelemetry validates them. Unset, telemetry is off.
 var TelemetrySettings = []SettingSpec{
-	{"OTEL_SDK_DISABLED", "", "true turns telemetry off even when an endpoint is set."},
-	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect."},
-	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", "Collector URL for traces only, used as-is; wins over the base URL."},
-	{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "", "Collector URL for logs only, used as-is; wins over the base URL."},
-	{"OTEL_EXPORTER_OTLP_PROTOCOL", "", "Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL."},
-	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
-	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
-	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
-	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path, so a higher value lets clients grow the spans held in memory. Falls back to OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT. A value that is not a non-negative integer fails startup."},
-	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
-	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
-	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
-	{"OTEL_SERVICE_NAME", defaultServiceName, "Overrides the service.name resource attribute."},
-	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
+	{Name: "OTEL_SDK_DISABLED", Meaning: "true turns telemetry off even when an endpoint is set."},
+	{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Meaning: "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect."},
+	{Name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Meaning: "Collector URL for traces only, used as-is; wins over the base URL."},
+	{Name: "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", Meaning: "Collector URL for logs only, used as-is; wins over the base URL."},
+	{Name: "OTEL_EXPORTER_OTLP_PROTOCOL", Meaning: "Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL."},
+	{Name: "OTEL_EXPORTER_OTLP_HEADERS", Secret: true, Meaning: "Collector request headers as key=value pairs, for example an API token."},
+	{Name: "OTEL_EXPORTER_OTLP_TRACES_HEADERS", Secret: true, Meaning: "Collector request headers for traces only, as key=value pairs; wins over OTEL_EXPORTER_OTLP_HEADERS."},
+	{Name: "OTEL_EXPORTER_OTLP_LOGS_HEADERS", Secret: true, Meaning: "Collector request headers for logs only, as key=value pairs; wins over OTEL_EXPORTER_OTLP_HEADERS."},
+	{Name: "OTEL_TRACES_EXPORTER", Meaning: "otlp or none. none turns off trace export."},
+	{Name: "OTEL_LOGS_EXPORTER", Meaning: "otlp or none. none turns off log export."},
+	{Name: "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", Default: "1024", Meaning: "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path, so a higher value lets clients grow the spans held in memory. Falls back to OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT. A value that is not a non-negative integer fails startup."},
+	{Name: "OTEL_TRACES_SAMPLER", Default: "parentbased_always_on", Meaning: "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
+	{Name: "OTEL_TRACES_SAMPLER_ARG", Default: "1", Meaning: "Sampling ratio from 0 to 1, for the traceidratio samplers."},
+	{Name: "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Default: "128", Meaning: "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
+	{Name: "OTEL_SERVICE_NAME", Default: defaultServiceName, Meaning: "Overrides the service.name resource attribute."},
+	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
 
 // EnvToken is the API token the client commands send. It is a secret, so it
@@ -64,9 +72,9 @@ const EnvProject = "GOLDIE_PROJECT"
 // status, version) and goldie mcp --transport stdio read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
-	{EnvAddr, "", "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
-	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
-	{EnvProject, "", "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it."},
+	{Name: EnvAddr, Meaning: "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
+	{Name: EnvToken, Secret: true, Meaning: "The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
+	{Name: EnvProject, Meaning: "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it."},
 }
 
 // def returns the registered default of a variable. A variable missing from
@@ -125,8 +133,23 @@ func table(b *strings.Builder, rows []SettingSpec) {
 		if s.Default != "" {
 			d = "`" + cell(s.Default) + "`"
 		}
-		b.WriteString("| `" + cell(s.Name) + "` | " + d + " | " + cell(s.Meaning) + " |\n")
+		meaning := s.Meaning
+		if s.Secret {
+			meaning = "Secret: set it with " + s.Name + "_FILE. " + meaning
+		}
+		b.WriteString("| `" + cell(s.Name) + "` | " + d + " | " + cell(meaning) + " |\n")
 	}
+}
+
+// secretSet returns the names of the rows marked Secret.
+func secretSet(rows []SettingSpec) map[string]bool {
+	set := map[string]bool{}
+	for _, s := range rows {
+		if s.Secret {
+			set[s.Name] = true
+		}
+	}
+	return set
 }
 
 // cell makes registry text safe inside a Markdown table cell or code span:
