@@ -98,7 +98,10 @@ The `implementer` agent definition carries the role. Pass this with it:
    - the issue rewires more than one Go package or Vue feature folder.
 4. **Draft PR first:** a Conventional Commit title, `Closes #<n>`, and a short plan.
 5. **Size budget:** about 400 changed lines, not counting tests and generated code. Over that, stop
-   and report a slice list instead of opening a bigger PR.
+   and report a slice list instead of opening a bigger PR. Measure again after every rework: the
+   review loop hands back anything over about 600 lines unreviewed. For a "split" hand-back, keep
+   the first slice on this PR and report `needs-info reason=spec` with the slice list for the rest;
+   pm-audit files the slices.
 6. **Dependencies:** add one only when the issue needs it, with `go get`, never by editing `go.sum`
    or a lockfile. Write the [dependency brief](./label-contract.md#dependency-brief) into the PR
    body.

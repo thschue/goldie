@@ -78,39 +78,25 @@ that PR to the maintainer to merge.
 A maintainer override is permanent precedent. Every fix direction the loop writes names the root
 cause and the existing pattern it follows, by file. A workaround is labelled as one.
 
-## 1. Flow
+## 1. Triage
 
-- **Classify each red or missing check** on an open PR (job log via
-  `gh api …/actions/jobs/<id>/logs`).
-  - An **infra flake** (runner, network, rate limit): rerun once per SHA on an own PR, and make sure a
-    flake issue exists (add `priority` at the third PR with the same signature).
-  - A **real failure on a ready PR** is the review loop's: it shows up as a failing gate in the
-    review.
-  - Report anything else.
-- **`main`:** a red workflow on `main` goes to the top of the inbox ([stop the line](./label-contract.md#stop-the-line)).
-- **Stalls:** report each one with its likely cause:
-  - `in-review` older than 60 min;
-  - a ready PR with no review marker after 30 min;
-  - armed auto-merge not merged after 30 min (name the blocking check);
-  - a draft with no commit for 24 h.
+Triage runs **first** in every tick, right after setup, before anything else can use up the tick.
+No issue stays `needs-triage` for more than one tick unless it is parked as `question` or
+`grilling-needed`. `scripts/loop-poll pm-audit` prints `triage=<n>`, and the report says how many
+issues were triaged and how many are left.
 
-  Release `in-progress` claims older than 24 h that have no PR.
+**Bundle first.** Most new issues are LOW follow-ups from reviews and the architecture sweep. Before
+giving verdicts, group them by area (the package or feature folder, and the kind of change):
+- several follow-ups in one area become one issue: keep the oldest, move the others' acceptance
+  items into it as a checklist, and close the rest as duplicates with a link (tier 1);
+- a follow-up in the area of an open, unclaimed issue is folded into that issue the same way;
+- a bundle still has to pass the size check below.
 
-## 2. Audit
+**Not worth doing.** A LOW follow-up whose cost outweighs its value (a nit in code about to be
+replaced, a hardening the record already rules out) is closed as `wontfix` through tier 2: announce
+it, and close it when the window ends.
 
-Verify every factual claim in an issue against the audit worktree: paths, symbols, ADR citations,
-whether a blocker shipped.
-
-| Finding | Action |
-|---|---|
-| Already fixed | Close with commit or PR and file:line evidence, one issue at a time |
-| Partly obsolete | Edit the body: a dated banner and struck text, then a comment |
-| Blocker cleared or references stale | Comment the corrected facts |
-| Still accurate | A ledger line only |
-
-## 3. Triage
-
-Apply **exactly one** verdict to each `needs-triage` or unlabelled issue:
+Then apply **exactly one** verdict to each remaining `needs-triage` or unlabelled issue:
 
 | Verdict | When |
 |---|---|
@@ -151,6 +137,36 @@ An explicit hold in the body ("don't start before X") always wins.
 **Milestones** are tier 3, except that a prerequisite slice inherits the milestone of the issue it
 unblocks.
 
+## 2. Flow
+
+- **Classify each red or missing check** on an open PR (job log via
+  `gh api …/actions/jobs/<id>/logs`).
+  - An **infra flake** (runner, network, rate limit): rerun once per SHA on an own PR, and make sure a
+    flake issue exists (add `priority` at the third PR with the same signature).
+  - A **real failure on a ready PR** is the review loop's: it shows up as a failing gate in the
+    review.
+  - Report anything else.
+- **`main`:** a red workflow on `main` goes to the top of the inbox ([stop the line](./label-contract.md#stop-the-line)).
+- **Stalls:** report each one with its likely cause:
+  - `in-review` older than 60 min;
+  - a ready PR with no review marker after 30 min;
+  - armed auto-merge not merged after 30 min (name the blocking check);
+  - a draft with no commit for 24 h.
+
+  Release `in-progress` claims older than 24 h that have no PR.
+
+## 3. Audit
+
+Verify every factual claim in an issue against the audit worktree: paths, symbols, ADR citations,
+whether a blocker shipped.
+
+| Finding | Action |
+|---|---|
+| Already fixed | Close with commit or PR and file:line evidence, one issue at a time |
+| Partly obsolete | Edit the body: a dated banner and struck text, then a comment |
+| Blocker cleared or references stale | Comment the corrected facts |
+| Still accurate | A ledger line only |
+
 ## 4. Planning
 
 - **Critical path:** order the frontier by how much it unblocks. Store each issue's count of open
@@ -184,7 +200,8 @@ One pinned issue titled `Maintainer inbox`, created on first use. pm-audit **rew
 tick and never comments on it. Each entry is 2–3 lines with a link: what, why it needs the
 maintainer, and the recommended action. The sections, in order:
 
-1. **Stop the line:** a red workflow on `main`, with the failing job, or a starving worker.
+1. **Stop the line:** a red workflow on `main`, with the failing job, a starving worker, or
+   `needs-triage` issues older than one tick.
 2. **Merge to approve:** PRs with `needs-maintainer`, each with its gate reasons and, for a new
    dependency, the brief in one line.
 3. **Decide:** tier-3 `question` items as either/or with a recommendation, the `grilling-needed`
@@ -203,7 +220,8 @@ When an entry appears that wasn't in the previous body, send the user a push not
 
 **Report every tick:**
 - flow actions and stalls;
-- triage and planning moves;
+- triage: issues triaged, bundled and left (`triage=` before and after);
+- planning moves;
 - the inbox sections, by count;
 - the top 3 `ready-for-human` issues.
 

@@ -12,9 +12,10 @@ this Item is the summary (`goldie lookup agent-loops`).
 
 1. **Setup:** refresh a read-only worktree at `origin/main` and read your ledger. Stop early when
    nothing changed.
-2. **Flow:** rerun classified flakes once, and report stalls and anything red on `main`.
-3. **Audit:** close fixed issues with evidence; update obsolete ones.
-4. **Triage and plan:** one verdict per new issue, after the readiness gate. Then keep the frontier
+2. **Triage first:** bundle small follow-ups by area, then one verdict per new issue, after the
+   readiness gate. Nothing stays untriaged for more than one tick.
+3. **Flow:** rerun classified flakes once, and report stalls and anything red on `main`.
+4. **Audit and plan:** close fixed issues with evidence and update obsolete ones. Keep the frontier
    deep and ordered along the critical path.
 5. **Architecture sweep:** every few merges, file the best deepening opportunities.
 6. **Maintainer inbox:** rewrite the one pinned issue the maintainer reads (gated PRs, decisions,
