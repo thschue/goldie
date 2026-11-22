@@ -25,12 +25,13 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Telemetry is the OpenTelemetry setup: server traces on the public listener
-// and a bridge that copies log records to OTLP. It is configured by the
+// Telemetry is the OpenTelemetry setup: server traces on the public listener,
+// a bridge that copies log records to OTLP and a metrics provider (Meter). It is configured by the
 // standard OTEL_* variables and is a no-op when none selects an exporter. All
 // methods are safe on a nil or disabled Telemetry.
 //
@@ -39,6 +40,7 @@ import (
 type Telemetry struct {
 	tp *sdktrace.TracerProvider
 	lp *sdklog.LoggerProvider
+	mp *sdkmetric.MeterProvider
 
 	// endpoints holds each exporting signal's collector as scheme://host,
 	// for the startup report. Userinfo, path and query are never kept.
@@ -188,8 +190,15 @@ func parseTraceSettings(get func(string) string) (traceSettings, error) {
 
 // newTelemetry wires the providers around the given exporters. Batch
 // processors keep export off the request path; Shutdown flushes them.
-func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
+func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanExporter, logs sdklog.Exporter, opts ...telemetryOption) *Telemetry {
+	var cfg telemetryConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
+	if cfg.metricReader != nil {
+		t.mp = newMeterProvider(res, cfg.metricReader)
+	}
 	if spans != nil {
 		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
 			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
@@ -267,10 +276,15 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
+	metricCfg, err := parseMetricSettings(get)
+	if err != nil {
+		errs = append(errs, err)
+	}
 	type signal struct{ name, exporter, prefix string }
 	signals := []signal{
 		{"traces", "OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_"},
 		{"logs", "OTEL_LOGS_EXPORTER", "OTEL_EXPORTER_OTLP_LOGS_"},
+		{"metrics", "OTEL_METRICS_EXPORTER", "OTEL_EXPORTER_OTLP_METRICS_"},
 	}
 	on := map[string]bool{}
 	headers := map[string]map[string]string{}
@@ -321,13 +335,14 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	if !on["traces"] && !on["logs"] {
+	if !on["traces"] && !on["logs"] && !on["metrics"] {
 		return &Telemetry{}, nil
 	}
 
 	var (
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
+		opts  []telemetryOption
 	)
 	// The SDK parses the OTEL_* variables goldie does not (timeouts, TLS file
 	// paths, batch and log record limits) while the exporters are built, and
@@ -355,7 +370,14 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	t := newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs)
+	if on["metrics"] {
+		reader, err := newMetricReader(ctx, otlpEndpoint(endpoints, "metrics"), headersOf("metrics"), metricCfg)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, withMetricReader(reader))
+	}
+	t := newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs, opts...)
 	t.notice = notice
 	t.clientInfo = clientInfo
 	for _, name := range t.signals() {
@@ -452,7 +474,7 @@ func parseResourceAttributes(s string) (map[string]string, error) {
 }
 
 // Enabled reports whether any signal is exported.
-func (t *Telemetry) Enabled() bool { return t != nil && (t.tp != nil || t.lp != nil) }
+func (t *Telemetry) Enabled() bool { return t != nil && (t.tp != nil || t.lp != nil || t.mp != nil) }
 
 // signals lists the signals that export, in a fixed order.
 func (t *Telemetry) signals() []string {
@@ -462,6 +484,9 @@ func (t *Telemetry) signals() []string {
 	}
 	if t.lp != nil {
 		out = append(out, "logs")
+	}
+	if t.mp != nil {
+		out = append(out, "metrics")
 	}
 	return out
 }
@@ -621,6 +646,9 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 		}
 		if t.lp != nil {
 			errs = append(errs, t.lp.Shutdown(ctx))
+		}
+		if t.mp != nil {
+			errs = append(errs, t.mp.Shutdown(ctx))
 		}
 		t.err = errors.Join(errs...)
 	})

@@ -285,6 +285,7 @@ func TestTelemetryNoneExporterDisablesSignal(t *testing.T) {
 	tel, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
 		"OTEL_TRACES_EXPORTER":        "none",
 		"OTEL_LOGS_EXPORTER":          "none",
+		"OTEL_METRICS_EXPORTER":       "none",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
 	}))
 	if err != nil || tel.Enabled() {
