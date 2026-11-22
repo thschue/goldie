@@ -292,6 +292,29 @@ func TestCLISanitisesLinesAndJSON(t *testing.T) {
 	}
 }
 
+// The client reads at most 16 MiB of an answer and says so, instead of
+// buffering whatever the server sends; an answer at the cap still works.
+func TestCLICapsResponseSize(t *testing.T) {
+	const capBytes = 16 << 20
+	answer := func(size int) string {
+		body := `{"results":[]}`
+		body += strings.Repeat(" ", size-len(body))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	_, err := runCLI(t, "search", "x", "--addr", answer(capBytes+1), "--token", cliToken)
+	if err == nil || !strings.Contains(err.Error(), "larger than 16 MiB") {
+		t.Fatalf("search with an answer over the cap: err = %v, want the size error", err)
+	}
+	if _, err := runCLI(t, "search", "x", "--addr", answer(capBytes), "--token", cliToken); err != nil {
+		t.Fatalf("search with an answer at the cap: %v", err)
+	}
+}
+
 // /openapi.json is public, so status and version never send the token there;
 // status still sends it to the token check.
 func TestCLIKeepsTokenOffPublicRoutes(t *testing.T) {

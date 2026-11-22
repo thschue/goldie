@@ -39,7 +39,7 @@ func (c *commander) search(ctx context.Context, q string) error {
 	}
 	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q})
 	if err != nil {
-		return unreachable()
+		return transportError(err)
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -76,7 +76,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	}
 	resp, err := cl.GetArticleWithResponse(ctx, id)
 	if err != nil {
-		return unreachable()
+		return transportError(err)
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -104,7 +104,7 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
 	if err != nil {
-		return unreachable()
+		return transportError(err)
 	}
 	if doc.JSON200 == nil {
 		return apiError(doc.HTTPResponse, doc.Body)
@@ -120,7 +120,7 @@ func (c *commander) status(ctx context.Context) error {
 		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
 		switch {
 		case err != nil:
-			return unreachable()
+			return transportError(err)
 		case resp.JSON200 != nil:
 			auth, accepted = "token accepted", true
 		case resp.StatusCode() == http.StatusUnauthorized:
@@ -166,9 +166,12 @@ func specInfo(doc map[string]any) (title, version string) {
 	return title, version
 }
 
-// unreachable words a transport failure. The cause is dropped: it can carry
-// the address, and the user already knows what they typed.
-func unreachable() error {
+// transportError words a transport failure. The cause is dropped: it can
+// carry the address, and the user already knows what they typed.
+func transportError(err error) error {
+	if errors.Is(err, errTooLarge) {
+		return fmt.Errorf("the server's answer is larger than %d MiB", maxResponseBytes>>20)
+	}
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
 

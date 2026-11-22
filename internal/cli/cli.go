@@ -31,6 +31,12 @@ const Usage = "search <words> | lookup <id> | status | version  [--addr URL] [--
 // requestTimeout bounds every API call.
 const requestTimeout = 30 * time.Second
 
+// maxResponseBytes bounds the body of every API answer the client reads.
+const maxResponseBytes = 16 << 20
+
+// errTooLarge is returned by a body that exceeds maxResponseBytes.
+var errTooLarge = errors.New("response body too large")
+
 // IsCommand reports whether name is a client command, for the dispatcher in
 // cmd/goldie.
 func IsCommand(name string) bool {
@@ -86,11 +92,13 @@ func Run(ctx context.Context, args []string, env Env) error {
 			return err
 		}
 	}
-	httpc := env.Client
-	if httpc == nil {
-		httpc = &http.Client{Timeout: requestTimeout}
+	httpc := &http.Client{Timeout: requestTimeout}
+	if env.Client != nil {
+		httpc = env.Client
 	}
-	c := &commander{s: s, out: env.Out, http: httpc}
+	limited := *httpc
+	limited.Transport = limitTransport{base: httpc.Transport}
+	c := &commander{s: s, out: env.Out, http: &limited}
 
 	switch name {
 	case "search":
@@ -163,3 +171,46 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 	}
 	return contract.NewClientWithResponses(strings.TrimRight(c.s.addr, "/"), opts...)
 }
+
+// limitTransport caps every response body at maxResponseBytes, so a hostile
+// or broken server cannot make the client buffer an unbounded answer.
+type limitTransport struct{ base http.RoundTripper }
+
+func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &limitedBody{rc: resp.Body, left: maxResponseBytes}
+	return resp, nil
+}
+
+// limitedBody reads at most left bytes and fails with errTooLarge when the
+// body has more.
+type limitedBody struct {
+	rc   io.ReadCloser
+	left int64
+}
+
+func (b *limitedBody) Read(p []byte) (int, error) {
+	if b.left <= 0 {
+		var probe [1]byte
+		n, err := b.rc.Read(probe[:])
+		if n > 0 {
+			return 0, errTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > b.left {
+		p = p[:b.left]
+	}
+	n, err := b.rc.Read(p)
+	b.left -= int64(n)
+	return n, err
+}
+
+func (b *limitedBody) Close() error { return b.rc.Close() }
