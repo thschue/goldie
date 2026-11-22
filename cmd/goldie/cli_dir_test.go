@@ -165,7 +165,12 @@ func TestCLIDirFromTheEnvironmentWithAddrIsAnError(t *testing.T) {
 func TestCLIDirWithUnusableContentFails(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "no-such-content-dir")
 	bad := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bad, "broken.md"), []byte("---\ntitle: [unclosed\n---\nbody\n"), 0o644); err != nil {
+	// Only global/articles/** and projects/<host>/<org>/<repo>/articles/** are
+	// loaded, so the broken article must live there to be read at all.
+	if err := os.MkdirAll(filepath.Join(bad, "global", "articles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bad, "global", "articles", "broken.md"), []byte("---\ntitle: [unclosed\n---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for name, dir := range map[string]string{"missing": missing, "invalid article": bad} {
