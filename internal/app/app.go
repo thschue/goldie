@@ -30,7 +30,7 @@ type publicMux struct {
 	mux     *http.ServeMux
 	tokens  *api.Tokens
 	limiter *api.RateLimiter
-	gate    *clientGate
+	gate    *api.ClientVersionGate
 	routes  []route
 }
 
@@ -48,7 +48,7 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 
 // newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
 // version (nil for none) and a rate limiter.
-func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *clientGate) (*publicMux, error) {
+func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(snap)
 	if err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	case docPaths[path]:
 		return m.tokens.Require(api.RoleReader, h)
 	}
-	return m.tokens.Require(api.RoleReader, m.gate.require(m.limiter.Limit(h)))
+	return m.tokens.Require(api.RoleReader, m.gate.Require(m.limiter.Limit(h)))
 }
 
 // RateLimitRejections returns a copy of the requests rejected by the rate
@@ -165,6 +165,20 @@ type Options struct {
 // parsed, as is.
 func rateLimiter(l platform.RateLimit) *api.RateLimiter {
 	return api.NewRateLimiter(l.Requests, l.Per, l.Burst)
+}
+
+// clientVersionGate builds the minimum client version gate from
+// GOLDIE_MIN_CLIENT_VERSION; "" is no gate (nil). Errors name the variable and
+// never contain the value.
+func clientVersionGate(minimum string) (*api.ClientVersionGate, error) {
+	if minimum == "" {
+		return nil, nil
+	}
+	v, err := platform.ParseSemver(minimum)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", platform.EnvMinClientVersion, err)
+	}
+	return api.NewClientVersionGate(v), nil
 }
 
 // apiTokens builds the token set from exactly one of GOLDIE_API_TOKEN and
@@ -250,7 +264,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 		return nil, &ConfigError{err}
 	}
 	limiter := rateLimiter(opts.RateLimit)
-	gate, err := newClientGate(opts.MinClientVersion)
+	gate, err := clientVersionGate(opts.MinClientVersion)
 	if err != nil {
 		return nil, &ConfigError{err}
 	}

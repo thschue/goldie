@@ -54,6 +54,16 @@ func ParseSemver(s string) (Semver, error) {
 	return v, nil
 }
 
+// String writes v as MAJOR.MINOR.PATCH, followed by -<prerelease> when it
+// has one. Build metadata was dropped by ParseSemver, so it never appears.
+func (v Semver) String() string {
+	s := strconv.FormatUint(v.core[0], 10) + "." + strconv.FormatUint(v.core[1], 10) + "." + strconv.FormatUint(v.core[2], 10)
+	if len(v.pre) > 0 {
+		s += "-" + strings.Join(v.pre, ".")
+	}
+	return s
+}
+
 // Less reports whether v has lower precedence than o (semver 2.0.0, section
 // 11): the core numerically, then a prerelease below its release, then the
 // prerelease identifiers in order.

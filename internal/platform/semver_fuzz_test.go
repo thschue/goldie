@@ -1,10 +1,14 @@
 package platform
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // ParseSemver never panics, its only error is a fixed message that cannot
 // contain the value (PC-05), and Less is a strict order on what it accepts:
-// irreflexive and asymmetric.
+// irreflexive and asymmetric. String parses back to the same precedence and
+// never carries build metadata.
 func FuzzParseSemver(f *testing.F) {
 	for _, s := range []string{"", "1.4.0", "1.4.0-rc.1", "1.0.0-alpha.1+b.2", "01.2.3", "1.2.3-", "99999999999999999999.0.0", "1.2.3\x00"} {
 		f.Add(s, "1.4.0")
@@ -22,6 +26,12 @@ func FuzzParseSemver(f *testing.F) {
 		}
 		if errA != nil || errB != nil {
 			return
+		}
+		if strings.Contains(va.String(), "+") {
+			t.Errorf("%q: String %q keeps build metadata", a, va.String())
+		}
+		if back, err := ParseSemver(va.String()); err != nil || back.Less(va) || va.Less(back) {
+			t.Errorf("%q: String %q does not parse back to the same precedence (%v)", a, va.String(), err)
 		}
 		if va.Less(va) {
 			t.Errorf("%q < itself", a)

@@ -10,6 +10,14 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// ClientHeader names the goldie client and its version on every request the
+// goldie CLI sends, as ClientHeaderPrefix followed by the version, such as
+// goldie/1.4.0. The server's minimum client version gate reads it.
+const (
+	ClientHeader       = "X-Goldie-Client"
+	ClientHeaderPrefix = "goldie/"
+)
+
 // specYAML is the OpenAPI 3.1 document, the source of truth for the API.
 //
 //go:embed openapi.yaml
