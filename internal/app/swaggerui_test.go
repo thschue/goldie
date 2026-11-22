@@ -10,11 +10,17 @@ import (
 	"github.com/thschue/goldie/internal/contract"
 )
 
-// rawGet is get without the spec check: the Swagger UI files are not API
-// operations, so the spec does not describe their 200 responses.
+// rawGet is an authenticated GET without the spec check: the Swagger UI files
+// are not API operations, so the spec does not describe their 200 responses,
+// and they take the API's token (#101).
 func rawGet(t *testing.T, url string) (*http.Response, []byte) {
 	t.Helper()
-	resp, err := http.Get(url) //nolint:gosec // test server URL
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearer(testToken)(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test server URL
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -59,7 +65,7 @@ func TestSwaggerUILoadsTheServedSpec(t *testing.T) {
 	if m == nil || m[1] != "/openapi.json" {
 		t.Fatalf("initializer url = %v, want /openapi.json", m)
 	}
-	_, spec := get(t, srv.URL+m[1])
+	_, spec := apiGet(t, srv.URL+m[1])
 	if !strings.Contains(string(spec), `"openapi"`) {
 		t.Errorf("the spec URL does not serve the OpenAPI document")
 	}
@@ -100,14 +106,14 @@ func TestSwaggerUIOnlyServesTheListedFiles(t *testing.T) {
 		"/swagger-ui/LICENSE", "/swagger-ui/vendor/VENDORED.md", "/swagger-ui/vendor/swagger-ui.css",
 		"/swagger-ui/swagger-ui-bundle.js.LICENSE.txt", "/swagger-ui/nope", "/swagger-ui/index.html",
 	} {
-		resp, body := get(t, srv.URL+p)
+		resp, body := apiGet(t, srv.URL+p)
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s: status %d, want 404", p, resp.StatusCode)
 			continue
 		}
 		assertEnvelope(t, body, "not_found")
 	}
-	resp, body := do(t, http.MethodPost, srv.URL+"/swagger-ui", nil)
+	resp, body := do(t, http.MethodPost, srv.URL+"/swagger-ui", bearer(testToken))
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /swagger-ui: status %d, want 405", resp.StatusCode)
 	}
@@ -117,7 +123,7 @@ func TestSwaggerUIOnlyServesTheListedFiles(t *testing.T) {
 func TestSwaggerUIDisabledIsNotFound(t *testing.T) {
 	srv := newServerWith(t, Options{SwaggerUI: false})
 	for _, p := range swaggerPaths {
-		resp, body := get(t, srv.URL+p)
+		resp, body := apiGet(t, srv.URL+p)
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s: status %d, want 404 when disabled", p, resp.StatusCode)
 			continue
@@ -125,7 +131,7 @@ func TestSwaggerUIDisabledIsNotFound(t *testing.T) {
 		assertEnvelope(t, body, "not_found")
 	}
 	// The spec stays up: only the UI is switched off.
-	if resp, _ := get(t, srv.URL+"/openapi.json"); resp.StatusCode != http.StatusOK {
+	if resp, _ := apiGet(t, srv.URL+"/openapi.json"); resp.StatusCode != http.StatusOK {
 		t.Errorf("/openapi.json: status %d, want 200", resp.StatusCode)
 	}
 }
@@ -188,7 +194,7 @@ func TestSwaggerUIIsServedWithAStrictCSP(t *testing.T) {
 func TestSwaggerUIMethodNotAllowedKeepsTheCSP(t *testing.T) {
 	srv := newServer(t)
 	for _, p := range swaggerPaths {
-		resp, body := do(t, http.MethodPost, srv.URL+p, nil)
+		resp, body := do(t, http.MethodPost, srv.URL+p, bearer(testToken))
 		if resp.StatusCode != http.StatusMethodNotAllowed {
 			t.Errorf("POST %s: status %d, want 405", p, resp.StatusCode)
 			continue
