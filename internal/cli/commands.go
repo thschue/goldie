@@ -149,12 +149,9 @@ func (c *commander) status(ctx context.Context) error {
 
 // project resolves the Project for the working directory.
 func (c *commander) project() (detectedProject, error) {
-	dir := c.env.Dir
-	if dir == "" {
-		var err error
-		if dir, err = os.Getwd(); err != nil {
-			return detectedProject{}, errors.New("cannot read the working directory")
-		}
+	dir, err := os.Getwd()
+	if err != nil {
+		return detectedProject{}, errors.New("cannot read the working directory")
 	}
 	envValue, _ := c.env.Lookup(EnvProject)
 	return resolveProject(dir, c.s.project, envValue)

@@ -55,7 +55,6 @@ type Env struct {
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
 	Out      io.Writer                    // results
 	Client   *http.Client                 // nil: a client with a timeout
-	Dir      string                       // working directory for Project detection; "": the process's
 }
 
 // DefaultEnv is the process environment.
