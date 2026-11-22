@@ -19,7 +19,6 @@ func TestNormaliseRemote(t *testing.T) {
 		{"https://github.com/acme/widgets/", "github.com/acme/widgets"},
 		{"HTTPS://GitHub.com/Acme/Widgets", "github.com/acme/widgets"},
 		{"git://github.com/acme/widgets.git", "github.com/acme/widgets"},
-		{"https://gitlab.com/group/sub/widgets.git", "gitlab.com/group/sub/widgets"},
 		{"https://user:s3cret-token@github.com/acme/widgets.git", "github.com/acme/widgets"},
 		{"https://s3cret-token@github.com/acme/widgets.git", "github.com/acme/widgets"},
 		{"  git@github.com:acme/widgets.git  ", "github.com/acme/widgets"},
@@ -33,7 +32,7 @@ func TestNormaliseRemote(t *testing.T) {
 			t.Errorf("NormaliseRemote(%q) leaks userinfo: %q", c.in, got)
 		}
 	}
-	for _, bad := range []string{"", "/srv/git/widgets.git", "../widgets", "file:///srv/widgets.git", "https://github.com", "github.com", "https://github.com/a b/c", "user:s3cret@github.com:acme/widgets.git"} {
+	for _, bad := range []string{"", "/srv/git/widgets.git", "../widgets", "file:///srv/widgets.git", "https://github.com", "github.com", "https://github.com/a b/c", "user:s3cret@github.com:acme/widgets.git", "https://gitlab.com/group/sub/widgets.git"} {
 		if got, ok := NormaliseRemote(bad); ok {
 			t.Errorf("NormaliseRemote(%q) = %q, want it rejected", bad, got)
 		}
@@ -54,12 +53,26 @@ func TestProjectSegmentRules(t *testing.T) {
 			t.Errorf("NormaliseRemote(%q) = %q, want it rejected", bad, got)
 		}
 	}
-	for _, bad := range []string{"../../etc", "foo", "a b/c/d", "%2e%2e/x/y", "ex.com/a/b?q", "ex.com/äö/c", "ex.com/a/../b"} {
-		if got, err := normaliseConfigured(bad); err == nil {
-			t.Errorf("normaliseConfigured(%q) = %q, want an error", bad, got)
+	for _, bad := range []string{"../../etc", "foo", "a/b/c/d", "a b/c/d", "%2e%2e/x/y", "ex.com/a/b?q", "ex.com/äö/c", "ex.com/a/../b", "gitlab.com/group/sub/app", "ex.com/org"} {
+		if got, err := normaliseConfigured(bad); err == nil || strings.Contains(err.Error(), bad) {
+			t.Errorf("normaliseConfigured(%q) = %q, %v; want an error that does not echo it", bad, got, err)
 		}
 	}
-	for in, want := range map[string]string{"Ex.com/Org_1/re-po.v2": "ex.com/org_1/re-po.v2", "gitlab.com/group/sub/app": "gitlab.com/group/sub/app"} {
+	// Detection skips a nested-group upstream and moves on to origin.
+	nested := repo(t, "[remote \"upstream\"]\n\turl = https://gitlab.com/g/sub/app.git\n[remote \"origin\"]\n\turl = https://github.com/a/b\n")
+	if got, err := ResolveProject(nested, "", ""); err != nil || got.ID != "github.com/a/b" || got.Source != SourceOrigin {
+		t.Errorf("nested-group upstream: got %+v, %v; want origin", got, err)
+	}
+	// A config file of the wrong shape is an error; one without `project:` defers to detection.
+	write(t, filepath.Join(nested, ".goldie", "config.yaml"), "project: gitlab.com/g/sub/app\n")
+	if _, err := ResolveProject(nested, "", ""); err == nil || strings.Contains(err.Error(), "sub/app") {
+		t.Errorf("nested-group config: err = %v, want a non-echoing error", err)
+	}
+	write(t, filepath.Join(nested, ".goldie", "config.yaml"), "other: 1\n")
+	if got, err := ResolveProject(nested, "", ""); err != nil || got.Source != SourceOrigin {
+		t.Errorf("config without project: got %+v, %v; want detection", got, err)
+	}
+	for in, want := range map[string]string{"Ex.com/Org_1/re-po.v2": "ex.com/org_1/re-po.v2"} {
 		if got, err := normaliseConfigured(in); err != nil || got != want {
 			t.Errorf("normaliseConfigured(%q) = %q, %v; want %q", in, got, err, want)
 		}

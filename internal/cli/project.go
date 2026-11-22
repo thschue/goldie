@@ -74,19 +74,20 @@ func normaliseConfigured(v string) (string, error) {
 	// A plain host/org/repo gets the same shape as a detected one.
 	id := strings.ToLower(strings.TrimSuffix(strings.Trim(v, "/"), ".git"))
 	if !validProjectID(id) {
-		return "", errors.New("the Project is not a host/org/repo name: use a lower-case host, then letters, digits, '.', '_' and '-' per segment")
+		return "", errors.New("the Project is not host/org/repo: a lower-case host, then an org and a repo of letters, digits, '.', '_' and '-'")
 	}
 	return id, nil
 }
 
-// validProjectID reports whether id is host/org/repo (or deeper, for nested
-// groups) under the segment rules the engine applies to projects/: a
-// lower-case DNS host, then segments of letters, digits, '.', '_' and '-' that
-// do not start with '.'. It keeps '..', percent escapes, query and fragment
-// characters and other path syntax from a hostile remote out of the Project.
+// validProjectID reports whether id is exactly host/org/repo under the rules
+// it mirrors from validProjectSegment in internal/engine/source.go (the cli
+// cannot import the engine): a lower-case DNS host, then an org and a repo of
+// letters, digits, '.', '_' and '-' that do not start with '.'. It keeps
+// nested groups, '..', percent escapes, query and fragment characters and
+// other path syntax from a hostile remote out of the Project.
 func validProjectID(id string) bool {
 	segs := strings.Split(id, "/")
-	if len(segs) < 3 {
+	if len(segs) != 3 {
 		return false
 	}
 	for i, s := range segs {
@@ -117,6 +118,9 @@ func projectFromConfigFile(dir string) (string, error) {
 		}
 		if err := yaml.Unmarshal(b, &cfg); err != nil {
 			return "", errors.New(".goldie/config.yaml is not valid YAML with a string `project:` key")
+		}
+		if strings.TrimSpace(cfg.Project) == "" {
+			return "", nil // no `project:` key: detection decides
 		}
 		id, err := normaliseConfigured(strings.TrimSpace(cfg.Project))
 		if err != nil {
