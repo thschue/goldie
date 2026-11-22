@@ -141,7 +141,7 @@ func parseTokenLine(line string) (tokenEntry, error) {
 	if hexDigest, hashed := strings.CutPrefix(secret, hashPrefix); hashed {
 		d, err := hex.DecodeString(hexDigest)
 		if err != nil || len(d) != sha256.Size {
-			return tokenEntry{}, errors.New("the hash must be sha256: followed by 64 hex digits")
+			return tokenEntry{}, errors.New("a plaintext token must not start with sha256:, which marks a hash, and a hash is sha256: followed by 64 hex digits")
 		}
 		copy(e.digest[:], d)
 		return e, nil
