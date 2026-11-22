@@ -1,6 +1,6 @@
 //go:build unix
 
-package cli
+package project
 
 import (
 	"errors"
@@ -58,7 +58,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 			dir := mk(t)
 			done := make(chan struct{})
 			go func() {
-				_, _ = resolveProject(dir, "", "") // an error is fine; blocking is not
+				_, _ = Resolve(dir, "", "") // an error is fine; blocking is not
 				close(done)
 			}()
 			select {
@@ -70,7 +70,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 						_ = f.Close()
 					}
 				}
-				t.Fatal("resolveProject blocked on a non-regular file")
+				t.Fatal("Resolve blocked on a non-regular file")
 			}
 		})
 	}
