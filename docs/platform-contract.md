@@ -10,7 +10,7 @@ Variables use the `GOLDIE_` prefix, with one exception: the standard `OTEL_*` Op
 
 | Clause | Requirement |
 |---|---|
-| PC-01 | **Admin port.** Probes and version are served on a separate admin port (`GOLDIE_ADMIN_ADDR`), never on the public listener. Any other path answers 404 in the error envelope with a static `details.hint` that echoes nothing from the request; the public listener answers the same way when no API is wired. |
+| PC-01 | **Admin port.** Probes and version are served on a separate admin port (`GOLDIE_ADMIN_ADDR`), never on the public listener. On the public listener `/livez`, `/readyz` and `/version` (exact, case-sensitive) answer the 404 error envelope, so a monitor pointed at the wrong port never reads a UI page as healthy. Any other unknown path on the admin port answers 404 in the error envelope with a static `details.hint` that echoes nothing from the request; the public listener answers any unknown path outside `/api/`, `/mcp`, the docs and `/swagger-ui` with the embedded UI (see below). |
 | PC-02 | **Liveness and readiness.** `/livez` answers 200 while the process runs. `/readyz` runs one check per Source (or one upstream check) and fails only while a Source has never loaded; a stale Source stays ready. Sources added at runtime never make a running server unready. |
 | PC-03 | **Version.** `/version` returns the version, commit and build date as JSON. |
 | PC-04 | **Environment-only config.** All server settings come from environment variables and are validated at startup. Invalid or missing values fail fast with an error naming the offending variable. (Declarative Sources and tokens held in Kubernetes Secrets are the one dynamic exception; settings stay env-only.) `goldie server -dev [dir]` takes the content directory as an argument; nothing else departs from environment-only configuration. |
@@ -61,6 +61,12 @@ and running `./run regen`.
 - The public endpoints are documented in the generated [API reference](reference/api.md)
   (`./run regen`; `./run check` fails on drift), as is the configuration reference (PC-10). The image
   of PC-11 has its own issue.
+- The public listener serves the embedded UI at `/` and for any extensionless GET or HEAD path (the
+  SPA's client-side routes), with `index.html` as `no-cache`, `/assets/*` as immutable, a fixed
+  `Content-Type` per file, `nosniff` and a strict Content-Security-Policy on UI responses only. A
+  missing file with an extension is a 404 envelope, never HTML; other methods get the 405 envelope.
+  The UI is public: the API behind it still needs the token. Without `./run ui` the binary serves a
+  placeholder page and logs one warning at startup ([ADR 0019](adr/0019-ui-build-output-not-committed.md)).
 - Swagger UI is served at `/swagger-ui` on the public listener, from assets embedded in the binary
   (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
   off (404). It is registered on the same mux as the API and takes the same Bearer token (see
