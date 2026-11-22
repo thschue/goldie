@@ -54,7 +54,8 @@ The rest (main, `--admin`, leases, containers) is enforced by the
    1. own PRs whose latest own marker is `reason=self-fix` for a different head (**delta reviews**);
    2. own PRs whose latest own marker is `reason=needs-info`, and which no longer carry `needs-info`:
       the decision was made (in the issue body or a maintainer or pm-audit comment), so review the
-      head again with it;
+      head again with it. For `reason=decision` with the head unchanged, don't review again: act on
+      the [PM decision](#pm-decisions);
    3. non-draft PRs with no own review marker for their head, own PRs before external ones, in the
       [order of work](./label-contract.md#order-of-work): `bug`, `security` or `priority` first,
       then oldest first.
@@ -124,14 +125,22 @@ this:
 6. **Sweep the class.** For each finding, search the whole diff for the same class of problem (the
    same mistake in a sibling setting, handler or path) and report every instance as one finding.
    Finding one instance per round is what makes reviews drag on.
-7. **Classify every finding:**
+7. **Questions:** never address the maintainer in a report. A product question goes:
+   - **into the fix**, when the record answers it, or the choice is additive and reversible: take
+     your recommendation and make it as a contained fix in this round;
+   - **to pm-audit** otherwise: report the question with the options and a recommendation, and the
+     outcome `decision` when nothing else is open ([PM decisions](#pm-decisions)).
+
+   Only the [critical list](./pm-audit-loop.md#decision-rights) reaches the maintainer, through
+   pm-audit, `needs-info reason=security` or the gate.
+8. **Classify every finding:**
    - **blocking:** correctness, a MEDIUM or worse security finding, an unmet criterion, a gate failure
      the PR caused, a failed dependency brief, or a broken user flow;
    - **LOW:** everything else, LOW security included, and nits.
 
    LOW findings never cause a round on their own: they are fixed when contained, or become
    follow-ups.
-8. **Self-fix**, security lens on own PRs only, in **every** round, the last one included. Fix every
+9. **Self-fix**, security lens on own PRs only, in **every** round, the last one included. Fix every
    **contained** finding of every lens, blocking or LOW:
    - within the PR's scope and the issue's intent;
    - the fix direction is clear from the finding: no product, spec or security judgement needed;
@@ -154,13 +163,13 @@ this:
 
    A partial fix is fine: list the rest for the hand-back. List the LOW findings you didn't fix as
    follow-ups.
-9. **Bugs already on `main`:** keep them out of this PR, and fix **every** one now, whatever its
+10. **Bugs already on `main`:** keep them out of this PR, and fix **every** one now, whatever its
    size, after reproducing it on `origin/main`, in a second worktree branched from there, never from
    an external diff. Push each as `fix/found-<slug>`. For MEDIUM+ security, commit locally and report
    only the worktree path; the orchestrator moves it to the advisory fork this tick.
-10. **Report** in prose, then the JSON block
+11. **Report** in prose, then the JSON block
    ([reports](./label-contract.md#reports-and-dry-runs)):
-   - `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;
+   - `outcome`: `clean`, `fixed`, `decision`, `changes-requested`, `needs-info` or `blocked`;
    - the reviewed SHA and the new head;
    - the files resolved by hand during the rebase;
    - findings with lens, severity, class and area (never an exploit), each fixed or with why not;
@@ -178,14 +187,20 @@ its lock. Then:
 - **Verify.** Re-check claimed spec mismatches against the issue, and read every fix commit. A fix
   that does more than its finding voids the fix: hand back with `needs-info reason=security`.
 - **Merge the lenses.** The PR's outcome is the worst lens outcome, in this order: `needs-info`,
-  `changes-requested`, `fixed`, `clean`.
+  `changes-requested`, `fixed`, `decision`, `clean`. A `fixed` round whose fixes are all for LOW
+  findings counts as `clean` (or `decision`) once the verify step above has read each fix commit:
+  only fixes for blocking findings need a fresh delta review.
 
   Post **one** marker comment that lists the findings by lens. Each blocking finding gets a fix
   direction; a security finding gets class and area only.
 
 Outcomes:
-- **Fixed** (a self-fix was pushed, nothing is left to hand back): post a marker with
-  `fixed=<new head> reason=self-fix`, and arm nothing. The next tick runs a fresh delta review.
+- **Fixed** (a self-fix for a blocking finding was pushed, nothing is left to hand back): post a
+  marker with `fixed=<new head> reason=self-fix`, and arm nothing. The next tick runs a fresh delta
+  review.
+- **Decision** (reviewed, otherwise clean, one product question open): add `needs-info`, and post a
+  marker with `reason=decision` for the head, holding the question, the options and the
+  recommendation. Arm nothing. pm-audit decides whether it merges ([PM decisions](#pm-decisions)).
 - **Clean.** Run `main`'s copy of the gate on the reviewed SHA
   ([gates](./label-contract.md#gates)), never the PR's `./run gate`.
   - **Own PR, the gate exits 0:** judge each `review:` reason by the
@@ -218,6 +233,18 @@ Outcomes:
   review still self-fixes what is contained (a delta review follows) and files LOW leftovers as
   follow-ups; only a blocking finding that isn't contained makes it `needs-info reason=round-cap`.
   Self-fix rounds are capped at 3 per PR; a fourth would be a hand-back.
+
+## PM decisions
+
+A PR with a `reason=decision` marker is reviewed; only the product call is open. pm-audit answers
+in a comment, `PM decision: merge` or `PM decision: change` with the rework, and removes
+`needs-info`. The next review tick acts on it, when the head is still the marker's SHA:
+- **merge:** run `main`'s gate on that SHA and finish as **Clean** (arm, or `needs-maintainer`). No
+  new review;
+- **change:** post a marker with `reason=changes-requested` and the PM's rework, add
+  `changes-requested`, and convert the PR to draft. A PM change is not counted as a hand-back.
+
+If the head moved, review it as usual.
 
 ## Severity
 

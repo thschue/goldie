@@ -78,9 +78,20 @@ that PR to the maintainer to merge.
 A maintainer override is permanent precedent. Every fix direction the loop writes names the root
 cause and the existing pattern it follows, by file. A workaround is labelled as one.
 
-## 1. Triage
+## 1. PR decisions, then triage
 
-Triage runs **first** in every tick, right after setup, before anything else can use up the tick.
+**PR decisions first.** A PR with `needs-info` and a `reason=decision` marker for its head is
+reviewed and waits only for this call. Decide it in this tick, without a tier-2 window, because
+merging it doesn't settle anything a later issue can't change:
+- **merge** when the PR is fine as is. If the recommendation was a change the record doesn't cover,
+  file it as a follow-up issue (tier 2 when it changes a contract or API shape);
+- **change** when the record calls for the recommendation, or when merging as is would break
+  something the record promises; give the rework.
+
+Comment `PM decision: merge` or `PM decision: change` with the rework and the record it rests on,
+remove `needs-info`, and log it. The review loop acts on it next tick.
+
+**Triage** runs right after, every tick, right after setup, before anything else can use up the tick.
 No issue stays `needs-triage` for more than one tick unless it is parked as `question` or
 `grilling-needed`. `scripts/loop-poll pm-audit` prints `triage=<n>`, and the report says how many
 issues were triaged and how many are left.

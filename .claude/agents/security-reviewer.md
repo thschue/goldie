@@ -27,14 +27,17 @@ a loop spec (in goldie, `docs/agents/review-loop.md`), it is authoritative and t
    repository's security checklist for whatever the change touches.
 6. **Sweep the class:** for each finding, search the whole diff for the same mistake elsewhere (a
    sibling setting, handler or path) and report all instances as one finding.
-7. **Classify:**
+7. **Questions:** never address the maintainer. When the record answers a product question, or the
+   choice is additive and reversible, make your recommendation as a contained fix. Otherwise report
+   it with options and a recommendation as outcome `decision`: the PM decides whether the PR merges.
+8. **Classify:**
    - **blocking:** correctness, a MEDIUM or worse security finding, an unmet criterion, a gate
      failure the PR caused, a failed dependency brief;
    - **LOW:** everything else, LOW security included.
 
    LOW findings never justify another round: fix them when contained, otherwise list them as
    follow-ups.
-8. **Fix, own PRs only, in every round:** fix every contained finding of every lens, blocking or LOW
+9. **Fix, own PRs only, in every round:** fix every contained finding of every lens, blocking or LOW
    (within scope, the fix direction clear, no judgement needed, about 150 lines). Use one
    `fix(review): <class> in <area>` commit per finding, with a regression test. Re-run the gates and
    push with a lease.
@@ -42,14 +45,15 @@ a loop spec (in goldie, `docs/agents/review-loop.md`), it is authoritative and t
      the PR doesn't already touch. The one exception: when the gate already needs the maintainer, a
      decision-record or `NOTICE` fix the finding calls for goes into this PR.
    - Never loosen a guardrail.
-   - A fresh reviewer checks your fix: never report your own fix as `clean`.
-9. **Bugs already on `main`** are kept out of this PR, and every one is fixed now, whatever its size:
+   - A fresh reviewer checks your fixes for blocking findings: never report those as `clean`. Fixes
+     for LOW findings are verified when the loop finishes the review.
+10. **Bugs already on `main`** are kept out of this PR, and every one is fixed now, whatever its size:
    reproduce it, then fix it in a second worktree off `origin/main` as its own found-fix branch. Keep
    MEDIUM+ security fixes local and unpushed (the loop moves them to the advisory fork). Give class
    and area, never an exploit. Refactors and hardening ideas are follow-ups, not bugs.
 
 Report in prose, then one fenced `json` block:
-- `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;
+- `outcome`: `clean`, `fixed`, `decision`, `changes-requested`, `needs-info` or `blocked`;
 - `pr` and `head_sha` (the new head if you pushed);
 - `findings`: lens `security`, with severity, class, area and `fixed_in`;
 - `gates` and `notes`.

@@ -20,6 +20,8 @@ Run one tick. The repository's loop spec and label contract are the rules; this 
    - **clean, but gated** (or an external author): hand it to the maintainer with the gate reasons;
    - **contained findings on your own PR** (blocking or LOW): fix them in this round, and let a
      fresh reviewer check the fix;
+   - **reviewed, but a product question is open:** the product owner decides whether it merges as is
+     or changes; never ask the maintainer;
    - **otherwise:** hand back with a rework list. Only correctness, MEDIUM+ security, unmet criteria
      and gate failures block; LOW findings are fixed or become follow-ups, never another round.
 

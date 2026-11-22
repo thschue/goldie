@@ -23,6 +23,9 @@ authoritative and this is its summary.
   - **UI:** builds on an approved design.
 
   If it fails, slice it with dependency edges, or park it with the exact missing fact.
+- **PR decisions first:** a reviewed PR waiting on a product call (`needs-info reason=decision`)
+  gets `merge` or `change` in this tick; a change the record doesn't cover becomes a follow-up, so
+  the PR merges.
 - **Order of work:** bugs, security and `priority` first, then oldest first. The critical path
   enters through `priority`: the two issues that unblock the most get it, sliced to the smallest
   change that unblocks the waiting work, so they land as fast as possible.
