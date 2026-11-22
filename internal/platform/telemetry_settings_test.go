@@ -144,3 +144,19 @@ func TestTelemetryRejectsBadSamplerAndLimits(t *testing.T) {
 		}
 	}
 }
+
+// NaN parses as a float but compares false against both bounds, and the SDK
+// turns it into a platform-dependent ratio. It must fail startup like any
+// other ratio outside [0, 1].
+func TestTelemetryRejectsNaNSamplerRatio(t *testing.T) {
+	for _, v := range []string{"NaN", "nan", "-NaN", "+Inf", "-Inf"} {
+		_, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+			"OTEL_TRACES_SAMPLER":         "parentbased_traceidratio",
+			"OTEL_TRACES_SAMPLER_ARG":     v,
+		}))
+		if err == nil || !strings.Contains(err.Error(), "OTEL_TRACES_SAMPLER_ARG") {
+			t.Errorf("OTEL_TRACES_SAMPLER_ARG=%q: err = %v", v, err)
+		}
+	}
+}

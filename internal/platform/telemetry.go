@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"math"
 	"net/url"
 	"os"
 	"path"
@@ -133,7 +134,8 @@ func parseTraceSettings(get func(string) string) (traceSettings, error) {
 			return 1, true
 		}
 		f, err := strconv.ParseFloat(arg, 64)
-		if err != nil || f < 0 || f > 1 {
+		// NaN compares false against both bounds, so it is checked itself.
+		if err != nil || math.IsNaN(f) || f < 0 || f > 1 {
 			errs = append(errs, fmt.Errorf("%s: must be a number from 0 to 1", envOTelSamplerArg))
 			return 0, false
 		}
