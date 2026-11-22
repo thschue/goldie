@@ -20,12 +20,12 @@ type route struct {
 	methods []string
 }
 
-// publicMux is the router of the public listener. contract.HandlerWithOptions
+// publicMux is the router of the public listener. api.Server.Register
 // registers the spec's operations on it, so the generated code drives routing
 // and parameter decoding. It records every route it registers, so the
 // route-coverage test reads exactly the table the router is built from; it
-// puts every path under /api/ behind the token; and it answers each path's
-// other methods with the 405 envelope.
+// puts every path but the OpenAPI documents and Swagger UI behind the token;
+// and it answers each path's other methods with the 405 envelope.
 type publicMux struct {
 	mux    *http.ServeMux
 	token  string
@@ -41,10 +41,7 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 		return nil, err
 	}
 	m := &publicMux{mux: http.NewServeMux(), token: token, allow: map[string][]string{}}
-	contract.HandlerWithOptions(srv.Handler(), contract.StdHTTPServerOptions{
-		BaseRouter:       m,
-		ErrorHandlerFunc: api.RequestError,
-	})
+	srv.Register(m)
 	return m, nil
 }
 

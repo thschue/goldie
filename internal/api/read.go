@@ -38,16 +38,20 @@ func NewServer(snap *engine.Snapshot) (*Server, error) {
 	return &Server{snap: snap, specJSON: specJSON}, nil
 }
 
-// Handler returns s as the generated ServerInterface that
-// contract.HandlerWithOptions routes to. Every response carries
-// X-Content-Type-Options: nosniff, and a response that cannot be written is
-// the 500 envelope.
-func (s *Server) Handler() contract.ServerInterface {
-	return contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff},
+// Register registers the spec's operations on m through the generated router,
+// as "METHOD path" patterns. Every response carries
+// X-Content-Type-Options: nosniff, parameters the router cannot decode are the
+// 400 envelope, and a response that cannot be written is the 500 envelope.
+func (s *Server) Register(m contract.ServeMux) {
+	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff},
 		contract.StrictHTTPServerOptions{
-			RequestErrorHandlerFunc:  RequestError,
+			RequestErrorHandlerFunc:  requestError,
 			ResponseErrorHandlerFunc: responseError,
 		})
+	contract.HandlerWithOptions(strict, contract.StdHTTPServerOptions{
+		BaseRouter:       m,
+		ErrorHandlerFunc: requestError,
+	})
 }
 
 // SearchArticles answers GET /api/v1/search.
@@ -126,12 +130,12 @@ func nosniff(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFu
 	}
 }
 
-// RequestError answers a request whose parameters the generated router cannot
-// decode with the 400 envelope; it is the ErrorHandlerFunc for
-// contract.HandlerWithOptions. A missing or repeated q is the envelope
+// requestError answers a request whose parameters the generated router cannot
+// decode with the 400 envelope; Register hands it to the generated router and
+// the strict handler. A missing or repeated q is the envelope
 // SearchArticles gives for blank search words. The error is not echoed: it
 // quotes the request.
-func RequestError(w http.ResponseWriter, _ *http.Request, err error) {
+func requestError(w http.ResponseWriter, _ *http.Request, err error) {
 	if paramName(err) == "q" {
 		writeJSON(w, http.StatusBadRequest, badSearch)
 		return
