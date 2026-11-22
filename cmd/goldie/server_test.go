@@ -194,11 +194,16 @@ func TestPC01And03BinaryServesProbesAndVersion(t *testing.T) {
 	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
 	defer func() { _ = p.cmd.Process.Signal(syscall.SIGTERM); _ = p.waitExit(t, 5*time.Second) }()
 	for _, path := range []string{"/livez", "/readyz", "/version"} {
-		if code, _ := httpGet(t, "http://"+p.admin+path); code != 200 {
+		code, probe := httpGet(t, "http://"+p.admin+path)
+		if code != 200 {
 			t.Errorf("admin %s = %d", path, code)
 		}
-		if code, _ := httpGet(t, "http://"+p.app+path); code != 404 {
-			t.Errorf("app %s = %d, want 404", path, code)
+		// The public listener does not serve the probes (PC-01). Since #164 an
+		// unknown path without a file extension is the UI's page (200, HTML),
+		// which is not the probe: it never carries the probe's answer.
+		code, body := httpGet(t, "http://"+p.app+path)
+		if code != 404 && !(code == 200 && strings.Contains(strings.ToLower(body), "<html") && body != probe) {
+			t.Errorf("app %s = %d, want 404 or the UI page, never the probe", path, code)
 		}
 	}
 	_, body := httpGet(t, "http://"+p.admin+"/version")
