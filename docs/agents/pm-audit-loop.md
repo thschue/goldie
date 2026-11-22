@@ -149,7 +149,8 @@ unblocks.
   - Report anything else.
 - **`main`:** a red workflow on `main` goes to the top of the inbox ([stop the line](./label-contract.md#stop-the-line)).
 - **Stalls:** report each one with its likely cause:
-  - `in-review` older than 60 min;
+  - `in-review` locks that `scripts/loop-poll pm-audit` reports as `stale=` (finished, or older
+    than 30 min) and that are still there one tick later;
   - a ready PR with no review marker after 30 min;
   - armed auto-merge not merged after 30 min (name the blocking check);
   - a draft with no commit for 24 h.

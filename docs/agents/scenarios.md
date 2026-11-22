@@ -38,3 +38,5 @@ scenario names a real PR, it is the case that motivated the rule.
 | S29 | Frontier: a new `bug` issue, a `priority` issue, and three older unlabelled issues | issue-worker | Claims the `bug`, then the `priority` issue, then the oldest unlabelled one |
 | S30 | Review queue: a ready PR closing a `security` issue and two older ready PRs | review | Dispatches the `security` PR first, then the oldest |
 | S31 | One open issue blocks five others; it rewires two packages | pm-audit | `priority`, sliced so the first slice is the smallest change that unblocks the five; the rest ordinary work. Not merged after a day: a stall line naming what holds it |
+| S32 | `in-review` on a PR whose latest own marker (`fixed=<head>`, `reason=self-fix`) is newer than the lock (#110) | review | `in-review` removed in the next tick's lock step; the PR queues for its delta review |
+| S33 | `in-review` on a PR whose head moved after the lock, no own marker for the head, no reviewer running in this session (#97) | review | `in-review` removed and the PR re-queued in the next tick; a late report for it is discarded |
