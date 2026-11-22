@@ -275,8 +275,15 @@ func TestCLIVersionIgnoresUnusableClientSettings(t *testing.T) {
 			if err := run([]string{"version"}, &out); err != nil {
 				t.Fatalf("version with %s=%q: %v", env[0], env[1], err)
 			}
-			if got := strings.TrimSpace(out.String()); got != platform.Version {
-				t.Errorf("version = %q, want %q", got, platform.Version)
+			first, _, _ := strings.Cut(out.String(), "\n")
+			if got := strings.TrimSpace(first); got != platform.Version {
+				t.Errorf("version first line = %q, want %q", got, platform.Version)
+			}
+			if env[0] == "GOLDIE_ADDR" && !strings.Contains(out.String(), "server API: unknown (no server address set)") {
+				t.Errorf("version = %q, want the no-address server line", out.String())
+			}
+			if strings.Contains(out.String(), env[1]) {
+				t.Errorf("version leaks %s value: %q", env[0], out.String())
 			}
 		})
 	}
