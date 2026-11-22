@@ -292,6 +292,17 @@ func (s *Snapshot) Projects() []string {
 	return out
 }
 
+// Project reports whether id ("host/org/repo") is a registered Project,
+// matched case-insensitively, and returns it in its registered spelling. It is
+// the one decision of what counts as registered; resolution uses it too.
+func (s *Snapshot) Project(id string) (scope string, ok bool) {
+	if id == "" {
+		return "", false
+	}
+	p, ok := s.projects[strings.ToLower(id)]
+	return p.scope, ok
+}
+
 // Articles returns every global article, sorted by ID.
 func (s *Snapshot) Articles() []Article {
 	out := make([]Article, len(s.articles))
@@ -323,8 +334,8 @@ func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
 
 // resolutionOrder returns the article lists to consult, Project before global.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
-	if p, ok := s.projects[strings.ToLower(proj)]; ok && proj != "" {
-		return [][]Article{p.articles, s.articles}
+	if scope, ok := s.Project(proj); ok {
+		return [][]Article{s.projects[strings.ToLower(scope)].articles, s.articles}
 	}
 	return [][]Article{s.articles}
 }

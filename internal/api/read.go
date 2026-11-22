@@ -37,10 +37,8 @@ func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *stri
 	if !contract.ValidProjectID(*project) {
 		return "", nil, false
 	}
-	for _, p := range s.snap.Projects() {
-		if strings.EqualFold(p, *project) {
-			return *project, nil, true
-		}
+	if scope, registered := s.snap.Project(*project); registered {
+		return scope, nil, true
 	}
 	h := unregisteredHint
 	return "", &h, true
