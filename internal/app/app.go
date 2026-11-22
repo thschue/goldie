@@ -147,10 +147,10 @@ func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.Se
 // configuration by the caller so this package stays the only place that knows
 // both modules.
 type Options struct {
-	SwaggerUI  bool   // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
-	ContentDir string // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
-	APIToken   string // one operator token, the shorthand (GOLDIE_API_TOKEN)
-	APITokens  string // name:role:token lines (GOLDIE_API_TOKENS)
+	SwaggerUI  bool               // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
+	ContentDir string             // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
+	APIToken   string             // one operator token, the shorthand (GOLDIE_API_TOKEN)
+	APITokens  string             // name:role:token lines (GOLDIE_API_TOKENS)
 	RateLimit  platform.RateLimit // per-token limit as LoadConfig parsed it (GOLDIE_RATE_LIMIT)
 }
 
