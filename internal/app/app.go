@@ -24,8 +24,8 @@ type route struct {
 // registers the spec's operations on it, so the generated code drives routing
 // and parameter decoding. It records every route it registers, so the
 // route-coverage test reads exactly the table the router is built from; it
-// puts every path but the OpenAPI documents and Swagger UI behind the tokens;
-// and it answers each path's other methods with the 405 envelope.
+// puts every path behind the tokens; and it answers each path's other methods
+// with the 405 envelope.
 type publicMux struct {
 	mux     *http.ServeMux
 	tokens  *api.Tokens
@@ -90,24 +90,26 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 	m.mux.Handle(method+" "+path, m.guard(path, h))
 }
 
-// openPaths are the registered paths the token does not guard yet: the OpenAPI
-// documents. The auth work (#11) covers them and Swagger UI.
-var openPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
+// docPaths are the OpenAPI documents. Like the Swagger UI they take the token
+// but not the rate limit: they are static, and a token that has used up its
+// bucket can still read what the API offers.
+var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
-// guard adds the Swagger UI Content-Security-Policy when path is under
-// /swagger-ui, 405s included, and leaves the OpenAPI documents open. Every
-// other path, /api/ and any operation the spec adds later, is behind the
-// tokens, then the minimum client version, then the per-token rate limit: a
-// new route fails closed, a request the tokens reject learns nothing of the
-// gate, and neither a 401 nor a 426 counts against a bucket. Every operation
-// today is open to readers; an operator-only one (sync, activity) passes
-// api.RoleOperator when it lands.
+// guard puts every registered path behind the tokens with at least the reader
+// Role: the API under /api/, any operation the spec adds later, the OpenAPI
+// documents and the Swagger UI (#101). A new route fails closed. API paths are
+// then behind the minimum client version and then the per-token rate limit, so
+// a request the tokens reject learns nothing of the gate, and neither a 401 nor
+// a 426 counts against a bucket. Every operation today is open to readers; an
+// operator-only one (sync, activity) passes api.RoleOperator when it lands.
+// Under /swagger-ui the Content-Security-Policy wraps the token check, so its
+// 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	switch {
 	case path == "/swagger-ui" || strings.HasPrefix(path, "/swagger-ui/"):
-		return withCSP(h)
-	case openPaths[path]:
-		return h
+		return withCSP(m.tokens.Require(api.RoleReader, h))
+	case docPaths[path]:
+		return m.tokens.Require(api.RoleReader, h)
 	}
 	return m.tokens.Require(api.RoleReader, m.gate.require(m.limiter.Limit(h)))
 }
@@ -190,8 +192,7 @@ func apiTokens(opts Options) (*api.Tokens, error) {
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
 // they are not in the spec and not in publicRoutes, but they are registered on
-// the same router as the API routes, so the auth of #11 can guard them too.
-// The static token guards /api/ only, so they are open until then.
+// the same router as the API routes, so the tokens guard them too (#101).
 func addSwaggerUI(m *publicMux) error {
 	assets, err := contract.SwaggerUIAssets()
 	if err != nil {
@@ -237,10 +238,11 @@ func (e *ConfigError) Unwrap() error { return e.err }
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
 // loads the dir Source and serves the API under /api/, every path of which
 // requires a configured token; the OpenAPI document at /openapi.yaml and
-// /openapi.json; MCP over streamable HTTP at /mcp, which needs a token too;
-// and, unless switched off, Swagger UI at /swagger-ui. Anything else is the
-// not-found envelope. A missing token, a bad token line or unloadable content
-// is an error naming the variable, so the server fails at startup (PC-04).
+// /openapi.json and, unless switched off, Swagger UI at /swagger-ui, which
+// take the same token; and MCP over streamable HTTP at /mcp, which needs a
+// token too. Anything else is the not-found envelope. A missing token, a bad
+// token line or unloadable content is an error naming the variable, so the
+// server fails at startup (PC-04).
 // Platform stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
 	tokens, err := apiTokens(opts)
