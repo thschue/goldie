@@ -196,9 +196,20 @@ func content(dir string) (*engine.Syncer, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
 	}
-	syncer := engine.NewSyncer(engine.NewDirSource(dir))
-	if err := syncer.Poll(context.Background()); err != nil {
+	syncer, err := loadDir(context.Background(), dir)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
+	}
+	return syncer, nil
+}
+
+// loadDir puts the dir Source at dir behind a Syncer and runs its first poll.
+// The error is the loader's reason, which names a file relative to dir and
+// never dir itself; callers say which setting or argument it came from.
+func loadDir(ctx context.Context, dir string) (*engine.Syncer, error) {
+	syncer := engine.NewSyncer(engine.NewDirSource(dir))
+	if err := syncer.Poll(ctx); err != nil {
+		return nil, err
 	}
 	return syncer, nil
 }
@@ -265,6 +276,7 @@ type Public struct {
 	syncer  *engine.Syncer
 	mu      sync.Mutex
 	started bool
+	loops   sync.WaitGroup // the poll loop Start runs
 }
 
 // Start runs the dir Source's poll loop until ctx ends and registers its
@@ -286,7 +298,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		return
 	}
 	p.started = true
-	go p.syncer.Run(ctx, dirPollInterval, nil)
+	p.loops.Go(func() { p.syncer.Run(ctx, dirPollInterval, nil) })
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
@@ -317,6 +329,14 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
+	return newPublic(cfg, tokens, syncer, logger)
+}
+
+// newPublic builds the public handler over a loaded Syncer and a parsed token
+// set; cfg supplies the rate limit, the minimum client version and the
+// Swagger UI switch. PublicHandler and Local share it, so a local server
+// serves exactly what goldie server serves.
+func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, logger *slog.Logger) (*Public, error) {
 	m, err := newPublicMuxWith(syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
 	if err != nil {
 		return nil, err

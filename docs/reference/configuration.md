@@ -28,6 +28,18 @@ responses keep working; `/mcp` bounds its own requests. The admin listener bound
 request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows
 `GOLDIE_DRAIN_SECONDS`.
 
+## goldie server -dev
+
+`goldie server -dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
+Both listeners bind to 127.0.0.1 on ports the system picks, and the API takes one random
+token (32 bytes from the system's secure random source, in hex), made for this run. It prints
+`export GOLDIE_ADDR=http://127.0.0.1:<port> GOLDIE_TOKEN=<token>` once, to stdout, and the
+token appears nowhere else: not in a log line, the startup report or telemetry. It ignores
+`GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR`, `GOLDIE_API_TOKEN` and `GOLDIE_API_TOKENS` and their
+_FILE forms, so a shell that ran the export line can run it again, and logs one line saying so
+when any is set. `GOLDIE_DRAIN_SECONDS` defaults to 0 here; every other setting applies as for
+`goldie server`.
+
 ## OpenTelemetry
 
 Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
