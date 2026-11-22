@@ -561,6 +561,9 @@ Greeting: "Good morning / afternoon / evening, `<first name>`", taken from the G
 3. Blue focus ring instead of the shared orange (§6.4).
 4. Project selector in the top bar, global to all pages.
 5. Decisions as a top-level nav entry next to Home, not under Agent assets (§2.1).
+
+**Accepted as proposed on 2026-11-22 (#161).**
+
 Settled since v0.1: activity across replicas (#12 Q48–Q54, #22); usage figures in the UI (#32); #22 aligned with the stat tiles and the Project column (§14.2).
 
 ---
@@ -575,7 +578,7 @@ Add to the project testing checklist:
 
 ## 13. Approval
 
-- [ ] Handoff approved by the issue owner — date: ______
+- [x] Handoff approved by the issue owner — date: 2026-11-22 (#161). The §11 decisions are accepted as proposed.
 
 ---
 
