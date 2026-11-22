@@ -47,6 +47,19 @@ messages; errors go to stderr. It exits when the client closes stdin. There is n
   "env": {"GOLDIE_ADDR": "http://localhost:8080", "GOLDIE_TOKEN_FILE": "/run/secrets/goldie-token"}}}}
 ```
 
+## MCP over HTTP
+
+`goldie server` also serves the same MCP server on its public listener at `/mcp`, over streamable
+HTTP, for agents that connect remotely. Every request needs the API token as
+`Authorization: Bearer <token>`; without it the answer is the 401 envelope. The tools call the API
+inside the process with the caller's token. The endpoint is stateless and answers with JSON: there
+are no sessions and no open event streams, so connected agents never hold up shutdown.
+
+```json
+{"mcpServers": {"goldie": {"type": "http", "url": "http://localhost:8080/mcp",
+  "headers": {"Authorization": "Bearer ${GOLDIE_TOKEN}"}}}}
+```
+
 ## Origins & credits
 
 Goldie is based on Jessica Andersson's talk at Cloud Native Denmark 2026 and on the

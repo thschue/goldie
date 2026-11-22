@@ -182,8 +182,9 @@ func (e *ConfigError) Unwrap() error { return e.err }
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
 // loads the dir Source and serves the API under /api/, every path of which
 // requires the token; the OpenAPI document at /openapi.yaml and
-// /openapi.json; and, unless switched off, Swagger UI at /swagger-ui. Anything
-// else is the not-found envelope. A missing token or unloadable content is an
+// /openapi.json; MCP over streamable HTTP at /mcp, which needs the token too;
+// and, unless switched off, Swagger UI at /swagger-ui. Anything else is the
+// not-found envelope. A missing token or unloadable content is an
 // error naming the variable, so the server fails at startup (PC-04). Platform
 // stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
@@ -206,6 +207,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 			return nil, err
 		}
 	}
+	addMCP(m, m)
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")

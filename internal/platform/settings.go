@@ -25,7 +25,7 @@ var Settings = []SettingSpec{
 	{EnvDrainSeconds, "25", "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
 	{EnvSwaggerUIEnabled, "true", "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
 	{EnvContentDir, "", "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
-	{EnvAPIToken, "", "Required by goldie server. Secret: set it with GOLDIE_API_TOKEN_FILE. The static bearer token that every /api/ request must send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
+	{EnvAPIToken, "", "Required by goldie server. Secret: set it with GOLDIE_API_TOKEN_FILE. The static bearer token that every /api/ and /mcp request must send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
