@@ -13,7 +13,7 @@ func TestReferenceDocumentsEveryOperationAndSchema(t *testing.T) {
 	}
 	for _, want := range []string{
 		"### `GET /openapi.json`", "### `GET /openapi.yaml`", "Operation ID: `getOpenAPIJSON`",
-		"| `default` | An error, in the error envelope. |", "### `ErrorEnvelope`", "| `details` | `object` | yes |",
+		"| `default` | An error, in the error envelope. |", "### `ErrorEnvelope`", "| `details` | `ErrorDetails` | yes |", "### `ErrorDetails`",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("reference lacks %q:\n%s", want, out)

@@ -50,8 +50,19 @@ One error. It never contains addresses, paths or stack traces.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `code` | `string` | yes | A stable, machine-readable error code. |
-| `details` | `object` | yes | Structured context for the error. Empty when there is none. |
+| `details` | `ErrorDetails` | yes |  |
 | `message` | `string` | yes | A short, human-readable explanation. |
+
+### `ErrorDetails`
+
+Next-step hints for the caller, and nothing else. It never echoes the
+request and never contains addresses, ports, hostnames, paths or stack
+traces. It is required, so a client can always read it, and always
+carries a hint.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `hint` | `string` | yes | What the caller can do next. |
 
 ### `ErrorEnvelope`
 
