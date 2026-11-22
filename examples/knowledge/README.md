@@ -15,3 +15,7 @@ summarise the rules; the authoritative rules are in `docs/agents/`.
 They follow the content format in spec #1. The engine will validate them with `goldie validate` once
 the example-content ticket lands, and that ticket also adds the remaining examples (two Sources,
 project scope, decisions, skills).
+
+A Project is registered by adding a `projects/<host>/<org>/<repo>/` directory to one of goldie's
+Sources, with or without articles in it, and a request for a Project that is not registered gets the
+global answer and a hint that says so.
