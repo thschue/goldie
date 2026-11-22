@@ -55,10 +55,10 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 	for name, mk := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := mk(t)
-			done := make(chan error, 1)
+			done := make(chan struct{})
 			go func() {
-				_, err := resolveProject(dir, "", "")
-				done <- err
+				_, _ = resolveProject(dir, "", "") // an error is fine; blocking is not
+				close(done)
 			}()
 			select {
 			case <-done:
