@@ -2,11 +2,9 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -233,69 +231,6 @@ func specOperations(t *testing.T) []string {
 	return ops
 }
 
-var templateRE = regexp.MustCompile(`\{([^/{}]+)\}`)
-
-// concretePath substitutes every {param} of a spec path template with the
-// example of the path parameter of that name, percent-encoded as one path
-// segment (ADR 0016). The parameters are those of the path item and of the
-// operation; an operation's parameter wins. A parameter without an example is
-// an error: the live pass cannot request the path.
-func concretePath(doc map[string]any, method, path string) (string, error) {
-	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths[path].(map[string]any)
-	op, _ := item[strings.ToLower(method)].(map[string]any)
-	examples := map[string]any{}
-	for _, list := range []any{item["parameters"], op["parameters"]} {
-		params, _ := list.([]any)
-		for _, p := range params {
-			pm, _ := p.(map[string]any)
-			if pm["in"] != "path" {
-				continue
-			}
-			if name, _ := pm["name"].(string); name != "" {
-				if ex, ok := pm["example"]; ok {
-					examples[name] = ex
-				}
-			}
-		}
-	}
-	var missing []string
-	out := templateRE.ReplaceAllStringFunc(path, func(tok string) string {
-		name := tok[1 : len(tok)-1]
-		ex, ok := examples[name].(string)
-		if !ok || ex == "" {
-			missing = append(missing, name)
-			return tok
-		}
-		return url.PathEscape(ex)
-	})
-	if len(missing) > 0 {
-		return "", fmt.Errorf("%s %s: path parameter(s) %v have no string example in the spec", method, path, missing)
-	}
-	return out, nil
-}
-
-func TestConcretePathSubstitutesExamples(t *testing.T) {
-	doc := map[string]any{"paths": map[string]any{
-		"/a/{id}/b/{n}": map[string]any{
-			"parameters": []any{map[string]any{"name": "n", "in": "path", "example": "7"}},
-			"get": map[string]any{"parameters": []any{
-				map[string]any{"name": "id", "in": "path", "example": "x/y z"},
-			}},
-		},
-		"/c/{id}": map[string]any{
-			"get": map[string]any{"parameters": []any{map[string]any{"name": "id", "in": "path"}}},
-		},
-	}}
-	got, err := concretePath(doc, "GET", "/a/{id}/b/{n}")
-	if err != nil || got != "/a/x%2Fy%20z/b/7" {
-		t.Errorf("concretePath = %q, %v; want /a/x%%2Fy%%20z/b/7", got, err)
-	}
-	if got, err := concretePath(doc, "GET", "/c/{id}"); err == nil {
-		t.Errorf("a parameter without an example gave %q, want an error", got)
-	}
-}
-
 func TestRoutesAndSpecAgree(t *testing.T) {
 	routes := testPublicMux(t).routes
 	var registered []string
@@ -322,12 +257,11 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 	// And against the live router: every operation must reach a handler, not
 	// the not-found fallback. A templated path is requested with each path
 	// parameter's spec example, which the test content answers.
-	doc := specDoc(t)
 	srv := newServer(t)
 	for _, o := range ops {
 		method, path, _ := strings.Cut(o, " ")
 		if strings.Contains(path, "{") {
-			concrete, err := concretePath(doc, method, path)
+			concrete, err := contracttest.ExamplePath(method, path)
 			if err != nil {
 				t.Error(err)
 				continue
@@ -346,7 +280,6 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 // HEAD wherever GET is, and HEAD is served where GET is.
 func TestRouterHonoursRegisteredMethods(t *testing.T) {
 	routes := testPublicMux(t).routes
-	doc := specDoc(t)
 	byPath := map[string][]string{}
 	for _, r := range routes {
 		byPath[r.path] = append(byPath[r.path], r.methods...)
@@ -361,7 +294,7 @@ func TestRouterHonoursRegisteredMethods(t *testing.T) {
 		concrete := path
 		if strings.Contains(path, "{") {
 			var err error
-			if concrete, err = concretePath(doc, methods[0], path); err != nil {
+			if concrete, err = contracttest.ExamplePath(methods[0], path); err != nil {
 				t.Error(err)
 				continue
 			}

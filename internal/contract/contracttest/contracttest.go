@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -46,7 +48,7 @@ func Check(resp *http.Response, body []byte) error {
 	if resp.Request == nil {
 		return errors.New("response has no request")
 	}
-	doc, c, err := load()
+	doc, err := Spec()
 	if err != nil {
 		return err
 	}
@@ -82,6 +84,10 @@ func Check(resp *http.Response, body []byte) error {
 	if _, ok := media["schema"]; !ok || !strings.HasSuffix(mt, "json") {
 		return nil // only JSON bodies are validated structurally
 	}
+	c, err := compiler()
+	if err != nil {
+		return err
+	}
 	sch, err := c.Compile(specURL + "#" + ptr + "/content/" + escape(mt) + "/schema")
 	if err != nil {
 		return fmt.Errorf("compile schema: %w", err)
@@ -96,31 +102,89 @@ func Check(resp *http.Response, body []byte) error {
 	return nil
 }
 
-// Spec returns the contract spec as Conforms reads it: contract.SpecJSON,
-// decoded. Each call returns a fresh document the caller may modify.
-func Spec() (map[string]any, error) {
-	doc, _, err := load()
-	return doc, err
-}
+// specJSON converts the embedded YAML once; every Spec call decodes the result.
+var specJSON = sync.OnceValues(contract.SpecJSON)
 
-func load() (map[string]any, *jsonschema.Compiler, error) {
-	raw, err := contract.SpecJSON()
+// Spec returns the contract spec as Conforms reads it: contract.SpecJSON,
+// decoded. Each call returns a fresh document the caller may modify. It only
+// decodes: Check builds the schema compiler it validates responses with.
+func Spec() (map[string]any, error) {
+	raw, err := specJSON()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	return doc, nil
+}
+
+// compiler returns a schema compiler holding the spec as its one resource.
+func compiler() (*jsonschema.Compiler, error) {
+	raw, err := specJSON()
+	if err != nil {
+		return nil, err
 	}
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	c := jsonschema.NewCompiler()
 	if err := c.AddResource(specURL, inst); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return doc, c, nil
+	return c, nil
+}
+
+// ExamplePath returns the request path for an operation of the spec: method
+// (any case) and path template in, the template with each path parameter
+// replaced by the example the spec declares for it, percent-encoded as one
+// path segment ("platform/deploy" becomes "platform%2Fdeploy"). A parameter
+// declared on the path item applies to every operation; one on the operation
+// overrides it by name. It returns an error naming the parameter when a path
+// parameter is undeclared or has no string example, and when the spec has no
+// such operation.
+func ExamplePath(method, template string) (string, error) {
+	doc, err := Spec()
+	if err != nil {
+		return "", err
+	}
+	return examplePath(doc, method, template)
+}
+
+func examplePath(doc map[string]any, method, template string) (string, error) {
+	method = strings.ToLower(method)
+	op, opPtr := findOperation(doc, method, template)
+	if op == nil || opPtr != "#/paths/"+escape(template)+"/"+method {
+		return "", fmt.Errorf("the spec has no %s operation for %s", strings.ToUpper(method), template)
+	}
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths[template].(map[string]any)
+	examples := map[string]any{}
+	for _, list := range []any{item["parameters"], op["parameters"]} { // the operation's come last and win
+		params, _ := list.([]any)
+		for _, p := range params {
+			param, _ := p.(map[string]any)
+			param, _ = resolve(doc, param, "")
+			if name, _ := param["name"].(string); name != "" && param["in"] == "path" {
+				examples[name] = param["example"]
+			}
+		}
+	}
+	var err error
+	out := paramRE.ReplaceAllStringFunc(regexp.QuoteMeta(template), func(m string) string {
+		name := strings.TrimSuffix(strings.TrimPrefix(m, `\{`), `\}`)
+		ex, ok := examples[name].(string)
+		if !ok && err == nil {
+			err = fmt.Errorf("path parameter %q of %s has no string example in the spec", name, template)
+		}
+		return url.PathEscape(ex)
+	})
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(out, `\`, ""), nil // undo QuoteMeta on the literal segments
 }
 
 // escape encodes one JSON Pointer reference token.
