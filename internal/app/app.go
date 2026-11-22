@@ -129,7 +129,7 @@ func addSwaggerUI(m *publicMux) error {
 		return err
 	}
 	for _, a := range assets {
-		h := staticGet(a.ContentType, a.Body)
+		h := api.StaticGet(a.ContentType, a.Body)
 		if a.Name == "index.html" {
 			m.handle(http.MethodGet, "/swagger-ui", h)
 			m.handle(http.MethodGet, "/swagger-ui/{$}", h)
@@ -201,17 +201,4 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	m.mux.Handle("/api", m.guard("/api", notFound))
 	m.mux.Handle("/", notFound)
 	return m, nil
-}
-
-// staticGet serves a fixed body. The router sends it GET and HEAD only, and
-// HEAD gets no body.
-func staticGet(contentType string, body []byte) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.WriteHeader(http.StatusOK)
-		if r.Method == http.MethodGet {
-			_, _ = w.Write(body)
-		}
-	})
 }

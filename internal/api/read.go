@@ -111,14 +111,32 @@ type specDocument struct {
 	body        []byte
 }
 
-func (d specDocument) VisitGetOpenAPIYAMLResponse(w http.ResponseWriter) error { return d.write(w) }
+func (d specDocument) VisitGetOpenAPIYAMLResponse(w http.ResponseWriter) error {
+	return writeFixed(w, d.contentType, d.body, true)
+}
 
-func (d specDocument) VisitGetOpenAPIJSONResponse(w http.ResponseWriter) error { return d.write(w) }
+func (d specDocument) VisitGetOpenAPIJSONResponse(w http.ResponseWriter) error {
+	return writeFixed(w, d.contentType, d.body, true)
+}
 
-func (d specDocument) write(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", d.contentType)
+// StaticGet serves a fixed body with X-Content-Type-Options: nosniff. The
+// router sends it GET and HEAD only, and HEAD gets no body.
+func StaticGet(contentType string, body []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = writeFixed(w, contentType, body, r.Method == http.MethodGet)
+	})
+}
+
+// writeFixed writes a 200 with contentType and nosniff, and body when withBody
+// is set.
+func writeFixed(w http.ResponseWriter, contentType string, body []byte, withBody bool) error {
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write(d.body)
+	if !withBody {
+		return nil
+	}
+	_, err := w.Write(body)
 	return err
 }
 
