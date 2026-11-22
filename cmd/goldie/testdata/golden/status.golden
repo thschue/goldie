@@ -1,5 +1,6 @@
 Server: reachable
 API: Goldie API 0.1.0
 Auth: token accepted
+Project: none found (set --project, GOLDIE_PROJECT or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)
 
 Search with: goldie search <words>

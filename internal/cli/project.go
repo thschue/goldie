@@ -1,0 +1,374 @@
+package cli
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// How a Project was found, in the order of precedence. These are the words
+// `goldie status` prints and the JSON "projectSource" carries.
+const (
+	sourceFlag     = "--project"
+	sourceEnv      = EnvProject
+	sourceConfig   = ".goldie/config.yaml"
+	sourceUpstream = "git remote upstream"
+	sourceOrigin   = "git remote origin"
+)
+
+// maxProjectFile bounds every file the detection reads. Both .git/config and
+// .goldie/config.yaml are untrusted input from the checked-out repository.
+const maxProjectFile = 1 << 20
+
+// maxWalkUp bounds how many parent directories the detection visits.
+const maxWalkUp = 64
+
+// detectedProject is a detected or configured Project and where it came from.
+type detectedProject struct {
+	ID     string // host/org/repo, or the value given by the user
+	Source string // one of the source constants
+}
+
+// resolveProject applies the override order: --project, GOLDIE_PROJECT,
+// .goldie/config.yaml, then the git remotes `upstream` and `origin`. dir is
+// the working directory. It returns the zero Project and no error when
+// nothing names one, for example outside a git repository. A broken
+// .goldie/config.yaml is an error: the user wrote it to be obeyed.
+func resolveProject(dir, flagValue, envValue string) (detectedProject, error) {
+	for _, c := range []struct{ v, source string }{{flagValue, sourceFlag}, {envValue, sourceEnv}} {
+		if v := strings.TrimSpace(c.v); v != "" {
+			id, err := normaliseConfigured(v)
+			if err != nil {
+				return detectedProject{}, fmt.Errorf("%s: %w", c.source, err)
+			}
+			return detectedProject{ID: id, Source: c.source}, nil
+		}
+	}
+	root, gitConfig, inRepo := findGitConfig(dir)
+	if !inRepo {
+		root = dir // outside a repository only the working directory counts
+	}
+	id, err := projectFromConfigFile(dir, root)
+	if err != nil {
+		return detectedProject{}, err
+	}
+	if id != "" {
+		return detectedProject{ID: id, Source: sourceConfig}, nil
+	}
+	return projectFromRemotes(gitConfig), nil
+}
+
+// normaliseConfigured normalises a Project the user typed: a remote URL
+// becomes host/org/repo, anything else is kept as written.
+func normaliseConfigured(v string) (string, error) {
+	if id, ok := normaliseRemote(v); ok {
+		return id, nil
+	}
+	// Anything that looks like a URL or carries userinfo but cannot be read is
+	// refused without echoing it: it may hold a credential.
+	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, unsafe) {
+		return "", errors.New("the Project is not a host/org/repo name or a git remote URL")
+	}
+	// A plain host/org/repo gets the same shape as a detected one.
+	id := strings.ToLower(strings.TrimSuffix(strings.Trim(v, "/"), ".git"))
+	if !validProjectID(id) {
+		return "", errors.New("the Project is not host/org/repo: a lower-case host, then an org and a repo of letters, digits, '.', '_' and '-'")
+	}
+	return id, nil
+}
+
+// validProjectID reports whether id is exactly host/org/repo under the rules
+// it mirrors from validProjectSegment in internal/engine/source.go (the cli
+// cannot import the engine): a lower-case DNS host, then an org and a repo of
+// letters, digits, '.', '_' and '-' that do not start with '.'. It keeps
+// nested groups, '..', percent escapes, query and fragment characters and
+// other path syntax from a hostile remote out of the Project.
+func validProjectID(id string) bool {
+	segs := strings.Split(id, "/")
+	if len(segs) != 3 {
+		return false
+	}
+	for i, s := range segs {
+		allowed := "abcdefghijklmnopqrstuvwxyz0123456789._-"
+		if i == 0 {
+			allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
+		}
+		if s == "" || s[0] == '.' || strings.Trim(s, allowed) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// projectFromConfigFile reads `project:` from the nearest .goldie/config.yaml
+// from dir up to root, the repository root. It never looks above root: a
+// repository uses its own .goldie/, not one of a checkout it is nested in.
+func projectFromConfigFile(dir, root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil
+	}
+	all, dirs := ancestors(dir), []string(nil)
+	for i, d := range all {
+		if d == absRoot {
+			dirs = all[:i+1]
+			break
+		}
+	}
+	for _, d := range dirs {
+		b, err := readCapped(filepath.Join(d, ".goldie", "config.yaml"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", errors.New("cannot read .goldie/config.yaml")
+		}
+		var cfg struct {
+			Project string `yaml:"project"`
+		}
+		if err := yaml.Unmarshal(b, &cfg); err != nil {
+			return "", errors.New(".goldie/config.yaml is not valid YAML with a string `project:` key")
+		}
+		if strings.TrimSpace(cfg.Project) == "" {
+			return "", nil // no `project:` key: detection decides
+		}
+		id, err := normaliseConfigured(strings.TrimSpace(cfg.Project))
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", sourceConfig, err)
+		}
+		return id, nil
+	}
+	return "", nil
+}
+
+// projectFromRemotes detects the Project from the `upstream` remote, else
+// `origin`, of a git config's text.
+func projectFromRemotes(cfg string) detectedProject {
+	urls := remoteURLs(cfg)
+	for _, r := range []struct{ name, source string }{
+		{"upstream", sourceUpstream},
+		{"origin", sourceOrigin},
+	} {
+		if id, ok := normaliseRemote(urls[r.name]); ok {
+			return detectedProject{ID: id, Source: r.source}
+		}
+	}
+	return detectedProject{}
+}
+
+// ancestors lists dir and its parents, nearest first.
+func ancestors(dir string) []string {
+	var out []string
+	d, err := filepath.Abs(dir)
+	if err != nil {
+		return nil
+	}
+	for i := 0; i < maxWalkUp; i++ {
+		out = append(out, d)
+		parent := filepath.Dir(d)
+		if parent == d {
+			break
+		}
+		d = parent
+	}
+	return out
+}
+
+// errNotRegular refuses a FIFO, device or socket, which could block the read.
+var errNotRegular = errors.New("not a regular file")
+
+// readCapped reads a regular file of at most maxProjectFile bytes. It checks
+// the type before opening, because opening a FIFO (or a symlink to one, or to
+// /dev/tty) planted in a checkout blocks, and so that no device is opened.
+func readCapped(path string) ([]byte, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
+	return openCapped(path)
+}
+
+// openCapped opens path without blocking (openFlags) and checks the type of
+// what it opened, so a FIFO swapped in after readCapped's check is refused
+// rather than read.
+func openCapped(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|openFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxProjectFile+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxProjectFile {
+		return nil, errTooLarge
+	}
+	return b, nil
+}
+
+// findGitConfig walks up from dir to the repository root, the nearest
+// directory with a `.git`, and returns it and the text of its config (empty
+// when it cannot be read). inRepo is false when no `.git` is found. A `.git`
+// directory holds the config itself. A `.git` file (worktree or submodule)
+// points at a gitdir; a worktree's gitdir names the main repository's
+// directory in `commondir`, where the shared config lives.
+func findGitConfig(dir string) (root, cfg string, inRepo bool) {
+	for _, d := range ancestors(dir) {
+		dotGit := filepath.Join(d, ".git")
+		fi, err := os.Stat(dotGit)
+		if err != nil {
+			continue
+		}
+		gitDir := dotGit
+		if !fi.IsDir() {
+			b, err := readCapped(dotGit)
+			if err != nil {
+				return d, "", true
+			}
+			target, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
+			if !ok {
+				return d, "", true
+			}
+			gitDir = resolveFrom(d, strings.TrimSpace(target))
+		}
+		if b, err := readCapped(filepath.Join(gitDir, "commondir")); err == nil {
+			gitDir = resolveFrom(gitDir, strings.TrimSpace(string(b)))
+		}
+		b, err := readCapped(filepath.Join(gitDir, "config"))
+		if err != nil {
+			return d, "", true
+		}
+		return d, string(b), true
+	}
+	return "", "", false
+}
+
+func resolveFrom(base, p string) string {
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Join(base, p)
+}
+
+// remoteURLs returns the first `url` of every `[remote "name"]` section of a
+// git config. It reads only what detection needs: it ignores includes and
+// url.<base>.insteadOf rewrites.
+func remoteURLs(cfg string) map[string]string {
+	urls := map[string]string{}
+	section := ""
+	for _, line := range strings.Split(cfg, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line[0] == '#' || line[0] == ';' {
+			continue
+		}
+		if line[0] == '[' {
+			section = remoteSection(line)
+			continue
+		}
+		if section == "" {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(key), "url") {
+			continue
+		}
+		if _, seen := urls[section]; !seen {
+			urls[section] = unquote(strings.TrimSpace(val))
+		}
+	}
+	return urls
+}
+
+// remoteSection returns the remote name of a `[remote "name"]` header, or ""
+// for any other section.
+func remoteSection(header string) string {
+	end := strings.LastIndex(header, "]")
+	if end < 0 {
+		return ""
+	}
+	name, rest, ok := strings.Cut(strings.TrimSpace(header[1:end]), " ")
+	if !ok || !strings.EqualFold(name, "remote") {
+		return ""
+	}
+	rest = strings.TrimSpace(rest)
+	if len(rest) < 2 || rest[0] != '"' || rest[len(rest)-1] != '"' {
+		return ""
+	}
+	return rest[1 : len(rest)-1]
+}
+
+func unquote(v string) string {
+	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+		return v[1 : len(v)-1]
+	}
+	return v
+}
+
+// normaliseRemote turns a git remote URL into host/org/repo: lower case,
+// without scheme, userinfo, port, `.git` suffix or trailing slash. It accepts
+// the scp form (git@host:org/repo.git), ssh://, git://, http:// and https://.
+// Userinfo is dropped so a token in a remote URL never reaches the output. ok
+// is false for a local path or anything it cannot read as host plus path.
+func normaliseRemote(raw string) (id string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	var host, path string
+	if strings.Contains(raw, "://") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return "", false
+		}
+		switch strings.ToLower(u.Scheme) {
+		case "ssh", "git", "http", "https", "git+ssh", "ssh+git":
+		default:
+			return "", false
+		}
+		host, path = u.Hostname(), u.Path
+	} else {
+		// scp form: [user@]host:path, where the colon comes before any slash.
+		colon, slash := strings.Index(raw, ":"), strings.Index(raw, "/")
+		if colon <= 0 || (slash >= 0 && slash < colon) {
+			return "", false
+		}
+		host, path = raw[:colon], raw[colon+1:]
+		if at := strings.LastIndex(host, "@"); at >= 0 {
+			host = host[at+1:]
+		}
+		host = strings.Trim(host, "[]")
+	}
+	path = strings.Trim(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.Trim(path, "/")
+	if host == "" || path == "" || strings.ContainsAny(host, " \t/@") || strings.ContainsAny(path, "@ \t") || strings.Contains(path, "//") {
+		return "", false
+	}
+	id = strings.ToLower(host + "/" + path)
+	if !validProjectID(id) { // its ASCII-only rule also keeps out control and bidi runes
+		return "", false
+	}
+	return id, true
+}
+
+// describe is the status line for a Project.
+func (p detectedProject) describe() string {
+	if p.ID == "" {
+		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"
+	}
+	return fmt.Sprintf("%s (from %s)", cleanLine(p.ID), p.Source)
+}
