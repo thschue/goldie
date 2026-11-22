@@ -42,7 +42,7 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
 	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
 	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
-	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes. goldie always sets service.version and goldie.mode (all)."},
+	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
 
 // def returns the registered default of a variable. A variable missing from
@@ -78,7 +78,10 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
-	b.WriteString("headers and query strings are not recorded.\n\n")
+	b.WriteString("headers and query strings are not recorded. Other OTEL_* variables, such as samplers,\n")
+	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
+	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
+	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	b.WriteString("| Variable | Default | Meaning |\n|---|---|---|\n")
 	for _, s := range TelemetrySettings {
 		d := "(none)"

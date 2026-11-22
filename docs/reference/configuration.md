@@ -20,7 +20,10 @@ that reads the value from a file; setting both is an error (PC-05).
 Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
 endpoint is set. These variables keep their standard names and are read as defined by
 OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request
-headers and query strings are not recorded.
+headers and query strings are not recorded. Other OTEL_* variables, such as samplers,
+OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own
+handling: goldie neither validates nor documents them. Only the OTLP headers variables
+accept a _FILE form; for any other OTEL_* name it is an error.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -34,4 +37,4 @@ headers and query strings are not recorded.
 | `OTEL_LOGS_EXPORTER` | (none) | otlp or none. none turns off log export. |
 | `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `1024` | Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path. |
 | `OTEL_SERVICE_NAME` | `goldie` | Overrides the service.name resource attribute. |
-| `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes. goldie always sets service.version and goldie.mode (all). |
+| `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override. |
