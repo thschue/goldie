@@ -117,6 +117,36 @@ func TestPC01AdminPortIsSeparate(t *testing.T) {
 	}
 }
 
+// Admin-port and fallback 404s carry a static next-step hint that echoes
+// nothing from the request (testing checklist: every error has a hint).
+func TestNotFoundCarriesStaticHint(t *testing.T) {
+	s := start(t, 0, nil) // no App wired: the app mux falls back to notFound
+	for name, base := range map[string]string{"admin": s.admin, "app fallback": s.app} {
+		code, body := get(t, "http://"+base+"/secret-path-xyz?token=abc123")
+		if code != 404 {
+			t.Fatalf("%s = %d, want 404", name, code)
+		}
+		var env struct {
+			Error struct {
+				Code    string         `json:"code"`
+				Details map[string]any `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(body), &env); err != nil {
+			t.Fatalf("%s: bad envelope %q: %v", name, body, err)
+		}
+		hint, _ := env.Error.Details["hint"].(string)
+		if env.Error.Code != "not_found" || hint == "" {
+			t.Errorf("%s: want not_found with details.hint, got %s", name, body)
+		}
+		for _, leak := range []string{"secret-path-xyz", "abc123", "127.0.0.1"} {
+			if strings.Contains(body, leak) {
+				t.Errorf("%s: body echoes %q: %s", name, leak, body)
+			}
+		}
+	}
+}
+
 func TestPC02LivenessAndReadiness(t *testing.T) {
 	s := start(t, 0, nil)
 	if code, _ := get(t, "http://"+s.admin+"/livez"); code != 200 {

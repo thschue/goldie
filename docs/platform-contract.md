@@ -10,7 +10,7 @@ Variables use the `GOLDIE_` prefix, with one exception: the standard `OTEL_*` Op
 
 | Clause | Requirement |
 |---|---|
-| PC-01 | **Admin port.** Probes and version are served on a separate admin port (`GOLDIE_ADMIN_ADDR`), never on the public listener. |
+| PC-01 | **Admin port.** Probes and version are served on a separate admin port (`GOLDIE_ADMIN_ADDR`), never on the public listener. Any other path answers 404 in the error envelope with a static `details.hint` that echoes nothing from the request; the public listener answers the same way when no API is wired. |
 | PC-02 | **Liveness and readiness.** `/livez` answers 200 while the process runs. `/readyz` runs one check per Source (or one upstream check) and fails only while a Source has never loaded; a stale Source stays ready. Sources added at runtime never make a running server unready. |
 | PC-03 | **Version.** `/version` returns the version, commit and build date as JSON. |
 | PC-04 | **Environment-only config.** All server settings come from environment variables and are validated at startup. Invalid or missing values fail fast with an error naming the offending variable. (Declarative Sources and tokens held in Kubernetes Secrets are the one dynamic exception; settings stay env-only.) |

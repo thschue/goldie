@@ -60,11 +60,15 @@ func versionHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, CurrentVersion())
 }
 
+// notFoundHint is static on purpose: it echoes nothing from the request, and
+// platform cannot import contract to share the API's hint wording.
+const notFoundHint = "the admin port serves /livez, /readyz and /version; the public listener serves the API"
+
 func notFound(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{
 		"code":    "not_found",
 		"message": "no such endpoint",
-		"details": map[string]any{},
+		"details": map[string]any{"hint": notFoundHint},
 	}})
 }
 
