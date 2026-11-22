@@ -191,6 +191,8 @@ func TestWriteConfigNormalisesTheID(t *testing.T) {
 // hostileIDs are ids that must never reach the file: path syntax, YAML that
 // tries to add a key, hidden and control runes, credential-bearing values that
 // cannot be read as a remote, and the wrong shape.
+//
+//nolint:staticcheck // ST1018: the hostile ids hold format characters on purpose.
 var hostileIDs = []string{
 	"",
 	"   ",

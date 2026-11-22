@@ -415,6 +415,7 @@ func TestCLIInitRefusesSourceRepository(t *testing.T) {
 // TestCLIInitRefusesHostileProject checks that an unusable Project from the
 // flag or the variable writes nothing, and the error never echoes it.
 func TestCLIInitRefusesHostileProject(t *testing.T) {
+	//nolint:staticcheck // ST1018: the hostile values hold format characters on purpose.
 	hostile := []string{
 		"../../etc/passwd",
 		"github.com/acme/widgets\nproject: evil.example/x/y",
@@ -425,6 +426,7 @@ func TestCLIInitRefusesHostileProject(t *testing.T) {
 		"https://user:s3cret-token@",
 		"gitlab.com/group/sub/app",
 	}
+	//nolint:staticcheck // ST1018: the hostile values hold format characters on purpose.
 	for _, v := range hostile {
 		for _, via := range []string{"flag", "env"} {
 			root := gitRepo(t, widgetsOrigin)

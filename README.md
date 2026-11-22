@@ -41,6 +41,16 @@ repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git re
 `host/org/repo`. The remote is read from `.git/config`; git need not be installed, and credentials
 in a remote URL are never printed. The sync state arrives with the sync work (#6).
 
+`goldie init [--project ID]` sets a repository up: it finds the Project as `status` does and writes
+`project: <id>` to `.goldie/config.yaml` at the repository root (the nearest directory with a
+`.git`), then prints the Project and how it was found, the file it wrote, and whether the server
+has the Project registered (`yes`, `no` with a hint on how to register it, or `not checked` with the
+reason: no address, no token, or a rejected token). The check is one `GET /api/v1/projects` and
+ignores case; without a token it sends no request. `init` takes no `--json`. It never overwrites an
+existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.yaml`, and refuses to
+run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
+root); a refusal writes nothing.
+
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
 goldie search kubernetes

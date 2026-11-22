@@ -3,9 +3,10 @@
 // .git/config and .goldie/config.yaml of a checkout.
 //
 // Detect detects the Project, trying in order: the flag value, the environment
-// value, .goldie/config.yaml, then the git remotes upstream and origin. The
-// package owns detection only and words nothing for the user: callers map a
-// Source, and the Source of a SourceError, to their own text. It imports no
+// value, .goldie/config.yaml, then the git remotes upstream and origin.
+// WriteConfig writes the .goldie/config.yaml that Detect reads (write.go). The
+// package words nothing for the user: callers map a Source, the Source of a
+// SourceError and the refusals of WriteConfig to their own text. It imports no
 // other goldie module except contract.
 package project
 

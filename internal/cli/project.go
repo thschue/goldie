@@ -61,6 +61,12 @@ func (c *commander) project() (project.Detected, error) {
 	if err != nil {
 		return project.Detected{}, errors.New("cannot read the working directory")
 	}
+	return c.projectIn(dir)
+}
+
+// projectIn detects the Project for dir, with the --project flag and the
+// variable.
+func (c *commander) projectIn(dir string) (project.Detected, error) {
 	envValue, _ := c.env.Lookup(EnvProject)
 	return detectProject(dir, c.s.project, envValue)
 }

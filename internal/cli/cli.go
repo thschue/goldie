@@ -26,7 +26,7 @@ const (
 
 // Usage is the one-line usage of the client commands, without the program
 // name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
+const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | init [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
 
 // TokenNote follows the usage text: it recommends the token variables over
 // --token, whose value shows in the process list.
@@ -36,7 +36,7 @@ const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: 
 // cmd/goldie.
 func IsCommand(name string) bool {
 	switch name {
-	case "search", "lookup", "status", "version":
+	case "search", "lookup", "status", "init", "version":
 		return true
 	}
 	return false
@@ -74,7 +74,9 @@ func Run(ctx context.Context, args []string, env Env) error {
 	if name != "version" { // version has no use for a Project
 		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	}
-	fs.BoolVar(&s.json, "json", false, "print JSON")
+	if name != "init" { // init prints three fixed lines
+		fs.BoolVar(&s.json, "json", false, "print JSON")
+	}
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
 		return fmt.Errorf("%w\nusage: goldie %s\n%s", err, Usage, TokenNote)
@@ -102,6 +104,11 @@ func Run(ctx context.Context, args []string, env Env) error {
 			return errors.New("usage: goldie status")
 		}
 		return c.status(ctx)
+	case "init":
+		if len(pos) != 0 {
+			return errors.New("usage: goldie init [--project ID]")
+		}
+		return c.initProject(ctx)
 	default:
 		if len(pos) != 0 {
 			return errors.New("usage: goldie version")
