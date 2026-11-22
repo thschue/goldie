@@ -278,6 +278,10 @@ func TestCLIUsageRecommendsTokenVariables(t *testing.T) {
 // goldie mcp's usage text recommends the variables too, and names the second
 // reason: an MCP client saves the arguments it starts goldie with in its config.
 func TestMCPUsageRecommendsTokenVariables(t *testing.T) {
+	// Build the binary before runMCPExpectingFailure starts its 10-second
+	// timer: this may be the first test to need it, and under -race on a cold
+	// cache the non-race build alone can take longer than that.
+	goldieBinary(t)
 	for name, transport := range map[string][]string{
 		"help":         {"--help"},
 		"no transport": {},
