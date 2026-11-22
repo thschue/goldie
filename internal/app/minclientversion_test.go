@@ -314,7 +314,7 @@ func TestUnauthenticatedRequestsAre401AndLearnNothingOfTheGate(t *testing.T) {
 // gets its whole burst and then 429, and an old client over the limit is told
 // to upgrade, which is what fixes it, rather than to wait.
 func TestGateRunsBeforeTheRateLimit(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: "1/m,burst=2", MinClientVersion: minVersion})
+	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=2"), MinClientVersion: minVersion})
 	old := func(r *http.Request) { r.Header.Set(clientHeader, "goldie/1.3.0") }
 	current := func(r *http.Request) { r.Header.Set(clientHeader, "goldie/"+minVersion) }
 	for i := range 5 {
