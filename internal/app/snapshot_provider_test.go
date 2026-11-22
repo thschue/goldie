@@ -73,6 +73,9 @@ func readOperationPaths(t *testing.T) []string {
 			}
 			path = c
 		}
+		if path == "/api/v1/search" {
+			path += "?q=a" // a valid read: bad input is a 400, tested apart
+		}
 		out = append(out, path)
 	}
 	if len(out) < 3 {
