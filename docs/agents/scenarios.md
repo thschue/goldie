@@ -26,6 +26,7 @@ number names the case that motivated the rule.
 | S18 | Reviewer reproduces a MEDIUM bug on `main` | delivery | Draft advisory, fix pushed to its private fork; the id to the user; nothing public |
 | S19 | Buffer is 3, target 8; issues #6–#34 are epic-sized | product | Epics sliced into sub-issues with `blocked_by` chains, each with Acceptance, Pattern to follow and `area:`; audit skipped this tick |
 | S20 | Several LOW follow-ups in one area (#89–#91) | product | Bundled into the oldest issue as a checklist; the rest closed as duplicates |
+| S25 | Frontier: a new `security` follow-up, a slice of started epic #11, and an older slice of unstarted epic #161 (#170, #101, #164) | delivery | `scripts/frontier` order: #101, then #170, then #164; the session claims #101 |
 | S21 | Question the record answers (`/version` vs PC-01) | product | Tier 1: decided and filed ready; no `question` |
 | S22 | UI issue whose handoff isn't approved (#21) | product | `question` to approve the handoff; inbox "Decide" |
 | S23 | Architect wants a refactor that would delay a `priority` issue | product | Issue stays sliced as is; refactor filed as a follow-up with its value |

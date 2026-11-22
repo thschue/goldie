@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // FuzzNormaliseRemote checks that no input panics and that an accepted result
@@ -17,7 +19,7 @@ func FuzzNormaliseRemote(f *testing.F) {
 		if !ok {
 			return
 		}
-		if strings.ContainsAny(id, "@ \t\n") || !validProjectID(id) || id != strings.ToLower(id) {
+		if strings.ContainsAny(id, "@ \t\n") || !contract.ValidProjectID(id) || id != strings.ToLower(id) {
 			t.Errorf("normaliseRemote(%q) = %q", in, id)
 		}
 	})
@@ -38,13 +40,13 @@ func FuzzProjectFiles(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, in string) {
 		for _, u := range remoteURLs(in) {
-			if id, ok := normaliseRemote(u); ok && !validProjectID(id) {
+			if id, ok := normaliseRemote(u); ok && !contract.ValidProjectID(id) {
 				t.Errorf("remote %q gave %q", u, id)
 			}
 		}
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, ".goldie", "config.yaml"), in)
-		if p, err := resolveProject(dir, "", ""); err == nil && p.ID != "" && !validProjectID(p.ID) {
+		if p, err := resolveProject(dir, "", ""); err == nil && p.ID != "" && !contract.ValidProjectID(p.ID) {
 			t.Errorf("config.yaml %q gave %q", in, p.ID)
 		}
 	})

@@ -4,7 +4,7 @@
 #   ./run check      everything CI runs (the four check-* groups below)
 #   ./run check-lint     format, go mod tidy, build, golangci-lint, depguard fixture
 #   ./run check-spec     spec lint, regen drift check, and their fixtures
-#   ./run check-harness  the loop tooling fixtures (gate-, guard-, test-lock-, claim-fixture),
+#   ./run check-harness  the loop tooling fixtures (gate-, guard-, test-lock-, frontier-, claim-fixture),
 #                        agent definitions, and the harness line budget
 #   ./run check-test     go test -race
 #   ./run test       go test ./... (extra arguments are passed to go test)
@@ -259,6 +259,17 @@ cmd_test_lock_fixture() {
 			die "test-lock case $name failed"
 		fi
 	done
+}
+
+# testdata/frontier/cases.json: each case's issues, ranked by
+# scripts/lib/frontier.jq, must come out in the case's order.
+cmd_frontier_fixture() {
+	say "frontier fixture (claim order: bug and priority, started epic, standalone, new epic)"
+	out=$(jq -L scripts/lib -r 'include "frontier";
+		.[] | (.issues | rank | map(.number)) as $got
+		| select($got != .want) | "\(.name): want \(.want), got \($got)"' testdata/frontier/cases.json) ||
+		die "cannot run the frontier cases"
+	[ -z "$out" ] || die "frontier case failed: $out"
 }
 
 # Two delivery sessions claim the same issue at once against a local origin,
@@ -518,6 +529,7 @@ cmd_check_harness() {
 	cmd_gate_fixture
 	cmd_guard_fixture
 	cmd_test_lock_fixture
+	cmd_frontier_fixture
 	cmd_claim_fixture
 	cmd_agents_check
 	cmd_harness_budget
@@ -549,6 +561,7 @@ check-spec) cmd_check_spec ;;
 check-harness) cmd_check_harness ;;
 test-lock-fixture) cmd_test_lock_fixture ;;
 claim-fixture) cmd_claim_fixture ;;
+frontier-fixture) cmd_frontier_fixture ;;
 gate-fixture) cmd_gate_fixture ;;
 guard-fixture) cmd_guard_fixture ;;
 check-test) cmd_check_test ;;

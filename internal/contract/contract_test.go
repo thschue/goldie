@@ -30,6 +30,10 @@ func (stub) SearchArticles(_ context.Context, req SearchArticlesRequestObject) (
 	return SearchArticles200JSONResponse{Query: req.Params.Q, Results: []SearchHit{}}, nil
 }
 
+func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjectsResponseObject, error) {
+	return ListProjects200JSONResponse{Projects: []ProjectId{}}, nil
+}
+
 func (stub) GetArticle(_ context.Context, req GetArticleRequestObject) (GetArticleResponseObject, error) {
 	return GetArticle200JSONResponse{Id: req.Id, Name: "n", Keywords: []string{}, Content: "c"}, nil
 }

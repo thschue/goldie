@@ -82,7 +82,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := cl.GetArticleWithResponse(ctx, id)
+	resp, err := cl.GetArticleWithResponse(ctx, id, nil)
 	if err != nil {
 		return transportError(err)
 	}
