@@ -38,7 +38,9 @@ and running `./run regen`.
 - `OTEL_*` is read by the OpenTelemetry SDK as well as by goldie. Goldie validates `OTEL_SDK_DISABLED`,
   `OTEL_EXPORTER_OTLP_{,TRACES_,LOGS_}{ENDPOINT,PROTOCOL,HEADERS}`, `OTEL_{TRACES,LOGS}_EXPORTER`,
   `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` (a malformed value, such as a pair without `=` or
-  a bad percent escape, fails startup). `OTEL_RESOURCE_ATTRIBUTES` cannot override `service.version`
+  a bad percent escape, fails startup). Every OTLP headers variable that is set is checked, and a header
+  key must be an RFC 7230 token, because the SDK prints a rejected key or value to its own logger.
+  `OTEL_RESOURCE_ATTRIBUTES` cannot override `service.version`
   or `goldie.mode`. The generated configuration reference lists them and names the ones left to the SDK.
   Only protocol `http/protobuf` is supported. The one `OTEL_*` limit goldie sets itself is a 1024-byte
   default for `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`.

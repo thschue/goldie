@@ -3,6 +3,7 @@ package platform
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -484,5 +486,103 @@ func TestTelemetryResourceReservedAttributesWin(t *testing.T) {
 		if kv.Key == "service.name" && kv.Value.String() != "b" {
 			t.Errorf("OTEL_SERVICE_NAME did not win: %v", kv.Value)
 		}
+	}
+}
+
+// captureSink records everything the otel global logger is asked to print.
+type captureSink struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (c *captureSink) Init(logr.RuntimeInfo)  {}
+func (c *captureSink) Enabled(level int) bool { return level <= 0 }
+func (c *captureSink) Info(_ int, msg string, kv ...any) {
+	c.write(msg, nil, kv)
+}
+func (c *captureSink) Error(err error, msg string, kv ...any) {
+	c.write(msg, err, kv)
+}
+func (c *captureSink) WithValues(...any) logr.LogSink { return c }
+func (c *captureSink) WithName(string) logr.LogSink   { return c }
+func (c *captureSink) write(msg string, err error, kv []any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.buf.WriteString(msg)
+	if err != nil {
+		c.buf.WriteString(err.Error())
+	}
+	for _, v := range kv {
+		fmt.Fprint(&c.buf, v)
+	}
+}
+func (c *captureSink) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
+}
+
+func captureOTelLogger(t *testing.T) *captureSink {
+	t.Helper()
+	sink := &captureSink{}
+	otel.SetLogger(logr.New(sink))
+	t.Cleanup(func() { otel.SetLogger(logr.Discard()) })
+	return sink
+}
+
+// Whatever goldie accepts in an OTLP headers variable must not make the
+// exporter SDK print header text to the otel global logger (PC-05, PC-07,
+// PC-12). Every case is refused at startup, so the SDK never parses it.
+func TestTelemetryHeaderTextNeverReachesOTelLogger(t *testing.T) {
+	const secret = "s3cr3t-marker"
+	bad := "a b" + secret + "=v"
+	cases := map[string]map[string]string{
+		"key with a space":          {"OTEL_EXPORTER_OTLP_HEADERS": bad},
+		"key with a non-ASCII rune": {"OTEL_EXPORTER_OTLP_HEADERS": "k\u00e9" + secret + "=v"},
+		"key with a slash":          {"OTEL_EXPORTER_OTLP_HEADERS": "a/" + secret + "=v"},
+		"bad escape":                {"OTEL_EXPORTER_OTLP_HEADERS": "authorization=" + secret + "%zz"},
+		"no equals":                 {"OTEL_EXPORTER_OTLP_HEADERS": secret},
+		"bad generic, good traces":  {"OTEL_EXPORTER_OTLP_HEADERS": bad, "OTEL_EXPORTER_OTLP_TRACES_HEADERS": "x-ok=1"},
+		"bad generic, good logs":    {"OTEL_EXPORTER_OTLP_HEADERS": bad, "OTEL_EXPORTER_OTLP_LOGS_HEADERS": "x-ok=1"},
+		"bad traces, good generic":  {"OTEL_EXPORTER_OTLP_HEADERS": "x-ok=1", "OTEL_EXPORTER_OTLP_TRACES_HEADERS": bad},
+		"bad logs, good generic":    {"OTEL_EXPORTER_OTLP_HEADERS": "x-ok=1", "OTEL_EXPORTER_OTLP_LOGS_HEADERS": bad},
+		"bad logs, good traces":     {"OTEL_EXPORTER_OTLP_TRACES_HEADERS": "x-ok=1", "OTEL_EXPORTER_OTLP_LOGS_HEADERS": bad},
+		"bad escape in logs":        {"OTEL_EXPORTER_OTLP_LOGS_HEADERS": "authorization=" + secret + "%zz"},
+	}
+	for name, env := range cases {
+		t.Run(name, func(t *testing.T) {
+			sink := captureOTelLogger(t)
+			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+			tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
+			if err == nil {
+				_ = tel.Shutdown(context.Background())
+				t.Fatal("a header goldie must refuse was accepted")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Error("error echoes header text")
+			}
+			if strings.Contains(sink.String(), secret) {
+				t.Error("header text reached the otel logger")
+			}
+		})
+	}
+}
+
+// Well-formed headers are accepted and the SDK has nothing to complain about.
+func TestTelemetryValidHeadersLeaveOTelLoggerSilent(t *testing.T) {
+	sink := captureOTelLogger(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Basic%20abc,X-Api_Token.1=v")
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "x-logs=1")
+	tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	_ = tel.Shutdown(context.Background())
+	if got := sink.String(); got != "" {
+		t.Errorf("otel logger was not silent: %q", got)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -170,14 +171,17 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 			}
 		}
 		on[s.name] = exp == "otlp" || (exp == "" && endpoint)
-		for _, name := range []string{s.prefix + "HEADERS", envOTLPHeaders} { // signal-specific wins
+		// The SDK parses every one of these variables itself when an
+		// exporter is built, and prints a rejected key or value to the
+		// global OpenTelemetry logger. Validate each one that is set so
+		// nothing the SDK would reject gets that far.
+		for _, name := range []string{envOTLPHeaders, s.prefix + "HEADERS"} { // signal-specific wins
 			if v := get(name); v != "" {
 				h, err := parseOTLPHeaders(v)
 				if err != nil {
 					errs = append(errs, fmt.Errorf("%s: %w", name, err))
 				}
 				headers[s.name] = h
-				break
 			}
 		}
 	}
@@ -225,6 +229,9 @@ func parseOTLPHeaders(s string) (map[string]string, error) {
 		if !ok || k == "" {
 			return nil, errors.New("must be comma-separated key=value pairs")
 		}
+		if !isHeaderToken(k) {
+			return nil, errors.New("keys must be HTTP header names (RFC 7230 tokens)")
+		}
 		dv, err := url.PathUnescape(v)
 		if err != nil {
 			return nil, errors.New("values must be percent-encoded")
@@ -232,6 +239,26 @@ func parseOTLPHeaders(s string) (map[string]string, error) {
 		out[k] = strings.TrimSpace(dv)
 	}
 	return out, nil
+}
+
+// isHeaderToken reports whether k is a non-empty RFC 7230 token, with the
+// same character set as the OTLP exporters' own key check (ASCII letters and
+// digits plus !#$%&'*+-.^_`|~). A key outside it makes the SDK print the key
+// to its global logger, so goldie must refuse it first.
+func isHeaderToken(k string) bool {
+	if k == "" {
+		return false
+	}
+	for _, c := range k {
+		if c > unicode.MaxASCII {
+			return false
+		}
+		if unicode.IsLetter(c) || unicode.IsDigit(c) || strings.ContainsRune("!#$%&'*+-.^_`|~", c) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // parseResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES, "k=v,k2=v2" with
