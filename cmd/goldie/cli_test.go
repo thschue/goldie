@@ -137,6 +137,11 @@ func TestCLIErrors(t *testing.T) {
 		{"no words", []string{"search", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
 		{"status spec not served", []string{"status", "--addr", statusStub(t, http.StatusServiceUnavailable, http.StatusOK).URL}, []string{"503"}},
 		{"status token check fails", []string{"status", "--addr", statusStub(t, http.StatusOK, http.StatusInternalServerError).URL, "--token", cliToken}, []string{"500"}},
+		{"unknown flag", []string{"search", "agent", "--bogus", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
+		{"lookup two ids", []string{"lookup", "a", "b", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
+		{"status extra arg", []string{"status", "extra", "--addr", srv.URL}, []string{"usage"}},
+		{"status bad addr", []string{"status", "--addr", "ftp://x"}, []string{"http"}},
+		{"status unreachable", []string{"status", "--addr", "http://127.0.0.1:1"}, []string{"cannot reach"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -153,6 +158,23 @@ func TestCLIErrors(t *testing.T) {
 				t.Errorf("error leaks a token or address: %q", err)
 			}
 		})
+	}
+}
+
+// A token file that cannot be read stops search with an error that names the
+// variable, not the path.
+func TestCLISearchMissingTokenFile(t *testing.T) {
+	srv := cliServer(t)
+	missing := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("GOLDIE_TOKEN_FILE", missing)
+	_ = os.Unsetenv("GOLDIE_TOKEN")
+	var out bytes.Buffer
+	err := run([]string{"search", "agent", "--addr", srv.URL}, &out)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "GOLDIE_TOKEN_FILE") || strings.Contains(err.Error(), missing) {
+		t.Errorf("error = %q, want it to name GOLDIE_TOKEN_FILE and not the path", err)
 	}
 }
 
