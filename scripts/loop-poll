@@ -4,11 +4,12 @@
 #   scripts/loop-poll <issue-worker|review|pm-audit>
 #
 # Prints one line:
-#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> fingerprint=<hash>
+#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> [triage=<n>] fingerprint=<hash>
 # main is the state of the `ci` workflow on the head of main (red stops the
 # line). work counts what the loop could act on now; 0 lets the tick end
 # without further reasoning. pm-audit compares the fingerprint (main, open
-# issues, open PR heads and labels) with its ledger instead. Read-only.
+# issues, open PR heads and labels) with its ledger instead, and also gets
+# triage=<open needs-triage issues>. Read-only.
 set -eu
 
 die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
@@ -51,7 +52,12 @@ review)
 			| select([.labels[].name] | (index("needs-info") or index("changes-requested") or index("needs-maintainer")) | not)
 		] | length')
 	;;
-pm-audit) work=- ;;
+pm-audit)
+	work=-
+	triage=$(gh issue list --state open --label needs-triage --limit 500 --json number --jq length) ||
+		die "cannot count needs-triage issues"
+	extra=" triage=$triage"
+	;;
 *) die "unknown loop: $loop" ;;
 esac
 
@@ -64,4 +70,4 @@ fingerprint=$(
 	} | git hash-object --stdin
 ) || die "cannot compute the fingerprint"
 
-printf 'main=%s red=%s work=%s fingerprint=%s\n' "$main" "$red" "$work" "$fingerprint"
+printf 'main=%s red=%s work=%s%s fingerprint=%s\n' "$main" "$red" "$work" "${extra-}" "$fingerprint"

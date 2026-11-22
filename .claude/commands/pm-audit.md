@@ -1,6 +1,6 @@
 ---
 model: opus
-description: Run one PM-audit tick (flow, audit, triage, planning, architecture sweep, maintainer inbox)
+description: Run one PM-audit tick (triage, flow, audit, planning, architecture sweep, maintainer inbox)
 argument-hint: "[dry-run]"
 ---
 

@@ -17,7 +17,8 @@
 #     architecture enforcement, the loop tooling (`scripts/`), git
 #     attributes, workspaces and vendoring, deployment;
 #   - review only: a change to `run`, the task runner CI calls, which a
-#     reviewer can tell apart (a new task) from a weakened check;
+#     reviewer can tell apart (a new task) from a weakened check, and lines
+#     only added to NOTICE (removing or rewording one is a hard reason);
 #   - a new direct Go dependency, a go.mod replace, exclude, retract,
 #     godebug, tool or ignore change, a Go or toolchain downgrade;
 #   - a new web dependency, or a new pinned tool (`<module>@<version>`);
@@ -70,8 +71,14 @@ while IFS= read -r f; do
 	docs/agents/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | \
 		SECURITY.md | .mcp.json | */.mcp.json | .claude.json | examples/knowledge/*)
 		gate "agent guardrail changed: $f" ;;
-	CONTEXT.md | docs/adr/* | docs/design/* | LICENSE | NOTICE)
+	CONTEXT.md | docs/adr/* | docs/design/* | LICENSE)
 		gate "decision record changed: $f" ;;
+	NOTICE)
+		# Adding an attribution is mechanical; removing or rewording one is
+		# a licensing decision.
+		removed=$(git diff --numstat --no-renames "$mb" "$head" -- NOTICE | cut -f2) ||
+			die "git diff failed"
+		if [ "$removed" = 0 ]; then review "attribution added: $f"; else gate "decision record changed: $f"; fi ;;
 	.github/* | release-please-config.json | .goreleaser.*)
 		gate "CI or release configuration changed: $f" ;;
 	.golangci.* | testdata/depguard/*)

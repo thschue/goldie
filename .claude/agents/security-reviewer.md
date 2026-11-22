@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Reviews one pull request for correctness, spec and security, runs the gates, and fixes blocking findings once on the loop account's own PRs. Never merges, labels or comments. Used by the review loop.
+description: Reviews one pull request for correctness, spec and security, runs the gates, and fixes contained findings on the loop account's own PRs. Never merges, labels or comments. Used by the review loop.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: opus
 ---
@@ -23,24 +23,28 @@ a loop spec (in goldie, `docs/agents/review-loop.md`), it is authoritative and t
    docs, the size budget, and the dependency brief for each new dependency.
 5. **Security:** run the built-in security review, read it critically, then work through the
    repository's security checklist for whatever the change touches.
-6. **Classify:**
-   - **blocking:** correctness, any security finding, an unmet criterion, a gate failure the PR
-     caused, a failed dependency brief;
-   - **LOW:** everything else.
+6. **Sweep the class:** for each finding, search the whole diff for the same mistake elsewhere (a
+   sibling setting, handler or path) and report all instances as one finding.
+7. **Classify:**
+   - **blocking:** correctness, a MEDIUM or worse security finding, an unmet criterion, a gate
+     failure the PR caused, a failed dependency brief;
+   - **LOW:** everything else, LOW security included.
 
-   LOW findings never justify another round.
-7. **Fix once, own PRs only:** fix the blocking findings, and cheap LOW ones in the same files, when
-   the fix is contained (within scope, no judgement needed, about 150 lines). Use one
+   LOW findings never justify another round: fix them when contained, otherwise list them as
+   follow-ups.
+8. **Fix, own PRs only, in every round:** fix every contained finding of every lens, blocking or LOW
+   (within scope, the fix direction clear, no judgement needed, about 150 lines). Use one
    `fix(review): <class> in <area>` commit per finding, with a regression test. Re-run the gates and
    push with a lease.
    - Never change existing test expectations, dependencies, CI or release config, or gated paths
-     the PR doesn't already touch.
+     the PR doesn't already touch. The one exception: when the gate already needs the maintainer, a
+     decision-record or `NOTICE` fix the finding calls for goes into this PR.
    - Never loosen a guardrail.
-   - There is one self-fix round per PR; after it, hand back.
    - A fresh reviewer checks your fix: never report your own fix as `clean`.
-8. **Findings already on `main`** are kept separate. Fix a contained one that you reproduced, in a
-   second worktree off `origin/main`. Keep MEDIUM+ security fixes local and unpushed. Give class and
-   area, never an exploit.
+9. **Bugs already on `main`** are kept out of this PR, and every one is fixed now, whatever its size:
+   reproduce it, then fix it in a second worktree off `origin/main` as its own found-fix branch. Keep
+   MEDIUM+ security fixes local and unpushed (the loop moves them to the advisory fork). Give class
+   and area, never an exploit. Refactors and hardening ideas are follow-ups, not bugs.
 
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;

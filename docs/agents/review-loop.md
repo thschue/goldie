@@ -1,8 +1,8 @@
 # Review loop
 
 The review loop sits between the [issue-worker loop](./issue-worker-loop.md) and `main`. Each tick it
-reviews ready PRs through **lenses** (security, architecture, UX), fixes blocking findings on own
-PRs once, runs the [gate](./label-contract.md#gates), and arms auto-merge where no human gate
+reviews ready PRs through **lenses** (security, architecture, UX), fixes contained findings on own
+PRs itself, runs the [gate](./label-contract.md#gates), and arms auto-merge where no human gate
 applies. **It is the only loop that merges**, and only through auto-merge, so GitHub still waits for
 the required checks. Shared rules are in the [label contract](./label-contract.md).
 
@@ -51,6 +51,10 @@ The rest (main, `--admin`, leases, containers) is enforced by the
       first.
 
    Skip release and bot PRs, PRs with `needs-info`, `changes-requested` or `in-review`, and drafts.
+   - **Too big to review:** an own PR over about 600 changed lines, not counting tests and generated
+     code, is handed back unreviewed. Post a marker with `reason=changes-requested` whose only rework
+     item is "split", with a proposed slice list; add `changes-requested` and convert to draft. This
+     doesn't count as a hand-back. An external PR gets the slice list as a comment.
    - **Conflicts:** own `DIRTY` or `CONFLICTING` PRs get rebased by their reviewer. An external PR
      gets one polite comment asking for a rebase.
    - **Stacked PRs** (base ≠ `main`) are reviewed base first.
@@ -108,19 +112,24 @@ this:
    - the size budget (about 400 lines) holds;
    - the [dependency brief](./label-contract.md#dependency-brief) is there and verified, for each new
      dependency.
-6. **Classify every finding:**
-   - **blocking:** correctness, any security finding, an unmet criterion, a gate failure the PR
-     caused, a failed dependency brief, or a broken user flow;
-   - **LOW:** everything else, including nits.
+6. **Sweep the class.** For each finding, search the whole diff for the same class of problem (the
+   same mistake in a sibling setting, handler or path) and report every instance as one finding.
+   Finding one instance per round is what makes reviews drag on.
+7. **Classify every finding:**
+   - **blocking:** correctness, a MEDIUM or worse security finding, an unmet criterion, a gate failure
+     the PR caused, a failed dependency brief, or a broken user flow;
+   - **LOW:** everything else, LOW security included, and nits.
 
-   LOW findings never cause a round on their own.
-7. **Self-fix**, security lens on own PRs only, at most one round per PR. Fix the **blocking**
-   findings of every lens, plus LOW findings that are cheap and inside the same files, when the fix is
-   contained:
+   LOW findings never cause a round on their own: they are fixed when contained, or become
+   follow-ups.
+8. **Self-fix**, security lens on own PRs only, in **every** round, the last one included. Fix every
+   **contained** finding of every lens, blocking or LOW:
    - within the PR's scope and the issue's intent;
-   - no product, spec or security judgement needed;
+   - the fix direction is clear from the finding: no product, spec or security judgement needed;
    - about 150 changed lines in total, not counting tests;
-   - the gate result unchanged.
+   - the gate result unchanged, with one exception: when the gate already exits 1 on the reviewed
+     head, a fix the finding needs in the decision record or `NOTICE` goes into this PR, so the
+     maintainer merges once. Agent guardrails, CI, release config and `scripts/` stay off limits.
 
    How to fix:
    - one commit per finding, `fix(review): <class> in <area>`, with a regression test for each
@@ -136,11 +145,11 @@ this:
 
    A partial fix is fine: list the rest for the hand-back. List the LOW findings you didn't fix as
    follow-ups.
-8. **Findings already on `main`:** keep them separate. Fix a contained one only after reproducing it
-   on `origin/main`, in a second worktree branched from there, never from an external diff. Push it
-   as `fix/found-<slug>`, at most 2. For MEDIUM+ security, commit locally and report only the
-   worktree path.
-9. **Report** in prose, then the JSON block
+9. **Bugs already on `main`:** keep them out of this PR, and fix **every** one now, whatever its
+   size, after reproducing it on `origin/main`, in a second worktree branched from there, never from
+   an external diff. Push each as `fix/found-<slug>`. For MEDIUM+ security, commit locally and report
+   only the worktree path; the orchestrator moves it to the advisory fork this tick.
+10. **Report** in prose, then the JSON block
    ([reports](./label-contract.md#reports-and-dry-runs)):
    - `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;
    - the reviewed SHA and the new head;
@@ -194,7 +203,10 @@ Outcomes:
   For a contradiction of an accepted ADR, or a change that needs a new one, the architecture lens
   drafts the ADR. The outcome is then `changes-requested`, with "add the drafted ADR" as the rework.
   Once the ADR is in, the `docs/adr/**` gate sends the PR to the maintainer.
-- **Round cap:** after two hand-backs, the next non-clean outcome is `needs-info reason=round-cap`.
+- **Round cap:** only hand-backs to the worker count, at most two. After the second, the next
+  review still self-fixes what is contained (a delta review follows) and files LOW leftovers as
+  follow-ups; only a blocking finding that isn't contained makes it `needs-info reason=round-cap`.
+  Self-fix rounds are capped at 3 per PR; a fourth would be a hand-back.
 
 ## Severity
 
@@ -207,8 +219,8 @@ Outcomes:
 
 ## Findings on `main`
 
-A pre-existing finding never blocks the PR under review. It's
-[fixed now](./label-contract.md#fix-it-now) rather than filed:
+A pre-existing finding never blocks the PR under review. A bug is
+[fixed now](./label-contract.md#fix-it-now), every one, never filed:
 
 1. Environmental noise is only reported to the user.
 2. Verify the finding on `origin/main` and search for duplicates. If an open item covers it, comment
@@ -229,10 +241,11 @@ A pre-existing finding never blocks the PR under review. It's
    JSON
    ```
 
-   With a contained fix, open the advisory's private fork
-   (`gh api -X POST repos/thschue/goldie/security-advisories/<ghsa_id>/forks`), push the fix there,
-   and open its PR in the fork. The maintainer merges it.
-5. **Not fixable now:** file an issue, starting at `needs-triage`, and say why the fix wasn't made.
+   Open the advisory's private fork
+   (`gh api -X POST repos/thschue/goldie/security-advisories/<ghsa_id>/forks`), push the reviewer's
+   fix there, and open its PR in the fork, in this tick. The maintainer merges it.
+5. **Not a bug** (a refactor, a hardening idea, a nit): if an open issue already covers the same
+   area, add the finding to it as a comment. Otherwise file an issue, starting at `needs-triage`.
    - LOW security: titled `fix(security): <generic class> in <area>`, labelled `security`, with no
      exploit steps.
    - Not security: a Conventional Commit title, with Problem, Evidence and Acceptance sections.
