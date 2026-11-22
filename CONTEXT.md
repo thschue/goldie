@@ -9,7 +9,7 @@ conventions) just in time to humans and agents.
 ## Content
 
 **Item**: one unit of golden-path knowledge, authored as Markdown with frontmatter in a git Source.
-Identified by Kind plus name, so an article and a skill can share a name.
+Identified by Kind plus name, so an article and a skill can share a name. The name is the path-derived slug (for an article, its path under `articles/` without `.md`); for an article the frontmatter `name` is only the display title (ADR 0015).
 
 **Kind**: the type of an Item: `article`, `skill`, `agent`, `loop`, `instruction` (a clause) or
 `decision`. Each Kind has its own layout and frontmatter within a Scope.
