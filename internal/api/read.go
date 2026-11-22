@@ -24,8 +24,12 @@ var badProject = envelope("bad_request", "invalid project",
 	"Pass project as host/org/repo, for example github.com/acme/shop, or list the registered Projects with GET /api/v1/projects.")
 
 // unregisteredHint tells a caller that named a Project this server does not
-// hold that it got the global answer (ADR 0014).
-const unregisteredHint = "The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects."
+// hold that it got the global answer (ADR 0014), and how to register it. The
+// id is already validated as a ProjectId, so it holds no markup or whitespace.
+func unregisteredHint(id string) string {
+	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
+}
 
 // scopeHint validates the optional project parameter. It returns the Project
 // to resolve for, the hint when it is not registered, and false when the
@@ -40,7 +44,7 @@ func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *stri
 	if scope, registered := s.snap.Project(*project); registered {
 		return scope, nil, true
 	}
-	h := unregisteredHint
+	h := unregisteredHint(*project)
 	return "", &h, true
 }
 
