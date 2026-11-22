@@ -76,16 +76,22 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 	m.mux.Handle(method+" "+path, m.guard(path, h))
 }
 
-// guard puts h behind the token when path is under /api/, and adds the Swagger
-// UI Content-Security-Policy when path is under /swagger-ui, 405s included.
+// openPaths are the registered paths the token does not guard yet: the OpenAPI
+// documents. The auth work (#11) covers them and Swagger UI.
+var openPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
+
+// guard adds the Swagger UI Content-Security-Policy when path is under
+// /swagger-ui, 405s included, and leaves the OpenAPI documents open. Every
+// other path, /api/ and any operation the spec adds later, is behind the
+// token: a new route fails closed.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	switch {
-	case path == "/api" || strings.HasPrefix(path, "/api/"):
-		return api.RequireToken(m.token, h)
 	case path == "/swagger-ui" || strings.HasPrefix(path, "/swagger-ui/"):
 		return withCSP(h)
+	case openPaths[path]:
+		return h
 	}
-	return h
+	return api.RequireToken(m.token, h)
 }
 
 // methodNotAllowed answers a method that is not registered for path. The Allow

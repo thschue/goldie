@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -305,6 +307,38 @@ func TestAPIOnlyAnswersGet(t *testing.T) {
 			continue
 		}
 		assertEnvelope(t, body, "method_not_allowed")
+	}
+}
+
+// An operation the spec adds outside /api/ is behind the token until someone
+// opens it on purpose: the router's guard fails closed.
+func TestNewRoutesNeedTheTokenByDefault(t *testing.T) {
+	snap, err := engine.NewDirSource(testContent).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := newPublicMux(snap, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.HandleFunc("GET /v2/future", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	for name, mutate := range map[string]func(*http.Request){"no token": nil, "wrong token": bearer("wrong")} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v2/future", nil)
+		if mutate != nil {
+			mutate(req)
+		}
+		rec := httptest.NewRecorder()
+		m.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: status %d, want 401", name, rec.Code)
+		}
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v2/future", nil)
+	bearer(testToken)(req)
+	rec := httptest.NewRecorder()
+	m.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("with the token: status %d, want 200", rec.Code)
 	}
 }
 
