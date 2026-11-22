@@ -557,6 +557,9 @@ func TestTelemetryHeaderTextNeverReachesOTelLogger(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
+			if strings.Contains(sink.String(), secret) {
+				t.Error("header text reached the otel logger")
+			}
 			if err == nil {
 				_ = tel.Shutdown(context.Background())
 				t.Fatal("a header goldie must refuse was accepted")
@@ -564,10 +567,85 @@ func TestTelemetryHeaderTextNeverReachesOTelLogger(t *testing.T) {
 			if strings.Contains(err.Error(), secret) {
 				t.Error("error echoes header text")
 			}
-			if strings.Contains(sink.String(), secret) {
-				t.Error("header text reached the otel logger")
+		})
+	}
+}
+
+// The exporters get the endpoints goldie validated, with the OTLP path rules:
+// the generic URL is a base for /v1/<signal>, a signal-specific URL is used
+// as-is and wins.
+func TestTelemetryExportersUseTheValidatedEndpoints(t *testing.T) {
+	cases := map[string]struct {
+		env  func(base string) map[string]string
+		want []string
+	}{
+		"generic base URL with a path": {
+			env:  func(b string) map[string]string { return map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": b + "/otlp"} },
+			want: []string{"/otlp/v1/traces", "/otlp/v1/logs"},
+		},
+		"signal-specific URLs are used as-is": {
+			env: func(b string) map[string]string {
+				return map[string]string{
+					"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": b + "/t",
+					"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT":   b,
+				}
+			},
+			want: []string{"/t", "/"},
+		},
+		"signal-specific wins over generic": {
+			env: func(b string) map[string]string {
+				return map[string]string{
+					"OTEL_EXPORTER_OTLP_ENDPOINT":      b + "/base",
+					"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": b + "/logs",
+				}
+			},
+			want: []string{"/base/v1/traces", "/logs"},
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			var mu sync.Mutex
+			paths := map[string]bool{}
+			collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				mu.Lock()
+				paths[r.URL.Path] = true
+				mu.Unlock()
+			}))
+			defer collector.Close()
+			for k, v := range c.env(collector.URL) {
+				t.Setenv(k, v)
+			}
+			tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
+			if err != nil || !tel.Enabled() {
+				t.Fatalf("enabled=%v err=%v", tel.Enabled(), err)
+			}
+			app, _, stop := startTraced(t, tel, &syncBuffer{})
+			get(t, "http://"+app+"/x")
+			stop()
+			mu.Lock()
+			defer mu.Unlock()
+			for _, p := range c.want {
+				if !paths[p] {
+					t.Errorf("collector got nothing on %s (got %v)", p, paths)
+				}
 			}
 		})
+	}
+}
+
+// The SDK parses the endpoint variables itself, untrimmed, and prints a value
+// it rejects to stderr before falling back to its default endpoint. goldie
+// refuses such a value at startup instead, naming the variable only (PC-04).
+func TestTelemetryRefusesEndpointsTheSDKWouldPrint(t *testing.T) {
+	const marker = "collector-marker.invalid"
+	for _, name := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"} {
+		for _, v := range []string{" http://" + marker + ":4318", "http://" + marker + ":4318\n", "http://" + marker + ":4318/\t"} {
+			_, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{name: v}))
+			if err == nil || !strings.Contains(err.Error(), name) || strings.Contains(err.Error(), marker) {
+				t.Errorf("%s=%q: err = %v, want an error naming only the variable", name, v, err)
+			}
+		}
 	}
 }
 

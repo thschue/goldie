@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -151,6 +152,7 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	}
 	on := map[string]bool{}
 	headers := map[string]map[string]string{}
+	endpoints := map[string]string{}
 	for _, s := range signals {
 		exp := strings.ToLower(get(s.exporter))
 		if exp != "" && exp != "otlp" && exp != "none" {
@@ -161,16 +163,25 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 				errs = append(errs, fmt.Errorf("%s: only http/protobuf is supported", name))
 			}
 		}
-		endpoint := false
+		// The generic endpoint is a base URL that gets the signal path; the
+		// signal-specific one is used as-is and wins (OTLP spec). The SDK also
+		// parses the raw value and prints one it rejects, so a value with
+		// surrounding space is refused, not trimmed.
 		for _, name := range []string{envOTLPEndpoint, s.prefix + "ENDPOINT"} {
 			if v := get(name); v != "" {
-				endpoint = true
-				if u, err := url.Parse(v); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				raw, _ := lookup(name)
+				u, err := url.Parse(v)
+				if err != nil || raw != v || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 					errs = append(errs, fmt.Errorf("%s: must be an http or https URL", name))
+					continue
 				}
+				if name == envOTLPEndpoint {
+					u.Path = path.Join(u.Path, "/v1/"+s.name)
+				}
+				endpoints[s.name] = u.String()
 			}
 		}
-		on[s.name] = exp == "otlp" || (exp == "" && endpoint)
+		on[s.name] = exp == "otlp" || (exp == "" && endpoints[s.name] != "")
 		// The SDK parses every one of these variables itself when an
 		// exporter is built, and prints a rejected key or value to the
 		// global OpenTelemetry logger. Validate each one that is set so
@@ -198,6 +209,9 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	)
 	if on["traces"] {
 		opts := []otlptracehttp.Option{}
+		if e := endpoints["traces"]; e != "" {
+			opts = append(opts, otlptracehttp.WithEndpointURL(e))
+		}
 		if h := headers["traces"]; h != nil {
 			opts = append(opts, otlptracehttp.WithHeaders(h))
 		}
@@ -207,6 +221,9 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	}
 	if on["logs"] {
 		opts := []otlploghttp.Option{}
+		if e := endpoints["logs"]; e != "" {
+			opts = append(opts, otlploghttp.WithEndpointURL(e))
+		}
 		if h := headers["logs"]; h != nil {
 			opts = append(opts, otlploghttp.WithHeaders(h))
 		}

@@ -33,9 +33,9 @@ var Settings = []SettingSpec{
 // part of Config; SetupTelemetry validates them. Unset, telemetry is off.
 var TelemetrySettings = []SettingSpec{
 	{"OTEL_SDK_DISABLED", "", "true turns telemetry off even when an endpoint is set."},
-	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https). Setting it, or a signal endpoint, turns on trace and log export."},
-	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", "Collector URL for traces only."},
-	{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "", "Collector URL for logs only."},
+	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export."},
+	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", "Collector URL for traces only, used as-is; wins over the base URL."},
+	{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "", "Collector URL for logs only, used as-is; wins over the base URL."},
 	{"OTEL_EXPORTER_OTLP_PROTOCOL", "", "Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL."},
 	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
 	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
