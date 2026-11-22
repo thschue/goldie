@@ -62,6 +62,24 @@ func TestCheck(t *testing.T) {
 
 // Overlapping templates must resolve to the most specific one on every run,
 // not in Go's random map order.
+func TestSpecDecodesFreshDocuments(t *testing.T) {
+	a, err := Spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a["paths"].(map[string]any); !ok {
+		t.Fatalf("spec has no paths object: %v", a["paths"])
+	}
+	delete(a, "paths")
+	b, err := Spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b["paths"]; !ok {
+		t.Error("Spec shares state between calls; want a fresh document each time")
+	}
+}
+
 func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 	op := func(id string) map[string]any { return map[string]any{"operationId": id} }
 	doc := map[string]any{"paths": map[string]any{

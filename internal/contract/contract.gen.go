@@ -83,7 +83,7 @@ type ErrorEnvelope struct {
 	Error Error `json:"error"`
 }
 
-// ProjectId A Project: exactly three segments `host/org/repo` (ADR 0018). The host
+// ProjectId A Project: exactly three segments `host/org/repo` (ADR 0020). The host
 // is a lower-case DNS name that starts with a letter or digit; the org and
 // the repo use letters, digits, `.`, `_` and `-` and do not start with a
 // dot. Clients send it lower-cased; the server matches it ignoring case.
@@ -166,7 +166,7 @@ type ErrorResponse = ErrorEnvelope
 
 // GetArticleParams defines parameters for GetArticle.
 type GetArticleParams struct {
-	// Project Look the article up for this Project (ADR 0018): its own article
+	// Project Look the article up for this Project (ADR 0020): its own article
 	// wins over the global one with the same id. Matched ignoring case.
 	// An unregistered Project answers the global article with a `hint`; a
 	// value that is not a `ProjectId` is a 400.
@@ -178,7 +178,7 @@ type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
 	Q string `form:"q" json:"q"`
 
-	// Project Resolve for this Project (ADR 0018): its articles come before the
+	// Project Resolve for this Project (ADR 0020): its articles come before the
 	// global ones and win on an equal id. Matched ignoring case. A Project
 	// that is not registered answers the global results with a `hint`; a
 	// value that is not a `ProjectId` is a 400.

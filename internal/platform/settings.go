@@ -25,7 +25,8 @@ var Settings = []SettingSpec{
 	{EnvDrainSeconds, "25", "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
 	{EnvSwaggerUIEnabled, "true", "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
 	{EnvContentDir, "", "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
-	{EnvAPIToken, "", "Required by goldie server. Secret: set it with GOLDIE_API_TOKEN_FILE. The static bearer token that every /api/ request must send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
+	{EnvAPIToken, "", "goldie server needs this or GOLDIE_API_TOKENS, not both. Secret: set it with GOLDIE_API_TOKEN_FILE. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
+	{EnvAPITokens, "", "goldie server needs this or GOLDIE_API_TOKEN, not both. Secret: set it with GOLDIE_API_TOKENS_FILE. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes. Blank lines and lines starting with # are ignored. A bad line stops the server, naming the line number, never the token."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
@@ -57,11 +58,11 @@ const EnvToken = "GOLDIE_TOKEN"
 const EnvProject = "GOLDIE_PROJECT"
 
 // ClientSettings lists the variables the client commands (search, lookup,
-// status, version) read. They are not server configuration: LoadConfig
+// status, version) and goldie mcp --transport stdio read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
-	{EnvAddr, "", "Server URL, http:// or https://, that the client commands talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
-	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup and status send; --token overrides it. status works without it."},
+	{EnvAddr, "", "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
+	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
 	{EnvProject, "", "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it."},
 }
 
@@ -98,7 +99,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
-	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables.\n")
+	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")
+	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR and GOLDIE_TOKEN).\n")
 	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
 	table(&b, ClientSettings)
 	return []byte(b.String())

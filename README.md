@@ -32,6 +32,36 @@ goldie search kubernetes
 goldie lookup platform/deploy
 ```
 
+## MCP over stdio
+
+`goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
+`search_knowledge` and `get_article`. An agent's MCP client starts it as a subprocess. It talks to a
+running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
+(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable. A missing or invalid
+setting stops it at startup with a message on stderr that names the setting. Stdout carries only MCP
+messages; errors go to stderr. It exits when the client closes stdin. There is no local mode yet
+(#10): it needs a server address.
+
+```json
+{"mcpServers": {"goldie": {"command": "goldie", "args": ["mcp", "--transport", "stdio"],
+  "env": {"GOLDIE_ADDR": "http://localhost:8080", "GOLDIE_TOKEN_FILE": "/run/secrets/goldie-token"}}}}
+```
+
+## MCP over HTTP
+
+`goldie server` also serves the same MCP server on its public listener at `/mcp`, over streamable
+HTTP, for agents that connect remotely. Every request needs an API token (`GOLDIE_API_TOKEN` or one
+of `GOLDIE_API_TOKENS`) as `Authorization: Bearer <token>`; without it the answer is the 401
+envelope. The tools call the API inside the process with the caller's token, so the API checks that
+token and no other. The endpoint is stateless and answers with JSON: there are no sessions, no
+standing event stream and no tool-list change notifications (the tool set is fixed), and each
+request must finish within 10 seconds, so connected agents never hold up shutdown.
+
+```json
+{"mcpServers": {"goldie": {"type": "http", "url": "http://localhost:8080/mcp",
+  "headers": {"Authorization": "Bearer ${GOLDIE_TOKEN}"}}}}
+```
+
 ## Origins & credits
 
 Goldie is based on Jessica Andersson's talk at Cloud Native Denmark 2026 and on the

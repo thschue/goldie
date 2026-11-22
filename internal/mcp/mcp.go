@@ -2,12 +2,10 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"unicode"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -38,8 +36,13 @@ type articleInput struct {
 // New returns an MCP server with the tools search_knowledge and get_article.
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
+//
+// The tool set is fixed, so the server advertises tools without listChanged:
+// a client cannot park a request waiting for tool-list changes that never
+// come, and hold up a drain with it.
 func New(client contract.ClientWithResponsesInterface) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version}, nil)
+	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
+		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return search(ctx, client, in.Query), nil, nil
@@ -73,6 +76,12 @@ func search(ctx context.Context, c contract.ClientWithResponsesInterface, q stri
 }
 
 func article(ctx context.Context, c contract.ClientWithResponsesInterface, id string) *sdk.CallToolResult {
+	// An empty or dot-only id would be cleaned out of the article path and
+	// reach another endpoint, so it is refused before any request.
+	if contract.CheckArticleID(id) != nil {
+		return failure(withHint("the article id is empty or made only of dots",
+			"Search for the article with search_knowledge, then use an id from its results."))
+	}
 	resp, err := c.GetArticleWithResponse(ctx, id, nil)
 	if err != nil {
 		return failure(transportError(err))
@@ -103,19 +112,25 @@ func transportError(err error) error {
 	return errors.New("cannot reach the knowledge server: it is not running or its address is wrong")
 }
 
-// apiError carries the envelope's message and hint. The text is untrusted, so
-// it is cleaned; nothing else of the response is passed on.
+// apiError words an error response. contract.DecodeAPIError passes on only
+// the status and the cleaned message and hint of the server's envelope.
 func apiError(resp *http.Response, body []byte) error {
-	status := http.StatusText(resp.StatusCode)
-	var env contract.ErrorEnvelope
-	if json.Unmarshal(body, &env) != nil || env.Error.Message == "" {
-		return fmt.Errorf("the knowledge server answered %d %s", resp.StatusCode, status)
+	e := contract.DecodeAPIError(resp.StatusCode, body)
+	status := http.StatusText(e.Status)
+	if e.Message == "" {
+		return fmt.Errorf("the knowledge server answered %d %s", e.Status, status)
 	}
-	msg := fmt.Sprintf("%s (%d %s)", line(env.Error.Message), resp.StatusCode, status)
-	if h := line(env.Error.Details.Hint); h != "" {
-		msg += "\nHint: " + h
+	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
+	if e.Hint == "" {
+		return errors.New(msg)
 	}
-	return errors.New(msg)
+	return withHint(msg, e.Hint)
+}
+
+// withHint words an error the agent can act on: what went wrong, then the
+// next step.
+func withHint(msg, hint string) error {
+	return errors.New(msg + "\nHint: " + hint)
 }
 
 func list(l []string) string {
@@ -129,30 +144,10 @@ func list(l []string) string {
 	return strings.Join(out, ", ")
 }
 
-// clean drops control characters other than newline and tab, and every format
-// character (Unicode category Cf: bidirectional controls, zero-width
-// characters, the byte-order mark, tag characters), so server text cannot hide
-// or reorder what the agent reads.
-func clean(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\n', r == '\t':
-			return r
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f, unicode.Is(unicode.Cf, r):
-			return -1
-		}
-		return r
-	}, s)
-}
+// clean is contract.CleanText: server text cannot hide or reorder what the
+// agent reads.
+func clean(s string) string { return contract.CleanText(s) }
 
-// line is clean for a single-line field: line breaks become spaces, so a
-// name or message cannot forge extra fields or entries.
-func line(s string) string {
-	return clean(strings.Map(func(r rune) rune {
-		switch r {
-		case '\n', '\t', 0x2028, 0x2029:
-			return ' '
-		}
-		return r
-	}, s))
-}
+// line is contract.CleanLine: a name or message cannot forge extra fields or
+// entries.
+func line(s string) string { return contract.CleanLine(s) }

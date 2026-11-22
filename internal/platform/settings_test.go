@@ -15,6 +15,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		EnvAddr: cfg.Addr, EnvAdminAddr: cfg.AdminAddr, EnvLogLevel: cfg.LogLevel,
 		EnvDrainSeconds: "25",
 		EnvContentDir:   cfg.ContentDir, EnvAPIToken: cfg.APIToken,
+		"GOLDIE_API_TOKENS": cfg.APITokens,
 	}
 	if !cfg.SwaggerUIEnabled {
 		t.Error("Swagger UI must be enabled by default")
@@ -127,5 +128,39 @@ func TestConfigReferenceListsClientSettings(t *testing.T) {
 		if !strings.Contains(ref, want) {
 			t.Errorf("reference lacks %q:\n%s", want, ref)
 		}
+	}
+}
+
+// GOLDIE_API_TOKENS is read from its _FILE form with every line kept and only
+// the trailing newline dropped, and the startup report redacts it.
+func TestAPITokensAreReadFromFileAndRedacted(t *testing.T) {
+	const lines = "ci-reader:reader:reader-token-0123456789abcdef0123456789\n" +
+		"ci-hashed:operator:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	path := t.TempDir() + "/tokens"
+	if err := os.WriteFile(path, []byte(lines+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{"GOLDIE_API_TOKENS_FILE": path}
+	cfg, err := LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APITokens != lines {
+		t.Fatalf("APITokens = %q, want the file's lines without the trailing newline", cfg.APITokens)
+	}
+	var buf syncBuffer
+	cfg.Report(NewLogger(&buf, 0, "server"))
+	for _, secret := range []string{"reader-token-0123456789abcdef0123456789", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"} {
+		if strings.Contains(buf.String(), secret) {
+			t.Errorf("startup report contains a token or digest: %s", buf.String())
+		}
+	}
+	if !strings.Contains(buf.String(), `"GOLDIE_API_TOKENS":"(redacted)"`) {
+		t.Errorf("startup report must redact GOLDIE_API_TOKENS: %s", buf.String())
+	}
+	var unset syncBuffer
+	Config{}.Report(NewLogger(&unset, 0, "server"))
+	if !strings.Contains(unset.String(), `"GOLDIE_API_TOKENS":"(unset)"`) {
+		t.Errorf("startup report must say GOLDIE_API_TOKENS is unset: %s", unset.String())
 	}
 }

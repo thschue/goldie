@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -32,25 +34,186 @@ func CheckToken(token string) error {
 	return nil
 }
 
-// RequireToken lets a request through to next only when it carries
-// "Authorization: Bearer <token>". Anything else is a 401 in the error
-// envelope. The comparison takes the same time for every presented token,
-// whatever its length or content, and the presented value is never logged or
-// echoed. A token that fails CheckToken, empty or too short included, rejects
-// every request, even one that presents it.
+// RequireToken guards next with one operator token, the GOLDIE_API_TOKEN
+// shorthand (see Tokens.Require). A token that fails CheckToken, empty or too
+// short included, rejects every request, even one that presents it.
 func RequireToken(token string, next http.Handler) http.Handler {
-	want := sha256.Sum256([]byte(token))
-	valid := CheckToken(token) == nil
+	tokens, err := OperatorToken(token)
+	if err != nil {
+		tokens = &Tokens{}
+	}
+	return tokens.Require(RoleReader, next)
+}
+
+// Role is what a token may do. Readers search, look up, list and fetch
+// bundles; operators can also trigger syncs and read activity. Each Role
+// includes the ones below it.
+type Role int
+
+// The Roles, lowest first.
+const (
+	RoleReader Role = iota + 1
+	RoleOperator
+)
+
+var roleNames = map[string]Role{"reader": RoleReader, "operator": RoleOperator}
+
+// ShorthandName is the name of the GOLDIE_API_TOKEN shorthand's token.
+const ShorthandName = "api-token"
+
+// maxNameLength bounds a token name, which goes into logs and telemetry.
+const maxNameLength = 64
+
+// hashPrefix marks a hashed entry: the hex SHA-256 digest of the token.
+const hashPrefix = "sha256:"
+
+// Tokens is the set of configured API tokens. It holds each token's name,
+// Role and SHA-256 digest, never a secret. The zero value rejects every
+// request.
+type Tokens struct{ entries []tokenEntry }
+
+type tokenEntry struct {
+	name   string
+	role   Role
+	digest [sha256.Size]byte
+}
+
+// OperatorToken is the set of one operator token named ShorthandName. Its
+// errors are CheckToken's.
+func OperatorToken(secret string) (*Tokens, error) {
+	if err := CheckToken(secret); err != nil {
+		return nil, err
+	}
+	return &Tokens{entries: []tokenEntry{{ShorthandName, RoleOperator, sha256.Sum256([]byte(secret))}}}, nil
+}
+
+// ParseTokens reads token lines: name:role:token, or name:role:sha256:<hex>
+// with the hex SHA-256 digest of the token. Blank lines and lines starting
+// with # are skipped, and a trailing carriage return is dropped. A name is 1
+// to 64 letters, digits, '.', '_' or '-' and is used once; a Role is reader
+// or operator; a plaintext token passes CheckToken; no token appears twice.
+// Errors give the line number but never the line, any part of it, or the
+// token's length.
+func ParseTokens(lines string) (*Tokens, error) {
+	t := &Tokens{}
+	names := map[string]int{}
+	digests := map[[sha256.Size]byte]int{}
+	for i, line := range strings.Split(lines, "\n") {
+		n := i + 1
+		line = strings.TrimSuffix(line, "\r")
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		e, err := parseTokenLine(line)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", n, err)
+		}
+		if prev, dup := names[e.name]; dup {
+			return nil, fmt.Errorf("line %d: the name is already used on line %d", n, prev)
+		}
+		if prev, dup := digests[e.digest]; dup {
+			return nil, fmt.Errorf("line %d: the same token as line %d: give each client its own", n, prev)
+		}
+		names[e.name], digests[e.digest] = n, n
+		t.entries = append(t.entries, e)
+	}
+	if len(t.entries) == 0 {
+		return nil, errors.New("has no token lines")
+	}
+	return t, nil
+}
+
+// parseTokenLine reads one name:role:token or name:role:sha256:<hex> line.
+func parseTokenLine(line string) (tokenEntry, error) {
+	name, rest, ok1 := strings.Cut(line, ":")
+	role, secret, ok2 := strings.Cut(rest, ":")
+	if !ok1 || !ok2 {
+		return tokenEntry{}, errors.New("must be name:role:token or name:role:sha256:<hex>")
+	}
+	if !validName(name) {
+		return tokenEntry{}, fmt.Errorf("the name must be 1 to %d letters, digits, '.', '_' or '-'", maxNameLength)
+	}
+	r, ok := roleNames[role]
+	if !ok {
+		return tokenEntry{}, errors.New("the role must be reader or operator")
+	}
+	e := tokenEntry{name: name, role: r}
+	if hexDigest, hashed := strings.CutPrefix(secret, hashPrefix); hashed {
+		d, err := hex.DecodeString(hexDigest)
+		if err != nil || len(d) != sha256.Size {
+			return tokenEntry{}, errors.New("the hash must be sha256: followed by 64 hex digits")
+		}
+		copy(e.digest[:], d)
+		return e, nil
+	}
+	if secret == "" {
+		return tokenEntry{}, errors.New("the token is empty")
+	}
+	if err := CheckToken(secret); err != nil {
+		return tokenEntry{}, fmt.Errorf("the token %w", err)
+	}
+	e.digest = sha256.Sum256([]byte(secret))
+	return e, nil
+}
+
+// validName reports whether name is 1 to maxNameLength letters, digits, '.',
+// '_' or '-', so that it is safe in logs and telemetry.
+func validName(name string) bool {
+	if name == "" || len(name) > maxNameLength {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if ('a' > c || c > 'z') && ('A' > c || c > 'Z') && ('0' > c || c > '9') && c != '.' && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+type tokenNameKey struct{}
+
+// TokenName is the name of the token that authenticated the request, never
+// its secret. A Require guard sets it on every request it lets through.
+func TokenName(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(tokenNameKey{}).(string)
+	return name, ok
+}
+
+// Require lets a request through to next only when it carries
+// "Authorization: Bearer <token>" with a configured token whose Role is at
+// least minRole, and puts the token's name in the request context
+// (TokenName). A missing or unknown token is a 401 and too low a Role a 403,
+// both in the error envelope. The presented token is hashed and compared with
+// every configured digest in constant time, whatever its length or content,
+// and it is never logged or echoed.
+func (t *Tokens) Require(minRole Role, next http.Handler) http.Handler {
+	var entries []tokenEntry
+	if t != nil {
+		entries = t.entries
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		presented, ok := bearerToken(r.Header.Get("Authorization"))
 		got := sha256.Sum256([]byte(presented))
-		if subtle.ConstantTimeCompare(got[:], want[:]) != 1 || !ok || !valid {
+		match, found := 0, 0
+		for i := range entries {
+			eq := subtle.ConstantTimeCompare(got[:], entries[i].digest[:])
+			match = subtle.ConstantTimeSelect(eq, i, match)
+			found |= eq
+		}
+		if found != 1 || !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="goldie"`)
 			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid API token",
 				"Send the API token in the Authorization header: Bearer <token>.")
 			return
 		}
-		next.ServeHTTP(w, r)
+		e := entries[match]
+		if e.role < minRole {
+			WriteError(w, http.StatusForbidden, "forbidden", "the API token's role does not allow this operation",
+				"Use a token with the operator role.")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tokenNameKey{}, e.name)))
 	})
 }
 

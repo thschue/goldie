@@ -1,0 +1,88 @@
+#!/bin/sh
+# merge-pr: the only way a loop queues a PR for merge (docs/agents/delivery-loop.md).
+#
+#   scripts/merge-pr <pr> <head sha>
+#
+# Refuses unless all of these hold, then marks the PR ready and enables
+# auto-merge, which puts it into the merge queue once the required checks pass:
+#   - the PR is open, targets main, its head is <head sha>, and its author is
+#     the loop account or renovate[bot];
+#   - the latest own review marker is `reason=clean` for <head sha>;
+#   - main's copy of scripts/agent-gate exits 0 on <head sha>, and the marker
+#     names every `review:` reason it prints;
+#   - main's copy of scripts/test-lock passes, with the test-author commits
+#     from the PR's `tests` markers.
+# scripts/loop-guard blocks every other merge command.
+#
+# Exits 0 when queued, 1 when the gate holds the PR (reasons printed), 3 when
+# the test lock fails (violations printed), and 2 on any other refusal or error.
+set -eu
+LC_ALL=C
+export LC_ALL
+
+die() { printf 'merge-pr: %s\n' "$*" >&2; exit 2; }
+
+[ $# -eq 2 ] || die "usage: scripts/merge-pr <pr> <head sha>"
+pr=$1
+sha=$2
+printf '%s\n' "$sha" | grep -Eqx '[0-9a-f]{40}' || die "not a full commit sha: $sha"
+root=$(git rev-parse --show-toplevel) || die "not in a git repository"
+cd "$root"
+
+me=$(gh api user --jq .login) || die "cannot resolve the gh user"
+[ -n "$me" ] && [ "$me" != null ] || die "cannot resolve the gh user"
+view=$(gh pr view "$pr" --json state,baseRefName,headRefOid,headRefName,isDraft,author,comments) ||
+	die "cannot read PR $pr"
+q() { printf '%s' "$view" | jq -L "$root/scripts/lib" -r --arg me "$me" "include \"markers\"; $1"; }
+
+[ "$(q .state)" = OPEN ] || die "PR $pr is not open"
+[ "$(q .baseRefName)" = main ] || die "PR $pr does not target main"
+[ "$(q .headRefOid)" = "$sha" ] || die "PR $pr head moved past $sha; review the new head"
+author=$(q .author.login)
+case "$author" in
+"$me" | app/renovate | renovate | 'renovate[bot]') ;;
+*) die "PR $pr is by $author: an external PR goes to the maintainer" ;;
+esac
+
+marker=$(q 'own_markers($me) | latest("review") | .line // ""')
+[ -n "$marker" ] || die "PR $pr has no review marker"
+[ "$(printf '%s' "$marker" | jq -Rr -L "$root/scripts/lib" 'include "markers"; attr("sha")')" = "$sha" ] ||
+	die "the latest review marker is not for $sha"
+[ "$(printf '%s' "$marker" | jq -Rr -L "$root/scripts/lib" 'include "markers"; attr("reason")')" = clean ] ||
+	die "the latest review marker is not reason=clean"
+review_body=$(q 'own_markers($me) | latest("review") | .body')
+authors=$(q 'own_markers($me) | map(select(.kind == "tests") | (.line | attr("sha") // attr("approved"))) | map(select(. != null)) | .[]')
+
+git fetch -q origin main "$(q .headRefName)" || die "cannot fetch main and the PR branch"
+git cat-file -e "$sha^{commit}" 2>/dev/null || die "commit $sha is not available"
+
+# main's copies, so a PR can't loosen the checks that judge it.
+g=$(mktemp -d) || die "cannot create a temporary directory"
+trap 'rm -rf "$g"' EXIT INT TERM
+for f in scripts/agent-gate scripts/test-lock run; do
+	git show "origin/main:$f" >"$g/${f##*/}" 2>/dev/null || die "origin/main has no $f"
+	chmod +x "$g/${f##*/}"
+done
+
+status=0
+out=$(GATE_RUN="$g/run" GOLDIE_TOOLS="$root/.tools" "$g/agent-gate" origin/main "$sha" 2>&1) || status=$?
+if [ "$status" != 0 ]; then
+	printf '%s\n' "$out"
+	exit 1
+fi
+printf '%s\n' "$out" | sed -n 's/^review: //p' | while IFS= read -r reason; do
+	printf '%s' "$review_body" | grep -qF -- "$reason" ||
+		die "the clean marker does not judge the review reason: $reason"
+done
+
+status=0
+out=$("$g/test-lock" origin/main "$sha" $authors 2>&1) || status=$?
+case "$status" in
+0) ;;
+1) printf '%s\n' "$out"; exit 3 ;;
+*) die "test-lock failed: $out" ;;
+esac
+
+if [ "$(q .isDraft)" = true ]; then gh pr ready "$pr" >/dev/null || die "cannot mark PR $pr ready"; fi
+gh pr merge "$pr" --auto --squash --match-head-commit "$sha" || die "cannot enable auto-merge on PR $pr"
+printf 'merge-pr: PR %s queued at %s\n' "$pr" "$sha"

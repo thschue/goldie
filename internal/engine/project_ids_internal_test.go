@@ -9,7 +9,7 @@ import (
 
 // TestProjectIDTable holds the engine's layout guard to the contract's
 // ProjectId: the engine cannot import the contract, so both read the same
-// table of accepted and rejected ids (ADR 0018).
+// table of accepted and rejected ids (ADR 0020).
 func TestProjectIDTable(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "contract", "testdata", "project_ids.txt"))
 	if err != nil {

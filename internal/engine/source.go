@@ -24,6 +24,10 @@ const projectsDir = "projects"
 // without bound.
 const maxArticleBytes = 1 << 20
 
+// errLoadLimit is what an fs.FS returns, or wraps, once a load runs past its
+// limits on work or content read, for example a treeFS out of budget.
+var errLoadLimit = errors.New("content exceeds the load limits")
+
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
 	// ID is the article's identity: its path under <scope>/articles/ without
@@ -76,7 +80,13 @@ func (s DirSource) Load() (*Snapshot, error) {
 		return nil, errors.New("content directory is not readable")
 	}
 	defer func() { _ = root.Close() }()
-	fsys := root.FS()
+	return loadFS(root.FS())
+}
+
+// loadFS is the loader every Source shares: it reads global/articles/** and
+// projects/<host>/<org>/<repo>/articles/** from fsys into a Snapshot, and names
+// an invalid file relative to the root of fsys.
+func loadFS(fsys fs.FS) (*Snapshot, error) {
 	global, err := loadArticles(fsys, articlesDir, ScopeGlobal)
 	if err != nil {
 		return nil, err
@@ -116,7 +126,7 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 			if dir == projectsDir && errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
-			return fmt.Errorf("%s: cannot read", dir)
+			return fmt.Errorf("%s: %w", dir, readErr(err))
 		}
 		for _, e := range entries {
 			p := dir + "/" + e.Name()
@@ -176,7 +186,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 			if p == dir && errors.Is(err, fs.ErrNotExist) {
 				return fs.SkipAll
 			}
-			return fmt.Errorf("%s: cannot read", p)
+			return fmt.Errorf("%s: %w", p, readErr(err))
 		}
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
@@ -205,17 +215,29 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 func readLimited(fsys fs.FS, p string) ([]byte, error) {
 	f, err := fsys.Open(p)
 	if err != nil {
-		return nil, errors.New("cannot read")
+		return nil, readErr(err)
 	}
 	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(f, maxArticleBytes+1))
 	if err != nil {
-		return nil, errors.New("cannot read")
+		return nil, readErr(err)
 	}
 	if len(raw) > maxArticleBytes {
 		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
 	}
 	return raw, nil
+}
+
+// readErr hides why a read failed, since an OS error can carry an absolute
+// path. It passes through the path-free errors about the content itself (load
+// limits, invalid trees), which the operator needs to fix the Source.
+func readErr(err error) error {
+	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName} {
+		if errors.Is(err, content) {
+			return content
+		}
+	}
+	return errors.New("cannot read")
 }
 
 func parseArticle(id string, raw []byte) (Article, error) {

@@ -64,7 +64,7 @@ func parseProjectIDSchema(spec []byte) (projectIDSchema, error) {
 }
 
 // ValidProjectID reports whether id is a ProjectId, the one definition of the
-// host/org/repo shape (ADR 0018), read from the spec's pattern and maxLength.
+// host/org/repo shape (ADR 0020), read from the spec's pattern and maxLength.
 // The API checks the project parameter with it and the CLI the Project it
 // sends, so neither drifts from the contract. The pattern admits ASCII only,
 // so the byte length is the JSON Schema length.

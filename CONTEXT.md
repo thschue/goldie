@@ -17,7 +17,7 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 **Scope**: where an Item applies. `global` (everyone), `project` (one repository, under
 `projects/<host>/<org>/<repo>/`) or `local` (the repository's own `.goldie/`).
 
-**Project**: one repository, identified as `host/org/repo` (ADR 0018) and matched ignoring case.
+**Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case.
 It is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
 request naming an unregistered Project gets the global answer with a hint.
 
@@ -75,7 +75,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 
 | Module | Package | Responsibility |
 |---|---|---|
-| Engine | `internal/engine` | Items, Kinds, validation, digests, keyword search, Resolution, Sources, Snapshots. Pure, no HTTP. |
+| Engine | `internal/engine` | Items, Kinds, validation, digests, keyword search, Resolution, Sources, Snapshots. Pure: it serves no HTTP and owns no inbound transport (that is the API's job). A Source may still be a client of a remote, for example by cloning a git repository. |
 | API | `internal/api` | HTTP transport over the Engine: handlers, auth, sessions, activity |
 | UI | `internal/ui` | Vue SPA, embedded, talking only to the API |
 | MCP | `internal/mcp` | Talks to the API only through the client |

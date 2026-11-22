@@ -1,0 +1,52 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/thschue/goldie/internal/cli"
+	gmcp "github.com/thschue/goldie/internal/mcp"
+)
+
+// MCPUsage is the one-line usage of the mcp role, without the program name.
+const MCPUsage = "mcp --transport stdio [--addr URL] [--token TOKEN]"
+
+// errTransport is the usage error for a missing or unknown --transport. The
+// value given is never echoed: it may hold control characters.
+var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + MCPUsage)
+
+// RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
+// the API as a client with the CLI's client settings from args and env. It
+// returns nil when the client ends the session by closing in, and when ctx is
+// cancelled. Settings are checked before the first message, so a bad one
+// fails at startup. Nothing but MCP messages is ever written to out.
+func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	transport := fs.String("transport", "", "the MCP transport: stdio")
+	settings := cli.BindClientFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		// flag's message echoes the argument, which may hold control characters.
+		return errors.New("unknown flag, or a flag without its value\nusage: goldie " + MCPUsage)
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: goldie " + MCPUsage)
+	}
+	if *transport != "stdio" {
+		return errTransport
+	}
+	client, err := settings.Client(env)
+	if err != nil {
+		return fmt.Errorf("invalid client settings: %w", err)
+	}
+	err = gmcp.New(client).Run(ctx, &sdk.IOTransport{Reader: in, Writer: out})
+	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
+}

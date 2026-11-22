@@ -1,5 +1,5 @@
 # Project ids in their canonical, lower-case form: "ok <id>" or "bad <id>".
-# The ProjectId schema in openapi.yaml is the definition (ADR 0018):
+# The ProjectId schema in openapi.yaml is the definition (ADR 0020):
 # contract.ValidProjectID, which the API and the CLI call, and the engine's
 # layout guard validProjectSegment must agree with it on every line. Only
 # lower-case ids belong here: the schema and the engine also accept upper case

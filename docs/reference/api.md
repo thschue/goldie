@@ -136,7 +136,7 @@ The body of every error response.
 
 ### `ProjectId`
 
-A Project: exactly three segments `host/org/repo` (ADR 0018). The host
+A Project: exactly three segments `host/org/repo` (ADR 0020). The host
 is a lower-case DNS name that starts with a letter or digit; the org and
 the repo use letters, digits, `.`, `_` and `-` and do not start with a
 dot. Clients send it lower-cased; the server matches it ignoring case.

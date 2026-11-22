@@ -1,98 +1,71 @@
 #!/bin/sh
-# loop-poll: the cheap first step of every loop tick (docs/agents/label-contract.md).
+# loop-poll: the cheap first step of every loop tick (docs/agents/README.md).
 #
-#   scripts/loop-poll <issue-worker|review|pm-audit>
+#   scripts/loop-poll <deliver|product>
 #
 # Prints one line:
-#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> [triage=<n>] [locked=<n> stale=<n>] fingerprint=<hash>
-# main is the state of the `ci` workflow on the head of main (red stops the
-# line). work counts what the loop could act on now; 0 lets the tick end
-# without further reasoning. pm-audit compares the fingerprint (main, open
-# issues, open PR heads and labels) with its ledger instead, and also gets
-# triage=<open needs-triage issues>. review and pm-audit get the `in-review`
-# locks: stale counts locks whose review is finished (the latest own marker is
-# for the head and newer than the lock) or that are older than 30 min.
-# Read-only.
+#   deliver: main=<state> red=<workflows> streams=<n>/2 renovate=<n> frontier=<n> work=<n> fingerprint=<hash>
+#   product: main=<state> red=<workflows> triage=<n> decisions=<n> buffer=<n> wip=<n> fingerprint=<hash>
+# main is the `ci` workflow on the head of main (green, red, pending, unknown;
+# red stops the line); red lists other failed workflows there. For deliver,
+# streams counts this session's open PRs ($GOLDIE_SESSION, default: the short
+# host name) without a final review marker for their head, renovate the
+# unreviewed Renovate PRs, and work what the tick can act on (0 ends it).
+# For product, decisions counts PRs waiting on a PM decision, buffer the
+# claimable issues, and wip the issues in progress. Read-only.
 set -eu
 
 die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
-[ $# -eq 1 ] || die "usage: scripts/loop-poll <issue-worker|review|pm-audit>"
+[ $# -eq 1 ] || die "usage: scripts/loop-poll <deliver|product>"
 loop=$1
+lib="$(cd "$(dirname "$0")" && pwd)/lib"
+session=${GOLDIE_SESSION:-$(hostname -s)}
 
+me=$(gh api user --jq .login) || die "cannot resolve the gh user"
 main_sha=$(gh api 'repos/{owner}/{repo}/commits/main' --jq .sha) || die "cannot read main"
-
-# Latest run of each workflow on main's head.
 runs=$(gh run list --branch main --limit 30 --json workflowName,headSha,status,conclusion \
 	--jq "[.[] | select(.headSha == \"$main_sha\")] | group_by(.workflowName) | map(.[0])") ||
 	die "cannot list workflow runs"
 main=$(printf '%s' "$runs" | jq -r '
 	(map(select(.workflowName == "ci")) | .[0]) as $ci
-	| if $ci == null then "unknown"
-	  elif $ci.status != "completed" then "pending"
-	  elif $ci.conclusion == "success" then "green"
-	  else "red" end')
+	| if $ci == null then "unknown" elif $ci.status != "completed" then "pending"
+	  elif $ci.conclusion == "success" then "green" else "red" end')
 red=$(printf '%s' "$runs" | jq -r '
 	[.[] | select(.workflowName != "ci" and .status == "completed"
-		and (.conclusion == "failure" or .conclusion == "timed_out"))
-		| .workflowName] | if length == 0 then "-" else join(",") end')
+		and (.conclusion == "failure" or .conclusion == "timed_out")) | .workflowName]
+	| if length == 0 then "-" else join(",") end')
 
-# locks: print " locked=<n> stale=<n>" for the PRs labelled in-review.
-locks() {
-	me=$(gh api user --jq .login) || die "cannot resolve the gh user"
-	now=$(date -u +%s)
-	n=0
-	stale=0
-	for pr in $(gh pr list --label in-review --json number --jq '.[].number') ; do
-		n=$((n + 1))
-		head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || die "cannot read PR $pr"
-		locked_at=$(gh api --paginate "repos/{owner}/{repo}/issues/$pr/timeline" --jq \
-			'.[] | select(.event == "labeled" and .label.name == "in-review") | .created_at' | tail -n 1) ||
-			die "cannot read the timeline of PR $pr"
-		marker=$(gh api --paginate "repos/{owner}/{repo}/issues/$pr/comments" --jq \
-			".[] | select(.user.login == \"$me\" and (.body | test(\"<!-- goldie-loop:review \")))
-				| \"\\(.created_at) \\(.body | capture(\"<!-- goldie-loop:review (?<m>[^>]*)-->\").m)\"" | tail -n 1) ||
-			die "cannot read the comments of PR $pr"
-		state=$(jq -rn --arg locked "$locked_at" --arg marker "$marker" --arg head "$head" --argjson now "$now" '
-			($marker | split(" ")) as $m
-			| ($m[1:] | map(select(test("^(sha|fixed)=")) | sub("^[a-z]+="; ""))) as $shas
-			| if $locked == "" then "stale"
-			  elif $marker != "" and $m[0] > $locked and ($shas | index($head)) then "stale"
-			  elif $now - ($locked | fromdateiso8601) > 1800 then "stale"
-			  else "live" end') || die "cannot judge the lock on PR $pr"
-		if [ "$state" = stale ]; then stale=$((stale + 1)); fi
-	done
-	printf ' locked=%s stale=%s' "$n" "$stale"
+prs=$(gh pr list --state open --limit 200 --json number,headRefOid,headRefName,labels,author,comments) ||
+	die "cannot list PRs"
+frontier=$(gh issue list --state open --label ready-for-agent --limit 500 \
+	--search 'no:assignee -label:in-progress -label:epic -is:blocked' --json number --jq length) ||
+	die "cannot list the frontier"
+# pr_count <jq filter on one PR with $m = its own markers>: how many open PRs match.
+pr_count() {
+	printf '%s' "$prs" | jq -L "$lib" --arg me "$me" --arg session "$session" \
+		"include \"markers\"; [.[] | own_markers(\$me) as \$m | select($1)] | length"
 }
-
 case "$loop" in
-issue-worker)
-	rework=$(gh pr list --author @me --label changes-requested --json number,labels \
-		--jq '[.[] | select([.labels[].name] | index("needs-info") | not)] | length')
-	inflight=$(gh issue list --label in-progress --json number --jq length)
-	frontier=$(gh issue list --label ready-for-agent --search 'no:assignee -label:in-progress -label:epic' \
-		--json number --jq length)
-	work=$((rework + inflight + frontier))
+deliver)
+	streams=$(pr_count '.author.login == $me
+		and ($m | latest("claim") | .line // "" | attr("session")) == $session
+		and ([.labels[].name] | index("needs-info") | not)
+		and (($m | latest("review") | .line // "" | attr("sha")) != .headRefOid)')
+	renovate=$(pr_count '(.author.login | test("renovate"))
+		and (($m | latest("review") | .line // "" | attr("sha")) != .headRefOid)')
+	claimable=0
+	[ "$streams" -ge 2 ] || claimable=$frontier
+	work=$((streams + renovate + claimable))
+	extra="streams=$streams/2 renovate=$renovate frontier=$frontier work=$work"
 	;;
-review)
-	# Ready PRs that aren't parked, handed back, held or already armed, plus
-	# armed PRs that need the tick: a head committed after arming (drift) or
-	# a failed check on the head (red after arming).
-	work=$(gh pr list --json number,isDraft,labels,headRefName,autoMergeRequest,author,statusCheckRollup,commits --jq '
-		[.[] | select(.isDraft | not)
-			| select(.headRefName | startswith("release-please--") | not)
-			| select(.author.is_bot | not)
-			| select(.autoMergeRequest == null
-				or ((.commits | last | .committedDate) > .autoMergeRequest.enabledAt)
-				or ([.statusCheckRollup[]? | (.conclusion // .state)] | index("FAILURE")))
-			| select([.labels[].name] | (index("needs-info") or index("changes-requested") or index("needs-maintainer")) | not)
-		] | length')
-	extra=$(locks)
-	;;
-pm-audit)
-	work=-
+product)
 	triage=$(gh issue list --state open --label needs-triage --limit 500 --json number --jq length) ||
 		die "cannot count needs-triage issues"
-	extra=" triage=$triage$(locks)"
+	decisions=$(pr_count '([.labels[].name] | index("needs-info"))
+		and (($m | latest("review") | .line // "" | attr("reason")) == "decision")')
+	wip=$(gh issue list --state open --label in-progress --limit 500 --json number --jq length) ||
+		die "cannot count issues in progress"
+	extra="triage=$triage decisions=$decisions buffer=$frontier wip=$wip"
 	;;
 *) die "unknown loop: $loop" ;;
 esac
@@ -101,9 +74,8 @@ fingerprint=$(
 	{
 		printf '%s\n' "$main_sha"
 		gh issue list --state open --limit 500 --json number,updatedAt --jq '.[] | "\(.number) \(.updatedAt)"'
-		gh pr list --state open --limit 200 --json number,headRefOid,labels \
-			--jq '.[] | "\(.number) \(.headRefOid) \([.labels[].name] | sort | join(","))"'
+		printf '%s' "$prs" | jq -r '.[] | "\(.number) \(.headRefOid) \([.labels[].name] | sort | join(","))"'
 	} | git hash-object --stdin
 ) || die "cannot compute the fingerprint"
 
-printf 'main=%s red=%s work=%s%s fingerprint=%s\n' "$main" "$red" "$work" "${extra-}" "$fingerprint"
+printf 'main=%s red=%s %s fingerprint=%s\n' "$main" "$red" "$extra" "$fingerprint"

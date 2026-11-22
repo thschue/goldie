@@ -8,14 +8,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
 )
 
 // printJSON prints v as indented JSON. encoding/json escapes C0 controls but
-// passes DEL, C1 and bidi controls through, so those are escaped too; they can
-// only occur inside strings, where \uXXXX keeps the value.
+// passes DEL, C1 and format characters through, so those are escaped too;
+// they can only occur inside strings, where \uXXXX keeps the value. A rune
+// outside the Basic Multilingual Plane, such as a tag character, is written
+// as its UTF-16 surrogate pair, as JSON requires.
 func (c *commander) printJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -23,10 +26,14 @@ func (c *commander) printJSON(v any) error {
 	}
 	var out strings.Builder
 	for _, r := range string(b) {
-		if r >= 0x7f && unsafe(r) {
-			fmt.Fprintf(&out, `\u%04x`, r)
-		} else {
+		switch {
+		case r < 0x7f || !contract.UnsafeRune(r):
 			out.WriteRune(r)
+		case r > 0xffff:
+			hi, lo := utf16.EncodeRune(r)
+			fmt.Fprintf(&out, `\u%04x\u%04x`, hi, lo)
+		default:
+			fmt.Fprintf(&out, `\u%04x`, r)
 		}
 	}
 	_, err = fmt.Fprintf(c.out, "%s\n", out.String())
@@ -51,15 +58,15 @@ func (c *commander) search(ctx context.Context, q string) error {
 	var b strings.Builder
 	hits := resp.JSON200.Results
 	if len(hits) == 0 {
-		fmt.Fprintf(&b, "No articles match %q.\n\n", cleanLine(q))
+		fmt.Fprintf(&b, "No articles match %q.\n\n", contract.CleanLine(q))
 	} else {
 		noun := "articles"
 		if len(hits) == 1 {
 			noun = "article"
 		}
-		fmt.Fprintf(&b, "%d %s for %q, best first:\n\n", len(hits), noun, cleanLine(q))
+		fmt.Fprintf(&b, "%d %s for %q, best first:\n\n", len(hits), noun, contract.CleanLine(q))
 		for _, h := range hits {
-			fmt.Fprintf(&b, "  %s  %s\n", cleanLine(h.Id), cleanLine(h.Name))
+			fmt.Fprintf(&b, "  %s  %s\n", contract.CleanLine(h.Id), contract.CleanLine(h.Name))
 			fmt.Fprintf(&b, "    score %d, matched: %s\n", h.Score, cleanList(h.Matched))
 			fmt.Fprintf(&b, "    keywords: %s\n", cleanList(h.Keywords))
 		}
@@ -87,7 +94,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	}
 	a := resp.JSON200
 	_, err = fmt.Fprintf(c.out, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
-		cleanLine(a.Name), cleanLine(a.Id), cleanList(a.Keywords), strings.TrimRight(clean(a.Content), "\n"))
+		contract.CleanLine(a.Name), contract.CleanLine(a.Id), cleanList(a.Keywords), strings.TrimRight(contract.CleanText(a.Content), "\n"))
 	return err
 }
 
@@ -143,7 +150,7 @@ func (c *commander) status(ctx context.Context) error {
 		return c.printJSON(out)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		cleanLine(title), cleanLine(apiVersion), auth, project.describe())
+		contract.CleanLine(title), contract.CleanLine(apiVersion), auth, project.describe())
 	return err
 }
 
@@ -168,7 +175,7 @@ func (c *commander) version(ctx context.Context) error {
 		if doc, err := cl.GetOpenAPIJSONWithResponse(ctx); err == nil && doc.JSON200 != nil {
 			_, apiVersion := specInfo(*doc.JSON200)
 			info["serverApiVersion"] = apiVersion
-			line += "\nserver API: " + cleanLine(apiVersion)
+			line += "\nserver API: " + contract.CleanLine(apiVersion)
 		}
 	}
 	if c.s.json {
@@ -195,57 +202,19 @@ func transportError(err error) error {
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
 
-// apiError turns an error response into an error that carries the envelope's
-// message and hint. The server's text is untrusted, so it is cleaned.
+// apiError words an error response. contract.DecodeAPIError passes on only
+// the status and the cleaned message and hint of the server's envelope.
 func apiError(resp *http.Response, body []byte) error {
-	status := http.StatusText(resp.StatusCode)
-	var env contract.ErrorEnvelope
-	if json.Unmarshal(body, &env) != nil || env.Error.Message == "" {
-		return fmt.Errorf("the server answered %d %s", resp.StatusCode, status)
+	e := contract.DecodeAPIError(resp.StatusCode, body)
+	status := http.StatusText(e.Status)
+	if e.Message == "" {
+		return fmt.Errorf("the server answered %d %s", e.Status, status)
 	}
-	msg := fmt.Sprintf("%s (%d %s)", cleanLine(env.Error.Message), resp.StatusCode, status)
-	if h := cleanLine(env.Error.Details.Hint); h != "" {
-		msg += "\nHint: " + h
+	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
+	if e.Hint != "" {
+		msg += "\nHint: " + e.Hint
 	}
 	return errors.New(msg)
-}
-
-// unsafe reports the runes that can drive or spoof a terminal: C0 and C1
-// controls, DEL and the bidirectional formatting characters.
-func unsafe(r rune) bool {
-	switch {
-	case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
-		return true
-	case r == 0x061c, r == 0x200e, r == 0x200f, r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
-		return true
-	}
-	return false
-}
-
-// clean removes unsafe runes other than newline and tab, so content from a
-// Source cannot drive the terminal with escape sequences. It is for text that
-// may span lines, such as an article's content.
-func clean(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || !unsafe(r) {
-			return r
-		}
-		return -1
-	}, s)
-}
-
-// cleanLine is clean for a single-line field: line breaks and tabs become
-// spaces, so server text cannot forge extra output lines.
-func cleanLine(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\n', r == '\t', r == 0x2028, r == 0x2029:
-			return ' '
-		case unsafe(r):
-			return -1
-		}
-		return r
-	}, s)
 }
 
 func cleanList(l []string) string {
@@ -254,7 +223,7 @@ func cleanList(l []string) string {
 	}
 	out := make([]string, len(l))
 	for i, s := range l {
-		out[i] = cleanLine(s)
+		out[i] = contract.CleanLine(s)
 	}
 	return strings.Join(out, ", ")
 }

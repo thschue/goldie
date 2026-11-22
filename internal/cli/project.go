@@ -74,7 +74,7 @@ func normaliseConfigured(v string) (string, error) {
 	}
 	// Anything that looks like a URL or carries userinfo but cannot be read is
 	// refused without echoing it: it may hold a credential.
-	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, unsafe) {
+	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, contract.UnsafeRune) {
 		return "", errors.New("the Project is not a host/org/repo name or a git remote URL")
 	}
 	// A plain host/org/repo gets the same shape as a detected one.
@@ -86,7 +86,7 @@ func normaliseConfigured(v string) (string, error) {
 }
 
 // Every Project the CLI sends passes contract.ValidProjectID, the ProjectId
-// schema of the spec (ADR 0018), after lower-casing. It keeps nested groups,
+// schema of the spec (ADR 0020), after lower-casing. It keeps nested groups,
 // '..', percent escapes, query and fragment characters and other path syntax
 // from a hostile remote out of the Project, and the server accepts what it
 // passes.
@@ -355,5 +355,5 @@ func (p detectedProject) describe() string {
 	if p.ID == "" {
 		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"
 	}
-	return fmt.Sprintf("%s (from %s)", cleanLine(p.ID), p.Source)
+	return fmt.Sprintf("%s (from %s)", contract.CleanLine(p.ID), p.Source)
 }
