@@ -41,6 +41,10 @@ type Config struct {
 	RateLimit     RateLimit // the per-token request limit, default applied (ParseRateLimit)
 	rateLimitText string    // RateLimit as written, for the startup report
 
+	// SetupTelemetry owns GOLDIE_TELEMETRY_CLIENT_INFO and fails startup on a
+	// bad value; this copy is only for the startup report.
+	telemetryClientInfo bool
+
 	// The server role validates these at startup; health does not need them.
 	ContentDir string // root of the dir Source
 	APIToken   string // the shorthand for one operator token; secret
@@ -94,6 +98,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	} else {
 		cfg.RateLimit = l
 	}
+	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
 	case "true":
@@ -136,25 +141,46 @@ func Setting(lookup Lookup, readFile func(string) ([]byte, error), name string) 
 	return val, nil
 }
 
-// Report logs the effective configuration once at startup (PC-06). Secret
-// settings are redacted: only whether they are set is logged.
+// Report logs the effective configuration once at startup (PC-06): every
+// Settings row, in registry order. A row marked Secret is redacted by that
+// flag alone: only whether it is set is logged.
 func (c Config) Report(l *slog.Logger) {
-	l.Info("config",
-		EnvAddr, c.Addr,
-		EnvAdminAddr, c.AdminAddr,
-		EnvLogLevel, c.LogLevel,
-		EnvDrainSeconds, int(c.DrainTimeout/time.Second),
-		EnvSwaggerUIEnabled, c.SwaggerUIEnabled,
-		EnvContentDir, c.ContentDir,
-		EnvAPIToken, redacted(c.APIToken),
-		EnvAPITokens, redacted(c.APITokens),
-		EnvRateLimit, c.rateLimitText,
-	)
+	values := c.effective()
+	args := make([]any, 0, 2*len(Settings))
+	for _, s := range Settings {
+		v, ok := values[s.Name]
+		if !ok {
+			panic("platform: setting " + s.Name + " has no value in Config.effective")
+		}
+		if s.Secret {
+			v = redacted(v)
+		}
+		args = append(args, s.Name, v)
+	}
+	l.Info("config", args...)
 }
 
-// redacted stands in for a secret value in logs.
-func redacted(secret string) string {
-	if secret == "" {
+// effective maps each Settings row to the value the startup report shows,
+// before redaction.
+func (c Config) effective() map[string]any {
+	return map[string]any{
+		EnvAddr:                c.Addr,
+		EnvAdminAddr:           c.AdminAddr,
+		EnvLogLevel:            c.LogLevel,
+		EnvDrainSeconds:        int(c.DrainTimeout / time.Second),
+		EnvSwaggerUIEnabled:    c.SwaggerUIEnabled,
+		EnvContentDir:          c.ContentDir,
+		EnvAPIToken:            c.APIToken,
+		EnvAPITokens:           c.APITokens,
+		EnvRateLimit:           c.rateLimitText,
+		EnvTelemetryClientInfo: c.telemetryClientInfo,
+	}
+}
+
+// redacted stands in for a secret value in logs. Anything but a non-empty
+// string counts as set, so the value itself never reaches the log.
+func redacted(secret any) string {
+	if s, ok := secret.(string); ok && s == "" {
 		return "(unset)"
 	}
 	return "(redacted)"
