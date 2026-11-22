@@ -105,9 +105,10 @@ func newGitHTTPClient() transport.Transport {
 }
 
 // sshDialScheme names the dialer through which every ssh connection of a Load
-// goes. go-git dials ssh with no context and leaves the connection without a
-// deadline, so a server that stalls in the handshake would hold the Load past
-// its bound; its proxy hook is the only place that sees the connection.
+// goes. go-git dials ssh with its own background context, not the Load's, and
+// leaves the connection without a deadline, so a server that stalls in the
+// handshake would hold the Load past its bound; its proxy hook is the only
+// place that sees the connection.
 const sshDialScheme = "goldie-ssh-load"
 
 var (
@@ -208,10 +209,6 @@ type budgetStorage struct {
 	*memory.Storage
 	b   *gitBudget
 	ctx context.Context
-}
-
-func newBudgetStorage(b *gitBudget) budgetStorage {
-	return newLoadStorage(context.Background(), b)
 }
 
 // newLoadStorage is a budgetStorage that stops unpacking when the Load's ctx
