@@ -194,6 +194,30 @@ func TestTelemetryRejectsBadSamplerAndLimits(t *testing.T) {
 	}
 }
 
+// Each sampler maps to the SDK sampler of the same name, and a ratio sampler
+// without an argument samples everything.
+func TestParseTraceSettingsSamplers(t *testing.T) {
+	for _, c := range []struct {
+		sampler, arg string
+		want         sdktrace.Sampler
+	}{
+		{"traceidratio", "0.5", sdktrace.TraceIDRatioBased(0.5)},
+		{"traceidratio", "", sdktrace.TraceIDRatioBased(1)},
+		{"parentbased_traceidratio", "", sdktrace.ParentBased(sdktrace.TraceIDRatioBased(1))},
+		{"always_on", "", sdktrace.AlwaysSample()},
+		{"always_off", "", sdktrace.NeverSample()},
+		{"parentbased_always_off", "", sdktrace.ParentBased(sdktrace.NeverSample())},
+		{"PARENTBASED_ALWAYS_ON", "", sdktrace.ParentBased(sdktrace.AlwaysSample())},
+	} {
+		ts, err := parseTraceSettings(func(k string) string {
+			return map[string]string{"OTEL_TRACES_SAMPLER": c.sampler, "OTEL_TRACES_SAMPLER_ARG": c.arg}[k]
+		})
+		if err != nil || ts.sampler.Description() != c.want.Description() {
+			t.Errorf("%s/%q: got %v err=%v, want %s", c.sampler, c.arg, ts.sampler, err, c.want.Description())
+		}
+	}
+}
+
 // The configuration reference says the span attribute cap falls back to the
 // generic OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT, and the span-specific name wins.
 func TestTraceSettingsValueLengthFallback(t *testing.T) {
