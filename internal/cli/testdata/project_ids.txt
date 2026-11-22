@@ -1,0 +1,27 @@
+# Project ids in their canonical, lower-case form: "ok <id>" or "bad <id>".
+# validProjectID in internal/cli mirrors validProjectSegment in
+# internal/engine/source.go; both must agree on every line. Only lower-case ids
+# belong here: the engine also accepts upper case in org and repo, the CLI
+# lower-cases first. The id is everything after the first space.
+ok github.com/acme/widgets
+ok gitlab.example.com/org_1/re-po.v2
+ok h/a/b
+ok h-1.example/a/b..c
+ok 0.example/-a/_b
+bad github.com/acme
+bad github.com/acme/widgets/extra
+bad .github.com/acme/widgets
+bad github.com/.acme/widgets
+bad github.com/acme/.widgets
+bad github.com/../widgets
+bad gh_x.example/acme/widgets
+bad github.com/acme/wid%2fgets
+bad github.com/acme/wid?gets
+bad github.com/acme/wid#gets
+bad github.com/acme/wid:gets
+bad github.com/acme/wid@gets
+bad github.com/ac me/widgets
+bad github.com/acme/widgéts
+bad github.com//widgets
+bad /acme/widgets
+bad github.com/acme/
