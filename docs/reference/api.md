@@ -10,8 +10,7 @@ the Go and TypeScript types are generated from it, and it is served by the
 server itself at `/openapi.yaml` and `/openapi.json`.
 
 The admin endpoints (`/livez`, `/readyz`, `/version`) are served on the
-separate admin port and are not part of this document. `/version` is also
-answered on the public listener; it is documented with the admin endpoints.
+separate admin port and are not part of this document.
 
 ## Endpoints
 

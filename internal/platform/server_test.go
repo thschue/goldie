@@ -106,12 +106,13 @@ func get(t *testing.T, url string) (int, string) {
 
 func TestPC01AdminPortIsSeparate(t *testing.T) {
 	s := start(t, 0, nil)
-	for _, p := range []string{"/livez", "/readyz"} {
+	for _, p := range []string{"/livez", "/readyz", "/version"} {
 		if code, _ := get(t, "http://"+s.admin+p); code != 200 {
 			t.Errorf("admin %s = %d, want 200", p, code)
 		}
-		if code, _ := get(t, "http://"+s.app+p); code != 404 {
-			t.Errorf("app %s = %d, want 404: probes must not be public", p, code)
+		code, body := get(t, "http://"+s.app+p)
+		if code != 404 || !strings.Contains(body, `"not_found"`) {
+			t.Errorf("app %s = %d %s, want the 404 not_found envelope: probes and version must not be public", p, code, body)
 		}
 	}
 }
@@ -177,13 +178,13 @@ func TestPC01IdleConnectionsAreClosed(t *testing.T) {
 	idleTimeout = 200 * time.Millisecond
 	t.Cleanup(func() { idleTimeout = old })
 	s := start(t, 0, nil)
-	for _, addr := range []string{s.admin, s.app} {
+	for addr, path := range map[string]string{s.admin: "/version", s.app: "/nothing"} {
 		conn, err := net.Dial("tcp", addr)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer func() { _ = conn.Close() }()
-		if _, err := io.WriteString(conn, "GET /version HTTP/1.1\r\nHost: x\r\n\r\n"); err != nil {
+		if _, err := io.WriteString(conn, "GET "+path+" HTTP/1.1\r\nHost: x\r\n\r\n"); err != nil {
 			t.Fatal(err)
 		}
 		br := bufio.NewReader(conn)
@@ -202,7 +203,7 @@ func TestPC01IdleConnectionsAreClosed(t *testing.T) {
 
 func TestPC03Version(t *testing.T) {
 	s := start(t, 0, nil)
-	for _, base := range []string{s.admin, s.app} {
+	for _, base := range []string{s.admin} {
 		code, body := get(t, "http://"+base+"/version")
 		if code != 200 {
 			t.Fatalf("%s/version = %d", base, code)
@@ -422,7 +423,7 @@ func TestPC08DrainFailsReadinessThenFinishesInFlight(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop")
 	}
-	if _, err := http.Get("http://" + s.app + "/version"); err == nil { //nolint:gosec // loopback
+	if _, err := http.Get("http://" + s.app + "/livez"); err == nil { //nolint:gosec // loopback
 		t.Fatal("app port still accepting after shutdown")
 	}
 }
