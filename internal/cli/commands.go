@@ -88,6 +88,9 @@ func (c *commander) search(ctx context.Context, q string) error {
 }
 
 func (c *commander) lookup(ctx context.Context, id string) error {
+	if dotOnly(id) {
+		return errors.New("lookup needs an article id, not an empty or dot-only one\nHint: find ids with: goldie search <words>")
+	}
 	project, err := c.project()
 	if err != nil {
 		return err
@@ -391,4 +394,11 @@ func cleanList(l []string) string {
 		out[i] = contract.CleanLine(s)
 	}
 	return strings.Join(out, ", ")
+}
+
+// dotOnly reports whether id is empty or only dots. Such an id would be
+// resolved by the URL path ("." and ".." collapse) into a different API route,
+// so it is refused before any Project, client or HTTP step.
+func dotOnly(id string) bool {
+	return strings.Trim(id, ".") == ""
 }
