@@ -45,6 +45,10 @@ type Telemetry struct {
 	endpoints map[string]string
 	notice    *sdkNotice
 
+	// clientInfo puts the peer IP and user agent on server spans
+	// (GOLDIE_TELEMETRY_CLIENT_INFO).
+	clientInfo bool
+
 	once sync.Once
 	err  error
 }
@@ -248,6 +252,10 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		}
 		return strings.TrimSpace(v)
 	}
+	clientInfo, err := clientInfoEnabled(lookup)
+	if err != nil {
+		errs = append(errs, err)
+	}
 	if v := strings.ToLower(get(envOTelDisabled)); v != "" && v != "true" && v != "false" {
 		errs = append(errs, fmt.Errorf("%s: must be true or false", envOTelDisabled))
 	} else if v == "true" {
@@ -352,6 +360,7 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	}
 	t := newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs)
 	t.notice = notice
+	t.clientInfo = clientInfo
 	for _, name := range t.signals() {
 		t.endpoints[name] = redactEndpoint(otlpEndpoint(endpoints, name))
 	}
@@ -552,12 +561,17 @@ func (t *Telemetry) WrapHandler(h http.Handler) http.Handler {
 	if t == nil || t.tp == nil {
 		return h
 	}
-	return otelhttp.NewHandler(h, "goldie",
+	traced := otelhttp.NewHandler(restoreRequest(h), "goldie",
 		otelhttp.WithTracerProvider(t.tp),
 		otelhttp.WithPropagators(propagation.TraceContext{}),
 		otelhttp.WithPublicEndpointFn(func(*http.Request) bool { return true }),
 		otelhttp.WithSpanNameFormatter(spanName),
 	)
+	// otelhttp sees a view of the request without the caller's address and
+	// user agent unless the operator opted in, and never X-Forwarded-For.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traced.ServeHTTP(w, spanView(r, t.clientInfo))
+	})
 }
 
 // WrapLogger adds the OTel log bridge next to l's own handler, so stdout
