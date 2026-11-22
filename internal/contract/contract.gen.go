@@ -91,7 +91,7 @@ type ErrorEnvelope struct {
 // Examples: github.com/acme/shop
 type ProjectId = string
 
-// ProjectList The registered Projects.
+// ProjectList The Projects the server holds Scope for.
 type ProjectList struct {
 	// Projects The Projects, sorted.
 	//
@@ -166,9 +166,9 @@ type ErrorResponse = ErrorEnvelope
 
 // GetArticleParams defines parameters for GetArticle.
 type GetArticleParams struct {
-	// Project Resolve for this Project (ADR 0018): its articles come before the
-	// global ones and win on an equal id. Matched ignoring case. A Project
-	// that is not registered answers the global results with a `hint`; a
+	// Project Look the article up for this Project (ADR 0018): its own article
+	// wins over the global one with the same id. Matched ignoring case.
+	// An unregistered Project answers the global article with a `hint`; a
 	// value that is not a `ProjectId` is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 }

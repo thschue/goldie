@@ -110,9 +110,9 @@ paths:
           in: query
           required: false
           description: |
-            Resolve for this Project (ADR 0018): its articles come before the
-            global ones and win on an equal id. Matched ignoring case. A Project
-            that is not registered answers the global results with a `hint`; a
+            Look the article up for this Project (ADR 0018): its own article
+            wins over the global one with the same id. Matched ignoring case.
+            An unregistered Project answers the global article with a `hint`; a
             value that is not a `ProjectId` is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
@@ -155,13 +155,13 @@ paths:
         answers an empty list. Pass one as `project` on search and lookup.
       responses:
         "200":
-          description: The registered Projects.
+          description: The Projects the server holds, sorted.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProjectList"
         "401":
-          description: The bearer token is missing or wrong.
+          description: No bearer token was sent, or it is wrong.
           content:
             application/json:
               schema:
@@ -269,7 +269,7 @@ components:
         - github.com/acme/shop
     ProjectList:
       type: object
-      description: The registered Projects.
+      description: The Projects the server holds Scope for.
       required:
         - projects
       properties:

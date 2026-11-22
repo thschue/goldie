@@ -43,8 +43,8 @@ Operation ID: `listProjects`
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | The registered Projects. | `application/json` (`ProjectList`) |
-| `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
+| `200` | The Projects the server holds, sorted. | `application/json` (`ProjectList`) |
+| `401` | No bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/search`
@@ -143,7 +143,7 @@ server matches it ignoring case.
 
 ### `ProjectList`
 
-The registered Projects.
+The Projects the server holds Scope for.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
