@@ -38,6 +38,6 @@ quality work becomes a follow-up with its value stated. Security sits on the cri
 - **Audit** a sample of merged PRs with the `reviewer`, and file what it finds.
 - **The maintainer reads one inbox:** short, decision-ready entries, rewritten each tick, including
   the top 5 harness-feedback items for the weekly batch.
-- **Measure:** claim-to-merge time, fix rounds, harness-PR share, test-change approval rate,
-  consults per stream. Name the worst bottleneck.
+- **Measure:** claim-to-merge time, fix rounds, harness-PR share and test-change approval rate.
+  Name the worst bottleneck.
 - **Evidence:** close an issue only with commit and file:line evidence.

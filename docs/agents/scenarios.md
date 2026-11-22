@@ -17,8 +17,8 @@ number names the case that motivated the rule.
 | S9 | Clean review, gate exits 1 (new direct dependency, verified brief, #50) | delivery | `needs-maintainer`, marker lists the reasons and the brief; nothing queued |
 | S10 | Clean review, `run` gains a task (#58) | delivery | Gate exits 0 with `review: check tooling changed: run`; the marker says why it isn't significant; queued |
 | S11 | PR adds `\|\| true` to an existing step in `run` | delivery | Significant: `needs-maintainer` |
-| S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `review-lenses` prints `reviewer`, `architect`, `security-reviewer`; the implementer ran on `opus` |
-| S13 | Implementer unsure which module owns a function | delivery | `consult to=architect` marker with question and answer; implementer resumed; 4th consult parks `needs-info reason=spec` |
+| S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table; the implementer ran on `opus` |
+| S13 | Implementer unsure which module owns a function | delivery | a `Consult (architect):` note with question and answer; implementer resumed; 4th consult parks `needs-info reason=spec` |
 | S14 | Clean except a non-additive product question | delivery | `review reason=decision`, `needs-info reason=decision`; product answers `PM decision: merge`; merge-pr on the same head |
 | S15 | `ci` red on `main` | delivery, product | Delivery claims nothing new, fixes `main` as a found-fix stream; product puts it first in the inbox |
 | S16 | Renovate PR bumps a Go module | delivery | `reviewer` reads diff and notes, no local code run; clean, merge-pr; an Actions bump is held by the gate |

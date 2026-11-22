@@ -37,7 +37,6 @@ Every loop comment ends with exactly one marker, as its final line. A marker cou
 | `<!-- goldie-loop:claim session=<name> -->` | `scripts/claim` | the stream's owner |
 | `<!-- goldie-loop:tests sha=<commit> -->` | delivery | the `test-author`'s acceptance-test commit |
 | `<!-- goldie-loop:tests request -->` and `<!-- goldie-loop:tests approved=<commit> -->` or `<!-- goldie-loop:tests rejected -->` | delivery | a test change request and its verdict |
-| `<!-- goldie-loop:consult to=<agent> -->` | delivery | a consult and its answer |
 | `<!-- goldie-loop:review sha=<head> reason=<clean\|needs-maintainer\|decision\|round-cap> rounds=<n> -->` | delivery | the review outcome for that exact head, after `rounds` fix rounds |
 | `<!-- goldie-loop:<session> note -->` | any | anything else |
 
@@ -92,19 +91,14 @@ The reviewer verifies each claim.
 
 ## Test lock
 
-Tests are the spec. An implementer may add tests, but may not modify or delete:
-- a test line on `main` (`*_test.go`, `testdata/**`);
-- a line from the `test-author`'s commits.
+Tests are the spec. An implementer may add test files and add lines to existing ones, but may not
+modify, move or delete a line in a test file (`*_test.go`, `testdata/**`) it didn't create on the
+branch: not one from `main`, not one from the `test-author`.
 
 To change one, it files a `test_change_request` (file, reason, proposed diff). The `test-author`
 approves (making the change itself) or rejects. When the criterion itself is in doubt, the request
-goes to the product session as `needs-info reason=spec`.
-
-`scripts/test-lock` (run by `merge-pr`) allows, without consent:
-- lines the implementer added on the branch;
-- moves and renames where every removed line reappears;
-- whitespace-only changes;
-- generated files.
+goes to the product session as `needs-info reason=spec`. `scripts/merge-pr` enforces this with
+`scripts/test-lock` (whitespace-only changes pass).
 
 ## Fix it now
 

@@ -8,7 +8,7 @@
 #   claim_to_merge_median_min=<n>   (PRs no gate held: draft creation to merge)
 #   fix_rounds_avg=<x> round_caps=<n>
 #   test_change_requests=<n> approved=<n> approval_pct=<n|->
-#   consults=<n> consults_per_pr=<x> adoptions=<n>
+#   adoptions=<n>
 # gated means the PR carried needs-maintainer; harness means it changed the
 # loop rules or tooling; rounds come from the clean marker's rounds=; an
 # adoption is a second claim marker by another session. Read-only.
@@ -26,16 +26,15 @@ gh pr list --state merged --search "merged:>=$since" --limit 500 \
 	jq -L "$lib" -r --arg me "$me" 'include "markers";
 	def median: sort | if length == 0 then "-" else .[(length / 2 | floor)] end;
 	def pct($a; $b): if $b == 0 then "-" else ($a * 100 / $b | floor) end;
-	def harness: [.files[].path] | any(test("^(docs/agents/|\\.claude/|scripts/|CLAUDE\\.md$|testdata/(agent-gate|loop-guard|test-lock|review-lenses|claim|merge-pr)/)"));
+	def harness: [.files[].path] | any(test("^(docs/agents/|\\.claude/|scripts/|CLAUDE\\.md$|testdata/(agent-gate|loop-guard|test-lock|claim)/)"));
 	map(. + {m: own_markers($me), gated: ([.labels[].name] | index("needs-maintainer") != null)})
 	| (map(.m[] | select(.kind == "tests") | .line)) as $tests
 	| ($tests | map(select(test(" request "))) | length) as $req
 	| ($tests | map(select(test(" approved="))) | length) as $ok
-	| (map(.m | map(select(.kind == "consult")) | length) | add // 0) as $consults
 	| (map(.m | latest("review") | .line // "" | attr("rounds") | tonumber? // empty)) as $rounds
 	| "merged=\(length) gated=\(map(select(.gated)) | length) harness=\(map(select(harness)) | length) harness_pct=\(pct(map(select(harness)) | length; length))",
 	  "claim_to_merge_median_min=\(map(select(.gated | not) | ((.mergedAt | fromdate) - (.createdAt | fromdate)) / 60 | floor) | median)",
 	  "fix_rounds_avg=\(if ($rounds | length) == 0 then "-" else ($rounds | add / length * 10 | floor / 10) end) round_caps=\(map(.m[] | select(.kind == "review") | select(.line | attr("reason") == "round-cap")) | length)",
 	  "test_change_requests=\($req) approved=\($ok) approval_pct=\(pct($ok; $req))",
-	  "consults=\($consults) consults_per_pr=\(if length == 0 then "-" else ($consults / length * 10 | floor / 10) end) adoptions=\(map(.m | map(select(.kind == "claim") | .line | attr("session")) | unique | length | select(. > 1)) | length)"
+	  "adoptions=\(map(.m | map(select(.kind == "claim") | .line | attr("session")) | unique | length | select(. > 1)) | length)"
 	' || die "cannot read merged PRs"

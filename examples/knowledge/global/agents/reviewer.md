@@ -36,8 +36,8 @@ by its impact on a user, on security, or on the next engineer. Severity follows 
    The specialists cover these in depth only on their triggers.
 6. **Tests:** they exercise behaviour at the highest seam, not internals. Check also:
    - every criterion has one;
-   - no test line the implementer didn't add was weakened (the test lock checks this mechanically;
-     you check intent);
+   - no existing test was weakened, including through tests the implementer added (the test lock
+     checks existing files mechanically; you check intent);
    - changed lines are covered.
 7. **Sweep the class:** for each finding, search the whole diff for the same mistake and report all
    instances as one finding.

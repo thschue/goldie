@@ -49,10 +49,17 @@ reason), consults, test change requests, and harness feedback filed.
      `reason=spec`, swap the issue's `ready-for-agent` for `needs-info`, and close the draft.
 2. **Implement.** The `implementer` gets `$me`, the issue, the branch, and the acceptance-test
    commit. Its brief is in its agent definition.
-3. **Review.** `scripts/review-lenses origin/main <head>` names the reviewers: always `reviewer`;
-   `architect`, `ux-designer` and `security-reviewer` only on their triggers. Start them in
-   parallel. Each gets the PR number, the head SHA, the closing issue and the round number, never
-   the implementer's report. They don't re-run gates; CI is authoritative.
+3. **Review.** Always `reviewer`, plus each specialist whose paths the diff touches
+   (`git diff --name-only origin/main...<head>`):
+
+   | Reviewer | Paths |
+   |---|---|
+   | `architect` | a new Go package, `internal/contract/**`, `go.mod`, `.golangci.*` |
+   | `ux-designer` | `web/**`, `internal/ui/**`, `docs/design/**` |
+   | `security-reviewer` (risk paths) | auth, sessions and tokens in `internal/api/`, `internal/mcp/**`, git Sources and sync in `internal/engine/`, `internal/platform/config*`, `goldie pull`, agent guardrails (`.claude/**`, `CLAUDE.md`, `docs/agents/**`, `scripts/**`, `.github/**`) |
+
+   Start them in parallel. Each gets the PR number, the head SHA, the closing issue and the round,
+   never the implementer's report. They don't re-run gates; CI is authoritative.
 4. **Fix.**
    - The worst outcome wins, in this order: `needs-info`, `changes-requested`, `decision`, `clean`.
    - On `changes-requested`, send every blocking finding, and every LOW finding with a clear fix,
@@ -79,8 +86,8 @@ reason), consults, test change requests, and harness feedback filed.
 
 - **Consults.** A report may carry `consult: {to, question, options, recommendation}`.
   - Allowed routes: implementer → `architect`, `ux-designer`, or `test-author` (intent only).
-  - Forward the question at once and resume the asker with the answer. Post both as one comment
-    with `<!-- goldie-loop:consult to=<agent> -->`.
+  - Forward the question at once and resume the asker with the answer. Post both as one note
+    comment starting with `Consult (<agent>):`.
   - Never route to or from a reviewer during review.
   - After 3 consults on one stream, park it: `needs-info reason=spec`, because the issue wasn't
     ready.
@@ -94,9 +101,8 @@ reason), consults, test change requests, and harness feedback filed.
 
 ## Model routing
 
-`implementer` and `test-author` run on `sonnet`. Use `opus` when the issue's cited paths match a
-risk path in `scripts/review-lenses` (auth, tokens, sessions, MCP authorization, git Sources,
-Secrets, archive extraction). `reviewer` and `ux-designer` run on `sonnet`; `architect` and
+`implementer` and `test-author` run on `sonnet`, and on `opus` when the issue's cited paths are
+risk paths (the review table above). `reviewer` and `ux-designer` run on `sonnet`; `architect` and
 `security-reviewer` on `opus`.
 
 ## Size

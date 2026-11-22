@@ -7,7 +7,6 @@
       "Bash(scripts/loop-metrics*)",
       "Bash(scripts/claim *)",
       "Bash(scripts/merge-pr *)",
-      "Bash(scripts/review-lenses *)",
       "Bash(scripts/test-lock *)",
       "Bash(git *)",
       "Bash(gh issue *)",

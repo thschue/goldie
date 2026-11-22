@@ -45,7 +45,7 @@ it:
 - **Customer first, with security and clean architecture in mind.** Build what the user observes,
   at the highest seam. Treat every input as hostile, and keep logic in the module that owns it.
 - **Tests are the spec.** Test first (`/tdd`) at the highest seam. Never weaken a test to make it
-  pass. In the loops, test lines you didn't add are locked
+  pass. In the loops, a test file you didn't create accepts only added lines
   ([test lock](docs/agents/README.md#test-lock)).
 - **Small, complete changes:** one issue, one PR, about 400 lines (`./run size`), with docs and
   generated code in the same PR.

@@ -25,15 +25,15 @@ minutes from ready to merge.
   - acceptance tests from a strict `test-author`;
   - the `implementer`;
   - a fresh-context, read-only `reviewer`, plus `architect`, `ux-designer` or `security-reviewer`
-    on narrow triggers (`scripts/review-lenses`);
+    on narrow path triggers;
   - at most two fix rounds in the same stream;
   - `scripts/merge-pr` into the GitHub merge queue.
   Review stays independent because reviewers see artifacts (diff, issue, record), never the
   implementer's reasoning, and they can't edit.
 - **Hub and spoke.** Subagents talk only through their orchestrator. A subagent may ask another one
-  through a logged **consult**. Agent teams and A2A aren't used: they add hidden state outside
+  through a **consult**, logged on the PR. Agent teams and A2A aren't used: they add hidden state outside
   GitHub and erode reviewer independence.
-- **Test lock.** Implementers may not change test lines they didn't add on the branch. A change needs
+- **Test lock.** In a test file they didn't create, implementers may only add lines. A change needs
   the `test-author`'s approval, recorded as a marker. `scripts/merge-pr` enforces it through
   `scripts/test-lock`.
 - **Native tools over rules:**

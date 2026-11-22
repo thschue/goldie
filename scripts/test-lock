@@ -4,12 +4,11 @@
 #
 #   scripts/test-lock <base> <head> [test-author commit...]
 #
-# Tests are the spec. On the branch <base>...<head>, a commit that is not a
-# test-author commit may add test lines, but may not modify or delete a test
-# line (in *_test.go or testdata/) unless the same branch's implementer
-# commits added it. Allowed without consent: whitespace-only changes, moves
-# (every removed line reappears in the same commit's tests), and generated
-# files. A test-author commit may touch test files only.
+# Tests are the spec. On the branch <base>...<head>, a commit that isn't a
+# test-author commit may add test files and add lines to existing ones, but
+# may not modify or delete a line (whitespace aside) in a test file
+# (*_test.go, testdata/) that it or an earlier implementer commit on the
+# branch didn't create. A test-author commit may touch test files only.
 #
 # Prints one line per violation and exits 1 when there is any, 0 when there is
 # none, and 2 on a usage or git error. scripts/merge-pr runs main's copy.
@@ -20,72 +19,33 @@ export LC_ALL
 die() { printf 'test-lock: %s\n' "$*" >&2; exit 2; }
 
 [ $# -ge 2 ] || die "usage: scripts/test-lock <base> <head> [test-author commit...]"
-base=$1
+mb=$(git merge-base "$1" "$2") || die "no merge base between $1 and $2"
 head=$2
 shift 2
-mb=$(git merge-base "$base" "$head") || die "no merge base between $base and $head"
-
-tmp=$(mktemp -d) || die "cannot create a temporary directory"
-trap 'rm -rf "$tmp"' EXIT INT TERM
-: >"$tmp/out"
-
+authors=""
 for a in "$@"; do
-	git rev-parse --verify --quiet "$a^{commit}" >>"$tmp/authors" || die "unknown test-author commit: $a"
+	authors="$authors $(git rev-parse --verify --quiet "$a^{commit}")" || die "unknown test-author commit: $a"
 done
-touch "$tmp/authors"
-git rev-list --reverse --no-merges "$mb..$head" >"$tmp/branch" || die "git rev-list failed"
-# Implementer commits: the branch commits that aren't test-author commits.
-grep -vxF -f "$tmp/authors" "$tmp/branch" >"$tmp/own" || :
-
+is_author() { case " $authors " in *" $1 "*) return 0 ;; esac; return 1; }
 is_test() { case "$1" in *_test.go | testdata/* | */testdata/*) return 0 ;; esac; return 1; }
-subject() { git log -1 --format=%s "$1"; }
-generated() { # generated <rev> <path>: the file carries Go's generated-code header
-	git show "$1:$2" 2>/dev/null | head -n 5 | grep -q '^// Code generated .* DO NOT EDIT\.$'
-}
 
-while IFS= read -r c; do
-	git diff-tree --no-commit-id --name-only -r --no-renames "$c" >"$tmp/files" || die "git diff-tree failed"
-	if grep -qxF "$c" "$tmp/authors"; then
-		while IFS= read -r f; do
-			is_test "$f" || printf 'test-author commit "%s" touches a non-test file: %s\n' "$(subject "$c")" "$f" >>"$tmp/out"
-		done <"$tmp/files"
-		continue
-	fi
-	: >"$tmp/tests"
-	while IFS= read -r f; do if is_test "$f"; then printf '%s\n' "$f" >>"$tmp/tests"; fi; done <"$tmp/files"
-	[ -s "$tmp/tests" ] || continue
-	# Lines this commit adds to any test file, trimmed: a removed line found here moved.
-	git diff -w --no-renames -U0 "$c^" "$c" -- $(cat "$tmp/tests") |
-		sed -n 's/^+\([^+]\)/\1/p; s/^+$//p' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sort -u >"$tmp/added"
-	while IFS= read -r f; do
-		git cat-file -e "$c^:$f" 2>/dev/null || continue # new file: nothing to lock
-		generated "$c^" "$f" && continue
-		if [ "$(git diff --numstat "$c^" "$c" -- "$f" | cut -f1)" = - ]; then
-			# A binary test file: locked unless an implementer commit added it.
-			adder=$(git log --format=%H --diff-filter=A "$mb..$c^" -- "$f" | tail -n 1)
-			if [ -z "$adder" ] || ! grep -qxF "$adder" "$tmp/own"; then
-				printf 'locked: %s (binary) changed by "%s"\n' "$f" "$(subject "$c")" >>"$tmp/out"
-			fi
-			continue
+out=$(mktemp) || die "cannot create a temporary file"
+trap 'rm -f "$out"' EXIT INT TERM
+own="" # test files created by implementer commits on the branch
+for c in $(git rev-list --reverse --no-merges "$mb..$head"); do
+	subject=$(git log -1 --format=%s "$c")
+	git diff-tree --no-commit-id -r --no-renames --name-status "$c" | while IFS="$(printf '\t')" read -r st f; do
+		if is_author "$c"; then
+			is_test "$f" || printf 'test-author commit "%s" touches a non-test file: %s\n' "$subject" "$f"
+		elif is_test "$f" && [ "$st" != A ] && ! printf '%s\n' "$own" | grep -qxF -- "$f"; then
+			removed=$(git diff -w --numstat "$c^" "$c" -- "$f" | cut -f2)
+			[ "${removed:-0}" = 0 ] || printf 'locked: %s changed by "%s"\n' "$f" "$subject"
 		fi
-		# Removed lines with their old line numbers, from the hunk headers.
-		git diff -w --no-renames -U0 "$c^" "$c" -- "$f" | awk '
-			/^@@/ { split($2, a, ","); n = substr(a[1], 2) + 0; next }
-			/^---/ { next }
-			/^-/ { print n "\t" substr($0, 2); n++ }' >"$tmp/removed"
-		lines=""
-		while IFS="$(printf '\t')" read -r n text; do
-			t=$(printf '%s' "$text" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-			[ -n "$t" ] || continue
-			grep -qxF -- "$t" "$tmp/added" && continue
-			origin=$(git blame -l -s -L "$n,$n" "$c^" -- "$f" | cut -c1-41 | tr -d '^ ')
-			grep -qxF "$origin" "$tmp/own" && continue
-			lines="${lines:+$lines,}$n"
-		done <"$tmp/removed"
-		[ -z "$lines" ] || printf 'locked: %s lines %s changed by "%s"\n' "$f" "$lines" "$(subject "$c")" >>"$tmp/out"
-	done <"$tmp/tests"
-done <"$tmp/branch"
+	done >>"$out"
+	is_author "$c" || own="$own
+$(git diff-tree --no-commit-id -r --no-renames --name-only --diff-filter=A "$c")"
+done
 
-[ -s "$tmp/out" ] || exit 0
-cat "$tmp/out"
+[ -s "$out" ] || exit 0
+cat "$out"
 exit 1

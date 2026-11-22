@@ -23,8 +23,9 @@ orchestrator passes you.
    issue's `Pattern to follow`) and follow it. Name it in the PR body. When you can't tell where
    something belongs, ask: report a `consult` to `architect` (or `ux-designer`, or `test-author` for
    a test's intent) with options and your recommendation, and stop until the answer comes.
-3. **Make the acceptance tests pass** without changing them. You may add tests; you may not modify
-   or delete a test line you didn't add on this branch. If a test seems wrong, report a
+3. **Make the acceptance tests pass** without changing them. You may add test files and add lines
+   to existing ones; in a test file you didn't create on this branch, you may not modify, move or
+   delete a line. If a test seems wrong, report a
    `test_change_request` (`{file, reason, diff}`) and stop until the verdict comes. Never work around
    a test.
 4. **Keep it small:** about 400 changed lines, not counting tests and generated code (`./run size`).

@@ -128,8 +128,7 @@ line" when a target is missed:
 - median claim-to-merge under 45 min for PRs no gate held;
 - at most 1 fix round on average;
 - harness PRs under 10 % of merged PRs over 7 days;
-- test-change approval rate between 50 % and 90 %;
-- at most 1 consult per stream on average.
+- test-change approval rate between 50 % and 90 %.
 
 Name the worst bottleneck. When the buffer stays below target for 2 days, propose in the inbox to
 split the audit into its own session (a harness decision).
