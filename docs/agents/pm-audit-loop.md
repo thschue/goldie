@@ -96,7 +96,8 @@ giving verdicts, group them by area (the package or feature folder, and the kind
 replaced, a hardening the record already rules out) is closed as `wontfix` through tier 2: announce
 it, and close it when the window ends.
 
-Then apply **exactly one** verdict to each remaining `needs-triage` or unlabelled issue:
+Then apply **exactly one** verdict to each remaining `needs-triage` or unlabelled issue, bugs and
+security first, then oldest first:
 
 | Verdict | When |
 |---|---|
@@ -169,9 +170,12 @@ whether a blocker shipped.
 
 ## 4. Planning
 
-- **Critical path:** order the frontier by how much it unblocks. Store each issue's count of open
-  issues it transitively unblocks (`gh api repos/thschue/goldie/issues/<n>/dependencies/blocking`)
-  in the ledger, and keep the top 2 as `priority` (at most 2 open, removed once claimed).
+- **Order:** the frontier is worked in the [order of work](./label-contract.md#order-of-work):
+  `bug`, `security` and `priority` first, then oldest first. pm-audit doesn't reorder it otherwise.
+- **Critical path:** store each issue's count of open issues it transitively unblocks
+  (`gh api repos/thschue/goldie/issues/<n>/dependencies/blocking`) in the ledger, and keep the top 2
+  as `priority` (at most 2 open, removed once claimed). That is how the critical path jumps the
+  queue.
 - **Depth:** keep at least 3 issues on the frontier, on at least 2 independent tracks, so the
   worker never waits on one PR. When it runs short, in this order:
   1. **challenge blocking edges:** keep `blocked_by` only when the blocked issue can't be built and

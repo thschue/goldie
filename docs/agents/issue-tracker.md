@@ -50,9 +50,9 @@ The **frontier** is the set of issues an agent may start now. An issue is on the
 4. every native `blocked_by` dependency is closed;
 5. if `LOOP_MILESTONE` is set, it is in that milestone.
 
-Rank the frontier in this order: `bug`, then `security`, then `priority` (pm-audit keeps it on the
-[critical path](./pm-audit-loop.md#4-planning)), then the number of open issues it unblocks, then the
-oldest `createdAt`. Handed-back PRs aren't on the frontier: the worker reworks them from its own
+Rank the frontier by the [order of work](./label-contract.md#order-of-work): `bug`, `security` and
+`priority` first (pm-audit puts `priority` on the [critical path](./pm-audit-loop.md#4-planning)),
+oldest `createdAt` first among them; then everything else, oldest `createdAt` first. Handed-back PRs aren't on the frontier: the worker reworks them from its own
 queue, before it claims anything ([issue-worker loop](./issue-worker-loop.md)).
 
 ```sh
