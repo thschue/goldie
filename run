@@ -14,7 +14,7 @@
 #   ./run red-check [base]  the PR's new tests must fail on <base> (origin/main)
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
-#   ./run regen      regenerate generated code (OpenAPI Go types and strict server)
+#   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint reference docs)
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run versions   print the toolchain versions this repository expects
@@ -284,6 +284,7 @@ cmd_test() {
 
 # Generated files, relative to the repository root.
 CONTRACT_SPEC=internal/contract/openapi.yaml
+CONTRACT_DOCS=docs/reference/api.md
 CONTRACT_CONFIG=internal/contract/oapi-codegen.yaml
 CONTRACT_GEN=internal/contract/contract.gen.go
 
@@ -305,7 +306,10 @@ oapi_codegen() {
 cmd_regen() {
 	say "regen: oapi-codegen ${OAPI_CODEGEN##*@}"
 	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN" || die "oapi-codegen failed for $CONTRACT_SPEC"
-	# TypeScript types and component docs register here as their issues land.
+	say "regen: endpoint reference docs"
+	mkdir -p "$(dirname "$CONTRACT_DOCS")"
+	go run ./internal/contract/cmd/refdocs "$CONTRACT_SPEC" "$CONTRACT_DOCS" || die "cannot generate $CONTRACT_DOCS"
+	# TypeScript types and configuration docs register here as their issues land.
 }
 
 # drift <spec>: succeed when the committed generated code equals a fresh
@@ -324,9 +328,24 @@ drift() {
 	return "$status"
 }
 
+# docs_drift <spec>: the same for the endpoint reference docs.
+docs_drift() {
+	fresh=$(mktemp) || die "cannot create a temporary file for the docs drift check"
+	if ! go run ./internal/contract/cmd/refdocs "$1" "$fresh"; then
+		rm -f "$fresh"
+		die "refdocs failed for $1"
+	fi
+	status=0
+	cmp -s "$fresh" "$CONTRACT_DOCS" || status=$?
+	rm -f "$fresh"
+	[ "$status" -le 1 ] || die "cannot compare $CONTRACT_DOCS with a fresh generation (cmp exit $status)"
+	return "$status"
+}
+
 cmd_regen_check() {
-	say "regen drift check (generated code must match the spec)"
+	say "regen drift check (generated code and docs must match the spec)"
 	drift "$CONTRACT_SPEC" || die "$CONTRACT_GEN is out of date with $CONTRACT_SPEC (run: ./run regen)"
+	docs_drift "$CONTRACT_SPEC" || die "$CONTRACT_DOCS is out of date with $CONTRACT_SPEC (run: ./run regen)"
 }
 
 # The drifted fixture is a spec the committed generated code was not made from:
@@ -335,6 +354,9 @@ cmd_regen_fixture() {
 	say "regen drift fixture (a drifted spec must be flagged)"
 	if drift testdata/openapi/drifted.yaml; then
 		die "drift check did not fire for testdata/openapi/drifted.yaml"
+	fi
+	if docs_drift testdata/openapi/drifted.yaml; then
+		die "docs drift check did not fire for testdata/openapi/drifted.yaml"
 	fi
 }
 
