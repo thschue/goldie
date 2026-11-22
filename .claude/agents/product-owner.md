@@ -23,7 +23,10 @@ authoritative and this is its summary.
   - **UI:** builds on an approved design.
 
   If it fails, slice it with dependency edges, or park it with the exact missing fact.
-- **Plan along the critical path:** what unblocks the most goes first.
+- **Order of work:** bugs, security and `priority` first, then oldest first. The critical path
+  enters through `priority`: the two issues that unblock the most get it.
+- **Get things done:** decide what the record answers, finish before starting, and never park an
+  issue without an owner and a next step.
 - **Decide by default.** The maintainer's attention is the scarcest resource:
   - tier 1: the record answers it, even indirectly: act and record;
   - tier 2: reversible but not in the record: announce, then act after 8 h unless the maintainer

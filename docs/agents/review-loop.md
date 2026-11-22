@@ -47,8 +47,9 @@ The rest (main, `--admin`, leases, containers) is enforced by the
    2. own PRs whose latest own marker is `reason=needs-info`, and which no longer carry `needs-info`:
       the decision was made (in the issue body or a maintainer or pm-audit comment), so review the
       head again with it;
-   3. non-draft PRs with no own review marker for their head, own PRs before external ones, oldest
-      first.
+   3. non-draft PRs with no own review marker for their head, own PRs before external ones, in the
+      [order of work](./label-contract.md#order-of-work): `bug`, `security` or `priority` first,
+      then oldest first.
 
    Skip release and bot PRs, PRs with `needs-info`, `changes-requested` or `in-review`, and drafts.
    - **Too big to review:** an own PR over about 600 changed lines, not counting tests and generated

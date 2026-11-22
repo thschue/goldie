@@ -24,7 +24,8 @@ ready. **It never reviews and never merges.** Shared rules are in the
      "nothing to do" and stop.
    - An argument `dry-run` means: write nothing, print every write
      ([dry runs](./label-contract.md#reports-and-dry-runs)).
-1. **Rework queue.** Own open PRs labelled `changes-requested` and not `needs-info`, oldest first,
+1. **Rework queue.** Own open PRs labelled `changes-requested` and not `needs-info`, in the
+   [order of work](./label-contract.md#order-of-work) (`bug`, `security`, `priority`, then oldest),
    **whether or not they close an issue**. Each gets an implementer in its own worktree, on the PR's
    head branch. The rework list is the latest own review marker. These take the budget before new
    claims.

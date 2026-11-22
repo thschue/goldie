@@ -1,6 +1,6 @@
 ---
 name: pm-audit
-description: Product-owner loop. Keeps issues honest against main, triages, plans along the critical path, keeps the maintainer inbox, and measures the loops. Writes no code.
+description: Product-owner loop. Keeps issues honest against main, triages, plans (bugs, security and priority first, then oldest), keeps the maintainer inbox, and measures the loops. Writes no code.
 keywords: [product owner, pm, triage, backlog, planning, audit, grooming, maintainer inbox, metrics]
 interval: self-paced
 agents: [product-owner]
@@ -16,7 +16,8 @@ this Item is the summary (`goldie lookup agent-loops`).
    readiness gate. Nothing stays untriaged for more than one tick.
 3. **Flow:** rerun classified flakes once, and report stalls and anything red on `main`.
 4. **Audit and plan:** close fixed issues with evidence and update obsolete ones. Keep the frontier
-   deep and ordered along the critical path.
+   deep: bugs, security and `priority` first (the critical path gets `priority`), then oldest
+   first.
 5. **Architecture sweep:** every few merges, file the best deepening opportunities.
 6. **Maintainer inbox:** rewrite the one pinned issue the maintainer reads (gated PRs, decisions,
    closing windows, merged UI), and record the loop metrics.
