@@ -85,6 +85,21 @@ func TestTelemetrySettingsComeFromLookupNotTheProcessEnvironment(t *testing.T) {
 	}
 }
 
+// Without an endpoint the exporters keep the SDK's TLS default, so OTLP
+// headers such as an API token never go out in plain text by default. A
+// configured endpoint is used unchanged.
+func TestOTLPDefaultEndpointUsesTLS(t *testing.T) {
+	for _, signal := range []string{"traces", "logs"} {
+		if got, want := otlpEndpoint(map[string]string{}, signal), "https://localhost:4318/v1/"+signal; got != want {
+			t.Errorf("default %s endpoint = %q, want %q", signal, got, want)
+		}
+		set := map[string]string{signal: "http://collector:4318/v1/" + signal}
+		if got := otlpEndpoint(set, signal); got != set[signal] {
+			t.Errorf("configured %s endpoint = %q, want %q", signal, got, set[signal])
+		}
+	}
+}
+
 // With an exporter selected in lookup but no endpoint or headers there, the
 // exporters must not fall back to the OTEL_EXPORTER_OTLP_* values in the
 // process environment.

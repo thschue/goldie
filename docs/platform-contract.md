@@ -44,7 +44,10 @@ and running `./run regen`.
   key must be an RFC 7230 token, because the SDK prints a rejected key or value to its own logger.
   `OTEL_RESOURCE_ATTRIBUTES` cannot override `service.version`
   or `goldie.mode`. The generated configuration reference lists them and names the ones left to the SDK.
-  Only protocol `http/protobuf` is supported. The one `OTEL_*` limit goldie sets itself is a 1024-byte
+  Only protocol `http/protobuf` is supported. With an exporter selected and no endpoint, goldie passes the
+  SDK's default `https://localhost:4318`. The endpoint's scheme, the default's included, decides between
+  plain HTTP and TLS, so `OTEL_EXPORTER_OTLP{,_TRACES,_LOGS}_INSECURE` has no effect; the CA and client
+  certificate variables keep the SDK's handling. The one `OTEL_*` limit goldie sets itself is a 1024-byte
   default for `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
 - `/readyz` returns `{"status":"ready|not_ready|draining","checks":[{"name","status"}]}` with 200 or
   503. Each check has its own timeout (2 s) and its error text is never echoed.

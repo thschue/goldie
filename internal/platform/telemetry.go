@@ -195,8 +195,10 @@ const (
 	envOTelService  = "OTEL_SERVICE_NAME"
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
 
-	// defaultOTLPEndpoint is the OTLP/HTTP default when no endpoint is set.
-	defaultOTLPEndpoint = "http://localhost:4318"
+	// defaultOTLPEndpoint is the Go SDK's own default when no endpoint is
+	// set. It is https, so a header such as an API token is never sent in
+	// plain text unless an operator chooses an http endpoint.
+	defaultOTLPEndpoint = "https://localhost:4318"
 
 	envOTelSampler    = "OTEL_TRACES_SAMPLER"
 	envOTelSamplerArg = "OTEL_TRACES_SAMPLER_ARG"
@@ -310,12 +312,6 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	)
 	// The endpoint and headers are always passed, defaults included, so the
 	// SDK's own reading of the process environment is overridden.
-	endpointOf := func(signal string) string {
-		if e := endpoints[signal]; e != "" {
-			return e
-		}
-		return defaultOTLPEndpoint + "/v1/" + signal
-	}
 	headersOf := func(signal string) map[string]string {
 		if h := headers[signal]; h != nil {
 			return h
@@ -323,18 +319,27 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		return map[string]string{}
 	}
 	if on["traces"] {
-		if spans, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpointOf("traces")),
+		if spans, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(otlpEndpoint(endpoints, "traces")),
 			otlptracehttp.WithHeaders(headersOf("traces"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_TRACES_*: cannot configure the trace exporter")
 		}
 	}
 	if on["logs"] {
-		if logs, err = otlploghttp.New(ctx, otlploghttp.WithEndpointURL(endpointOf("logs")),
+		if logs, err = otlploghttp.New(ctx, otlploghttp.WithEndpointURL(otlpEndpoint(endpoints, "logs")),
 			otlploghttp.WithHeaders(headersOf("logs"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
 	return newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs), nil
+}
+
+// otlpEndpoint is the endpoint URL for signal: the configured one, or the
+// default with the signal path.
+func otlpEndpoint(endpoints map[string]string, signal string) string {
+	if e := endpoints[signal]; e != "" {
+		return e
+	}
+	return defaultOTLPEndpoint + "/v1/" + signal
 }
 
 // parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the
