@@ -32,6 +32,21 @@ goldie search kubernetes
 goldie lookup platform/deploy
 ```
 
+## MCP over stdio
+
+`goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
+`search_knowledge` and `get_article`. An agent's MCP client starts it as a subprocess. It talks to a
+running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
+(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable. A missing or invalid
+setting stops it at startup with a message on stderr that names the setting. Stdout carries only MCP
+messages; errors go to stderr. It exits when the client closes stdin. There is no local mode yet
+(#10): it needs a server address.
+
+```json
+{"mcpServers": {"goldie": {"command": "goldie", "args": ["mcp", "--transport", "stdio"],
+  "env": {"GOLDIE_ADDR": "http://localhost:8080", "GOLDIE_TOKEN_FILE": "/run/secrets/goldie-token"}}}}
+```
+
 ## Origins & credits
 
 Goldie is based on Jessica Andersson's talk at Cloud Native Denmark 2026 and on the

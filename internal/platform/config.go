@@ -20,7 +20,8 @@ const (
 	EnvSwaggerUIEnabled = "GOLDIE_SWAGGER_UI_ENABLED"
 
 	EnvContentDir = "GOLDIE_CONTENT_DIR"
-	EnvAPIToken   = "GOLDIE_API_TOKEN" // secret: never logged
+	EnvAPIToken   = "GOLDIE_API_TOKEN"  // secret: never logged
+	EnvAPITokens  = "GOLDIE_API_TOKENS" // secret: never logged
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -35,7 +36,8 @@ type Config struct {
 
 	// The server role validates these at startup; health does not need them.
 	ContentDir string // root of the dir Source
-	APIToken   string // static bearer token for /api/; secret
+	APIToken   string // the shorthand for one operator token; secret
+	APITokens  string // name:role:token lines, as read; secret
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -78,6 +80,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.DrainTimeout = time.Duration(secs) * time.Second
 	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
+	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
 	case "true":
@@ -131,6 +134,7 @@ func (c Config) Report(l *slog.Logger) {
 		EnvSwaggerUIEnabled, c.SwaggerUIEnabled,
 		EnvContentDir, c.ContentDir,
 		EnvAPIToken, redacted(c.APIToken),
+		EnvAPITokens, redacted(c.APITokens),
 	)
 }
 
