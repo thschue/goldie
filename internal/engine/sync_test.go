@@ -134,7 +134,6 @@ func TestSyncerRevisionEmptyWithoutRevisioner(t *testing.T) {
 	if r := s.Status().Revision; r != "" {
 		t.Fatalf("revision = %q", r)
 	}
-	var _ Source = NewDirSource("x")
 }
 
 func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {

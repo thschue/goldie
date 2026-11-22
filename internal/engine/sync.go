@@ -8,19 +8,6 @@ import (
 	"time"
 )
 
-// Source produces a Snapshot. DirSource is one; a git Source is another. A
-// Source may also implement Revisioner.
-type Source interface {
-	Load() (*Snapshot, error)
-}
-
-// Revisioner is implemented by a Source that can name the revision its last
-// successful Load read. The value is opaque to the engine. DirSource does not
-// implement it, so its Revision is empty.
-type Revisioner interface {
-	Revision() string
-}
-
 // SyncStatus reports how the Syncer is doing. LastError is redacted: it holds
 // no paths, URLs or credentials, and is empty after a successful poll.
 type SyncStatus struct {
