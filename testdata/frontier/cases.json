@@ -1,0 +1,27 @@
+[
+  {"name": "oldest first within a class",
+   "issues": [
+     {"number": 3, "createdAt": "2026-01-03T00:00:00Z", "labels": [], "epic": null},
+     {"number": 1, "createdAt": "2026-01-01T00:00:00Z", "labels": [], "epic": null},
+     {"number": 2, "createdAt": "2026-01-02T00:00:00Z", "labels": [], "epic": null}],
+   "want": [1, 2, 3]},
+  {"name": "bug and priority first, security is only a tag",
+   "issues": [
+     {"number": 10, "createdAt": "2026-01-01T00:00:00Z", "labels": [], "epic": null},
+     {"number": 11, "createdAt": "2026-01-05T00:00:00Z", "labels": ["security"], "epic": null},
+     {"number": 12, "createdAt": "2026-01-06T00:00:00Z", "labels": ["priority"], "epic": null},
+     {"number": 13, "createdAt": "2026-01-07T00:00:00Z", "labels": ["bug"], "epic": null}],
+   "want": [12, 13, 10, 11]},
+  {"name": "finish the started epic before standalone work and new epics",
+   "issues": [
+     {"number": 20, "createdAt": "2026-01-01T00:00:00Z", "labels": [], "epic": {"number": 90, "createdAt": "2026-01-01T00:00:00Z", "started": false}},
+     {"number": 21, "createdAt": "2026-01-02T00:00:00Z", "labels": [], "epic": null},
+     {"number": 22, "createdAt": "2026-01-09T00:00:00Z", "labels": [], "epic": {"number": 91, "createdAt": "2026-01-03T00:00:00Z", "started": true}}],
+   "want": [22, 21, 20]},
+  {"name": "the oldest started epic before a newer started epic",
+   "issues": [
+     {"number": 30, "createdAt": "2026-01-01T00:00:00Z", "labels": [], "epic": {"number": 92, "createdAt": "2026-01-05T00:00:00Z", "started": true}},
+     {"number": 31, "createdAt": "2026-01-08T00:00:00Z", "labels": [], "epic": {"number": 93, "createdAt": "2026-01-02T00:00:00Z", "started": true}},
+     {"number": 32, "createdAt": "2026-01-04T00:00:00Z", "labels": [], "epic": {"number": 93, "createdAt": "2026-01-02T00:00:00Z", "started": true}}],
+   "want": [32, 31, 30]}
+]

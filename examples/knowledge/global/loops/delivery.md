@@ -12,8 +12,9 @@ Run one tick. The repository's loop rules are authoritative; this Item is the su
 
 1. If `main` is red, fix it first.
 2. Advance every stream whose subagent returned; resume your own streams from GitHub state.
-3. While fewer than two streams run, claim the next frontier issue by pushing its branch. The first
-   push wins.
+3. While fewer than two streams run, claim the first issue of the ranked frontier (bugs and
+   priorities, then the started epic, then standalone work, then a new epic) by pushing its branch.
+   The first push wins.
 4. Each stream:
    - `agent:test-author` writes failing acceptance tests;
    - `agent:implementer` makes them pass, following the existing pattern;

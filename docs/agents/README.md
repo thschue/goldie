@@ -50,15 +50,20 @@ Triage labels are in [triage-labels.md](./triage-labels.md). Flow labels:
   - `spec`, `product`, `decision`: owned by the product session;
   - `round-cap`, `security`, `human-check`, `credential`: owned by the maintainer.
 - `area:<lane>` on issues (`engine`, `api`, `cli`, `mcp`, `platform`, `ui`, `contract`): the
-  product session sets it; each delivery session prefers its lane.
+  product session sets it; a session's two streams never share a lane's package.
 
 A loop never adds a label it doesn't own here. Re-read labels right before every write.
 
 ## Order of work
 
-`bug`, `security` and `priority` first, then oldest first (issues by `createdAt`, PRs by when they
-were claimed). Finish before starting: resumed streams come before new claims. Work that unblocks
-the most gets `priority` (at most 2 open), sliced to the smallest unblocking change.
+**Finish before starting:** resumed streams before new claims, and the started epic before a new
+one. `scripts/frontier` ranks the claimable issues (never re-rank them):
+1. `bug` and `priority` (at most 2 open: the work that unblocks the most);
+2. issues of a started epic (a sub-issue closed or in progress), the oldest started epic first;
+3. standalone issues;
+4. issues of a new epic, the oldest epic first; only when nothing above is claimable.
+
+Oldest first within each. `security` on a LOW follow-up is a tag, not a rank.
 
 ## Gates
 

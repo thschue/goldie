@@ -6,6 +6,7 @@
       "Bash(scripts/loop-poll *)",
       "Bash(scripts/loop-metrics*)",
       "Bash(scripts/claim *)",
+      "Bash(scripts/frontier*)",
       "Bash(scripts/merge-pr *)",
       "Bash(scripts/test-lock *)",
       "Bash(git *)",

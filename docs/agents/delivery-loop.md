@@ -21,11 +21,9 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
 3. **Renovate PRs:** an open, unreviewed `renovate[bot]` PR is a stream with no test or implement
    step. The `reviewer` reads the diff and the release notes; no code from it runs locally; CI is
    authoritative.
-4. **Claim** while fewer than 2 streams are running. Build the
-   [frontier](./issue-tracker.md#frontier-query), own lane (`area:` matching `GOLDIE_LANE`) first,
-   then any lane, in the [order of work](./README.md#order-of-work). Skip an issue that shares a Go
-   package or Vue feature folder with this session's other stream. Then run
-   `scripts/claim <n> <type>`:
+4. **Claim** while fewer than 2 streams are running: the first issue `scripts/frontier` prints
+   ([order of work](./README.md#order-of-work)) that shares no Go package or Vue feature folder
+   with this session's other stream. Run `scripts/claim <n> <type>`:
    - it pushes the deterministic branch `<type>/issue-<n>-<slug>`, opens the draft PR, posts the
      `claim` marker, and sets `in-progress` and the assignee;
    - exit 3 means another session won: take the next issue.
