@@ -475,8 +475,8 @@ components:
     NotReady:
       description: |
         The server has not loaded its content yet, so it cannot answer; the
-        error code is `not_ready`. Retry shortly. Once a load has succeeded it
-        never answers this again, even if a later load fails.
+        error code is `not_ready`. Retry shortly. Once this server has loaded
+        its content it never answers this again, even if a later load fails.
       content:
         application/json:
           schema:
