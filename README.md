@@ -20,10 +20,11 @@ The server publishes its OpenAPI 3.1 contract on the public listener at `/openap
 running server through the generated client. Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
 `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. `status` reports
 whether the server answers and accepts the token (`--json` adds `tokenGiven`) and which Project the
-CLI works for. The Project is `--project`, else `GOLDIE_PROJECT`, else `project:` in
-`.goldie/config.yaml`, else the `upstream` (or `origin`) git remote, normalised to `host/org/repo`.
-The remote is read from `.git/config`; git need not be installed, and credentials in a remote URL are
-never printed. The sync state arrives with the sync work (#6).
+CLI works for. The Project is `--project` (only `status` takes it for now), else `GOLDIE_PROJECT`,
+else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git
+remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git need not be
+installed, and credentials in a remote URL are never printed. The sync state arrives with the sync
+work (#6).
 
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
