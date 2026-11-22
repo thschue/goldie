@@ -251,7 +251,8 @@ func TestCLIStatusWithoutToken(t *testing.T) {
 
 func TestCLIVersionAgainstServer(t *testing.T) {
 	srv := cliServer(t)
-	out, err := runCLI(t, "version", "--addr", srv.URL, "--json")
+	// The API document takes the reader role (#101), so version sends the token.
+	out, err := runCLI(t, "version", "--addr", srv.URL, "--token", cliToken, "--json")
 	if err != nil {
 		t.Fatal(err)
 	}
