@@ -7,19 +7,23 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"golang.org/x/net/proxy"
 )
 
 // Load limits for one GitSource Load. The remote is untrusted, and a pack is
 // compressed and delta encoded, so a few MB on the wire can unpack to GB.
 const (
-	maxGitWireBytes   = 64 << 20  // bytes read from an https server, ref listing included
+	maxGitWireBytes   = 64 << 20  // bytes read from an https or ssh server, ref listing included
 	maxGitMemoryBytes = 256 << 20 // the pack plus its objects once unpacked
 	gitObjectOverhead = 256       // charged per object for its bookkeeping
 )
@@ -75,6 +79,72 @@ func newGitHTTPClient() transport.Transport {
 		},
 	}
 	return githttp.NewClient(&http.Client{Transport: tr})
+}
+
+// sshDialScheme names the dialer through which every ssh connection of a Load
+// goes. go-git dials ssh with no context and leaves the connection without a
+// deadline, so a server that stalls in the handshake would hold the Load past
+// its bound; its proxy hook is the only place that sees the connection.
+const sshDialScheme = "goldie-ssh-load"
+
+var (
+	sshLoads   sync.Map // load id -> *sshDialer
+	sshLoadSeq atomic.Uint64
+)
+
+// registerSSHDialer installs the dialer type behind sshDialScheme, once, from
+// useGitTransports.
+func registerSSHDialer() {
+	proxy.RegisterDialerType(sshDialScheme, func(u *url.URL, _ proxy.Dialer) (proxy.Dialer, error) {
+		d, ok := sshLoads.Load(u.Host)
+		if !ok {
+			return nil, errors.New("no load for this ssh connection")
+		}
+		return d.(*sshDialer), nil
+	})
+}
+
+// sshDialer dials a Load's ssh connections, through ALL_PROXY when it is set,
+// as go-git would. Each connection ends at the Load's deadline and charges its
+// reads to the Load's wire budget, like an https one.
+type sshDialer struct {
+	budget   *gitBudget
+	deadline time.Time
+}
+
+// sshProxy routes the ssh connections of one Load through an sshDialer. The
+// returned func forgets the Load.
+func sshProxy(budget *gitBudget, deadline time.Time) (transport.ProxyOptions, func()) {
+	id := strconv.FormatUint(sshLoadSeq.Add(1), 10)
+	sshLoads.Store(id, &sshDialer{budget: budget, deadline: deadline})
+	return transport.ProxyOptions{URL: sshDialScheme + "://" + id}, func() { sshLoads.Delete(id) }
+}
+
+func (d *sshDialer) Dial(network, addr string) (net.Conn, error) {
+	return d.DialContext(context.Background(), network, addr)
+}
+
+func (d *sshDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	ctx, cancel := context.WithDeadline(ctx, d.deadline)
+	defer cancel()
+	var (
+		c   net.Conn
+		err error
+	)
+	switch fwd := proxy.FromEnvironmentUsing(&net.Dialer{Timeout: 30 * time.Second}).(type) {
+	case proxy.ContextDialer:
+		c, err = fwd.DialContext(ctx, network, addr)
+	default:
+		c, err = fwd.Dial(network, addr)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := c.SetDeadline(d.deadline); err != nil {
+		_ = c.Close()
+		return nil, err
+	}
+	return budgetConn{Conn: c, b: d.budget}, nil
 }
 
 // budgetConn charges what it reads to the wire budget.

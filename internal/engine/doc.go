@@ -13,20 +13,28 @@
 // two entries of one name, and caps each load's steps, content bytes and path
 // length, so a tree that reuses subtrees cannot expand without bound.
 //
-// A GitSource loads a git repository over https or file through that tree
-// fs.FS. It uses go-git in process (no git binary) and clones into memory (no
-// disk), depth 1 over https. Each Load lists the remote refs first and clones
-// only when the ref moved; otherwise it returns the cached Snapshot. Its
-// revision is the commit SHA, and one Load is bounded by two minutes. A remote
-// is untrusted, so each Load also has a byte budget: what it reads from an
-// https server, ref listing included, and the pack plus its objects once
-// unpacked, charged from the object headers before anything is unpacked. A
-// load over either stops there with a fixed error. NewGitSource installs, once
-// per process, go-git's in-process file:// server and an https client that
-// charges the budget. A token
-// is a value, accepted only with https and sent as the basic-auth password;
-// credentials in the URL, http:// and git:// are rejected. Its errors are
-// fixed messages that never carry the URL, the token or a host path.
+// A GitSource loads a git repository over https, ssh or file through that
+// tree fs.FS. It uses go-git in process (no git binary) and clones into memory
+// (no disk), depth 1 over https and ssh. Each Load lists the remote refs first
+// and clones only when the ref moved; otherwise it returns the cached
+// Snapshot. Its revision is the commit SHA, and one Load is bounded by two
+// minutes. A remote is untrusted, so each Load also has a byte budget: what it
+// reads from an https or ssh server, ref listing included, and the pack plus
+// its objects once unpacked, charged from the object headers before anything
+// is unpacked. A load over either stops there with a fixed error.
+// NewGitSource installs, once per process, go-git's in-process file:// server,
+// an https client that charges the budget, and an ssh dialer that charges it
+// and ends each connection at the Load's bound.
+//
+// Credentials are values. A token is accepted only with https and sent as the
+// basic-auth password. An ssh URL needs an unencrypted PEM private key and
+// known_hosts content; its user, git by default, is the login. The host key
+// is always verified from that content in memory: plain and hashed hosts,
+// [host]:port, negation and @revoked, while wildcards and @cert-authority fail
+// closed. No ~/.ssh file and no SSH agent is read. A password in the URL,
+// any other URL user, http:// and git:// are rejected. Errors are fixed
+// messages that never carry the URL, a credential, a key fingerprint,
+// known_hosts content or a host path.
 //
 // Search and Article see global articles only; SearchIn and ArticleIn take a
 // Project and resolve its articles before global ones, ranking with the keyword

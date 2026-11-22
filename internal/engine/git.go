@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +23,16 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"golang.org/x/crypto/ssh"
 )
 
 // GitOptions configures a git Source. Credentials are passed in as values: the
-// engine reads no environment or file for them.
+// engine reads no environment, file or SSH agent for them.
 type GitOptions struct {
-	// URL is https://host/path or file:///path. It carries no credentials;
-	// those go in Token.
+	// URL is https://host/path, ssh://[user@]host[:port]/path or
+	// file:///path. It carries no password; credentials go in Token or SSHKey.
+	// An ssh URL's user is the login name, git when there is none.
 	URL string
 	// Ref is a branch, a tag or a full ref name (refs/...). Empty means the
 	// remote's HEAD.
@@ -35,12 +40,19 @@ type GitOptions struct {
 	// Token is an HTTPS access token, sent as the basic-auth password. It is
 	// only accepted with an https URL.
 	Token string
+	// SSHKey is an unencrypted PEM private key, only accepted with an ssh URL,
+	// which needs one.
+	SSHKey string
+	// KnownHosts is known_hosts content, which an ssh URL needs: the server's
+	// host key is always checked against it, and nothing skips that check.
+	KnownHosts string
 }
 
-// String describes o without the token or URL user info, so logging
-// GitOptions with %v or %+v never prints a credential.
+// String describes o without the token, the SSH key, the known hosts or URL
+// user info, so logging GitOptions with %v or %+v never prints a credential.
 func (o GitOptions) String() string {
-	return fmt.Sprintf("{URL:%s Ref:%q Token:%s}", redactURL(o.URL), o.Ref, redactToken(o.Token))
+	return fmt.Sprintf("{URL:%s Ref:%q Token:%s SSHKey:%s KnownHosts:%s}", redactURL(o.URL), o.Ref,
+		redactToken(o.Token), redactToken(o.SSHKey), redactToken(o.KnownHosts))
 }
 
 // GoString is String, for %#v.
@@ -49,7 +61,8 @@ func (o GitOptions) GoString() string { return "engine.GitOptions" + o.String() 
 // LogValue implements slog.LogValuer with the same redaction as String.
 func (o GitOptions) LogValue() slog.Value {
 	return slog.GroupValue(slog.String("url", redactURL(o.URL)), slog.String("ref", o.Ref),
-		slog.String("token", redactToken(o.Token)))
+		slog.String("token", redactToken(o.Token)), slog.String("ssh_key", redactToken(o.SSHKey)),
+		slog.String("known_hosts", redactToken(o.KnownHosts)))
 }
 
 func redactToken(t string) string {
@@ -73,6 +86,9 @@ func redactURL(raw string) string {
 // gitLoadTimeout bounds one Load, so a stalled server cannot hold the Syncer.
 const gitLoadTimeout = 2 * time.Minute
 
+// sshUser is the login name for an ssh URL without a user.
+const sshUser = "git"
+
 // tokenUser is the basic-auth user name sent with Token. GitHub and GitLab
 // accept any non-empty name with an access token.
 const tokenUser = "x-access-token"
@@ -82,11 +98,15 @@ var installGitTransports sync.Once
 // useGitTransports installs, once per process, the go-git transports a
 // GitSource needs. PC-11: no git binary, so file:// is served by go-git's
 // in-process server rather than an exec'd git-upload-pack. https goes through
-// a client that charges each Load's reads to its budget.
+// a client that charges each Load's reads to its budget. ssh is go-git's
+// client, with ~/.ssh/config switched off so no file can redirect a host, and
+// its connections dialled by sshDialer, which applies the same bounds.
 func useGitTransports() {
 	installGitTransports.Do(func() {
 		client.InstallProtocol("file", server.NewClient(server.DefaultLoader))
 		client.InstallProtocol("https", newGitHTTPClient())
+		gitssh.DefaultSSHConfig = nil
+		registerSSHDialer()
 	})
 }
 
@@ -113,7 +133,7 @@ type GitSource struct {
 }
 
 // NewGitSource validates opts and returns a git Source. It contacts no server.
-// Its errors are fixed messages that never contain the URL or the token.
+// Its errors are fixed messages that never contain the URL or a credential.
 func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if strings.TrimSpace(opts.URL) == "" {
 		return nil, errors.New("git source: URL is empty")
@@ -122,12 +142,15 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if err != nil {
 		return nil, errors.New("git source: URL is not valid")
 	}
-	if u.User != nil {
-		return nil, errors.New("git source: URL must not carry credentials; use Token")
-	}
 	scheme := strings.ToLower(u.Scheme)
+	if _, hasPassword := u.User.Password(); hasPassword || (u.User != nil && scheme != "ssh") {
+		return nil, errors.New("git source: URL must not carry credentials; use Token or SSHKey")
+	}
 	if scheme != "https" && opts.Token != "" {
 		return nil, errors.New("git source: Token needs an HTTPS URL")
+	}
+	if scheme != "ssh" && (opts.SSHKey != "" || opts.KnownHosts != "") {
+		return nil, errors.New("git source: SSHKey and KnownHosts need an ssh URL")
 	}
 	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
 	switch {
@@ -136,10 +159,15 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 		if opts.Token != "" {
 			s.auth = &githttp.BasicAuth{Username: tokenUser, Password: opts.Token}
 		}
+	case scheme == "ssh" && u.Hostname() != "" && u.Opaque == "":
+		s.shallow = true
+		if s.auth, err = newSSHAuth(u, opts); err != nil {
+			return nil, err
+		}
 	case scheme == "file" && u.Host == "" && u.Opaque == "" && u.Path != "":
 		// go-git's in-process server does not serve shallow clones.
 	default:
-		return nil, errors.New("git source: URL must be HTTPS with a host, or FILE with an absolute path")
+		return nil, errors.New("git source: URL must be HTTPS or SSH with a host, or FILE with an absolute path")
 	}
 	if _, err := transport.NewEndpoint(opts.URL); err != nil {
 		return nil, errors.New("git source: URL is not valid")
@@ -149,6 +177,55 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	}
 	useGitTransports()
 	return s, nil
+}
+
+// newSSHAuth checks the SSH key and known hosts of an ssh URL u. The host key
+// is always verified against KnownHosts; there is no option to skip it.
+func newSSHAuth(u *url.URL, opts GitOptions) (*sshAuth, error) {
+	if opts.SSHKey == "" {
+		return nil, errors.New("git source: an ssh URL needs SSHKey")
+	}
+	if strings.TrimSpace(opts.KnownHosts) == "" {
+		return nil, errors.New("git source: an ssh URL needs KnownHosts; host keys are always verified")
+	}
+	signer, err := ssh.ParsePrivateKey([]byte(opts.SSHKey))
+	if err != nil {
+		return nil, errors.New("git source: SSHKey is not an unencrypted PEM private key")
+	}
+	kh, err := parseKnownHosts(opts.KnownHosts)
+	if err != nil {
+		return nil, err
+	}
+	port := u.Port()
+	if port == "" {
+		port = strconv.Itoa(gitssh.DefaultPort)
+	}
+	user := u.User.Username()
+	if user == "" {
+		user = sshUser
+	}
+	return &sshAuth{cfg: ssh.ClientConfig{
+		User:              user,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback:   kh.check,
+		HostKeyAlgorithms: kh.algorithms(net.JoinHostPort(u.Hostname(), port)),
+		Timeout:           30 * time.Second,
+	}}, nil
+}
+
+// sshAuth offers one key and checks the host key against the given known
+// hosts. go-git falls back to ~/.ssh/known_hosts only when HostKeyCallback is
+// nil, and here it never is; it asks an SSH agent only when no AuthMethod is
+// set, and here one always is.
+type sshAuth struct{ cfg ssh.ClientConfig }
+
+func (a *sshAuth) Name() string   { return gitssh.PublicKeysName }
+func (a *sshAuth) String() string { return gitssh.PublicKeysName }
+
+// ClientConfig returns a copy, so go-git's changes to it do not stick.
+func (a *sshAuth) ClientConfig() (*ssh.ClientConfig, error) {
+	cfg := a.cfg
+	return &cfg, nil
 }
 
 // Revision returns the commit SHA the last successful Load read, or "" before
@@ -168,9 +245,16 @@ func (s *GitSource) Load() (*Snapshot, error) {
 	budget := &gitBudget{wire: s.maxWire, mem: s.maxMem}
 	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), gitBudgetKey{}, budget), s.timeout)
 	defer cancel()
+	var dial transport.ProxyOptions
+	if _, ok := s.auth.(*sshAuth); ok {
+		deadline, _ := ctx.Deadline()
+		var forget func()
+		dial, forget = sshProxy(budget, deadline)
+		defer forget()
+	}
 
 	remote := git.NewRemote(newBudgetStorage(budget), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
-	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: s.auth, CABundle: s.caBundle})
+	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: s.auth, CABundle: s.caBundle, ProxyOptions: dial})
 	if err != nil {
 		return nil, s.fetchError(err, budget)
 	}
@@ -189,7 +273,7 @@ func (s *GitSource) Load() (*Snapshot, error) {
 	}
 
 	clone := &git.CloneOptions{
-		URL: s.url, Auth: s.auth, CABundle: s.caBundle,
+		URL: s.url, Auth: s.auth, CABundle: s.caBundle, ProxyOptions: dial,
 		ReferenceName: name, SingleBranch: true, Tags: git.NoTags,
 	}
 	if s.shallow {
@@ -290,15 +374,20 @@ func (s *GitSource) fetchError(err error, budget *gitBudget) error {
 	switch {
 	case budget.exceeded():
 		msg = "the repository " + errLoadLimit.Error()
+	case errors.Is(err, errHostKeyNotTrusted):
+		msg = "the SSH host key is not trusted by KnownHosts"
 	case errors.Is(err, transport.ErrAuthenticationRequired), errors.Is(err, transport.ErrAuthorizationFailed):
 		msg = "authentication failed; check the token"
+	case strings.Contains(err.Error(), "ssh: unable to authenticate"):
+		// x/crypto has no error type for a refused key, only this text.
+		msg = "authentication failed; check the SSH key"
 	case errors.Is(err, transport.ErrRepositoryNotFound):
 		msg = "repository not found, or not readable with these credentials"
 	case errors.Is(err, transport.ErrEmptyRemoteRepository):
 		msg = "the repository is empty"
 	case errors.As(err, &certErr), errors.As(err, &unknown), errors.As(err, &hostname), errors.As(err, &invalid):
 		msg = "the server's TLS certificate is not trusted"
-	case errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded):
 		msg = "timed out after " + s.timeout.String()
 	case errors.As(err, &opErr):
 		msg = "cannot connect to the git server"
