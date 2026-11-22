@@ -1,13 +1,16 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Client info on server spans (#89). By default a server span carries no
@@ -296,5 +299,82 @@ func TestMalformedClientInfoFailsStartupWhenSDKDisabled(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "maybe") {
 		t.Errorf("error %q echoes the value", err)
+	}
+}
+
+// A handler behind WrapHandler that parses a multipart form with a file part
+// leaves its temp file to net/http's cleanup, which only removes files named
+// by the original request's MultipartForm. restoreRequest hands the handler a
+// copy, so the form must be copied back onto the original (as otelhttp does),
+// or the file stays in the temp directory after the response.
+// t.Setenv keeps TMPDIR private to this test, so it cannot be parallel.
+func TestMultipartTempFileIsRemovedAfterWrappedHandlerResponds(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), &logSink{})
+	const content = "file-part-content-that-exceeds-the-tiny-memory-limit"
+	var during int
+	h := tel.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1); err != nil { // 1 byte: the file part spills to disk
+			t.Errorf("ParseMultipartForm: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		f, _, err := r.FormFile("upload")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		b, _ := io.ReadAll(f)
+		_ = f.Close()
+		if string(b) != content {
+			t.Errorf("handler read file %q, want %q", b, content)
+		}
+		entries, _ := os.ReadDir(tmp)
+		during = len(entries)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("upload", "u.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte(content))
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(srv.URL, mw.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d, want 204", resp.StatusCode)
+	}
+	if during == 0 {
+		t.Fatal("no temp file existed while the handler ran: the test does not exercise a spill to disk")
+	}
+
+	// net/http removes the files after it finishes the response, which can be
+	// just after the client has read it.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		entries, err := os.ReadDir(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d temp file(s) left in TMPDIR after the response: the original request's MultipartForm was not set", len(entries))
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
