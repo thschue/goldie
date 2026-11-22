@@ -80,6 +80,8 @@ func redactURL(raw string) string {
 	if u.User != nil {
 		u.User = url.User("[redacted]")
 	}
+	u.RawQuery = redactToken(u.RawQuery)
+	u.Fragment, u.RawFragment = redactToken(u.Fragment), ""
 	return u.String()
 }
 
@@ -137,6 +139,11 @@ type GitSource struct {
 func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if strings.TrimSpace(opts.URL) == "" {
 		return nil, errors.New("git source: URL is empty")
+	}
+	// A query or a fragment is where a token gets pasted, and git needs
+	// neither; in a valid URL, ? and # appear only to start them.
+	if strings.ContainsAny(opts.URL, "?#") {
+		return nil, errors.New("git source: URL must not carry a query or a fragment")
 	}
 	u, err := url.Parse(opts.URL)
 	if err != nil {
@@ -253,7 +260,7 @@ func (s *GitSource) Load() (*Snapshot, error) {
 		defer forget()
 	}
 
-	remote := git.NewRemote(newBudgetStorage(budget), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
+	remote := git.NewRemote(newLoadStorage(ctx, budget), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: s.auth, CABundle: s.caBundle, ProxyOptions: dial})
 	if err != nil {
 		return nil, s.fetchError(err, budget)
@@ -279,7 +286,7 @@ func (s *GitSource) Load() (*Snapshot, error) {
 	if s.shallow {
 		clone.Depth = 1
 	}
-	repo, err := git.CloneContext(ctx, newBudgetStorage(budget), nil, clone)
+	repo, err := git.CloneContext(ctx, newLoadStorage(ctx, budget), nil, clone)
 	if err != nil {
 		return nil, s.fetchError(err, budget)
 	}

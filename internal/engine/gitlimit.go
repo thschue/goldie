@@ -25,7 +25,11 @@ import (
 const (
 	maxGitWireBytes   = 64 << 20  // bytes read from an https or ssh server, ref listing included
 	maxGitMemoryBytes = 256 << 20 // the pack plus its objects once unpacked
-	gitObjectOverhead = 256       // charged per object for its bookkeeping
+	// gitObjectOverhead is charged per object for its bookkeeping. A pack of
+	// many tiny distinct objects peaks at about 540 live bytes per object
+	// while it unpacks (go-git v5.19.3, measured by
+	// TestGitMemoryChargeCoversMeasuredPeak), so 1024 covers it with room.
+	gitObjectOverhead = 1024
 )
 
 // gitBudget is what one Load may still read and unpack. hit records that a
@@ -37,9 +41,23 @@ type gitBudget struct {
 	hit  bool
 }
 
-func (b *gitBudget) spend(left *int64, n int64) error {
+// spendWire charges n bytes read from a server to the wire budget.
+func (b *gitBudget) spendWire(n int64) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.spendLocked(&b.wire, n)
+}
+
+// spendMem charges n bytes of pack or unpacked object to the memory budget.
+func (b *gitBudget) spendMem(n int64) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.spendLocked(&b.mem, n)
+}
+
+// spendLocked takes n from left, one of b's budgets. A refused spend, over
+// what is left or negative, spends that budget and records the hit.
+func (b *gitBudget) spendLocked(left *int64, n int64) error {
 	if n < 0 || n > *left {
 		*left, b.hit = 0, true
 		return errLoadLimit
@@ -57,10 +75,14 @@ func (b *gitBudget) exceeded() bool {
 // gitBudgetKey carries a Load's budget to the connections it dials.
 type gitBudgetKey struct{}
 
+var errNoLoadBudget = errors.New("git https dial outside a load budget")
+
 // newGitHTTPClient is go-git's https client with each connection's reads
 // charged to the budget of the Load that dialled it. It stays an
 // *http.Transport, so go-git can still apply a CA bundle to a clone of it, and
-// keep-alives are off, so no connection outlives its Load.
+// keep-alives are off, so no connection outlives its Load. A dial whose
+// context carries no budget fails before it connects, so no connection goes
+// uncharged.
 func newGitHTTPClient() transport.Transport {
 	dialer := &net.Dialer{Timeout: 30 * time.Second}
 	tr := &http.Transport{
@@ -68,14 +90,15 @@ func newGitHTTPClient() transport.Transport {
 		TLSHandshakeTimeout: 10 * time.Second,
 		DisableKeepAlives:   true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			b, ok := ctx.Value(gitBudgetKey{}).(*gitBudget)
+			if !ok || b == nil {
+				return nil, errNoLoadBudget
+			}
 			c, err := dialer.DialContext(ctx, network, addr)
 			if err != nil {
 				return nil, err
 			}
-			if b, ok := ctx.Value(gitBudgetKey{}).(*gitBudget); ok {
-				return budgetConn{Conn: c, b: b}, nil
-			}
-			return c, nil
+			return budgetConn{Conn: c, b: b}, nil
 		},
 	}
 	return githttp.NewClient(&http.Client{Transport: tr})
@@ -171,7 +194,7 @@ type budgetConn struct {
 func (c budgetConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
 	if n > 0 {
-		if berr := c.b.spend(&c.b.wire, int64(n)); berr != nil {
+		if berr := c.b.spendWire(int64(n)); berr != nil {
 			return 0, berr
 		}
 	}
@@ -180,13 +203,21 @@ func (c budgetConn) Read(p []byte) (int, error) {
 
 // budgetStorage is go-git's in-memory store with a pack writer, so a fetch
 // hands it the raw pack and the pack is unpacked only once it fits the budget.
+// Unpacking stops when ctx ends.
 type budgetStorage struct {
 	*memory.Storage
-	b *gitBudget
+	b   *gitBudget
+	ctx context.Context
 }
 
 func newBudgetStorage(b *gitBudget) budgetStorage {
-	return budgetStorage{Storage: memory.NewStorage(), b: b}
+	return newLoadStorage(context.Background(), b)
+}
+
+// newLoadStorage is a budgetStorage that stops unpacking when the Load's ctx
+// ends.
+func newLoadStorage(ctx context.Context, b *gitBudget) budgetStorage {
+	return budgetStorage{Storage: memory.NewStorage(), b: b, ctx: ctx}
 }
 
 // PackfileWriter implements storer.PackfileWriter.
@@ -204,7 +235,7 @@ type packWriter struct {
 
 func (w *packWriter) Write(p []byte) (int, error) {
 	if w.err == nil {
-		w.err = w.s.b.spend(&w.s.b.mem, int64(len(p)))
+		w.err = w.s.b.spendMem(int64(len(p)))
 	}
 	if w.err != nil {
 		return 0, w.err
@@ -217,15 +248,32 @@ func (w *packWriter) Close() error {
 		return w.err
 	}
 	pack := w.buf.Bytes()
-	if err := checkPack(pack, w.s.b); err != nil {
+	if err := checkPack(w.s.ctx, pack, w.s.b); err != nil {
 		return err
 	}
-	p, err := packfile.NewParserWithStorage(packfile.NewScanner(bytes.NewReader(pack)), w.s.Storage)
+	r := ctxReader{Reader: bytes.NewReader(pack), ctx: w.s.ctx}
+	p, err := packfile.NewParserWithStorage(packfile.NewScanner(r), w.s.Storage)
 	if err != nil {
 		return err
 	}
 	_, err = p.Parse()
 	return err
+}
+
+// ctxReader stops reading a pack when ctx ends. go-git's parser calls its
+// observers only while it resolves deltas, so the reader under its scanner is
+// where a Load's deadline stops an unpacking that resolves none. It keeps
+// Seek, so the scanner stays seekable.
+type ctxReader struct {
+	*bytes.Reader
+	ctx context.Context
+}
+
+func (r ctxReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(p)
 }
 
 var errBadPack = errors.New("malformed pack")
@@ -234,7 +282,8 @@ var errBadPack = errors.New("malformed pack")
 // charges each object's unpacked size to the memory budget. A whole object's
 // size is in its header, and go-git never inflates past it. A delta's result
 // size is declared in its data, and go-git rejects a delta that writes more.
-func checkPack(pack []byte, b *gitBudget) error {
+// The walk stops when ctx ends.
+func checkPack(ctx context.Context, pack []byte, b *gitBudget) error {
 	sc := packfile.NewScanner(bytes.NewReader(pack))
 	_, n, err := sc.Header()
 	if err != nil {
@@ -242,11 +291,14 @@ func checkPack(pack []byte, b *gitBudget) error {
 	}
 	var delta bytes.Buffer
 	for range n {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		oh, err := sc.NextObjectHeader()
 		if err != nil {
 			return errBadPack
 		}
-		if err := b.spend(&b.mem, oh.Length+gitObjectOverhead); err != nil {
+		if err := b.spendMem(oh.Length + gitObjectOverhead); err != nil {
 			return err
 		}
 		if !oh.Type.IsDelta() {
@@ -260,7 +312,7 @@ func checkPack(pack []byte, b *gitBudget) error {
 		if err != nil {
 			return err
 		}
-		if err := b.spend(&b.mem, target); err != nil {
+		if err := b.spendMem(target); err != nil {
 			return err
 		}
 	}
@@ -286,7 +338,7 @@ func deltaTargetSize(d []byte) (int64, error) {
 		}
 	}
 	if size > 1<<62 {
-		return -1, nil // spend rejects a negative size
+		return -1, nil // spendMem rejects a negative size
 	}
 	return int64(size), nil
 }
