@@ -72,7 +72,13 @@ func (s DirSource) Load() (*Snapshot, error) {
 		return nil, err
 	}
 	for _, d := range dirs {
-		articles, err := loadArticles(fsys, d.dir+"/articles", d.scope)
+		// fs.WalkDir follows a symlinked start directory, and os.Root only
+		// stops links out of the root, so reject a symlinked articles dir here.
+		dir := d.dir + "/articles"
+		if fi, err := fs.Lstat(fsys, dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%s: is a symlink; Project articles must be a directory", dir)
+		}
+		articles, err := loadArticles(fsys, dir, d.scope)
 		if err != nil {
 			return nil, err
 		}

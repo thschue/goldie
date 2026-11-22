@@ -239,6 +239,23 @@ func TestProjectSymlinksAreNotFollowed(t *testing.T) {
 	}
 }
 
+// A Project articles directory that is a symlink is rejected even when it
+// points inside the root, so one directory cannot pose as another scope.
+func TestProjectArticlesSymlinkInsideRootIsRejected(t *testing.T) {
+	root := writeFiles(t, map[string]string{"global/articles/g.md": article("G", "g")})
+	mustMkdir(t, filepath.Join(root, "projects/github.com/acme/shop"))
+	if err := os.Symlink("../../../../global/articles", filepath.Join(root, "projects/github.com/acme/shop/articles")); err != nil {
+		t.Skip("symlinks unavailable")
+	}
+	_, err := engine.NewDirSource(root).Load()
+	if err == nil {
+		t.Fatal("a symlinked Project articles directory was accepted")
+	}
+	if want := "projects/github.com/acme/shop/articles: "; !strings.HasPrefix(err.Error(), want) || strings.Contains(err.Error(), root) {
+		t.Fatalf("error = %q, want prefix %q and no host path", err, want)
+	}
+}
+
 func mustMkdir(t *testing.T, p string) {
 	t.Helper()
 	if err := os.MkdirAll(p, 0o755); err != nil {
