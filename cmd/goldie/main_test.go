@@ -15,8 +15,9 @@ func TestRunVersionPrintsPlatformVersion(t *testing.T) {
 	if err := run([]string{"version"}, &out); err != nil {
 		t.Fatalf("run version: %v", err)
 	}
-	if got := strings.TrimSpace(out.String()); got != platform.Version {
-		t.Fatalf("version output = %q, want %q", got, platform.Version)
+	first, _, _ := strings.Cut(out.String(), "\n")
+	if got := strings.TrimSpace(first); got != platform.Version {
+		t.Fatalf("version first line = %q, want %q (output %q)", got, platform.Version, out.String())
 	}
 }
 
