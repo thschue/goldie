@@ -35,8 +35,8 @@ type Server struct {
 	Config Config
 	Logger *slog.Logger
 	Ready  *Registry
-	// App serves the public listener beside /version. nil means everything
-	// else is the not-found envelope.
+	// App serves the public listener. nil means every path is the not-found
+	// envelope. Probes and /version are admin-only (PC-01).
 	App http.Handler
 	// OnListen, when set, is called with each bound address ("app" or
 	// "admin") before serving starts. Tests use it with port 0.
@@ -78,7 +78,6 @@ func (s *Server) adminHandler() http.Handler {
 
 func (s *Server) appHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /version", versionHandler)
 	if s.App != nil {
 		mux.Handle("/", s.App)
 	} else {

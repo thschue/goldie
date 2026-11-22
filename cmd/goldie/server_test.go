@@ -159,7 +159,7 @@ func httpGet(t *testing.T, url string) (int, string) {
 func TestPC01And03BinaryServesProbesAndVersion(t *testing.T) {
 	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
 	defer func() { _ = p.cmd.Process.Signal(syscall.SIGTERM); _ = p.waitExit(t, 5*time.Second) }()
-	for _, path := range []string{"/livez", "/readyz"} {
+	for _, path := range []string{"/livez", "/readyz", "/version"} {
 		if code, _ := httpGet(t, "http://"+p.admin+path); code != 200 {
 			t.Errorf("admin %s = %d", path, code)
 		}
@@ -167,12 +167,10 @@ func TestPC01And03BinaryServesProbesAndVersion(t *testing.T) {
 			t.Errorf("app %s = %d, want 404", path, code)
 		}
 	}
-	for _, addr := range []string{p.admin, p.app} {
-		_, body := httpGet(t, "http://"+addr+"/version")
-		want := `{"version":"1.2.3","commit":"abc123","date":"2026-01-02"}`
-		if strings.TrimSpace(body) != want {
-			t.Errorf("%s/version = %s, want %s", addr, body, want)
-		}
+	_, body := httpGet(t, "http://"+p.admin+"/version")
+	want := `{"version":"1.2.3","commit":"abc123","date":"2026-01-02"}`
+	if strings.TrimSpace(body) != want {
+		t.Errorf("%s/version = %s, want %s", p.admin, body, want)
 	}
 }
 
