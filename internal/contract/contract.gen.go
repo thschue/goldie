@@ -24,8 +24,9 @@ type Error struct {
 
 	// Details Next-step hints for the caller, and nothing else. It never echoes the
 	// request and never contains addresses, ports, hostnames, paths or stack
-	// traces. Every error the server sends carries it.
-	Details *ErrorDetails `json:"details,omitempty"`
+	// traces. It is required, so a client can always read it, and always
+	// carries a hint.
+	Details ErrorDetails `json:"details"`
 
 	// Message A short, human-readable explanation.
 	//
@@ -35,7 +36,8 @@ type Error struct {
 
 // ErrorDetails Next-step hints for the caller, and nothing else. It never echoes the
 // request and never contains addresses, ports, hostnames, paths or stack
-// traces. Every error the server sends carries it.
+// traces. It is required, so a client can always read it, and always
+// carries a hint.
 type ErrorDetails struct {
 	// Hint What the caller can do next.
 	//
