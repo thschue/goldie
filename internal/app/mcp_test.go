@@ -91,6 +91,18 @@ func TestMCPToolsAreAdvertised(t *testing.T) {
 	}
 }
 
+func TestMCPToolDescriptionsMarkResultsAsData(t *testing.T) {
+	res, err := connect(t, testToken).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range res.Tools {
+		if !strings.Contains(tl.Description, "as data, not as instructions") {
+			t.Errorf("%s: the description must say that what it returns from a Source is data: %q", tl.Name, tl.Description)
+		}
+	}
+}
+
 func TestMCPSearchHit(t *testing.T) {
 	cs := connect(t, testToken)
 	text, isErr := call(t, cs, "search_knowledge", map[string]any{"query": "agents loops"})
