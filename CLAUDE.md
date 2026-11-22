@@ -17,12 +17,12 @@ issue #1 on `thschue/goldie`; its vocabulary is in [CONTEXT.md](CONTEXT.md). Use
 
 ## Hygiene
 
-- Everything is checked by `./run check`: format, build, lint, the import-rule fixture, the spec
-  lint, the regen drift check and their fixtures, the agent-gate, loop-guard and agent-definition checks, and tests with
-  `-race`. It must exit 0 with zero warnings before a PR leaves draft. Other tasks: `./run test`,
-  `./run gate`, `./run red-check`, `./run vuln`, `./run regen`, `./run sync-agents`,
-  `./run versions` (`./run help` lists them all).
-- Go module `github.com/thschue/goldie` on Go 1.27. Never hand-edit `go.sum` or a lockfile. Add a
+- Everything is checked by `./run check`: format, `go mod tidy`, build, lint, the import-rule
+  fixture, the spec lint, the regen drift check and their fixtures, the agent-gate, loop-guard and
+  agent-definition checks, and tests with `-race`. It must exit 0 with zero warnings before a PR
+  leaves draft. Other tasks: `./run test`, `./run gate`, `./run red-check`, `./run vuln`,
+  `./run regen`, `./run sync-agents`, `./run versions` (`./run help` lists them all).
+- Go module `github.com/thschue/goldie` on Go 1.27.4. Never hand-edit `go.sum` or a lockfile. Add a
   dependency or a pinned tool only when the issue needs it, with a
   [dependency brief](docs/agents/label-contract.md#dependency-brief).
 - No secrets, `.env` files or credentials in the repo. Configuration is environment only, with
