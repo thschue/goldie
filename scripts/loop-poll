@@ -4,12 +4,15 @@
 #   scripts/loop-poll <issue-worker|review|pm-audit>
 #
 # Prints one line:
-#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> [triage=<n>] fingerprint=<hash>
+#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> [triage=<n>] [locked=<n> stale=<n>] fingerprint=<hash>
 # main is the state of the `ci` workflow on the head of main (red stops the
 # line). work counts what the loop could act on now; 0 lets the tick end
 # without further reasoning. pm-audit compares the fingerprint (main, open
 # issues, open PR heads and labels) with its ledger instead, and also gets
-# triage=<open needs-triage issues>. Read-only.
+# triage=<open needs-triage issues>. review and pm-audit get the `in-review`
+# locks: stale counts locks whose review is finished (the latest own marker is
+# for the head and newer than the lock) or that are older than 30 min.
+# Read-only.
 set -eu
 
 die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
@@ -33,6 +36,34 @@ red=$(printf '%s' "$runs" | jq -r '
 		and (.conclusion == "failure" or .conclusion == "timed_out"))
 		| .workflowName] | if length == 0 then "-" else join(",") end')
 
+# locks: print " locked=<n> stale=<n>" for the PRs labelled in-review.
+locks() {
+	me=$(gh api user --jq .login) || die "cannot resolve the gh user"
+	now=$(date -u +%s)
+	n=0
+	stale=0
+	for pr in $(gh pr list --label in-review --json number --jq '.[].number') ; do
+		n=$((n + 1))
+		head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid) || die "cannot read PR $pr"
+		locked_at=$(gh api --paginate "repos/{owner}/{repo}/issues/$pr/timeline" --jq \
+			'.[] | select(.event == "labeled" and .label.name == "in-review") | .created_at' | tail -n 1) ||
+			die "cannot read the timeline of PR $pr"
+		marker=$(gh api --paginate "repos/{owner}/{repo}/issues/$pr/comments" --jq \
+			".[] | select(.user.login == \"$me\" and (.body | test(\"<!-- goldie-loop:review \")))
+				| \"\\(.created_at) \\(.body | capture(\"<!-- goldie-loop:review (?<m>[^>]*)-->\").m)\"" | tail -n 1) ||
+			die "cannot read the comments of PR $pr"
+		state=$(jq -rn --arg locked "$locked_at" --arg marker "$marker" --arg head "$head" --argjson now "$now" '
+			($marker | split(" ")) as $m
+			| ($m[1:] | map(select(test("^(sha|fixed)=")) | sub("^[a-z]+="; ""))) as $shas
+			| if $locked == "" then "stale"
+			  elif $marker != "" and $m[0] > $locked and ($shas | index($head)) then "stale"
+			  elif $now - ($locked | fromdateiso8601) > 1800 then "stale"
+			  else "live" end') || die "cannot judge the lock on PR $pr"
+		if [ "$state" = stale ]; then stale=$((stale + 1)); fi
+	done
+	printf ' locked=%s stale=%s' "$n" "$stale"
+}
+
 case "$loop" in
 issue-worker)
 	rework=$(gh pr list --author @me --label changes-requested --json number,labels \
@@ -51,12 +82,13 @@ review)
 			| select(.autoMergeRequest == null)
 			| select([.labels[].name] | (index("needs-info") or index("changes-requested") or index("needs-maintainer")) | not)
 		] | length')
+	extra=$(locks)
 	;;
 pm-audit)
 	work=-
 	triage=$(gh issue list --state open --label needs-triage --limit 500 --json number --jq length) ||
 		die "cannot count needs-triage issues"
-	extra=" triage=$triage"
+	extra=" triage=$triage$(locks)"
 	;;
 *) die "unknown loop: $loop" ;;
 esac

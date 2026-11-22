@@ -35,8 +35,16 @@ The rest (main, `--admin`, leases, containers) is enforced by the
    - An argument `dry-run` means: write nothing, print every write.
 1. **Merged sweep.** For PRs merged since the last tick, remove `needs-maintainer`, then the
    reviewer worktrees.
-2. **Locks.** Remove `in-review` from a PR that has no live reviewer in this session and was locked
-   more than 60 min ago, and re-queue it.
+2. **Locks.** Check every PR labelled `in-review` (`scripts/loop-poll review` prints
+   `locked=<n> stale=<n>`). A lock comes off in this tick when it is:
+   - **finished:** the latest own marker is for the current head (`sha=` or `fixed=`) and newer
+     than the lock. Remove `in-review`; the queue takes it from there;
+   - **lost:** no reviewer for the PR is running in this session (always the case in the first tick
+     after a session start), and the current head has no own marker. Remove `in-review` and
+     re-queue the PR. Its lenses' worktrees are cleaned up; a report that still arrives for a
+     released lock is discarded.
+
+   A live reviewer running longer than 60 min is reported as a stall, and its lock stays.
 3. **Drift.** For every PR with auto-merge armed, or with `needs-maintainer`, whose head differs from
    the latest own marker's SHA:
    - disable auto-merge where `enabledBy == $me`;
@@ -161,7 +169,9 @@ this:
 
 ## Finishing a review
 
-First remove `in-review`. Then:
+First remove `in-review`. Post the marker and remove the label in one command
+(`gh pr comment … && gh pr edit <n> --remove-label in-review`), so a finished review never keeps
+its lock. Then:
 
 - **Head check.** The head must be the reviewed SHA, or the reviewed SHA plus exactly the reported
   fix commits. Otherwise the review is void: re-queue the PR.
