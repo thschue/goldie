@@ -84,8 +84,12 @@ paths:
           required: true
           description: |
             The article id: its path under `articles/` without `.md` (ADR 0015).
-            A nested id contains `/`, which is sent percent-encoded as `%2F`,
-            as generated clients do.
+            The id is one path segment (ADR 0016). A `/` inside a nested id is
+            sent percent-encoded as `%2F`, as generated clients do:
+            `platform/deploy` is requested as `/api/v1/articles/platform%2Fdeploy`.
+            A bare slash (`/api/v1/articles/platform/deploy`) is not an article
+            lookup and answers the not-found envelope. Ids in response bodies
+            are always decoded.
           schema:
             type: string
             minLength: 1
