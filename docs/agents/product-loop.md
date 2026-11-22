@@ -48,7 +48,8 @@ Each step runs only after the steps before it are done.
    | `question` | the critical list; ask the maintainer |
 
 3. **Refine until the buffer holds:** at least **2 × WIP** claimable issues (WIP = 2 streams × the
-   number of delivery sessions), on at least 3 lanes. Work the order of work.
+   number of delivery sessions). The started epic comes first: keep at least 2 of its slices
+   claimable so both streams can finish it; then the next epic by the order of work.
    - **Slice** epics and large issues into sub-issues chained by `blocked_by`, so the first slice
      needs nothing open. An issue labelled `ready-for-agent` that fails the size check is sliced in
      this tick.
@@ -65,7 +66,8 @@ Each step runs only after the steps before it are done.
    - You decide what goes in. Architect and UX input that would delay a valuable outcome becomes a
      follow-up issue with its value stated.
    - Write the issue body from the [template](./issue-tracker.md#issue-template). Set the `area:`
-     lane. Keep `priority` on the 2 issues that unblock the most.
+     lane, and attach slices and follow-ups to their epic as sub-issues. Keep `priority` on the 2
+     issues that unblock the most.
 
    **Readiness gate** (all must pass):
    - it changes one Go package or Vue feature folder, within about 400 lines;

@@ -16,7 +16,7 @@ Supporting labels:
 - `grilling-needed`: an open design question; run `/grilling` before it can be ready
 - `question`: a decision the maintainer has to make
 - `priority`: at most 2 open at a time
-- `bug`, `security`: ranking hints
+- `bug`: ranks first; `security`: a tag (MEDIUM+ goes to a private advisory)
 
 - `area:engine`, `area:api`, `area:cli`, `area:mcp`, `area:platform`, `area:ui`, `area:contract`:
   the lane, set by the product session

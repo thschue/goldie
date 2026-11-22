@@ -17,6 +17,15 @@ a `NAME_FILE` form that reads the value from a file; setting both is an error (P
 | `GOLDIE_RATE_LIMIT` | `20/s,burst=40` | The request limit per token on every /api/ path and on /mcp: &lt;n&gt;/s or &lt;n&gt;/m, n requests per second or per minute for each token name, optionally followed by ,burst=&lt;b&gt;, the most requests a token may send at once (b defaults to n). n and b are positive integers. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An /mcp tool call that reads the API also counts its API request. A malformed value stops the server. |
 | `GOLDIE_SWAGGER_UI_ENABLED` | `true` | Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404. |
 
+## Connection timeouts
+
+These are fixed, not settings. The public listener closes a connection that takes more than
+10 seconds to send request headers, more than 30 seconds to send the whole request, or that
+sits idle for 60 seconds between requests. It sets no server-wide write timeout, so long
+responses keep working; `/mcp` bounds its own requests. The admin listener bounds the whole
+request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows
+`GOLDIE_DRAIN_SECONDS`.
+
 ## OpenTelemetry
 
 Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
@@ -25,7 +34,8 @@ OpenTelemetry, with the validation noted. Admin-port requests are not traced. Re
 headers and query strings are not recorded. goldie reads every variable listed here through
 its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as
 OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own
-handling: goldie neither validates nor documents them. Only the OTLP headers variables
+handling: goldie neither validates nor documents them, but a value the SDK rejects is never
+printed; goldie logs one fixed warning instead. Only the OTLP headers variables
 accept a _FILE form; for any other OTEL_* name it is an error.
 
 | Variable | Default | Meaning |

@@ -46,7 +46,7 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
 	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
-	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
+	{"OTEL_SERVICE_NAME", defaultServiceName, "Overrides the service.name resource attribute."},
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
 
@@ -89,6 +89,13 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Configuration is environment only (PC-04). Every variable in the table below also accepts\n")
 	b.WriteString("a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).\n\n")
 	table(&b, rows)
+	b.WriteString("\n## Connection timeouts\n\n")
+	b.WriteString("These are fixed, not settings. The public listener closes a connection that takes more than\n")
+	b.WriteString("10 seconds to send request headers, more than 30 seconds to send the whole request, or that\n")
+	b.WriteString("sits idle for 60 seconds between requests. It sets no server-wide write timeout, so long\n")
+	b.WriteString("responses keep working; `/mcp` bounds its own requests. The admin listener bounds the whole\n")
+	b.WriteString("request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows\n")
+	b.WriteString("`GOLDIE_DRAIN_SECONDS`.\n")
 	b.WriteString("\n## OpenTelemetry\n\n")
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
@@ -96,7 +103,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
 	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
-	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
+	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
+	b.WriteString("printed; goldie logs one fixed warning instead. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
