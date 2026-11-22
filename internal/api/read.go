@@ -21,7 +21,7 @@ var badSearch = envelope("bad_request", "missing or invalid search words",
 
 // badProject is the 400 envelope for a project parameter that is not a ProjectId.
 var badProject = envelope("bad_request", "invalid project",
-	"Pass project as host/org/repo, for example github.com/acme/shop, or list the registered Projects with GET /api/v1/projects.")
+	"Pass project as host/org/repo, for example github.com/acme/payments. Leave it out to get the global answer.")
 
 // unregisteredHint tells a caller that named a Project this server does not
 // hold that it got the global answer (ADR 0014), and how to register it. The

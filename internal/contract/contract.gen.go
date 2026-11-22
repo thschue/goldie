@@ -73,7 +73,7 @@ type Error struct {
 type ErrorDetails struct {
 	// Hint What the caller can do next.
 	//
-	// Examples: Check the request path against the OpenAPI document.
+	// Examples: Check the request path against the OpenAPI document., Pass project as host/org/repo, for example github.com/acme/payments. Leave it out to get the global answer.
 	Hint string `json:"hint"`
 }
 
