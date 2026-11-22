@@ -57,11 +57,11 @@ const EnvToken = "GOLDIE_TOKEN"
 const EnvProject = "GOLDIE_PROJECT"
 
 // ClientSettings lists the variables the client commands (search, lookup,
-// status, version) read. They are not server configuration: LoadConfig
+// status, version) and goldie mcp --transport stdio read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
-	{EnvAddr, "", "Server URL, http:// or https://, that the client commands talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
-	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup and status send; --token overrides it. status works without it."},
+	{EnvAddr, "", "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
+	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
 	{EnvProject, "", "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it."},
 }
 
@@ -98,7 +98,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
-	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables.\n")
+	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")
+	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR and GOLDIE_TOKEN).\n")
 	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
 	table(&b, ClientSettings)
 	return []byte(b.String())

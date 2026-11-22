@@ -74,11 +74,10 @@ func Run(ctx context.Context, args []string, env Env) error {
 		return errors.New("usage: goldie " + Usage)
 	}
 	name := args[0]
-	var s settings
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.StringVar(&s.addr, "addr", "", "server address")
-	fs.StringVar(&s.token, "token", "", "API token")
+	f := BindClientFlags(fs)
+	s := &f.s
 	if name == "status" { // only status reads the Project until #8
 		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	}
@@ -87,23 +86,12 @@ func Run(ctx context.Context, args []string, env Env) error {
 	if err != nil {
 		return fmt.Errorf("%w\nusage: goldie %s", err, Usage)
 	}
-	if s.addr == "" {
-		s.addr, _ = env.Lookup(EnvAddr)
-	}
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
-	if s.token == "" && name != "version" {
-		if s.token, err = platform.Setting(env.Lookup, env.ReadFile, EnvToken); err != nil {
-			return err
-		}
+	c, err := f.commander(env, name != "version")
+	if err != nil {
+		return err
 	}
-	httpc := &http.Client{Timeout: requestTimeout}
-	if env.Client != nil {
-		httpc = env.Client
-	}
-	limited := *httpc
-	limited.Transport = limitTransport{base: httpc.Transport}
-	c := &commander{s: s, out: env.Out, http: &limited, env: env}
 
 	switch name {
 	case "search":
@@ -127,6 +115,54 @@ func Run(ctx context.Context, args []string, env Env) error {
 		}
 		return c.version(ctx)
 	}
+}
+
+// ClientFlags are the client settings: the server address and the API token.
+// Every client command reads them the same way, and so does any other role
+// that talks to the API as a client (goldie mcp --transport stdio).
+type ClientFlags struct{ s settings }
+
+// BindClientFlags registers --addr and --token on fs.
+func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
+	f := &ClientFlags{}
+	fs.StringVar(&f.s.addr, "addr", "", "server address")
+	fs.StringVar(&f.s.token, "token", "", "API token")
+	return f
+}
+
+// Client returns the API client for the settings, after fs is parsed. A flag
+// overrides its variable: --addr over GOLDIE_ADDR, --token over GOLDIE_TOKEN
+// or GOLDIE_TOKEN_FILE. Every call sends the token, every answer is capped at
+// 16 MiB and every request has a timeout, as in the client commands. A missing
+// or invalid setting is an error that names it and shows no value.
+func (f *ClientFlags) Client(env Env) (*contract.ClientWithResponses, error) {
+	c, err := f.commander(env, true)
+	if err != nil {
+		return nil, err
+	}
+	return c.client(true)
+}
+
+// commander resolves the settings from the flags and env. With needToken it
+// reads the token variables, which may fail.
+func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
+	s := f.s
+	if s.addr == "" {
+		s.addr, _ = env.Lookup(EnvAddr)
+	}
+	if s.token == "" && needToken {
+		var err error
+		if s.token, err = platform.Setting(env.Lookup, env.ReadFile, EnvToken); err != nil {
+			return nil, err
+		}
+	}
+	httpc := &http.Client{Timeout: requestTimeout}
+	if env.Client != nil {
+		httpc = env.Client
+	}
+	limited := *httpc
+	limited.Transport = limitTransport{base: httpc.Transport}
+	return &commander{s: s, out: env.Out, http: &limited, env: env}, nil
 }
 
 // parseInterleaved parses flags that may come before, between or after the
