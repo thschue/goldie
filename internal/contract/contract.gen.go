@@ -27,6 +27,13 @@ type Article struct {
 	// Examples: Use the platform chart.
 	Content string `json:"content"`
 
+	// Hint Present when the request named a Project that is not registered: the
+	// article is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
+	Hint *string `json:"hint,omitempty"`
+
 	// Id The article id, its path under `articles/` without `.md`.
 	//
 	// Examples: platform/deploy
@@ -76,6 +83,22 @@ type ErrorEnvelope struct {
 	Error Error `json:"error"`
 }
 
+// ProjectId A Project: exactly three segments `host/org/repo` (ADR 0020). The host
+// is a lower-case DNS name that starts with a letter or digit; the org and
+// the repo use letters, digits, `.`, `_` and `-` and do not start with a
+// dot. Clients send it lower-cased; the server matches it ignoring case.
+//
+// Examples: github.com/acme/shop
+type ProjectId = string
+
+// ProjectList The Projects the server holds Scope for.
+type ProjectList struct {
+	// Projects The Projects, sorted.
+	//
+	// Examples: ["github.com/acme/shop"]
+	Projects []ProjectId `json:"projects"`
+}
+
 // SearchHit One article that matched a search.
 //
 // Examples: {"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}
@@ -120,6 +143,13 @@ type SearchHit struct {
 //
 // Examples: {"query":"kubernetes","results":[{"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}]}
 type SearchResults struct {
+	// Hint Present when the request named a Project that is not registered: the
+	// results are the global ones, and this says what to do next.
+	//
+	//
+	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
+	Hint *string `json:"hint,omitempty"`
+
 	// Query The search words as received.
 	//
 	// Examples: deploy kubernetes
@@ -137,10 +167,25 @@ type ErrorResponse = ErrorEnvelope
 // RateLimited The body of every error response.
 type RateLimited = ErrorEnvelope
 
+// GetArticleParams defines parameters for GetArticle.
+type GetArticleParams struct {
+	// Project Look the article up for this Project (ADR 0020): its own article
+	// wins over the global one with the same id. Matched ignoring case.
+	// An unregistered Project answers the global article with a `hint`; a
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
 // SearchArticlesParams defines parameters for SearchArticles.
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
 	Q string `form:"q" json:"q"`
+
+	// Project Resolve for this Project (ADR 0020): its articles come before the
+	// global ones and win on an equal id. Matched ignoring case. A Project
+	// that is not registered answers the global results with a `hint`; a
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 }
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
@@ -223,7 +268,16 @@ type ClientInterface interface {
 	// 404 whose hint points to search.
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
-	GetArticle(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListProjects List the registered Projects
+	//
+	// Returns the Projects the server holds Scope for, sorted, as
+	// `host/org/repo` in the case they are stored in. A server with none
+	// answers an empty list. Pass one as `project` on search and lookup.
+	//
+	// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
+	ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SearchArticles Search articles by keyword
 	//
@@ -256,8 +310,27 @@ type ClientInterface interface {
 // 404 whose hint points to search.
 //
 // Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
-func (c *Client) GetArticle(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetArticleRequest(c.Server, id)
+func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArticleRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListProjects List the registered Projects
+//
+// Returns the Projects the server holds Scope for, sorted, as
+// `host/org/repo` in the case they are stored in. A server with none
+// answers an empty list. Pass one as `project` on search and lookup.
+//
+// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
+func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListProjectsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +396,7 @@ func (c *Client) GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditor
 }
 
 // NewGetArticleRequest constructs an http.Request for the GetArticle method
-func NewGetArticleRequest(server string, id string) (*http.Request, error) {
+func NewGetArticleRequest(server string, id string, params *GetArticleParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -339,6 +412,60 @@ func NewGetArticleRequest(server string, id string) (*http.Request, error) {
 	}
 
 	operationPath := "/api/v1/articles/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListProjectsRequest constructs an http.Request for the ListProjects method
+func NewListProjectsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/projects"
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -390,6 +517,18 @@ func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*htt
 			for _, qp := range strings.Split(queryFrag, "&") {
 				rawQueryFragments = append(rawQueryFragments, qp)
 			}
+		}
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
 		}
 
 		if encoded := queryValues.Encode(); encoded != "" {
@@ -512,7 +651,18 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
-	GetArticleWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
+	GetArticleWithResponse(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
+
+	// ListProjectsWithResponse List the registered Projects
+	//
+	// Returns the Projects the server holds Scope for, sorted, as
+	// `host/org/repo` in the case they are stored in. A server with none
+	// answers an empty list. Pass one as `project` on search and lookup.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
+	ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
 
 	// SearchArticlesWithResponse Search articles by keyword
 	//
@@ -555,6 +705,8 @@ type GetArticleResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Article
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
 	// JSON404 the response for an HTTP 404 `application/json` response
@@ -570,6 +722,11 @@ type GetArticleResponse struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r GetArticleResponse) GetJSON200() *Article {
 	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetArticleResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -615,6 +772,75 @@ func (r GetArticleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetArticleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListProjectsResponse429Headers the declared response headers of an HTTP 429 response for ListProjects
+type ListProjectsResponse429Headers struct {
+	RetryAfter *int
+}
+
+type ListProjectsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProjectList
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *ListProjectsResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListProjectsResponse) GetJSON200() *ProjectList {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListProjectsResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r ListProjectsResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListProjectsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListProjectsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListProjectsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListProjectsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListProjectsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -801,12 +1027,29 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
-func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetArticleResponse, error) {
-	rsp, err := c.GetArticle(ctx, id, reqEditors...)
+func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*GetArticleResponse, error) {
+	rsp, err := c.GetArticle(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseGetArticleResponse(rsp)
+}
+
+// ListProjectsWithResponse List the registered Projects
+//
+// Returns the Projects the server holds Scope for, sorted, as
+// `host/org/repo` in the case they are stored in. A server with none
+// answers an empty list. Pass one as `project` on search and lookup.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
+func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error) {
+	rsp, err := c.ListProjects(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListProjectsResponse(rsp)
 }
 
 // SearchArticlesWithResponse Search articles by keyword
@@ -878,6 +1121,13 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -911,6 +1161,66 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetArticleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListProjectsResponse parses an HTTP response from a ListProjectsWithResponse call
+func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListProjectsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectList
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers ListProjectsResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -1061,7 +1371,10 @@ func ParseGetOpenAPIYAMLResponse(rsp *http.Response) (*GetOpenAPIYAMLResponse, e
 type ServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
-	GetArticle(w http.ResponseWriter, r *http.Request, id string)
+	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
+	// ListProjects List the registered Projects
+	// (GET /api/v1/projects)
+	ListProjects(w http.ResponseWriter, r *http.Request)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
@@ -1097,8 +1410,38 @@ func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArticleParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetArticle(w, r, id)
+		siw.Handler.GetArticle(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListProjects operation middleware
+func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListProjects(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1126,6 +1469,19 @@ func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
 		}
 		return
 	}
@@ -1291,6 +1647,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search", wrapper.SearchArticles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPIYAML)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetOpenAPIJSON)
 
@@ -1309,7 +1666,8 @@ type RateLimitedJSONResponse struct {
 }
 
 type GetArticleRequestObject struct {
-	Id string `json:"id"`
+	Id     string `json:"id"`
+	Params GetArticleParams
 }
 
 type GetArticleResponseObject interface {
@@ -1326,6 +1684,20 @@ func (response GetArticle200JSONResponse) VisitGetArticleResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticle400JSONResponse ErrorEnvelope
+
+func (response GetArticle400JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1387,6 +1759,81 @@ type GetArticledefaultJSONResponse struct {
 }
 
 func (response GetArticledefaultJSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjectsRequestObject struct {
+}
+
+type ListProjectsResponseObject interface {
+	VisitListProjectsResponse(w http.ResponseWriter) error
+}
+
+type ListProjects200JSONResponse ProjectList
+
+func (response ListProjects200JSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjects401JSONResponse ErrorEnvelope
+
+func (response ListProjects401JSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjects429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response ListProjects429JSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjectsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response ListProjectsdefaultJSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -1575,6 +2022,9 @@ type StrictServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
+	// ListProjects List the registered Projects
+	// (GET /api/v1/projects)
+	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
@@ -1629,10 +2079,11 @@ type strictHandler struct {
 }
 
 // GetArticle operation middleware
-func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id string) {
+func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams) {
 	var request GetArticleRequestObject
 
 	request.Id = id
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetArticle(ctx, request.(GetArticleRequestObject))
@@ -1647,6 +2098,30 @@ func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetArticleResponseObject); ok {
 		if err := validResponse.VisitGetArticleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListProjects operation middleware
+func (sh *strictHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
+	var request ListProjectsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListProjects(ctx, request.(ListProjectsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListProjects")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListProjectsResponseObject); ok {
+		if err := validResponse.VisitListProjectsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

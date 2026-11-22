@@ -46,7 +46,8 @@ exit 0 with zero warnings. Reviewers use the same list.
 - [ ] Session and login hardening holds: forged Origin, missing CSRF, replayed state, expiry, use
       after logout.
 - [ ] No secret, token or GitHub credential appears in logs, errors, responses or test fixtures.
-- [ ] `/security-review` ran on the diff and its findings are fixed or explained.
+- [ ] `/security-review` ran on the diff and its findings are fixed or explained (for loop PRs,
+      the `security-reviewer` and `reviewer` pass replaces it).
 
 ## Platform Contract
 

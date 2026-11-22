@@ -6,7 +6,7 @@ number names the case that motivated the rule.
 
 | # | Situation | Session | Expected writes |
 |---|---|---|---|
-| S1 | Two delivery sessions claim the same issue at once | delivery | One `scripts/claim` wins; the other exits 3 and claims the next issue. One draft PR, one `claim` marker |
+| S1 | Two delivery sessions claim the same issue at once; or `origin` is unreachable | delivery | One `scripts/claim` wins; the other exits 3 and claims the next issue. One draft PR, one `claim` marker. Unreachable `origin`: exit 2, never reported as lost |
 | S2 | Session restarted with a stream at "review" (draft PR, tests and implementation pushed, no `review` marker) | delivery | Resumed at step 3 with fresh reviewers; nothing re-claimed |
 | S3 | Stream of another session idle for over 2 h | delivery | New `claim` marker for this session, then resumed |
 | S4 | `feat` issue, criteria clear | delivery | `test(acceptance)` commit and `tests sha=` marker, then implementer, reviewers, clean marker, `scripts/merge-pr` |
@@ -14,15 +14,14 @@ number names the case that motivated the rule.
 | S6 | Implementer edited a `main` test line without approval | delivery | `scripts/merge-pr` exits 3; a blocking finding, back to the implementer |
 | S7 | Reviewer finds one blocking and two LOW findings | delivery | Same implementer fixes them (`SendMessage`); only that reviewer re-runs; clean, then merge |
 | S8 | Blocking finding still open after 2 fix rounds | delivery | `review reason=round-cap` marker, `needs-info reason=round-cap`; inbox "Decide" |
-| S9 | Clean review, gate exits 1 (new direct dependency, verified brief, #50) | delivery | `needs-maintainer`, marker lists the reasons and the brief; nothing queued |
-| S10 | Clean review, `run` gains a task (#58) | delivery | Gate exits 0 with `review: check tooling changed: run`; the marker says why it isn't significant; queued |
-| S11 | PR adds `\|\| true` to an existing step in `run` | delivery | Significant: `needs-maintainer` |
+| S9 | Clean review, gate exits 1 (new direct dependency, verified brief, #50) | delivery | `needs-maintainer`, marker lists the reasons and the brief; nothing merged |
+| S10 | Clean review, `run` gains a task (#58); another PR adds `\|\| true` to an existing step | delivery | First: `review:` reason judged not significant in the marker, merged. Second: significant, `needs-maintainer` |
 | S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table; the implementer ran on `opus` |
 | S13 | Implementer unsure which module owns a function | delivery | a `Consult (architect):` note with question and answer; implementer resumed; 4th consult parks `needs-info reason=spec` |
 | S14 | Clean except a non-additive product question | delivery | `review reason=decision`, `needs-info reason=decision`; product answers `PM decision: merge`; merge-pr on the same head |
 | S15 | `ci` red on `main` | delivery, product | Delivery claims nothing new, fixes `main` as a found-fix stream; product puts it first in the inbox |
 | S16 | Renovate PR bumps a Go module | delivery | `reviewer` reads diff and notes, no local code run; clean, merge-pr; an Actions bump is held by the gate |
-| S17 | Subagent report without a valid JSON block | delivery | Treated as `blocked`; no markers or labels written from it |
+| S17 | Implementer ends without a JSON block and with commits unpushed (#141, #153) | delivery | Nothing written from the report; the same implementer is resumed once to push, write the PR body and report; a second `blocked` parks `needs-info reason=human-check` |
 | S18 | Reviewer reproduces a MEDIUM bug on `main` | delivery | Draft advisory, fix pushed to its private fork; the id to the user; nothing public |
 | S19 | Buffer is 3, target 8; issues #6–#34 are epic-sized | product | Epics sliced into sub-issues with `blocked_by` chains, each with Acceptance, Pattern to follow and `area:`; audit skipped this tick |
 | S20 | Several LOW follow-ups in one area (#89–#91) | product | Bundled into the oldest issue as a checklist; the rest closed as duplicates |

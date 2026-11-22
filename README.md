@@ -19,10 +19,16 @@ is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client. Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
-`GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. `status` reports
+`GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. Prefer `GOLDIE_TOKEN` or `GOLDIE_TOKEN_FILE` to `--token`: a `--token` value shows in the
+process list (`ps`) of the machine. The CLI follows no redirects, so a server cannot send the token
+elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`. `status` reports
 whether the server answers and accepts the token (`--json` adds `tokenGiven`) and which Project the
 CLI works for; without an accepted token it cannot read the API document, so it reports the API as
-unknown, and `version` leaves out the server's API version. The Project is `--project` (only `status` takes it for now), else `GOLDIE_PROJECT`,
+unknown, and `version` leaves out the server's API version. `search`, `lookup` and `status` take `--project`, and `search` and `lookup` send the resolved Project
+to the server as `project=`. If the server does not have that Project registered, it answers with
+the global results plus a hint, which the CLI prints (and carries in `--json`, for `status` too). An
+unusable Project (a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error before
+any request is made, for `search` and `lookup` as for `status`. The Project is `--project`, else `GOLDIE_PROJECT`,
 else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git
 remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git need not be
 installed, and credentials in a remote URL are never printed. The sync state arrives with the sync
@@ -39,7 +45,8 @@ goldie lookup platform/deploy
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
 `search_knowledge` and `get_article`. An agent's MCP client starts it as a subprocess. It talks to a
 running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
-(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable. A missing or invalid
+(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable. Prefer the variables to `--token`: a `--token` value shows in the
+process list (`ps`) and is saved in the MCP client's config, while the variables can name a file. A missing or invalid
 setting stops it at startup with a message on stderr that names the setting. Stdout carries only MCP
 messages; errors go to stderr. It exits when the client closes stdin. There is no local mode yet
 (#10): it needs a server address.

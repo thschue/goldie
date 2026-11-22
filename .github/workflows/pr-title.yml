@@ -1,0 +1,38 @@
+name: pr-title
+
+# The PR title becomes the squash commit message (CLAUDE.md), so it is linted on
+# every change to it, including an edit, without re-running the other checks.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-pr-title:
+    name: lint-pr-title
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@0723387faaf9b38adef4775cd42cfd5155ed6017 # v5.5.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            build
+            ci
+            chore
+            perf
+            style
+            revert

@@ -27,7 +27,7 @@ minutes from ready to merge.
   - a fresh-context, read-only `reviewer`, plus `architect`, `ux-designer` or `security-reviewer`
     on narrow path triggers;
   - at most two fix rounds in the same stream;
-  - `scripts/merge-pr` into the GitHub merge queue.
+  - `scripts/merge-pr`: auto-merge, or a direct squash for a PR that is already green.
   Review stays independent because reviewers see artifacts (diff, issue, record), never the
   implementer's reasoning, and they can't edit.
 - **Hub and spoke.** Subagents talk only through their orchestrator. A subagent may ask another one
@@ -37,7 +37,9 @@ minutes from ready to merge.
   the `test-author`'s approval, recorded as a marker. `scripts/merge-pr` enforces it through
   `scripts/test-lock`.
 - **Native tools over rules:**
-  - the merge queue replaces the drift, red-after-arming and rebase rules;
+  - auto-merge pinned to the reviewed head replaces the drift and red-after-arming rules. A merge
+    queue isn't available to a user-owned repository, so skew between PRs is caught by CI on
+    `main` and the stop-the-line rule;
   - Renovate replaces manual dependency upkeep;
   - a branch push replaces claim locks.
 - **The harness changes only in batches by the maintainer.** Loops record friction in the pinned
@@ -62,6 +64,6 @@ ADR 0013 still holds. Superseded from ADR 0012: the separate reviewer session, t
 - **The product session can become the bottleneck.** It refines first, and its inbox says when the
   ready buffer stays below 2 × WIP.
 - **Same identity:** markers and the test lock stop mistakes, not a determined agent. Branch rules,
-  the merge queue and the required checks remain the real controls. A dedicated bot identity is a
+  auto-merge and the required checks remain the real controls. A dedicated bot identity is a
   later option for the maintainer.
 - **Rollback:** revert the PR that introduced this ADR, which restores the three loops.

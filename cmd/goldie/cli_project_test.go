@@ -153,13 +153,3 @@ func TestCLIStatusNeverPrintsRemoteCredentials(t *testing.T) {
 		t.Errorf("err = %v, want an error without the credential", err)
 	}
 }
-
-// TestCLIProjectFlagStatusOnly checks that only status takes --project until
-// the other commands use the Project (#8).
-func TestCLIProjectFlagStatusOnly(t *testing.T) {
-	for _, args := range [][]string{{"search", "x"}, {"lookup", "x"}, {"version"}} {
-		if _, err := runCLI(t, append(args, "--project", "ex.com/a/b")...); err == nil || !strings.Contains(err.Error(), "-project") {
-			t.Errorf("%v --project: err = %v, want an unknown-flag error", args, err)
-		}
-	}
-}

@@ -16,9 +16,13 @@ import (
 // MCPUsage is the one-line usage of the mcp role, without the program name.
 const MCPUsage = "mcp --transport stdio [--addr URL] [--token TOKEN]"
 
+// mcpTokenNote recommends the token variables over --token: its value shows in
+// the process list (ps), and an MCP client saves it in its config.
+const mcpTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE to --token: a --token value shows in the process list (ps) and is saved in the MCP client's config"
+
 // errTransport is the usage error for a missing or unknown --transport. The
 // value given is never echoed: it may hold control characters.
-var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + MCPUsage)
+var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + MCPUsage + "\n" + mcpTokenNote)
 
 // RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
 // the API as a client with the CLI's client settings from args and env. It
@@ -32,10 +36,10 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	settings := cli.BindClientFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		// flag's message echoes the argument, which may hold control characters.
-		return errors.New("unknown flag, or a flag without its value\nusage: goldie " + MCPUsage)
+		return errors.New("unknown flag, or a flag without its value\nusage: goldie " + MCPUsage + "\n" + mcpTokenNote)
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: goldie " + MCPUsage)
+		return errors.New("usage: goldie " + MCPUsage + "\n" + mcpTokenNote)
 	}
 	if *transport != "stdio" {
 		return errTransport

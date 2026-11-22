@@ -82,7 +82,7 @@ func article(ctx context.Context, c contract.ClientWithResponsesInterface, id st
 		return failure(withHint("the article id is empty or made only of dots",
 			"Search for the article with search_knowledge, then use an id from its results."))
 	}
-	resp, err := c.GetArticleWithResponse(ctx, id)
+	resp, err := c.GetArticleWithResponse(ctx, id, nil)
 	if err != nil {
 		return failure(transportError(err))
 	}

@@ -28,13 +28,20 @@ const (
 
 // Usage is the one-line usage of the client commands, without the program
 // name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> | lookup <id> | status [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
+const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
+
+// TokenNote follows the usage text: it recommends the token variables over
+// --token, whose value shows in the process list.
+const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine"
 
 // requestTimeout bounds every API call.
 const requestTimeout = 30 * time.Second
 
 // maxResponseBytes bounds the body of every API answer the client reads.
 const maxResponseBytes = 16 << 20
+
+// errRedirect is returned for a 3xx answer. It carries nothing of the answer.
+var errRedirect = errors.New("the server answered with a redirect")
 
 // errTooLarge is returned by a body that exceeds maxResponseBytes.
 var errTooLarge = errors.New("response body too large")
@@ -71,20 +78,20 @@ type settings struct {
 // Run runs one client command. args[0] is the command name.
 func Run(ctx context.Context, args []string, env Env) error {
 	if len(args) == 0 || !IsCommand(args[0]) {
-		return errors.New("usage: goldie " + Usage)
+		return errors.New("usage: goldie " + Usage + "\n" + TokenNote)
 	}
 	name := args[0]
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	f := BindClientFlags(fs)
 	s := &f.s
-	if name == "status" { // only status reads the Project until #8
+	if name != "version" { // version has no use for a Project
 		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	}
 	fs.BoolVar(&s.json, "json", false, "print JSON")
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
-		return fmt.Errorf("%w\nusage: goldie %s", err, Usage)
+		return fmt.Errorf("%w\nusage: goldie %s\n%s", err, Usage, TokenNote)
 	}
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
@@ -162,6 +169,9 @@ func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
 	}
 	limited := *httpc
 	limited.Transport = limitTransport{base: httpc.Transport}
+	// No redirects, whatever the injected client says: the token must never
+	// follow a Location the server picks.
+	limited.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &commander{s: s, out: env.Out, http: &limited, env: env}, nil
 }
 
@@ -204,7 +214,11 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 	if withToken && c.s.token == "" {
 		return nil, fmt.Errorf("no token: set --token, %s or %s_FILE", EnvToken, EnvToken)
 	}
-	opts := []contract.ClientOption{contract.WithHTTPClient(c.http)}
+	opts := []contract.ClientOption{contract.WithHTTPClient(c.http),
+		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
+			r.Header.Set("X-Goldie-Client", "goldie/"+platform.Version)
+			return nil
+		})}
 	if withToken {
 		token := c.s.token
 		opts = append(opts, contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
@@ -227,6 +241,10 @@ func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	resp, err := base.RoundTrip(r)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		_ = resp.Body.Close()
+		return nil, errRedirect
 	}
 	resp.Body = &limitedBody{rc: resp.Body, left: maxResponseBytes}
 	return resp, nil

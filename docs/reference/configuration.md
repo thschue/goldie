@@ -16,6 +16,7 @@ a `NAME_FILE` form that reads the value from a file; setting both is an error (P
 | `GOLDIE_LOG_LEVEL` | `info` | Log level: debug, info, warn or error. |
 | `GOLDIE_RATE_LIMIT` | `20/s,burst=40` | The request limit per token on every /api/ path and on /mcp: &lt;n&gt;/s or &lt;n&gt;/m, n requests per second or per minute for each token name, optionally followed by ,burst=&lt;b&gt;, the most requests a token may send at once (b defaults to n). n and b are positive integers. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An /mcp tool call that reads the API also counts its API request. A malformed value stops the server. |
 | `GOLDIE_SWAGGER_UI_ENABLED` | `true` | Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404. |
+| `GOLDIE_TELEMETRY_CLIENT_INFO` | `false` | true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on. |
 
 ## Connection timeouts
 
@@ -65,4 +66,4 @@ Only GOLDIE_TOKEN has a _FILE form (GOLDIE_TOKEN_FILE); the client reads no othe
 |---|---|---|
 | `GOLDIE_ADDR` | (none) | Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address. |
 | `GOLDIE_TOKEN` | (none) | Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it. |
-| `GOLDIE_PROJECT` | (none) | The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. |
+| `GOLDIE_PROJECT` | (none) | The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it. |

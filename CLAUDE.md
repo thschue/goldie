@@ -58,7 +58,7 @@ One binary `goldie`, roles as subcommands, modules with one-way dependencies:
 ```
 cmd/goldie        entry point
 internal/app      composition root: wires modules into roles
-internal/engine   Items, Resolution, Sources, Snapshots (pure, no HTTP)
+internal/engine   Items, Resolution, Sources, Snapshots (pure: no inbound transport; Sources may be outbound clients)
 internal/api      HTTP transport over the engine
 internal/ui       embedded Vue SPA
 internal/mcp      MCP component (API only through the client)
@@ -87,7 +87,7 @@ internal/platform config, logging, admin port, readiness, drain, telemetry
    private draft advisory ([disclosure](docs/agents/README.md#disclosure-and-quoting)).
 4. Before leaving draft: `./run check` is green, `./run red-check` shows the new tests fail without
    the change, `docs/testing-checklist.md` is worked through, and the built-in `/security-review`
-   has run on the diff.
+   has run on the diff (for loop PRs, the `security-reviewer` and `reviewer` pass replaces it).
 5. `./run gate origin/main HEAD` says whether a PR needs the maintainer: agent guardrails and
    instruction files, the decision record, CI and release, architecture enforcement, the loop
    tooling (`scripts/`), new dependencies or `go.mod` directives, or a breaking contract change

@@ -41,11 +41,15 @@ func (c *commander) printJSON(v any) error {
 }
 
 func (c *commander) search(ctx context.Context, q string) error {
+	project, err := c.project()
+	if err != nil {
+		return err
+	}
 	cl, err := c.client(true)
 	if err != nil {
 		return err
 	}
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q})
+	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
 	if err != nil {
 		return transportError(err)
 	}
@@ -73,16 +77,21 @@ func (c *commander) search(ctx context.Context, q string) error {
 		b.WriteString("\nRead one with: goldie lookup <id>\n")
 	}
 	b.WriteString("Try other words: goldie search <words>\n")
+	writeHint(&b, resp.JSON200.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
 	return err
 }
 
 func (c *commander) lookup(ctx context.Context, id string) error {
+	project, err := c.project()
+	if err != nil {
+		return err
+	}
 	cl, err := c.client(true)
 	if err != nil {
 		return err
 	}
-	resp, err := cl.GetArticleWithResponse(ctx, id)
+	resp, err := cl.GetArticleWithResponse(ctx, id, &contract.GetArticleParams{Project: project.param()})
 	if err != nil {
 		return transportError(err)
 	}
@@ -93,9 +102,19 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 		return c.printJSON(resp.JSON200)
 	}
 	a := resp.JSON200
-	_, err = fmt.Fprintf(c.out, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), cleanList(a.Keywords), strings.TrimRight(contract.CleanText(a.Content), "\n"))
+	writeHint(&b, a.Hint)
+	_, err = fmt.Fprint(c.out, b.String())
 	return err
+}
+
+// writeHint adds the server's hint for an unregistered Project, if any.
+func writeHint(b *strings.Builder, hint *string) {
+	if hint != nil && *hint != "" {
+		fmt.Fprintf(b, "Hint: %s\n", contract.CleanLine(*hint))
+	}
 }
 
 // status reports whether the server answers and whether it accepts the token.
@@ -127,11 +146,12 @@ func (c *commander) status(ctx context.Context) error {
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
 	var title, apiVersion string
+	var hint *string
 	switch {
 	case doc.JSON200 != nil:
 		title, apiVersion = specInfo(*doc.JSON200)
 		if given {
-			if auth, accepted, err = probeToken(ctx, cl); err != nil {
+			if auth, accepted, hint, err = probeToken(ctx, cl, project.param()); err != nil {
 				return err
 			}
 		}
@@ -147,6 +167,9 @@ func (c *commander) status(ctx context.Context) error {
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
+		if hint != nil && *hint != "" {
+			out["hint"] = contract.CleanLine(*hint)
+		}
 		return c.printJSON(out)
 	}
 	apiLine := "unknown (the API document needs an accepted token)"
@@ -155,22 +178,28 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
 		apiLine, auth, project.describe())
+	if err == nil {
+		var b strings.Builder
+		writeHint(&b, hint)
+		_, err = fmt.Fprint(c.out, b.String())
+	}
 	return err
 }
 
-// probeToken checks the token with one search, so status reports the token as
-// accepted only where the API answers it.
-func probeToken(ctx context.Context, cl *contract.ClientWithResponses) (auth string, accepted bool, err error) {
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
+// probeToken checks the token with one search for project, so status reports
+// the token as accepted only where the API answers it, and passes on the
+// server's hint for an unregistered Project.
+func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId) (auth string, accepted bool, hint *string, err error) {
+	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
 	switch {
 	case err != nil:
-		return "", false, transportError(err)
+		return "", false, nil, transportError(err)
 	case resp.JSON200 != nil:
-		return "token accepted", true, nil
+		return "token accepted", true, resp.JSON200.Hint, nil
 	case resp.StatusCode() == http.StatusUnauthorized:
-		return "token rejected", false, nil
+		return "token rejected", false, nil, nil
 	}
-	return "", false, apiError(resp.HTTPResponse, resp.Body)
+	return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
 }
 
 // project resolves the Project for the working directory.
@@ -219,6 +248,9 @@ func specInfo(doc map[string]any) (title, version string) {
 func transportError(err error) error {
 	if errors.Is(err, errTooLarge) {
 		return fmt.Errorf("the server's answer is larger than %d MiB", maxResponseBytes>>20)
+	}
+	if errors.Is(err, errRedirect) {
+		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
 	}
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }

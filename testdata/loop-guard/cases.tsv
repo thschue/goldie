@@ -55,3 +55,4 @@ deny	gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId:
 deny	git push --force-with-lease origin feat/x
 deny	gh label edit in-review --name x
 deny	gh label create area:x
+allow	gh pr comment 5 --body-file /tmp/comment.md

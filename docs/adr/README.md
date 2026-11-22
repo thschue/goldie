@@ -22,3 +22,4 @@ Consequences.
 - [0016. Nested article ids travel as one percent-encoded path segment](0016-nested-article-ids-are-one-encoded-path-segment.md)
 - [0017. Observability through OpenTelemetry, configured by the standard OTEL_* variables](0017-observability-through-opentelemetry.md)
 - [0018. A product session and delivery streams replace the three cooperating loops](0018-product-and-delivery-sessions.md)
+- [0020. Project identity is exactly host/org/repo, matched case-insensitively](0020-project-identity-is-host-org-repo-matched-case-insensitively.md)
