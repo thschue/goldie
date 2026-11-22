@@ -110,10 +110,12 @@ func runServer(out io.Writer) error {
 // runDev runs goldie server -dev [dir]: the server on loopback over dir, else
 // GOLDIE_CONTENT_DIR, else the working directory, with a random token. It
 // prints the export line once, straight to out: the token goes through no
-// logger, so it never reaches a log line or the OTLP log bridge.
+// logger, so it never reaches a log line or the OTLP log bridge. Log records
+// go to stderr, so stdout carries only the export line and is safe to eval
+// (PC-07).
 func runDev(args []string, out io.Writer) error {
 	lookup, ignored := app.DevLookup(os.LookupEnv)
-	cfg, logger, tel, err := serverSetup(lookup, out)
+	cfg, logger, tel, err := serverSetup(lookup, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -157,14 +159,14 @@ func isSet(lookup platform.Lookup, name string) bool {
 }
 
 // serverSetup loads the configuration through lookup and builds the server's
-// logger, writing to out, and telemetry. The caller defers flushTelemetry.
-func serverSetup(lookup platform.Lookup, out io.Writer) (platform.Config, *slog.Logger, *platform.Telemetry, error) {
+// logger, writing to logOut, and telemetry. The caller defers flushTelemetry.
+func serverSetup(lookup platform.Lookup, logOut io.Writer) (platform.Config, *slog.Logger, *platform.Telemetry, error) {
 	cfg, err := platform.LoadConfig(lookup)
 	if err != nil {
 		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	level, _ := platform.ParseLevel(cfg.LogLevel) // validated by LoadConfig
-	logger := platform.NewLogger(out, level, "server")
+	logger := platform.NewLogger(logOut, level, "server")
 	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv)
 	if err != nil {
 		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
