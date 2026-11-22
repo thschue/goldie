@@ -118,6 +118,7 @@ func TestTelemetryReportRedactsEndpoints(t *testing.T) {
 			env: map[string]string{
 				"OTEL_EXPORTER_OTLP_ENDPOINT": "https://user:pw-marker@collector.example:4318/tenant-marker?token=q-marker",
 				"OTEL_EXPORTER_OTLP_HEADERS":  "authorization=Bearer%20hdr-marker",
+				"OTEL_METRICS_EXPORTER":       "none",
 			},
 			signals: "traces,logs",
 			want:    "https://collector.example:4318",
