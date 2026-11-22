@@ -182,3 +182,23 @@ func TestSwaggerUIIsServedWithAStrictCSP(t *testing.T) {
 		}
 	}
 }
+
+// A wrong method on a Swagger UI path is the 405 envelope, still under the
+// page's CSP: every response from those paths carries it.
+func TestSwaggerUIMethodNotAllowedKeepsTheCSP(t *testing.T) {
+	srv := newServer(t)
+	for _, p := range swaggerPaths {
+		resp, body := do(t, http.MethodPost, srv.URL+p, nil)
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s: status %d, want 405", p, resp.StatusCode)
+			continue
+		}
+		assertEnvelope(t, body, "method_not_allowed")
+		if got := resp.Header.Get("Allow"); got != "GET, HEAD" {
+			t.Errorf("POST %s: Allow %q, want GET, HEAD", p, got)
+		}
+		if csp := resp.Header.Get("Content-Security-Policy"); csp != swaggerUICSP {
+			t.Errorf("POST %s: CSP %q, want the Swagger UI policy", p, csp)
+		}
+	}
+}

@@ -76,10 +76,14 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 	m.mux.Handle(method+" "+path, m.guard(path, h))
 }
 
-// guard puts h behind the token when path is under /api/.
+// guard puts h behind the token when path is under /api/, and adds the Swagger
+// UI Content-Security-Policy when path is under /swagger-ui, 405s included.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
-	if path == "/api" || strings.HasPrefix(path, "/api/") {
+	switch {
+	case path == "/api" || strings.HasPrefix(path, "/api/"):
 		return api.RequireToken(m.token, h)
+	case path == "/swagger-ui" || strings.HasPrefix(path, "/swagger-ui/"):
+		return withCSP(h)
 	}
 	return h
 }
@@ -122,7 +126,7 @@ func addSwaggerUI(m *publicMux) error {
 		return err
 	}
 	for _, a := range assets {
-		h := withCSP(staticGet(a.ContentType, a.Body))
+		h := staticGet(a.ContentType, a.Body)
 		if a.Name == "index.html" {
 			m.handle(http.MethodGet, "/swagger-ui", h)
 			m.handle(http.MethodGet, "/swagger-ui/{$}", h)
