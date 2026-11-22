@@ -445,6 +445,7 @@ components:
           description: What the caller can do next.
           examples:
             - Check the request path against the OpenAPI document.
+            - Pass project as host/org/repo, for example github.com/acme/payments. Leave it out to get the global answer.
   responses:
     Error:
       x-go-name: ErrorResponse
