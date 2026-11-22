@@ -65,4 +65,4 @@ Only GOLDIE_TOKEN has a _FILE form (GOLDIE_TOKEN_FILE); the client reads no othe
 |---|---|---|
 | `GOLDIE_ADDR` | (none) | Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address. |
 | `GOLDIE_TOKEN` | (none) | Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it. |
-| `GOLDIE_PROJECT` | (none) | The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. |
+| `GOLDIE_PROJECT` | (none) | The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it. |

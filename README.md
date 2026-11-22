@@ -22,7 +22,11 @@ running server through the generated client. Each takes `--addr` (or `GOLDIE_ADD
 process list (`ps`) of the machine. The CLI follows no redirects, so a server cannot send the token
 elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`. `status` reports
 whether the server answers and accepts the token (`--json` adds `tokenGiven`) and which Project the
-CLI works for. The Project is `--project` (only `status` takes it for now), else `GOLDIE_PROJECT`,
+CLI works for. `search`, `lookup` and `status` take `--project`, and `search` and `lookup` send the resolved Project
+to the server as `project=`. If the server does not have that Project registered, it answers with
+the global results plus a hint, which the CLI prints (and carries in `--json`, for `status` too). An
+unusable Project (a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error before
+any request is made, for `search` and `lookup` as for `status`. The Project is `--project`, else `GOLDIE_PROJECT`,
 else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git
 remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git need not be
 installed, and credentials in a remote URL are never printed. The sync state arrives with the sync

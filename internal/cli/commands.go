@@ -167,6 +167,9 @@ func (c *commander) status(ctx context.Context) error {
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
+		if hint != nil && *hint != "" {
+			out["hint"] = contract.CleanLine(*hint)
+		}
 		return c.printJSON(out)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
