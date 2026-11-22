@@ -166,6 +166,8 @@ components:
           results:
             - id: platform/deploy
               name: Deploying to Kubernetes
+              kind: article
+              scope: global
               keywords:
                 - kubernetes
                 - deploy
@@ -195,6 +197,8 @@ components:
       examples:
         - id: platform/deploy
           name: Deploying to Kubernetes
+          kind: article
+          scope: global
           keywords:
             - kubernetes
             - deploy
@@ -205,6 +209,8 @@ components:
       required:
         - id
         - name
+        - kind
+        - scope
         - keywords
         - score
         - matched
@@ -219,6 +225,16 @@ components:
           description: The display title from the frontmatter.
           examples:
             - Deploying to Kubernetes
+        kind:
+          type: string
+          description: The Kind of the Item, such as `article` (ADR 0005).
+          examples:
+            - article
+        scope:
+          type: string
+          description: Where the Item applies, such as `global` (ADR 0005).
+          examples:
+            - global
         keywords:
           type: array
           description: The article's keywords, lower case.

@@ -12,10 +12,20 @@ const (
 	scoreSubstring    = 1
 )
 
+// The Kind and Scope of every Item the dir Source loads today (CONTEXT: Kind,
+// Scope). Each search result carries both (ADR 0005).
+const (
+	KindArticle = "article"
+	ScopeGlobal = "global"
+)
+
 // Hit is a search result: the article without its content, plus why it matched.
 type Hit struct {
-	ID       string
-	Name     string
+	ID   string
+	Name string
+	// Kind and Scope say what the Item is and where it applies (ADR 0005).
+	Kind     string
+	Scope    string
 	Keywords []string
 	// Score is the sum over all query words.
 	Score int
@@ -32,7 +42,7 @@ func (s *Snapshot) Search(query string) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
 	for _, a := range s.articles {
-		h := Hit{ID: a.ID, Name: a.Name, Keywords: append([]string(nil), a.Keywords...)}
+		h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: ScopeGlobal, Keywords: append([]string(nil), a.Keywords...)}
 		name := strings.ToLower(a.Name)
 		for _, w := range words {
 			for _, k := range a.Keywords {

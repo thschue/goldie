@@ -124,8 +124,10 @@ One article that matched a search.
 |---|---|---|---|
 | `id` | `string` | yes | The article id, for a lookup. |
 | `keywords` | `array` | yes | The article's keywords, lower case. |
+| `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
 | `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
 | `name` | `string` | yes | The display title from the frontmatter. |
+| `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
 | `score` | `integer` | yes | The relevance score; higher is better. |
 
 ### `SearchResults`

@@ -233,3 +233,21 @@ func TestSearch(t *testing.T) {
 		})
 	}
 }
+
+// Every search result carries its Kind and Scope (ADR 0005); the dir Source
+// loads only global articles so far.
+func TestSearchHitsCarryKindAndScope(t *testing.T) {
+	snap := load(t, map[string]string{
+		"global/articles/sub/a.md": article("Ay", "k"),
+		"global/articles/b.md":     article("Bee k"),
+	})
+	hits := snap.Search("k")
+	if len(hits) != 2 {
+		t.Fatalf("Search = %+v, want 2 hits", hits)
+	}
+	for _, h := range hits {
+		if h.Kind != "article" || h.Scope != "global" {
+			t.Errorf("hit %s: kind %q, scope %q, want article and global", h.ID, h.Kind, h.Scope)
+		}
+	}
+}

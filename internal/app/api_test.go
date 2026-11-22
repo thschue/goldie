@@ -148,6 +148,33 @@ func TestSearchReturnsScoredHitsBestFirst(t *testing.T) {
 	}
 }
 
+// Every search result carries kind and scope (ADR 0005).
+func TestSearchHitsCarryKindAndScope(t *testing.T) {
+	srv := newServer(t)
+	resp, body := apiGet(t, srv.URL+"/api/v1/search?q=kubernetes")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	var got struct {
+		Results []struct {
+			ID    string `json:"id"`
+			Kind  string `json:"kind"`
+			Scope string `json:"scope"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Results) == 0 {
+		t.Fatalf("no hits: %s", body)
+	}
+	for _, h := range got.Results {
+		if h.Kind != "article" || h.Scope != "global" {
+			t.Errorf("hit %s: kind %q, scope %q, want article and global", h.ID, h.Kind, h.Scope)
+		}
+	}
+}
+
 func TestSearchWithoutHitsIsAnEmptyList(t *testing.T) {
 	srv := newServer(t)
 	resp, body := apiGet(t, srv.URL+"/api/v1/search?q=cobol")

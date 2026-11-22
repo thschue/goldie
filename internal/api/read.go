@@ -45,6 +45,8 @@ func search(snap *engine.Snapshot, w http.ResponseWriter, r *http.Request) {
 		res.Results = append(res.Results, contract.SearchHit{
 			Id:       h.ID,
 			Name:     h.Name,
+			Kind:     h.Kind,
+			Scope:    h.Scope,
 			Keywords: list(h.Keywords),
 			Score:    h.Score,
 			Matched:  list(h.Matched),

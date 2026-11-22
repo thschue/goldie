@@ -74,7 +74,7 @@ type ErrorEnvelope struct {
 
 // SearchHit One article that matched a search.
 //
-// Examples: {"id":"platform/deploy","keywords":["kubernetes","deploy"],"matched":["kubernetes","name"],"name":"Deploying to Kubernetes","score":6}
+// Examples: {"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}
 type SearchHit struct {
 	// Id The article id, for a lookup.
 	//
@@ -86,6 +86,11 @@ type SearchHit struct {
 	// Examples: ["kubernetes","deploy"]
 	Keywords []string `json:"keywords"`
 
+	// Kind The Kind of the Item, such as `article` (ADR 0005).
+	//
+	// Examples: article
+	Kind string `json:"kind"`
+
 	// Matched What matched, in order of first match - keywords, and `name` when the name matched.
 	//
 	// Examples: ["kubernetes","name"]
@@ -96,6 +101,11 @@ type SearchHit struct {
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
 
+	// Scope Where the Item applies, such as `global` (ADR 0005).
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+
 	// Score The relevance score; higher is better.
 	//
 	// Examples: 6
@@ -104,7 +114,7 @@ type SearchHit struct {
 
 // SearchResults The result of a search.
 //
-// Examples: {"query":"kubernetes","results":[{"id":"platform/deploy","keywords":["kubernetes","deploy"],"matched":["kubernetes","name"],"name":"Deploying to Kubernetes","score":6}]}
+// Examples: {"query":"kubernetes","results":[{"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}]}
 type SearchResults struct {
 	// Query The search words as received.
 	//
