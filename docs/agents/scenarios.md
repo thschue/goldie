@@ -35,3 +35,6 @@ scenario names a real PR, it is the case that motivated the rule.
 | S26 | A LOW finding in a security-relevant area, not contained | review | Not blocking: filed as `fix(security): <class> in <area>` (`needs-triage`), or added to an open issue for the area; the PR proceeds |
 | S27 | Reviewer finds a reproducible bug on `main` outside the PR, fix about 300 lines | review | The PR under review is unaffected; the bug is fixed this tick as found-fix PRs (stacked when over the size budget); no issue filed |
 | S28 | Reviewer finds a MEDIUM security bug on `main` | review | Draft advisory, the fix pushed to its private fork this tick; the advisory id to the user; nothing public |
+| S29 | Frontier: a new `bug` issue, a `priority` issue, and three older unlabelled issues | issue-worker | Claims the `bug`, then the `priority` issue, then the oldest unlabelled one |
+| S30 | Review queue: a ready PR closing a `security` issue and two older ready PRs | review | Dispatches the `security` PR first, then the oldest |
+| S31 | One open issue blocks five others; it rewires two packages | pm-audit | `priority`, sliced so the first slice is the smallest change that unblocks the five; the rest ordinary work. Not merged after a day: a stall line naming what holds it |
