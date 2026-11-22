@@ -58,8 +58,8 @@ type APIError struct {
 	Message string
 	Hint    string
 	// RetryAfter is the wait the server asked for, in whole seconds. It is 0
-	// when the header is absent, malformed or 0, so no client claims a wait
-	// the server did not send.
+	// when the header is absent, malformed, 0 or above an hour, so no client
+	// claims a wait the server did not send, or passes on an absurd one.
 	RetryAfter int
 }
 
@@ -79,16 +79,20 @@ func DecodeAPIError(status int, header http.Header, body []byte) APIError {
 }
 
 // retryAfter reads Retry-After as delay-seconds (RFC 9110, 10.2.3): one or
-// more ASCII digits and nothing else. Any other value, or one too large for
-// an int, is 0. The HTTP-date form is not read: the API never sends it.
+// more ASCII digits and nothing else. Any other value, or a wait above
+// maxRetryAfter, is 0: a client says "wait a little" rather than pass on an
+// absurd number. The HTTP-date form is not read: the API never sends it.
 func retryAfter(h http.Header) int {
 	v := h.Get("Retry-After")
 	if v == "" || strings.Trim(v, "0123456789") != "" {
 		return 0
 	}
 	n, err := strconv.Atoi(v)
-	if err != nil {
+	if err != nil || n > maxRetryAfter {
 		return 0
 	}
 	return n
 }
+
+// maxRetryAfter is the longest wait, in seconds, a client passes on: an hour.
+const maxRetryAfter = 3600

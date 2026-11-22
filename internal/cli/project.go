@@ -177,6 +177,9 @@ func ancestors(dir string) []string {
 // errNotRegular refuses a FIFO, device or socket, which could block the read.
 var errNotRegular = errors.New("not a regular file")
 
+// errFileTooLarge refuses a Project file above maxProjectFile.
+var errFileTooLarge = errors.New("file too large")
+
 // readCapped reads a regular file of at most maxProjectFile bytes. It checks
 // the type before opening, because opening a FIFO (or a symlink to one, or to
 // /dev/tty) planted in a checkout blocks, and so that no device is opened.
@@ -212,7 +215,7 @@ func openCapped(path string) ([]byte, error) {
 		return nil, err
 	}
 	if len(b) > maxProjectFile {
-		return nil, errTooLarge
+		return nil, errFileTooLarge
 	}
 	return b, nil
 }

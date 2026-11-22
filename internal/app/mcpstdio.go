@@ -10,7 +10,9 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/thschue/goldie/internal/cli"
+	"github.com/thschue/goldie/internal/contract"
 	gmcp "github.com/thschue/goldie/internal/mcp"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // MCPUsage is the one-line usage of the mcp role, without the program name.
@@ -25,7 +27,8 @@ const mcpTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE t
 var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + MCPUsage + "\n" + mcpTokenNote)
 
 // RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
-// the API as a client with the CLI's client settings from args and env. It
+// the API through contract's hardened client, with the CLI's client settings
+// from args and env. It
 // returns nil when the client ends the session by closing in, and when ctx is
 // cancelled. Settings are checked before the first message, so a bad one
 // fails at startup. Nothing but MCP messages is ever written to out.
@@ -44,7 +47,11 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	if *transport != "stdio" {
 		return errTransport
 	}
-	client, err := settings.Client(env)
+	addr, token, err := settings.Resolve(env)
+	if err != nil {
+		return fmt.Errorf("invalid client settings: %w", err)
+	}
+	client, err := contract.NewAPIClient(addr, token, platform.Version, env.Client)
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)
 	}
