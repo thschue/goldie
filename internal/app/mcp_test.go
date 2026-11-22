@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -88,6 +90,45 @@ func TestMCPToolsAreAdvertised(t *testing.T) {
 	}
 	if d := strings.ToLower(got["search_knowledge"]); !strings.Contains(d, "before") {
 		t.Errorf("search_knowledge description must tell the agent to search before choosing: %q", d)
+	}
+}
+
+// The tool shapes are part of the frozen contract (ADR 0011): each tool takes
+// exactly one required string argument.
+func TestMCPToolInputSchemas(t *testing.T) {
+	res, err := connect(t, testToken).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"search_knowledge": "query", "get_article": "id"}
+	seen := 0
+	for _, tl := range res.Tools {
+		arg, ok := want[tl.Name]
+		if !ok {
+			continue
+		}
+		seen++
+		raw, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Type       string `json:"type"`
+			Properties map[string]struct {
+				Type string `json:"type"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s: input schema: %v", tl.Name, err)
+		}
+		if schema.Type != "object" || len(schema.Properties) != 1 || schema.Properties[arg].Type != "string" ||
+			!slices.Equal(schema.Required, []string{arg}) {
+			t.Errorf("%s: want one required string property %q, got %s", tl.Name, arg, raw)
+		}
+	}
+	if seen != len(want) {
+		t.Errorf("saw %d of the %d tools", seen, len(want))
 	}
 }
 
