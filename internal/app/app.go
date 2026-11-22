@@ -30,7 +30,6 @@ type publicMux struct {
 	mux    *http.ServeMux
 	token  string
 	routes []route
-	allow  map[string][]string // the methods registered for each path
 }
 
 // newPublicMux returns the router with the spec's operations over snap
@@ -40,7 +39,7 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), token: token, allow: map[string][]string{}}
+	m := &publicMux{mux: http.NewServeMux(), token: token}
 	srv.Register(m)
 	return m, nil
 }
@@ -57,18 +56,22 @@ func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
 }
 
 // HandleFunc registers one generated operation; its pattern is "METHOD path".
+// A pattern without a method is a programming error and panics at startup, as
+// net/http does for a malformed pattern.
 func (m *publicMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
-	method, path, _ := strings.Cut(pattern, " ")
+	method, path, ok := strings.Cut(pattern, " ")
+	if !ok || method == "" || path == "" {
+		panic(fmt.Sprintf("app: route pattern %q is not \"METHOD path\"", pattern))
+	}
 	m.handle(method, path, http.HandlerFunc(h))
 }
 
 // handle registers h for method on path and, the first time path is seen, the
 // 405 envelope for the path's other methods.
 func (m *publicMux) handle(method, path string, h http.Handler) {
-	if _, seen := m.allow[path]; !seen {
+	if len(m.methods(path)) == 0 {
 		m.mux.Handle(path, m.guard(path, m.methodNotAllowed(path)))
 	}
-	m.allow[path] = append(m.allow[path], method)
 	m.routes = append(m.routes, route{path, []string{method}})
 	m.mux.Handle(method+" "+path, m.guard(path, h))
 }
@@ -96,7 +99,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 func (m *publicMux) methodNotAllowed(path string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var allow []string
-		for _, method := range m.allow[path] {
+		for _, method := range m.methods(path) {
 			allow = append(allow, method)
 			if method == http.MethodGet {
 				allow = append(allow, http.MethodHead)
@@ -106,6 +109,17 @@ func (m *publicMux) methodNotAllowed(path string) http.Handler {
 		api.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed",
 			"Use a method listed in the Allow header.")
 	})
+}
+
+// methods are the methods registered for path, in registration order.
+func (m *publicMux) methods(path string) []string {
+	var out []string
+	for _, r := range m.routes {
+		if r.path == path {
+			out = append(out, r.methods...)
+		}
+	}
+	return out
 }
 
 func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.ServeHTTP(w, r) }

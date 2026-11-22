@@ -342,6 +342,33 @@ func TestNewRoutesNeedTheTokenByDefault(t *testing.T) {
 	}
 }
 
+// A route pattern without a method fails at registration instead of
+// registering an empty path.
+func TestRoutePatternWithoutMethodPanics(t *testing.T) {
+	snap, err := engine.NewDirSource(testContent).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := newPublicMux(snap, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(m.routes)
+	for _, pattern := range []string{"/v2/future", " /v2/future", "GET "} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("pattern %q registered without a panic", pattern)
+				}
+			}()
+			m.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
+		}()
+	}
+	if len(m.routes) != before {
+		t.Errorf("routes %v registered from malformed patterns", m.routes[before:])
+	}
+}
+
 func TestPublicHandlerFailsFastOnBadSettings(t *testing.T) {
 	const marker = "s3cret marker 0123456789abcdef0123" // long enough that the space is what fails
 	broken := t.TempDir()
