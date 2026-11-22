@@ -261,6 +261,23 @@ func TestCLIVersionIgnoresUnusableClientSettings(t *testing.T) {
 	}
 }
 
+// The usage line names the program once, before the server and client
+// commands alike.
+func TestCLIUsageNamesProgramOnce(t *testing.T) {
+	_, err := runCLI(t)
+	if err == nil {
+		t.Fatal("expected a usage error")
+	}
+	if n := strings.Count(err.Error(), "goldie"); n != 1 {
+		t.Errorf("usage = %q names goldie %d times, want 1", err, n)
+	}
+	for _, cmd := range []string{"server", "health", "search", "lookup", "status", "version"} {
+		if !strings.Contains(err.Error(), cmd) {
+			t.Errorf("usage = %q lacks %s", err, cmd)
+		}
+	}
+}
+
 func TestCLIStripsTerminalEscapesFromServerText(t *testing.T) {
 	evil := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

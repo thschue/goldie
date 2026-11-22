@@ -23,8 +23,9 @@ const (
 	EnvToken = "GOLDIE_TOKEN"
 )
 
-// Usage is the one-line usage of the client commands.
-const Usage = "goldie search <words> | lookup <id> | status | version  [--addr URL] [--token TOKEN] [--json]"
+// Usage is the one-line usage of the client commands, without the program
+// name, so the dispatcher can list it after its own commands.
+const Usage = "search <words> | lookup <id> | status | version  [--addr URL] [--token TOKEN] [--json]"
 
 // requestTimeout bounds every API call.
 const requestTimeout = 30 * time.Second
@@ -61,7 +62,7 @@ type settings struct {
 // Run runs one client command. args[0] is the command name.
 func Run(ctx context.Context, args []string, env Env) error {
 	if len(args) == 0 || !IsCommand(args[0]) {
-		return errors.New("usage: " + Usage)
+		return errors.New("usage: goldie " + Usage)
 	}
 	name := args[0]
 	var s settings
@@ -72,7 +73,7 @@ func Run(ctx context.Context, args []string, env Env) error {
 	fs.BoolVar(&s.json, "json", false, "print JSON")
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
-		return fmt.Errorf("%w\nusage: %s", err, Usage)
+		return fmt.Errorf("%w\nusage: goldie %s", err, Usage)
 	}
 	if s.addr == "" {
 		s.addr, _ = env.Lookup(EnvAddr)
