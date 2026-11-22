@@ -114,6 +114,9 @@ func TestProjectSearchCases(t *testing.T) {
 		{"project with no own items sees global only", projB, []resolved{{"db", "global"}}},
 		{"unregistered project is global only", "github.com/acme/unknown", []resolved{{"db", "global"}}},
 		{"no project is global only", "", []resolved{{"db", "global"}}},
+		// The shop's db does not match "sql" but still hides the global db
+		// that does: a Project article shadows by ID, not by score.
+		{"project item shadows a matching global one", projA, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
