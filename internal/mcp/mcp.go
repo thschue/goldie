@@ -71,6 +71,12 @@ func search(ctx context.Context, c contract.ClientWithResponsesInterface, q stri
 }
 
 func article(ctx context.Context, c contract.ClientWithResponsesInterface, id string) *sdk.CallToolResult {
+	// An empty or dot-only id would be cleaned out of the article path and
+	// reach another endpoint, so it is refused before any request.
+	if contract.CheckArticleID(id) != nil {
+		return failure(errors.New("the article id is empty or made only of dots" +
+			"\nHint: Search for the article with search_knowledge, then use an id from its results."))
+	}
 	resp, err := c.GetArticleWithResponse(ctx, id)
 	if err != nil {
 		return failure(transportError(err))
