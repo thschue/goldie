@@ -1,6 +1,8 @@
 // Package contracttest checks HTTP responses against the OpenAPI document in
 // internal/contract. API tests call Conforms on every response they make, so
-// the server cannot drift from the spec unnoticed. It is for tests only.
+// the server cannot drift from the spec unnoticed. ExamplePath builds a
+// request path for an operation from the examples the spec declares. It is for
+// tests only.
 package contracttest
 
 import (
@@ -143,8 +145,8 @@ func compiler() (*jsonschema.Compiler, error) {
 // path segment ("platform/deploy" becomes "platform%2Fdeploy"). A parameter
 // declared on the path item applies to every operation; one on the operation
 // overrides it by name. It returns an error naming the parameter when a path
-// parameter is undeclared or has no string example, and when the spec has no
-// such operation.
+// parameter is undeclared or has no non-empty string example, and when the
+// spec has no such operation.
 func ExamplePath(method, template string) (string, error) {
 	doc, err := Spec()
 	if err != nil {
@@ -155,12 +157,12 @@ func ExamplePath(method, template string) (string, error) {
 
 func examplePath(doc map[string]any, method, template string) (string, error) {
 	method = strings.ToLower(method)
-	op, opPtr := findOperation(doc, method, template)
-	if op == nil || opPtr != "#/paths/"+escape(template)+"/"+method {
-		return "", fmt.Errorf("the spec has no %s operation for %s", strings.ToUpper(method), template)
-	}
 	paths, _ := doc["paths"].(map[string]any)
 	item, _ := paths[template].(map[string]any)
+	op, ok := item[method].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("the spec has no %s operation for %s", strings.ToUpper(method), template)
+	}
 	examples := map[string]any{}
 	for _, list := range []any{item["parameters"], op["parameters"]} { // the operation's come last and win
 		params, _ := list.([]any)
@@ -172,19 +174,36 @@ func examplePath(doc map[string]any, method, template string) (string, error) {
 			}
 		}
 	}
-	var err error
-	out := paramRE.ReplaceAllStringFunc(regexp.QuoteMeta(template), func(m string) string {
-		name := strings.TrimSuffix(strings.TrimPrefix(m, `\{`), `\}`)
+	// Walk the quoted template: the text between parameter matches is literal,
+	// and QuoteMeta only adds a backslash before a character, so undoing it per
+	// pair keeps a backslash the template itself holds.
+	quoted := regexp.QuoteMeta(template)
+	var out strings.Builder
+	last := 0
+	for _, m := range paramRE.FindAllStringIndex(quoted, -1) {
+		out.WriteString(unquoteMeta.ReplaceAllString(quoted[last:m[0]], "$1"))
+		name := strings.TrimSuffix(strings.TrimPrefix(quoted[m[0]:m[1]], `\{`), `\}`)
 		ex, ok := examples[name].(string)
-		if !ok && err == nil {
-			err = fmt.Errorf("path parameter %q of %s has no string example in the spec", name, template)
+		if !ok || ex == "" {
+			return "", fmt.Errorf("path parameter %q of %s has no non-empty string example in the spec", name, template)
 		}
-		return url.PathEscape(ex)
-	})
-	if err != nil {
-		return "", err
+		out.WriteString(url.PathEscape(ex)) // one path segment, ADR 0016
+		last = m[1]
 	}
-	return strings.ReplaceAll(out, `\`, ""), nil // undo QuoteMeta on the literal segments
+	out.WriteString(unquoteMeta.ReplaceAllString(quoted[last:], "$1"))
+	return out.String(), nil
+}
+
+// unquoteMeta matches one backslash-quoted character of regexp.QuoteMeta output.
+var unquoteMeta = regexp.MustCompile(`\\(.)`)
+
+// Resolve follows a local $ref ("#/a/b") in doc if node is one. It returns the
+// referenced node, node itself when it has no $ref, and nil when node is not an
+// object or the reference dangles.
+func Resolve(doc map[string]any, node any) map[string]any {
+	m, _ := node.(map[string]any)
+	out, _ := resolve(doc, m, "")
+	return out
 }
 
 // escape encodes one JSON Pointer reference token.

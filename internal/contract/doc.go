@@ -8,8 +8,13 @@
 // the Project of a working directory for the CLI and MCP, contract/contracttest
 // checks responses against the document and builds example request paths from it.
 //
-// The hand-written helpers sit beside the generated code: reference.go renders
-// the endpoint reference Markdown from the document, and CheckArticleID
-// (articleid.go) rejects article ids that URL path cleaning would resolve away. The package
-// imports no other goldie module.
+// The hand-written helpers sit beside the generated code: the endpoint
+// reference Markdown is rendered from the document, and CheckArticleID rejects
+// article ids that URL path cleaning would resolve away. The package imports no
+// other goldie module.
+//
+// contract/contracttest checks a response against the document with Conforms.
+// ExamplePath builds a request path for an operation from the examples the
+// spec declares, each encoded as one path segment, and fails naming a path
+// parameter whose example is missing or empty. Resolve follows a local $ref.
 package contract
