@@ -64,6 +64,16 @@ func (b treeBuilder) fs(root plumbing.Hash) treeFS {
 	return newTreeFS(tree)
 }
 
+// load runs loadTree on root, the way a Source loads a commit.
+func (b treeBuilder) load(root plumbing.Hash) (*Snapshot, error) {
+	b.t.Helper()
+	tree, err := object.GetTree(b.sto, root)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	return loadTree(tree)
+}
+
 func TestTreeFSConforms(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	md := b.blob("---\nname: A\n---\nbody")
@@ -129,7 +139,7 @@ func TestLoadFSReadsATreeWithProjects(t *testing.T) {
 	globalT, _ := object.GetTree(b.sto, b.dirTree("global/articles", md("a")))
 	projT, _ := object.GetTree(b.sto, b.dirTree("projects/github.com/acme/shop/articles", md("b")))
 	root := b.tree(globalT.Entries[0], projT.Entries[0])
-	snap, err := loadFS(b.fs(root))
+	snap, err := b.load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +171,7 @@ func TestLoadFSFailsOnSymlinkedDirs(t *testing.T) {
 			object.TreeEntry{Name: "real", Mode: filemode.Dir, Hash: realGlobal},
 		),
 	} {
-		if snap, err := loadFS(b.fs(root)); err == nil {
+		if snap, err := b.load(root); err == nil {
 			t.Errorf("symlinked %s: loaded %d articles", name, len(snap.Articles()))
 		}
 	}
@@ -174,7 +184,7 @@ func TestTreeFSRejectsTraversingNames(t *testing.T) {
 		articles := b.tree(object.TreeEntry{Name: name, Mode: filemode.Dir, Hash: evil})
 		global := b.tree(object.TreeEntry{Name: "articles", Mode: filemode.Dir, Hash: articles})
 		root := b.tree(object.TreeEntry{Name: "global", Mode: filemode.Dir, Hash: global})
-		snap, err := loadFS(b.fs(root))
+		snap, err := b.load(root)
 		if err == nil {
 			t.Errorf("entry %q: loaded %d articles", name, len(snap.Articles()))
 		}

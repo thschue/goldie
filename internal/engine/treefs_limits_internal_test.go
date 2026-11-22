@@ -36,23 +36,27 @@ func (b treeBuilder) bomb(width, depth int, leaf object.TreeEntry) plumbing.Hash
 }
 
 // underGlobalArticles wraps a tree as global/articles.
-func (b treeBuilder) underGlobalArticles(articles plumbing.Hash) treeFS {
+func (b treeBuilder) underGlobalArticles(articles plumbing.Hash) plumbing.Hash {
 	b.t.Helper()
 	global := b.tree(object.TreeEntry{Name: "articles", Mode: filemode.Dir, Hash: articles})
-	return b.fs(b.tree(object.TreeEntry{Name: "global", Mode: filemode.Dir, Hash: global}))
+	return b.tree(object.TreeEntry{Name: "global", Mode: filemode.Dir, Hash: global})
 }
 
-// loadWithin fails the test if loadFS runs longer than d, so a missing limit
-// shows up as a failure instead of a hung suite.
-func loadWithin(t *testing.T, d time.Duration, fsys fs.FS) error {
-	t.Helper()
+// loadWithin fails the test if loading root runs longer than d, so a missing
+// limit shows up as a failure instead of a hung suite.
+func (b treeBuilder) loadWithin(d time.Duration, root plumbing.Hash) error {
+	b.t.Helper()
+	tree, err := object.GetTree(b.sto, root)
+	if err != nil {
+		b.t.Fatal(err)
+	}
 	done := make(chan error, 1)
-	go func() { _, err := loadFS(fsys); done <- err }()
+	go func() { _, err := loadTree(tree); done <- err }()
 	select {
 	case err := <-done:
 		return err
 	case <-time.After(d):
-		t.Fatalf("loadFS still running after %v", d)
+		b.t.Fatalf("load still running after %v", d)
 		return nil
 	}
 }
@@ -61,8 +65,21 @@ func TestLoadFSStopsAtTreeStepLimit(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	// 16^7 paths from 7 objects; plain files, so only the walk itself counts.
 	articles := b.bomb(16, 6, object.TreeEntry{Name: "f", Mode: filemode.Regular, Hash: b.blob("x")})
-	if err := loadWithin(t, time.Minute, b.underGlobalArticles(articles)); !errors.Is(err, errTreeTooLarge) {
+	if err := b.loadWithin(time.Minute, b.underGlobalArticles(articles)); !errors.Is(err, errTreeTooLarge) {
 		t.Fatalf("err = %v, want errTreeTooLarge", err)
+	}
+}
+
+// Every load gets the whole budget: a tree that needs more than half of it
+// loads again and again.
+func TestLoadTreeBudgetIsPerLoad(t *testing.T) {
+	b := treeBuilder{t, memory.NewStorage()}
+	// 800^2 plain files: about 640k steps, more than half of maxTreeSteps.
+	root := b.underGlobalArticles(b.bomb(800, 1, object.TreeEntry{Name: "f", Mode: filemode.Regular, Hash: b.blob("x")}))
+	for i := range 2 {
+		if err := b.loadWithin(time.Minute, root); err != nil {
+			t.Fatalf("load %d: %v", i+1, err)
+		}
 	}
 }
 
@@ -70,10 +87,10 @@ func TestLoadFSStopsAtTreeByteLimit(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	md := b.blob("---\nname: A\n---\n" + strings.Repeat("x", 100))
 	articles := b.bomb(4, 0, object.TreeEntry{Name: ".md", Mode: filemode.Regular, Hash: md})
-	if _, err := loadFS(b.underGlobalArticles(articles)); err != nil {
+	if _, err := b.load(b.underGlobalArticles(articles)); err != nil {
 		t.Fatalf("within the limit: %v", err)
 	}
-	fsys := b.underGlobalArticles(articles)
+	fsys := b.fs(b.underGlobalArticles(articles))
 	fsys.b.bytes = 300 // four articles of 116 bytes each
 	if _, err := loadFS(fsys); !errors.Is(err, errTreeTooLarge) {
 		t.Fatalf("err = %v, want errTreeTooLarge", err)

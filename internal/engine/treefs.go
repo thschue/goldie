@@ -49,6 +49,11 @@ func newTreeFS(root *object.Tree) treeFS {
 	}}
 }
 
+// loadTree loads one git tree with a fresh treeFS, so its load limits apply
+// per load: a Source calls it on every load and never keeps a treeFS between
+// loads, as DirSource.Load opens its os.Root per call.
+func loadTree(root *object.Tree) (*Snapshot, error) { return loadFS(newTreeFS(root)) }
+
 // treeBudget is what a treeFS may still spend, the subtrees it decoded and
 // their name indexes.
 type treeBudget struct {

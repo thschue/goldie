@@ -3,6 +3,7 @@ package engine
 import (
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/memory"
@@ -18,14 +19,14 @@ func TestLoadFSRejectsDuplicateEntryNames(t *testing.T) {
 	}
 	one := b.tree(object.TreeEntry{Name: "articles", Mode: filemode.Dir, Hash: b.tree(article("one"))})
 	two := b.tree(object.TreeEntry{Name: "articles", Mode: filemode.Dir, Hash: b.tree(article("two"))})
-	for name, fsys := range map[string]treeFS{
-		"directory on the path": b.fs(b.tree(
+	for name, root := range map[string]plumbing.Hash{
+		"directory on the path": b.tree(
 			object.TreeEntry{Name: "global", Mode: filemode.Dir, Hash: one},
 			object.TreeEntry{Name: "global", Mode: filemode.Dir, Hash: two},
-		)),
+		),
 		"listed file": b.underGlobalArticles(b.tree(article("one"), article("two"))),
 	} {
-		if snap, err := loadFS(fsys); err == nil {
+		if snap, err := b.load(root); err == nil {
 			a, _ := snap.Article("a")
 			t.Errorf("%s: loaded %q", name, a.Name)
 		}

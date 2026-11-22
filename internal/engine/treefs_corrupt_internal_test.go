@@ -15,13 +15,14 @@ import (
 func TestLoadFSFailsOnMissingObjects(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	missing := plumbing.NewHash("0123456789012345678901234567890123456789")
-	fsys := b.underGlobalArticles(b.tree(
+	root := b.underGlobalArticles(b.tree(
 		object.TreeEntry{Name: "x.md", Mode: filemode.Regular, Hash: missing},
 		object.TreeEntry{Name: "link", Mode: filemode.Symlink, Hash: missing},
 	))
-	if snap, err := loadFS(fsys); err == nil {
+	if snap, err := b.load(root); err == nil {
 		t.Fatalf("loaded %d articles", len(snap.Articles()))
 	}
+	fsys := b.fs(root)
 	if _, err := fs.ReadLink(fsys, "global/articles/link"); err == nil {
 		t.Error("ReadLink of a missing blob succeeded")
 	}
