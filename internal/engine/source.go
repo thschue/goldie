@@ -23,9 +23,10 @@ const maxArticleBytes = 1 << 20
 
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
-	// ID is the file's path under global/articles without ".md", slash separated.
+	// ID is the article's identity: its path under global/articles without
+	// ".md", slash separated. IDs compare case-insensitively (ADR 0015).
 	ID string
-	// Name is the frontmatter name.
+	// Name is the frontmatter name, the display title. It is not the identity.
 	Name string
 	// Keywords are lower-cased and trimmed.
 	Keywords []string
@@ -55,6 +56,7 @@ func (s DirSource) Load() (*Snapshot, error) {
 	defer func() { _ = root.Close() }()
 	fsys := root.FS()
 	var articles []Article
+	seen := map[string]string{} // lower-cased ID -> file path
 	err = fs.WalkDir(fsys, articlesDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if p == articlesDir && errors.Is(err, fs.ErrNotExist) {
@@ -70,6 +72,10 @@ func (s DirSource) Load() (*Snapshot, error) {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		id := strings.TrimSuffix(strings.TrimPrefix(p, articlesDir+"/"), ".md")
+		if other, dup := seen[strings.ToLower(id)]; dup {
+			return fmt.Errorf("%s and %s: article IDs differ only in case", other, p)
+		}
+		seen[strings.ToLower(id)] = p
 		a, err := parseArticle(id, raw)
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)

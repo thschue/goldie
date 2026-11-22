@@ -134,6 +134,45 @@ func TestLoadErrors(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsIDsDifferingOnlyInCase(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"same directory": {
+			"global/articles/Postgres.md": article("One"),
+			"global/articles/postgres.md": article("Two"),
+		},
+		"nested": {
+			"global/articles/Db/Setup.md": article("One"),
+			"global/articles/db/setup.md": article("Two"),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := writeFiles(t, files)
+			_, err := engine.NewDirSource(root).Load()
+			if err == nil {
+				t.Fatal("Load succeeded with two IDs that differ only in case")
+			}
+			for f := range files {
+				if !strings.Contains(err.Error(), f) {
+					t.Fatalf("error %q does not name %s", err, f)
+				}
+			}
+			if strings.Contains(err.Error(), root) {
+				t.Fatalf("error leaks the root path: %q", err)
+			}
+		})
+	}
+}
+
+func TestIdentityIsPathNotName(t *testing.T) {
+	snap := load(t, map[string]string{
+		"global/articles/a.md": article("Same title"),
+		"global/articles/b.md": article("Same title"),
+	})
+	if n := len(snap.Articles()); n != 2 {
+		t.Fatalf("articles with the same name must both load, got %d", n)
+	}
+}
+
 func TestLoadBadRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "nope")
 	_, err := engine.NewDirSource(root).Load()
