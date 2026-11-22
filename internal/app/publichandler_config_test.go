@@ -106,9 +106,9 @@ func TestPublicHandlerTakesTheTypedMinClientVersionAsIs(t *testing.T) {
 	}
 }
 
-// configErrors calls PublicHandler with cfg and returns its error, which must
-// be a *ConfigError, and the error's lines.
-func configErrors(t *testing.T, label string, cfg platform.Config) (error, []string) {
+// configErrors calls PublicHandler with cfg and returns the lines of its error,
+// and the error, which must be a *ConfigError.
+func configErrors(t *testing.T, label string, cfg platform.Config) ([]string, error) {
 	t.Helper()
 	h, err := PublicHandler(cfg, nil)
 	if err == nil {
@@ -121,7 +121,7 @@ func configErrors(t *testing.T, label string, cfg platform.Config) (error, []str
 	if !errors.As(err, &cfgErr) {
 		t.Errorf("%s: err = %v, want a *ConfigError so the server labels it invalid configuration", label, err)
 	}
-	return err, strings.Split(err.Error(), "\n")
+	return strings.Split(err.Error(), "\n"), err
 }
 
 // A bad token, a bad rate limit and a missing content dir are all reported in
@@ -135,7 +135,7 @@ func TestPublicHandlerReportsEveryConfigErrorInOneRun(t *testing.T) {
 		"bad token line":      {APITokens: "ci:reader:" + marker, RateLimit: platform.RateLimit{Per: time.Second, Burst: 40}, ContentDir: missing},
 		"no token, no dir":    {RateLimit: platform.RateLimit{}},
 	} {
-		err, lines := configErrors(t, name, cfg)
+		lines, err := configErrors(t, name, cfg)
 		for _, v := range []string{platform.EnvAPIToken, platform.EnvRateLimit, platform.EnvContentDir} {
 			n := 0
 			for _, l := range lines {
@@ -173,7 +173,7 @@ func TestPublicHandlerReportsOnlyTheProblemsThereAre(t *testing.T) {
 		platform.EnvRateLimit:  bad(func(c *platform.Config) { c.RateLimit = platform.RateLimit{} }),
 		platform.EnvContentDir: bad(func(c *platform.Config) { c.ContentDir = filepath.Join(t.TempDir(), "missing") }),
 	} {
-		err, lines := configErrors(t, want, cfg)
+		lines, err := configErrors(t, want, cfg)
 		if len(lines) != 1 || !strings.Contains(err.Error(), want) {
 			t.Errorf("only %s bad: err = %q, want one line naming it", want, err)
 		}
@@ -196,7 +196,7 @@ func TestZeroValueRateLimitFailsClosed(t *testing.T) {
 		{Requests: 0, Per: time.Second},
 	} {
 		label := fmt.Sprintf("RateLimit %+v", l)
-		err, _ := configErrors(t, label, platform.Config{ContentDir: testContent, APITokens: namedTokenLines(), RateLimit: l})
+		_, err := configErrors(t, label, platform.Config{ContentDir: testContent, APITokens: namedTokenLines(), RateLimit: l})
 		if !strings.Contains(err.Error(), platform.EnvRateLimit) {
 			t.Errorf("%s: err = %v, want it to name %s", label, err, platform.EnvRateLimit)
 		}
