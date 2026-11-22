@@ -20,6 +20,11 @@ const articlesDir = "global/articles"
 // projectsDir holds Project scope: projects/<host>/<org>/<repo>/articles/**.
 const projectsDir = "projects"
 
+// maxProjectIDLen is the maxLength of the ProjectId schema in the spec. The
+// engine cannot import the contract, so loading holds a Source to it here; a
+// longer id would be listed but could never be selected with project=.
+const maxProjectIDLen = 512
+
 // maxArticleBytes caps one article file, so a Source cannot make Load read
 // without bound.
 const maxArticleBytes = 1 << 20
@@ -143,6 +148,9 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 				continue
 			}
 			scope := strings.TrimPrefix(p, projectsDir+"/")
+			if len(scope) > maxProjectIDLen {
+				return fmt.Errorf("%s: the Project id is longer than %d bytes", p, maxProjectIDLen)
+			}
 			if other, dup := seen[strings.ToLower(scope)]; dup {
 				return fmt.Errorf("%s and %s: Projects differ only in case", other, p)
 			}
@@ -161,7 +169,7 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 // DNS name), 1 the org and 2 the repo.
 func validProjectSegment(depth int, name string) error {
 	if depth == 0 {
-		if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789.-") != "" || strings.HasPrefix(name, ".") {
+		if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789.-") != "" || name[0] == '.' || name[0] == '-' {
 			return errors.New("invalid Project host: use a lower-case host name such as github.com")
 		}
 		return nil
@@ -314,6 +322,23 @@ func (s *Snapshot) Projects() []string {
 	return out
 }
 
+// Project reports whether id ("host/org/repo") is a registered Project,
+// matched case-insensitively, and returns it in its registered spelling. It is
+// the one decision of what counts as registered; resolution uses it too.
+func (s *Snapshot) Project(id string) (scope string, ok bool) {
+	p, ok := s.lookupProject(id)
+	return p.scope, ok
+}
+
+// lookupProject finds a registered Project by id, case-insensitively.
+func (s *Snapshot) lookupProject(id string) (project, bool) {
+	if id == "" {
+		return project{}, false
+	}
+	p, ok := s.projects[strings.ToLower(id)]
+	return p, ok
+}
+
 // Articles returns every global article, sorted by ID.
 func (s *Snapshot) Articles() []Article {
 	out := make([]Article, len(s.articles))
@@ -345,7 +370,7 @@ func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
 
 // resolutionOrder returns the article lists to consult, Project before global.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
-	if p, ok := s.projects[strings.ToLower(proj)]; ok && proj != "" {
+	if p, ok := s.lookupProject(proj); ok {
 		return [][]Article{p.articles, s.articles}
 	}
 	return [][]Article{s.articles}

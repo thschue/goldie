@@ -26,6 +26,8 @@ tags:
     description: The API contract itself.
   - name: articles
     description: Search and look up articles.
+  - name: projects
+    description: The Projects whose Scope the server holds.
 paths:
   /api/v1/search:
     get:
@@ -48,6 +50,16 @@ paths:
             minLength: 1
             maxLength: 1024
           example: deploy kubernetes
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve for this Project (ADR 0020): its articles come before the
+            global ones and win on an equal id. Matched ignoring case. A Project
+            that is not registered answers the global results with a `hint`; a
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
       responses:
         "200":
           description: The matching articles, best first.
@@ -56,7 +68,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResults"
         "400":
-          description: The search words are missing or longer than 1024 bytes.
+          description: The search words are missing or longer than 1024 bytes, or `project` is not a `ProjectId`.
           content:
             application/json:
               schema:
@@ -96,6 +108,16 @@ paths:
             type: string
             minLength: 1
           example: platform/deploy
+        - name: project
+          in: query
+          required: false
+          description: |
+            Look the article up for this Project (ADR 0020): its own article
+            wins over the global one with the same id. Matched ignoring case.
+            An unregistered Project answers the global article with a `hint`; a
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
       responses:
         "200":
           description: The article.
@@ -103,6 +125,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Article"
+        "400":
+          description: '`project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: No bearer token, or a wrong one.
           content:
@@ -111,6 +139,33 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: No article has this id; the hint points to search.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/projects:
+    get:
+      operationId: listProjects
+      tags:
+        - projects
+      summary: List the registered Projects
+      description: |
+        Returns the Projects the server holds Scope for, sorted, as
+        `host/org/repo` in the case they are stored in. A server with none
+        answers an empty list. Pass one as `project` on search and lookup.
+      responses:
+        "200":
+          description: The Projects the server holds, sorted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectList"
+        "401":
+          description: No bearer token was sent, or it is wrong.
           content:
             application/json:
               schema:
@@ -200,6 +255,38 @@ components:
             $ref: "#/components/schemas/SearchHit"
           examples:
             - []
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            results are the global ones, and this says what to do next.
+          examples:
+            - The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
+    ProjectId:
+      type: string
+      description: |
+        A Project: exactly three segments `host/org/repo` (ADR 0020). The host
+        is a lower-case DNS name that starts with a letter or digit; the org and
+        the repo use letters, digits, `.`, `_` and `-` and do not start with a
+        dot. Clients send it lower-cased; the server matches it ignoring case.
+      pattern: '^[a-z0-9][a-z0-9.-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*/[A-Za-z0-9_-][A-Za-z0-9._-]*$'
+      maxLength: 512
+      examples:
+        - github.com/acme/shop
+    ProjectList:
+      type: object
+      description: The Projects the server holds Scope for.
+      required:
+        - projects
+      properties:
+        projects:
+          type: array
+          description: The Projects, sorted.
+          items:
+            $ref: "#/components/schemas/ProjectId"
+          examples:
+            - - github.com/acme/shop
     SearchHit:
       type: object
       description: One article that matched a search.
@@ -298,6 +385,14 @@ components:
           description: The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML.
           examples:
             - "Use the platform chart."
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            article is the global one, and this says what to do next.
+          examples:
+            - The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
     ErrorEnvelope:
       type: object
       description: The body of every error response.

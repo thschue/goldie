@@ -17,6 +17,10 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 **Scope**: where an Item applies. `global` (everyone), `project` (one repository, under
 `projects/<host>/<org>/<repo>/`) or `local` (the repository's own `.goldie/`).
 
+**Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case.
+It is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
+request naming an unregistered Project gets the global answer with a hint.
+
 **Resolution**: the rule that decides which Item wins when several share an identity. Scope first
 (local > project > global), then Source preference (first listed wins).
 

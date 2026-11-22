@@ -154,6 +154,20 @@ func TestProjects(t *testing.T) {
 	}
 }
 
+func TestProjectIsRegisteredIgnoringCase(t *testing.T) {
+	snap := load(t, projectContent())
+	for id, want := range map[string]string{projA: projA, "GITHUB.COM/ACME/SHOP": projA, "github.com/Acme/Other": projB} {
+		if scope, ok := snap.Project(id); !ok || scope != want {
+			t.Errorf("Project(%q) = %q, %v, want %q", id, scope, ok, want)
+		}
+	}
+	for _, id := range []string{"", "github.com/acme/none", "github.com/acme"} {
+		if scope, ok := snap.Project(id); ok || scope != "" {
+			t.Errorf("Project(%q) = %q, %v, want not registered", id, scope, ok)
+		}
+	}
+}
+
 func TestProjectValidationErrors(t *testing.T) {
 	tests := []struct {
 		name  string
