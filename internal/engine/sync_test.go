@@ -277,3 +277,15 @@ func TestSyncerConcurrentPollsNeverRegress(t *testing.T) {
 		t.Fatalf("Current is from load %s; the newer load 2 must win", got)
 	}
 }
+
+func TestRedactSchemelessUserinfo(t *testing.T) {
+	for _, tc := range []struct{ msg, leak string }{
+		{"auth failed for alice:hunter2@git.internal", "hunter2"},
+		{"push to bob:swordfish@host rejected", "swordfish"},
+		{"user alice@example.com denied", "alice"},
+	} {
+		if got := redact(tc.msg); strings.Contains(got, tc.leak) {
+			t.Errorf("redact(%q) = %q leaks %q", tc.msg, got, tc.leak)
+		}
+	}
+}
