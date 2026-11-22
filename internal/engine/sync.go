@@ -58,13 +58,19 @@ func (s *Syncer) Status() SyncStatus {
 	return s.status
 }
 
-// Poll loads the Source once. On success it swaps the Snapshot atomically; on
-// failure it keeps the previous Snapshot, records a redacted error and returns
-// the original error.
-func (s *Syncer) Poll() error {
+// Poll loads the Source once, handing it ctx, so cancelling ctx stops the
+// load. On success it swaps the Snapshot atomically; on failure it keeps the
+// previous Snapshot, records a redacted error and returns the original error.
+func (s *Syncer) Poll(ctx context.Context) error {
+	_, err := s.poll(ctx)
+	return err
+}
+
+// poll is Poll, also returning the Status it left.
+func (s *Syncer) poll(ctx context.Context) (SyncStatus, error) {
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
-	snap, rev, err := s.load()
+	snap, rev, err := s.load(ctx)
 	if err == nil && snap == nil {
 		err = errNilSnapshot
 	}
@@ -74,25 +80,25 @@ func (s *Syncer) Poll() error {
 	s.status.LastPoll = now
 	if err != nil {
 		s.status.LastError = redact(err.Error())
-		return err
+		return s.status, err
 	}
 	s.current.Store(snap)
 	s.status.LastSuccess = now
 	s.status.LastError = ""
 	s.status.Revision = rev
-	return nil
+	return s.status, nil
 }
 
 // load calls the Source. A panic in Load or Revision becomes errLoadPanicked,
 // so a Source bug fails one poll instead of the process, and the panic value
 // never reaches Status.
-func (s *Syncer) load() (snap *Snapshot, rev string, err error) {
+func (s *Syncer) load(ctx context.Context) (snap *Snapshot, rev string, err error) {
 	defer func() {
 		if recover() != nil {
 			snap, rev, err = nil, "", errLoadPanicked
 		}
 	}()
-	snap, err = s.src.Load()
+	snap, err = s.src.Load(ctx)
 	if err == nil && snap != nil {
 		if r, ok := s.src.(Revisioner); ok {
 			rev = r.Revision()
@@ -102,22 +108,35 @@ func (s *Syncer) load() (snap *Snapshot, rev string, err error) {
 }
 
 // Run polls once at once, then on every tick of interval, and returns when ctx
-// ends. Failed polls are recorded in Status and do not stop Run. An interval of
-// zero or less means no periodic polling: Run polls once and returns.
-func (s *Syncer) Run(ctx context.Context, interval time.Duration) {
+// ends. Each poll gets ctx, so cancelling it stops a load in flight, and ctx is
+// checked before each poll, so no poll starts after cancel. Failed polls are
+// recorded in Status and do not stop Run. onPoll, when not nil, gets the Status
+// each poll left, after that poll; it is never called without a poll. An
+// interval of zero or less means no periodic polling: Run polls once and
+// returns.
+func (s *Syncer) Run(ctx context.Context, interval time.Duration, onPoll func(SyncStatus)) {
+	poll := func() {
+		if ctx.Err() != nil {
+			return
+		}
+		st, _ := s.poll(ctx)
+		if onPoll != nil {
+			onPoll(st)
+		}
+	}
 	if interval <= 0 {
-		_ = s.Poll()
+		poll()
 		return
 	}
 	ticks, stop := s.newTicker(interval)
 	defer stop()
-	_ = s.Poll()
+	poll()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticks:
-			_ = s.Poll()
+			poll()
 		}
 	}
 }

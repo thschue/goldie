@@ -39,7 +39,7 @@ func loadedProvider(t *testing.T) func() *engine.Snapshot {
 	t.Helper()
 	dir := t.TempDir()
 	writeArticle(t, dir, "alpha", "Alpha article", "body")
-	snap, err := engine.NewDirSource(dir).Load()
+	snap, err := engine.NewDirSource(dir).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

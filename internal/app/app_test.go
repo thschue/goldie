@@ -60,7 +60,7 @@ func withDefaultRateLimit(l platform.RateLimit) platform.RateLimit {
 // PublicHandler uses, from a parsed token set and limiter.
 func testPublicMux(t *testing.T) *publicMux {
 	t.Helper()
-	snap, err := engine.NewDirSource(testContent).Load()
+	snap, err := engine.NewDirSource(testContent).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

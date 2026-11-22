@@ -50,7 +50,7 @@ func TestGitSourceSSHStalledHandshakeTimesOut(t *testing.T) {
 	engine.SetGitLoadTimeout(src, time.Second)
 
 	done := make(chan error, 1)
-	go func() { _, err := src.Load(); done <- err }()
+	go func() { _, err := src.Load(t.Context()); done <- err }()
 	select {
 	case err := <-done:
 		if err == nil || !strings.Contains(err.Error(), "timed out") {

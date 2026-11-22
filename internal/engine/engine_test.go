@@ -31,7 +31,7 @@ func article(name string, keywords ...string) string {
 
 func load(t *testing.T, files map[string]string) *engine.Snapshot {
 	t.Helper()
-	snap, err := engine.NewDirSource(writeFiles(t, files)).Load()
+	snap, err := engine.NewDirSource(writeFiles(t, files)).Load(t.Context())
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -39,7 +39,7 @@ func load(t *testing.T, files map[string]string) *engine.Snapshot {
 }
 
 func TestLoadExampleKnowledge(t *testing.T) {
-	snap, err := engine.NewDirSource("../../examples/knowledge").Load()
+	snap, err := engine.NewDirSource("../../examples/knowledge").Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestLoadErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := writeFiles(t, tt.files)
-			snap, err := engine.NewDirSource(root).Load()
+			snap, err := engine.NewDirSource(root).Load(t.Context())
 			if err == nil {
 				t.Fatalf("Load succeeded: %+v", snap)
 			}
@@ -147,7 +147,7 @@ func TestLoadRejectsIDsDifferingOnlyInCase(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := writeFiles(t, files)
-			_, err := engine.NewDirSource(root).Load()
+			_, err := engine.NewDirSource(root).Load(t.Context())
 			if err == nil {
 				t.Fatal("Load succeeded with two IDs that differ only in case")
 			}
@@ -175,7 +175,7 @@ func TestIdentityIsPathNotName(t *testing.T) {
 
 func TestLoadBadRoot(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "nope")
-	_, err := engine.NewDirSource(root).Load()
+	_, err := engine.NewDirSource(root).Load(t.Context())
 	if err == nil || strings.Contains(err.Error(), root) {
 		t.Fatalf("error = %v", err)
 	}

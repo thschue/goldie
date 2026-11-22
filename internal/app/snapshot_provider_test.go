@@ -206,7 +206,7 @@ func TestSpecDeclaresNotReadyOnEveryRead(t *testing.T) {
 // request, with no restart; also from nil (not ready) to loaded.
 func TestSwappingTheSnapshotShowsOnTheNextRequest(t *testing.T) {
 	load := func(dir string) *engine.Snapshot {
-		s, err := engine.NewDirSource(dir).Load()
+		s, err := engine.NewDirSource(dir).Load(t.Context())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -257,7 +257,7 @@ func TestDirSourceThroughTheSyncerServesAndRefreshes(t *testing.T) {
 	if resp, body := apiGet(t, srv.URL+"/api/v1/articles/alpha"); resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("before the first Poll: status %d, want 503: %s", resp.StatusCode, body)
 	}
-	if err := syncer.Poll(); err != nil {
+	if err := syncer.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if resp, body := apiGet(t, srv.URL+"/api/v1/articles/alpha"); resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "first body") {
@@ -268,7 +268,7 @@ func TestDirSourceThroughTheSyncerServesAndRefreshes(t *testing.T) {
 	if _, body := apiGet(t, srv.URL+"/api/v1/articles/alpha"); !strings.Contains(string(body), "first body") {
 		t.Errorf("an edit shows before the next Poll: %s", body)
 	}
-	if err := syncer.Poll(); err != nil {
+	if err := syncer.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if _, body := apiGet(t, srv.URL+"/api/v1/articles/alpha"); !strings.Contains(string(body), "edited body") {
@@ -281,7 +281,7 @@ func TestDirSourceThroughTheSyncerServesAndRefreshes(t *testing.T) {
 	if err := os.WriteFile(broken, []byte("---\nname: [broken\n---\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := syncer.Poll(); err == nil {
+	if err := syncer.Poll(t.Context()); err == nil {
 		t.Fatal("poll of broken content succeeded")
 	}
 	if resp, body := apiGet(t, srv.URL+"/api/v1/articles/alpha"); resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "edited body") {
