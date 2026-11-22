@@ -6,12 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/thschue/goldie/internal/contract"
-	projectpkg "github.com/thschue/goldie/internal/contract/project"
+	"github.com/thschue/goldie/internal/contract/project"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -42,7 +41,7 @@ func (c *commander) printJSON(v any) error {
 }
 
 func (c *commander) search(ctx context.Context, q string) error {
-	project, err := c.project()
+	proj, err := c.project()
 	if err != nil {
 		return err
 	}
@@ -50,7 +49,7 @@ func (c *commander) search(ctx context.Context, q string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: projectParam(project)})
+	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: projectParam(proj)})
 	if err != nil {
 		return transportError(err)
 	}
@@ -91,7 +90,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if dotOnly(id) {
 		return errors.New("lookup needs an article id, not an empty or dot-only one\nHint: find ids with: goldie search <words>")
 	}
-	project, err := c.project()
+	proj, err := c.project()
 	if err != nil {
 		return err
 	}
@@ -99,7 +98,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: projectParam(project)})
+	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: projectParam(proj)})
 	if err != nil {
 		return transportError(err)
 	}
@@ -153,11 +152,11 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	// A Project problem is reported on the Project line, not as a failure:
 	// status is how a user finds out what is wrong. Other commands still fail.
-	project, perr := c.project()
+	proj, perr := c.project()
 	projectError := ""
 	if perr != nil {
 		projectError = contract.CleanLine(perr.Error())
-		project = projectpkg.Detected{}
+		proj = project.Detected{}
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
@@ -167,7 +166,7 @@ func (c *commander) status(ctx context.Context) error {
 	case doc.JSON200 != nil:
 		title, apiVersion = specInfo(*doc.JSON200)
 		if given {
-			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(project)); err != nil {
+			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj)); err != nil {
 				return err
 			}
 		}
@@ -180,13 +179,13 @@ func (c *commander) status(ctx context.Context) error {
 		if doc.JSON200 != nil {
 			out["api"], out["apiVersion"] = title, apiVersion
 		}
-		if project.ID != "" {
-			out["project"], out["projectSource"] = project.ID, sourceWords[project.Source]
+		if proj.ID != "" {
+			out["project"], out["projectSource"] = proj.ID, sourceWords[proj.Source]
 		}
 		if projectError != "" {
 			out["projectError"] = projectError
 		}
-		if h := projectHint(project); h != "" {
+		if h := projectHint(proj); h != "" {
 			out["projectHint"] = h
 		}
 		if hint != nil && *hint != "" {
@@ -199,7 +198,7 @@ func (c *commander) status(ctx context.Context) error {
 		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		apiLine, auth, describeProject(project, projectError))
+		apiLine, auth, describeProject(proj, projectError))
 	if err == nil {
 		var b strings.Builder
 		writeHint(&b, hint)
@@ -229,25 +228,6 @@ func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *
 		return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
 	}
 	return "token accepted", true, resp.JSON200.Hint, nil
-}
-
-// describeProject is the text of the Project line: the problem when there is
-// one, else the Project or what was found.
-func describeProject(p projectpkg.Detected, problem string) string {
-	if problem != "" {
-		return "problem: " + problem
-	}
-	return describe(p)
-}
-
-// project resolves the Project for the working directory.
-func (c *commander) project() (projectpkg.Detected, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return projectpkg.Detected{}, errors.New("cannot read the working directory")
-	}
-	envValue, _ := c.env.Lookup(EnvProject)
-	return resolveProject(dir, c.s.project, envValue)
 }
 
 // version prints the client version, and the server's API version when an

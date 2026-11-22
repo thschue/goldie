@@ -2,11 +2,11 @@
 // and the MCP stdio role both use it, so that one parser reads the untrusted
 // .git/config and .goldie/config.yaml of a checkout.
 //
-// Detect detects the Project, trying in order: the flag value, the environment value,
-// .goldie/config.yaml, then the git remotes upstream and origin. The package
-// owns detection only and words nothing for the user: callers map a Source,
-// and the Source of a SourceError, to their own text. It imports no other
-// goldie module except contract.
+// Detect detects the Project, trying in order: the flag value, the environment
+// value, .goldie/config.yaml, then the git remotes upstream and origin. The
+// package owns detection only and words nothing for the user: callers map a
+// Source, and the Source of a SourceError, to their own text. It imports no
+// other goldie module except contract.
 package project
 
 import (
