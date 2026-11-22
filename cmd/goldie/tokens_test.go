@@ -147,6 +147,49 @@ func TestBinaryRejectsShortOrMalformedTokenLines(t *testing.T) {
 	}
 }
 
+// A plaintext token that starts with sha256: (#159), from the variable and
+// from the file, stops startup with output that names GOLDIE_API_TOKENS and
+// the line number and says a plaintext token must not start with sha256:. It
+// never contains the token or any part of it.
+func TestBinaryExplainsPlaintextTokenStartingWithSHA256(t *testing.T) {
+	secret := "sha256:" + binReaderToken
+	lines := "ok:operator:" + binOperatorToken + "\nci:reader:" + secret
+	for _, form := range []string{"GOLDIE_API_TOKENS=" + lines, "GOLDIE_API_TOKENS_FILE=" + tokenFile(t, lines)} {
+		label := strings.SplitN(form, "=", 2)[0]
+		// A server that wrongly starts must fail this case, not hang the run.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.CommandContext(ctx, goldieBinary(t), "server")
+		cmd.Env = []string{
+			"PATH=" + os.Getenv("PATH"), "GOLDIE_ADDR=127.0.0.1:0", "GOLDIE_ADMIN_ADDR=127.0.0.1:0",
+			"GOLDIE_CONTENT_DIR=" + contentDir(t), form,
+		}
+		out, err := cmd.CombinedOutput()
+		timedOut := ctx.Err() != nil
+		cancel()
+		if timedOut {
+			t.Errorf("%s: the server started instead of failing", label)
+			continue
+		}
+		if err == nil {
+			t.Errorf("%s: the server exited 0, want a startup failure: %s", label, out)
+		}
+		lower := strings.ToLower(string(out))
+		for _, want := range []string{"GOLDIE_API_TOKENS", "line 2"} {
+			if !strings.Contains(string(out), want) {
+				t.Errorf("%s: output does not name %q: %s", label, want, out)
+			}
+		}
+		if !strings.Contains(lower, "plaintext token") || !strings.Contains(lower, "must not start with sha256:") {
+			t.Errorf("%s: output does not say a plaintext token must not start with sha256:: %s", label, out)
+		}
+		for _, leak := range []string{secret, binReaderToken, binOperatorToken, binReaderToken[:8], binReaderToken[len(binReaderToken)-8:]} {
+			if strings.Contains(string(out), leak) {
+				t.Errorf("%s: output echoes a token: %s", label, out)
+			}
+		}
+	}
+}
+
 // A plaintext line of exactly 32 bytes starts the server and authenticates.
 func TestBinaryAcceptsMinimumLengthTokenLine(t *testing.T) {
 	atMin := binReaderToken[:32]

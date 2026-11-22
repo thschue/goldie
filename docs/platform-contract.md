@@ -71,7 +71,7 @@ and running `./run regen`.
   the token. The Role is `reader` (search, look up, list, fetch bundles) or `operator` (also sync
   and activity). `GOLDIE_API_TOKEN` is the shorthand for one operator token named `api-token`.
   Tokens must be at least 32 bytes; `openssl rand -hex 32` makes one, and the token behind a hash
-  must be as strong. A bad line, a reused name or token, or a short token makes the server exit
+  must be as strong. A plaintext token must not start with `sha256:`, which marks a hash. A bad line, a reused name or token, or a short token makes the server exit
   non-zero naming the variable and the line number, never the token, its digest or its length.
   Every path under `/api/` requires `Authorization: Bearer <token>`; the server hashes it and
   compares it with every configured digest in constant time, and answers 401 in the error envelope
