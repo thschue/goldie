@@ -21,13 +21,13 @@ var badSearch = envelope("bad_request", "missing or invalid search words",
 
 // badProject is the 400 envelope for a project parameter that is not a ProjectId.
 var badProject = envelope("bad_request", "invalid project",
-	"Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to search all global content.")
+	"Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to get global guidance only.")
 
 // unregisteredHint tells a caller that named a Project this server does not
 // hold that it got the global answer (ADR 0014), and how to register it. The
 // id is already validated as a ProjectId, so it holds no markup or whitespace.
 func unregisteredHint(id string) string {
-	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+	return "The Project " + id + " is not registered on this server, so this is global guidance only. " +
 		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
 }
 

@@ -16,7 +16,7 @@ import (
 )
 
 // Acceptance tests for #121: search and lookup send the resolved Project as
-// project=, and an unregistered Project gets the global answer plus the
+// project=, and an unregistered Project gets global guidance only plus the
 // server's hint, which status shows too. The server is the real handler over
 // the example content, which registers github.com/acme/shop and holds a shop
 // article platform/deploy that overrides the global one.

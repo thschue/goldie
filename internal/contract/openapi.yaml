@@ -274,7 +274,7 @@ components:
             Present when the request named a Project that is not registered: the
             results are the global ones, and this says what to do next.
           examples:
-            - The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     ProjectId:
       type: string
       description: |
@@ -404,7 +404,7 @@ components:
             Present when the request named a Project that is not registered: the
             article is the global one, and this says what to do next.
           examples:
-            - The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     ErrorEnvelope:
       type: object
       description: The body of every error response.
@@ -451,7 +451,7 @@ components:
           description: What the caller can do next.
           examples:
             - Check the request path against the OpenAPI document.
-            - Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to search all global content.
+            - Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to get global guidance only.
   responses:
     Error:
       x-go-name: ErrorResponse
