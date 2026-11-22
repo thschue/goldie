@@ -5,6 +5,7 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract"
@@ -17,26 +18,90 @@ import (
 type route struct {
 	path    string
 	methods []string
-	handler http.Handler
 }
 
-// publicRoutes is the table of public endpoints. PublicHandler registers
-// exactly these, and the route-coverage test compares them with the spec, so
-// there is no second list to drift. The API operations require the token.
-func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
-	jsonSpec, err := contract.SpecJSON()
+// publicMux is the router of the public listener. contract.HandlerWithOptions
+// registers the spec's operations on it, so the generated code drives routing
+// and parameter decoding. It records every route it registers, so the
+// route-coverage test reads exactly the table the router is built from; it
+// puts every path under /api/ behind the token; and it answers each path's
+// other methods with the 405 envelope.
+type publicMux struct {
+	mux    *http.ServeMux
+	token  string
+	routes []route
+	allow  map[string][]string // the methods registered for each path
+}
+
+// newPublicMux returns the router with the spec's operations over snap
+// registered, and nothing else.
+func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
+	srv, err := api.NewServer(snap)
 	if err != nil {
 		return nil, err
 	}
-	routes := []route{
-		{"/openapi.yaml", []string{http.MethodGet}, staticGet("application/yaml", contract.SpecYAML())},
-		{"/openapi.json", []string{http.MethodGet}, staticGet("application/json", jsonSpec)},
-	}
-	for _, r := range api.Routes(snap) {
-		routes = append(routes, route{r.Path, []string{r.Method}, api.RequireToken(token, r.Handler)})
-	}
-	return routes, nil
+	m := &publicMux{mux: http.NewServeMux(), token: token, allow: map[string][]string{}}
+	contract.HandlerWithOptions(srv.Handler(), contract.StdHTTPServerOptions{
+		BaseRouter:       m,
+		ErrorHandlerFunc: api.RequestError,
+	})
+	return m, nil
 }
+
+// publicRoutes is the table of public endpoints as the generated router
+// registers them. The route-coverage test compares it with the spec, so there
+// is no second list to drift.
+func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
+	m, err := newPublicMux(snap, token)
+	if err != nil {
+		return nil, err
+	}
+	return m.routes, nil
+}
+
+// HandleFunc registers one generated operation; its pattern is "METHOD path".
+func (m *publicMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http.Request)) {
+	method, path, _ := strings.Cut(pattern, " ")
+	m.handle(method, path, http.HandlerFunc(h))
+}
+
+// handle registers h for method on path and, the first time path is seen, the
+// 405 envelope for the path's other methods.
+func (m *publicMux) handle(method, path string, h http.Handler) {
+	if _, seen := m.allow[path]; !seen {
+		m.mux.Handle(path, m.guard(path, m.methodNotAllowed(path)))
+	}
+	m.allow[path] = append(m.allow[path], method)
+	m.routes = append(m.routes, route{path, []string{method}})
+	m.mux.Handle(method+" "+path, m.guard(path, h))
+}
+
+// guard puts h behind the token when path is under /api/.
+func (m *publicMux) guard(path string, h http.Handler) http.Handler {
+	if path == "/api" || strings.HasPrefix(path, "/api/") {
+		return api.RequireToken(m.token, h)
+	}
+	return h
+}
+
+// methodNotAllowed answers a method that is not registered for path. The Allow
+// header lists the registered ones, with HEAD wherever GET is.
+func (m *publicMux) methodNotAllowed(path string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var allow []string
+		for _, method := range m.allow[path] {
+			allow = append(allow, method)
+			if method == http.MethodGet {
+				allow = append(allow, http.MethodHead)
+			}
+		}
+		w.Header().Set("Allow", strings.Join(allow, ", "))
+		api.WriteError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed",
+			"Use a method listed in the Allow header.")
+	})
+}
+
+func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.ServeHTTP(w, r) }
 
 // Options are the settings PublicHandler needs, read from the platform
 // configuration by the caller so this package stays the only place that knows
@@ -47,27 +112,25 @@ type Options struct {
 	APIToken   string // the bearer token for /api/ (GOLDIE_API_TOKEN)
 }
 
-// swaggerUIRoutes is the table of Swagger UI paths. They are not API
-// operations, so they are not in the spec and not in publicRoutes, but they are
-// registered on the same mux as the API routes, so the auth of #11 can guard
-// them too. The static token guards /api/ only, so they are open until then.
-func swaggerUIRoutes() ([]route, error) {
+// addSwaggerUI registers the Swagger UI paths. They are not API operations, so
+// they are not in the spec and not in publicRoutes, but they are registered on
+// the same router as the API routes, so the auth of #11 can guard them too.
+// The static token guards /api/ only, so they are open until then.
+func addSwaggerUI(m *publicMux) error {
 	assets, err := contract.SwaggerUIAssets()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	var routes []route
 	for _, a := range assets {
 		h := withCSP(staticGet(a.ContentType, a.Body))
 		if a.Name == "index.html" {
-			routes = append(routes,
-				route{"/swagger-ui", []string{http.MethodGet}, h},
-				route{"/swagger-ui/{$}", []string{http.MethodGet}, h})
+			m.handle(http.MethodGet, "/swagger-ui", h)
+			m.handle(http.MethodGet, "/swagger-ui/{$}", h)
 			continue
 		}
-		routes = append(routes, route{"/swagger-ui/" + a.Name, []string{http.MethodGet}, h})
+		m.handle(http.MethodGet, "/swagger-ui/"+a.Name, h)
 	}
-	return routes, nil
+	return nil
 }
 
 // swaggerUICSP is the Content-Security-Policy of the Swagger UI paths. The
@@ -113,41 +176,30 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
-	routes, err := publicRoutes(snap, opts.APIToken)
+	m, err := newPublicMux(snap, opts.APIToken)
 	if err != nil {
 		return nil, err
 	}
 	if opts.SwaggerUI {
-		ui, err := swaggerUIRoutes()
-		if err != nil {
+		if err := addSwaggerUI(m); err != nil {
 			return nil, err
 		}
-		routes = append(routes, ui...)
-	}
-	mux := http.NewServeMux()
-	for _, r := range routes {
-		mux.Handle(r.path, r.handler)
 	}
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotFound, "not_found", "no such endpoint",
+		api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")
 	})
 	// Unknown /api/ paths need the token too, so they reveal nothing.
-	mux.Handle("/api/", api.RequireToken(opts.APIToken, notFound))
-	mux.Handle("/api", api.RequireToken(opts.APIToken, notFound))
-	mux.Handle("/", notFound)
-	return mux, nil
+	m.mux.Handle("/api/", m.guard("/api/", notFound))
+	m.mux.Handle("/api", m.guard("/api", notFound))
+	m.mux.Handle("/", notFound)
+	return m, nil
 }
 
-// staticGet serves a fixed body for GET and HEAD and rejects other methods.
+// staticGet serves a fixed body. The router sends it GET and HEAD only, and
+// HEAD gets no body.
 func staticGet(contentType string, body []byte) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", "GET, HEAD")
-			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed",
-				"Use a method listed in the Allow header.")
-			return
-		}
 		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.WriteHeader(http.StatusOK)
@@ -155,9 +207,4 @@ func staticGet(contentType string, body []byte) http.Handler {
 			_, _ = w.Write(body)
 		}
 	})
-}
-
-// writeError writes the error envelope (ADR 0014); see api.WriteError.
-func writeError(w http.ResponseWriter, status int, code, message, hint string) {
-	api.WriteError(w, status, code, message, hint)
 }
