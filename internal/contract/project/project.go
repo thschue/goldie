@@ -111,7 +111,7 @@ func normaliseConfigured(v string) (string, error) {
 	}
 	// Anything that looks like a URL or carries userinfo but cannot be read is
 	// refused without echoing it: it may hold a credential.
-	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, contract.UnsafeRune) {
+	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, contract.HiddenRune) {
 		return "", errors.New("the Project is not a host/org/repo name or a git remote URL")
 	}
 	// A plain host/org/repo gets the same shape as a detected one.

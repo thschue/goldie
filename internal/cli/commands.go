@@ -27,7 +27,7 @@ func (c *commander) printJSON(v any) error {
 	var out strings.Builder
 	for _, r := range string(b) {
 		switch {
-		case r < 0x7f || !contract.UnsafeRune(r):
+		case r < 0x7f || !contract.HiddenRune(r):
 			out.WriteRune(r)
 		case r > 0xffff:
 			hi, lo := utf16.EncodeRune(r)
