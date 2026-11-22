@@ -26,6 +26,14 @@ func (stub) GetOpenAPIYAML(context.Context, GetOpenAPIYAMLRequestObject) (GetOpe
 	}, nil
 }
 
+func (stub) SearchArticles(_ context.Context, req SearchArticlesRequestObject) (SearchArticlesResponseObject, error) {
+	return SearchArticles200JSONResponse{Query: req.Params.Q, Results: []SearchHit{}}, nil
+}
+
+func (stub) GetArticle(_ context.Context, req GetArticleRequestObject) (GetArticleResponseObject, error) {
+	return GetArticle200JSONResponse{Id: req.Id, Name: "n", Keywords: []string{}, Content: "c"}, nil
+}
+
 func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 	srv := httptest.NewServer(Handler(NewStrictHandler(stub{}, nil)))
 	t.Cleanup(srv.Close)
@@ -34,8 +42,10 @@ func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 		status int
 		body   string
 	}{
-		"/openapi.json": {http.StatusOK, `"openapi":"3.1.0"`},
-		"/openapi.yaml": {http.StatusTeapot, `"code":"boom"`},
+		"/openapi.json":                      {http.StatusOK, `"openapi":"3.1.0"`},
+		"/openapi.yaml":                      {http.StatusTeapot, `"code":"boom"`},
+		"/api/v1/search?q=go":                {http.StatusOK, `"query":"go"`},
+		"/api/v1/articles/platform%2Fdeploy": {http.StatusOK, `"id":"platform/deploy"`},
 	} {
 		resp, err := http.Get(srv.URL + path) //nolint:gosec // test server URL
 		if err != nil {

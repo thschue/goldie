@@ -39,6 +39,11 @@ func TestCheck(t *testing.T) {
 			`{"error":{"code":"x","message":"y","details":{"hint":"z","addr":"10.0.0.1"}}}`, "addr"},
 		"error that is not the envelope": {"GET", "/nope", 404, "application/json", `{"message":"x"}`, "error"},
 		"body that is not JSON":          {"GET", "/openapi.json", 200, "application/json", `nope`, "not JSON"},
+		// A path parameter is one segment: a "/" inside it is sent as %2F.
+		"encoded slash in a path parameter": {"GET", "/api/v1/articles/platform%2Fdeploy", 200, "application/json",
+			`{"id":"platform/deploy","name":"Deploy","keywords":[],"content":""}`, ""},
+		"bare slash is not a path parameter": {"GET", "/api/v1/articles/platform/deploy", 200, "application/json",
+			`{"id":"platform/deploy","name":"Deploy","keywords":[],"content":""}`, "not a client error"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp, body := response(tc.method, tc.path, tc.status, tc.contentType, tc.body)

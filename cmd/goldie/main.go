@@ -78,9 +78,13 @@ func runServer(out io.Writer) error {
 		close(force)
 	}()
 
-	public, err := app.PublicHandler(app.Options{SwaggerUI: cfg.SwaggerUIEnabled})
+	public, err := app.PublicHandler(app.Options{
+		SwaggerUI:  cfg.SwaggerUIEnabled,
+		ContentDir: cfg.ContentDir,
+		APIToken:   cfg.APIToken,
+	})
 	if err != nil {
-		return fmt.Errorf("build public handler: %w", err)
+		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public}
 	return srv.Serve(ctx, force)

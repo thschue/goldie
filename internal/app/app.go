@@ -3,10 +3,13 @@
 package app
 
 import (
-	"encoding/json"
+	"fmt"
 	"net/http"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/engine"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // route is one public endpoint: a path and the methods it answers. HEAD is
@@ -19,29 +22,35 @@ type route struct {
 
 // publicRoutes is the table of public endpoints. PublicHandler registers
 // exactly these, and the route-coverage test compares them with the spec, so
-// there is no second list to drift.
-func publicRoutes() ([]route, error) {
+// there is no second list to drift. The API operations require the token.
+func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
 	jsonSpec, err := contract.SpecJSON()
 	if err != nil {
 		return nil, err
 	}
-	return []route{
+	routes := []route{
 		{"/openapi.yaml", []string{http.MethodGet}, staticGet("application/yaml", contract.SpecYAML())},
 		{"/openapi.json", []string{http.MethodGet}, staticGet("application/json", jsonSpec)},
-	}, nil
+	}
+	for _, r := range api.Routes(snap) {
+		routes = append(routes, route{r.Path, []string{r.Method}, api.RequireToken(token, r.Handler)})
+	}
+	return routes, nil
 }
 
 // Options are the settings PublicHandler needs, read from the platform
 // configuration by the caller so this package stays the only place that knows
 // both modules.
 type Options struct {
-	SwaggerUI bool // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
+	SwaggerUI  bool   // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
+	ContentDir string // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
+	APIToken   string // the bearer token for /api/ (GOLDIE_API_TOKEN)
 }
 
 // swaggerUIRoutes is the table of Swagger UI paths. They are not API
 // operations, so they are not in the spec and not in publicRoutes, but they are
-// registered on the same mux as the API routes, so whatever guards that mux
-// (the auth of #11) guards them too.
+// registered on the same mux as the API routes, so the auth of #11 can guard
+// them too. The static token guards /api/ only, so they are open until then.
 func swaggerUIRoutes() ([]route, error) {
 	assets, err := contract.SwaggerUIAssets()
 	if err != nil {
@@ -78,12 +87,24 @@ func withCSP(h http.Handler) http.Handler {
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
-// serves the OpenAPI document at /openapi.yaml and /openapi.json and, unless
-// switched off, Swagger UI at /swagger-ui; anything else is the not-found
-// envelope. Platform stays unaware of the contract: this is where the two
-// meet.
+// loads the dir Source and serves the API under /api/, every path of which
+// requires the token; the OpenAPI document at /openapi.yaml and
+// /openapi.json; and, unless switched off, Swagger UI at /swagger-ui. Anything
+// else is the not-found envelope. A missing token or unloadable content is an
+// error naming the variable, so the server fails at startup (PC-04). Platform
+// stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
-	routes, err := publicRoutes()
+	if err := api.CheckToken(opts.APIToken); err != nil {
+		return nil, fmt.Errorf("%s %w", platform.EnvAPIToken, err)
+	}
+	if opts.ContentDir == "" {
+		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
+	}
+	snap, err := engine.NewDirSource(opts.ContentDir).Load()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
+	}
+	routes, err := publicRoutes(snap, opts.APIToken)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +119,14 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	for _, r := range routes {
 		mux.Handle(r.path, r.handler)
 	}
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")
 	})
+	// Unknown /api/ paths need the token too, so they reveal nothing.
+	mux.Handle("/api/", api.RequireToken(opts.APIToken, notFound))
+	mux.Handle("/api", api.RequireToken(opts.APIToken, notFound))
+	mux.Handle("/", notFound)
 	return mux, nil
 }
 
@@ -123,17 +148,7 @@ func staticGet(contentType string, body []byte) http.Handler {
 	})
 }
 
-// writeError writes the error envelope {"error":{code,message,details}},
-// built from the generated contract types (ADR 0014). hint is the next-step
-// hint in details; it must not echo the request or contain addresses, paths
-// or stack traces.
+// writeError writes the error envelope (ADR 0014); see api.WriteError.
 func writeError(w http.ResponseWriter, status int, code, message, hint string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(contract.ErrorEnvelope{Error: contract.Error{
-		Code:    code,
-		Message: message,
-		Details: contract.ErrorDetails{Hint: hint},
-	}})
+	api.WriteError(w, status, code, message, hint)
 }
