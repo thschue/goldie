@@ -50,6 +50,14 @@ The rest (main, `--admin`, leases, containers) is enforced by the
    - disable auto-merge where `enabledBy == $me`;
    - remove `needs-maintainer`;
    - re-queue the PR.
+
+   **Red after arming.** For every own PR with auto-merge armed whose head has a required check
+   that completed as failed (a clean review doesn't protect it; often a skew with what merged
+   since, #113):
+   - an infra flake (runner, network, rate limit, per the job log) is rerun once per SHA;
+   - otherwise disable auto-merge and re-queue the PR as if its head had no marker. The security
+     lens rebases onto `origin/main`, runs the gates, and fixes what the PR causes, as a self-fix,
+     or hands it back.
 4. **Queue**, in this order (`main=red` first: the fix for `main`):
    1. own PRs whose latest own marker is `reason=self-fix` for a different head (**delta reviews**);
    2. own PRs whose latest own marker is `reason=needs-info`, and which no longer carry `needs-info`:
