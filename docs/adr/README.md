@@ -15,3 +15,4 @@ Consequences.
 - [0009. OpenAPI 3.1, spec first, with code generation](0009-openapi-spec-first-with-codegen.md)
 - [0010. Vue with a design-token structure and goldie's own blue brand](0010-vue-design-tokens-and-blue-brand.md)
 - [0011. Versioning policy: additive-only contract](0011-versioning-policy.md)
+- [0012. Agent loops: mechanical gates, a PR-centric handoff and review lenses](0012-agent-loop-gates-and-handoff.md)
