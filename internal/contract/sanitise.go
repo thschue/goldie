@@ -1,9 +1,6 @@
 package contract
 
 import (
-	"encoding/json"
-	"net/http"
-	"strconv"
 	"strings"
 	"unicode"
 )
@@ -16,19 +13,36 @@ import (
 // controls and every format character (Unicode category Cf: bidirectional
 // controls, zero-width characters, the byte-order mark, tag characters).
 // They can drive a terminal or hide and reorder text a reader sees.
-// CleanText keeps newline and tab, which are C0 controls.
+// CleanText keeps newline and tab, which are C0 controls, and CleanText and
+// CleanLine also drop the invisible fillers of invisibleFiller.
 func UnsafeRune(r rune) bool {
 	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) || unicode.Is(unicode.Cf, r)
 }
 
-// CleanText drops every unsafe rune other than newline and tab, keeping the
-// line and paragraph separators U+2028 and U+2029. It is for text that may
-// span lines, such as an article's content. Invalid UTF-8 becomes U+FFFD, so
-// the result is always valid UTF-8 and no stray byte reaches a terminal as an
-// 8-bit control.
+// invisibleFiller reports the runes outside category Cf that render as
+// nothing, so server text could hide characters behind them: the Hangul
+// fillers U+115F, U+1160, U+3164 and U+FFA0, and the variation selectors
+// U+FE00 to U+FE0F and U+E0100 to U+E01EF. Dropping a variation selector
+// only changes how its neighbour is drawn, such as an emoji's text or colour
+// form; the neighbour stays.
+func invisibleFiller(r rune) bool {
+	switch {
+	case r == 0x115f, r == 0x1160, r == 0x3164, r == 0xffa0:
+		return true
+	case r >= 0xfe00 && r <= 0xfe0f, r >= 0xe0100 && r <= 0xe01ef:
+		return true
+	}
+	return false
+}
+
+// CleanText drops every unsafe rune other than newline and tab, and every
+// invisible filler, keeping the line and paragraph separators U+2028 and
+// U+2029. It is for text that may span lines, such as an article's content.
+// Invalid UTF-8 becomes U+FFFD, so the result is always valid UTF-8 and no
+// stray byte reaches a terminal as an 8-bit control.
 func CleanText(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r != '\n' && r != '\t' && UnsafeRune(r) {
+		if (r != '\n' && r != '\t' && UnsafeRune(r)) || invisibleFiller(r) {
 			return -1
 		}
 		return r
@@ -43,56 +57,9 @@ func CleanLine(s string) string {
 		switch {
 		case r == '\n', r == '\t', r == 0x2028, r == 0x2029:
 			return ' '
-		case UnsafeRune(r):
+		case UnsafeRune(r), invisibleFiller(r):
 			return -1
 		}
 		return r
 	}, s)
 }
-
-// APIError is what a client may pass on from an error response: the status,
-// the envelope's message and hint cleaned with CleanLine, and the wait of a
-// valid Retry-After header. Each client words its own message from it.
-type APIError struct {
-	Status  int
-	Message string
-	Hint    string
-	// RetryAfter is the wait the server asked for, in whole seconds. It is 0
-	// when the header is absent, malformed, 0 or above an hour, so no client
-	// claims a wait the server did not send, or passes on an absurd one.
-	RetryAfter int
-}
-
-// DecodeAPIError reads an error response. A body that is not an error
-// envelope, or an envelope without a message, yields only the status and
-// RetryAfter: nothing else of the body is passed on.
-func DecodeAPIError(status int, header http.Header, body []byte) APIError {
-	e := APIError{Status: status, RetryAfter: retryAfter(header)}
-	var env ErrorEnvelope
-	if json.Unmarshal(body, &env) != nil {
-		return e
-	}
-	if e.Message = CleanLine(env.Error.Message); e.Message != "" {
-		e.Hint = CleanLine(env.Error.Details.Hint)
-	}
-	return e
-}
-
-// retryAfter reads Retry-After as delay-seconds (RFC 9110, 10.2.3): one or
-// more ASCII digits and nothing else. Any other value, or a wait above
-// maxRetryAfter, is 0: a client says "wait a little" rather than pass on an
-// absurd number. The HTTP-date form is not read: the API never sends it.
-func retryAfter(h http.Header) int {
-	v := h.Get("Retry-After")
-	if v == "" || strings.Trim(v, "0123456789") != "" {
-		return 0
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n > maxRetryAfter {
-		return 0
-	}
-	return n
-}
-
-// maxRetryAfter is the longest wait, in seconds, a client passes on: an hour.
-const maxRetryAfter = 3600

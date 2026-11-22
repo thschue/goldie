@@ -71,13 +71,13 @@ func search(ctx context.Context, c contract.ClientInterface, q string) *sdk.Call
 	}
 	hits := resp.JSON200.Results
 	if len(hits) == 0 {
-		return success(fmt.Sprintf("No articles match %q. Try other words.", line(q)))
+		return success(fmt.Sprintf("No articles match %q. Try other words.", contract.CleanLine(q)))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d articles for %q, best first. Read one with get_article.\n", len(hits), line(q))
+	fmt.Fprintf(&b, "%d articles for %q, best first. Read one with get_article.\n", len(hits), contract.CleanLine(q))
 	for _, h := range hits {
 		fmt.Fprintf(&b, "\n- id: %s\n  name: %s\n  keywords: %s\n  matched: %s\n",
-			line(h.Id), line(h.Name), list(h.Keywords), list(h.Matched))
+			contract.CleanLine(h.Id), contract.CleanLine(h.Name), list(h.Keywords), list(h.Matched))
 	}
 	return success(b.String())
 }
@@ -105,7 +105,8 @@ func article(ctx context.Context, c contract.ClientInterface, id string) *sdk.Ca
 	}
 	a := resp.JSON200
 	return success(fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
-		line(a.Name), line(a.Id), list(a.Keywords), strings.TrimRight(clean(a.Content), "\n")))
+		contract.CleanLine(a.Name), contract.CleanLine(a.Id), list(a.Keywords),
+		strings.TrimRight(contract.CleanText(a.Content), "\n")))
 }
 
 func success(text string) *sdk.CallToolResult {
@@ -168,21 +169,15 @@ func withHint(msg, hint string) error {
 	return errors.New(msg + "\nHint: " + hint)
 }
 
+// list joins l for one line, each entry cleaned with contract.CleanLine so
+// it cannot forge extra fields or entries.
 func list(l []string) string {
 	if len(l) == 0 {
 		return "(none)"
 	}
 	out := make([]string, len(l))
 	for i, s := range l {
-		out[i] = line(s)
+		out[i] = contract.CleanLine(s)
 	}
 	return strings.Join(out, ", ")
 }
-
-// clean is contract.CleanText: server text cannot hide or reorder what the
-// agent reads.
-func clean(s string) string { return contract.CleanText(s) }
-
-// line is contract.CleanLine: a name or message cannot forge extra fields or
-// entries.
-func line(s string) string { return contract.CleanLine(s) }

@@ -127,7 +127,10 @@ func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
 // after fs is parsed, for contract.NewAPIClient. A flag overrides its
 // variable: --addr over GOLDIE_ADDR, --token over GOLDIE_TOKEN or
 // GOLDIE_TOKEN_FILE. A missing or invalid setting is an error that names it
-// and shows no value.
+// and shows no value. The address check is for startup only: a role that
+// resolves its settings before it serves fails there, with the CLI's wording.
+// contract.NewAPIClient checks the address again, so Resolve is not what keeps
+// a bad one from the client.
 func (f *ClientFlags) Resolve(env Env) (addr, token string, err error) {
 	c, err := f.commander(env, true)
 	if err != nil {
