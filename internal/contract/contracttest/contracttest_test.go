@@ -59,3 +59,39 @@ func TestCheck(t *testing.T) {
 		})
 	}
 }
+
+// Overlapping templates must resolve to the most specific one on every run,
+// not in Go's random map order.
+func TestFindOperationPrefersLiteralSegments(t *testing.T) {
+	op := func(id string) map[string]any { return map[string]any{"operationId": id} }
+	doc := map[string]any{"paths": map[string]any{
+		"/items/{id}":         map[string]any{"get": op("byID"), "delete": op("del")},
+		"/items/search":       map[string]any{"get": op("search")},
+		"/items/{id}/{name}":  map[string]any{"get": op("idName")},
+		"/items/{id}/details": map[string]any{"get": op("details")},
+		"/{kind}/search":      map[string]any{"get": op("kindSearch")},
+	}}
+	for name, tc := range map[string]struct {
+		method, path string
+		wantID       string // empty means no operation
+		wantPtr      string
+	}{
+		"literal beats template":              {"get", "/items/search", "search", "#/paths/~1items~1search/get"},
+		"template when no literal matches":    {"get", "/items/42", "byID", "#/paths/~1items~1{id}/get"},
+		"literal in a later segment wins":     {"get", "/items/42/details", "details", "#/paths/~1items~1{id}~1details/get"},
+		"earlier literal segment wins":        {"get", "/items/search", "search", "#/paths/~1items~1search/get"},
+		"template in a later segment":         {"get", "/items/42/other", "idName", "#/paths/~1items~1{id}~1{name}/get"},
+		"most specific path lacks the method": {"delete", "/items/search", "", ""},
+		"no match":                            {"get", "/nope", "", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for range 50 {
+				got, ptr := findOperation(doc, tc.method, tc.path)
+				id, _ := got["operationId"].(string)
+				if id != tc.wantID || ptr != tc.wantPtr {
+					t.Fatalf("got %q at %q, want %q at %q", id, ptr, tc.wantID, tc.wantPtr)
+				}
+			}
+		})
+	}
+}
