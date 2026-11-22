@@ -120,21 +120,27 @@ func sshProxy(budget *gitBudget, deadline time.Time) (transport.ProxyOptions, fu
 	return transport.ProxyOptions{URL: sshDialScheme + "://" + id}, func() { sshLoads.Delete(id) }
 }
 
-func (d *sshDialer) Dial(network, addr string) (net.Conn, error) {
-	return d.DialContext(context.Background(), network, addr)
+// Dial always fails: go-git dials with DialContext, and a wrapper that drops
+// the context would slip past the re-entry guard in dialVia.
+func (d *sshDialer) Dial(_, _ string) (net.Conn, error) {
+	return nil, errors.New("the git ssh load dialer needs a context")
 }
 
 func (d *sshDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	return d.dialVia(ctx, proxy.FromEnvironmentUsing(&net.Dialer{Timeout: 30 * time.Second}), network, addr)
 }
 
+// sshDialKey marks a context that is already inside a load dialer.
+type sshDialKey struct{}
+
 // dialVia dials through fwd. ALL_PROXY resolves through the same registry, so
-// it could name a load dialer; that would recurse, and it fails instead.
+// it could name a load dialer, alone or wrapped (x/net wraps it in a PerHost
+// when NO_PROXY is set). Coming back in would recurse, so it fails instead.
 func (d *sshDialer) dialVia(ctx context.Context, fwd proxy.Dialer, network, addr string) (net.Conn, error) {
-	if _, loop := fwd.(*sshDialer); loop {
+	if _, loop := fwd.(*sshDialer); loop || ctx.Value(sshDialKey{}) != nil {
 		return nil, errors.New("ALL_PROXY names a git ssh load dialer")
 	}
-	ctx, cancel := context.WithDeadline(ctx, d.deadline)
+	ctx, cancel := context.WithDeadline(context.WithValue(ctx, sshDialKey{}, true), d.deadline)
 	defer cancel()
 	var (
 		c   net.Conn
