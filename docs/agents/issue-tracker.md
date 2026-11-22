@@ -47,13 +47,8 @@ The **frontier** is the set of issues an agent may start now. An issue is on the
 4. every native `blocked_by` dependency is closed;
 5. no remote branch `*/issue-<n>-*` exists (`scripts/claim` checks this).
 
-Rank it by the [order of work](./README.md#order-of-work); a delivery session takes its own
-`area:` lane first.
-
-```sh
-gh issue list --state open --label ready-for-agent --limit 500 --json number,title,labels,createdAt \
-  --search 'no:assignee -label:in-progress -label:epic -is:blocked'
-```
+`scripts/frontier` prints it ranked by the [order of work](./README.md#order-of-work). An epic's
+slices must be its native sub-issues, or they rank as standalone work.
 
 ```sh
 # open issues this one blocks (critical-path count, first level)

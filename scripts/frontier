@@ -1,0 +1,53 @@
+#!/bin/sh
+# frontier: the claimable issues, best first (docs/agents/README.md#order-of-work).
+#
+#   scripts/frontier
+#
+# Prints "<number><TAB><title>" per issue, in the order a delivery session
+# claims: bug and priority, then the oldest started epic's issues, then
+# standalone issues, then new epics; oldest first within each. Claimable means
+# open, ready-for-agent, not an epic, unassigned, not in progress and not
+# blocked. An issue's epic is its nearest ancestor labelled `epic`, except the
+# spec of record (#1, CLAUDE.md); an epic has started when a sub-issue is
+# closed or in progress. The ranking is scripts/lib/frontier.jq. Read-only.
+set -eu
+
+die() { printf 'frontier: %s\n' "$*" >&2; exit 2; }
+spec=1
+lib="$(cd "$(dirname "$0")" && pwd)/lib"
+tmp=$(mktemp -d) || die "cannot create a temporary directory"
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+# info <n>: the issue's number, labels, createdAt, parent and sub-issue summary, cached.
+info() {
+	[ -s "$tmp/$1" ] || gh issue view "$1" --json number,labels,createdAt,parent,subIssuesSummary \
+		--jq '{number, createdAt, labels: [.labels[].name], parent: .parent.number,
+			completed: .subIssuesSummary.completed}' >"$tmp/$1" || die "cannot read issue $1"
+	cat "$tmp/$1"
+}
+# epic_of <n>: the nearest epic above issue <n>, as JSON, or null.
+epic_of() {
+	p=$(info "$1" | jq -r '.parent // empty')
+	while [ -n "$p" ] && [ "$p" != "$spec" ]; do
+		if info "$p" | jq -e '.labels | index("epic")' >/dev/null; then info "$p"; return; fi
+		p=$(info "$p" | jq -r '.parent // empty')
+	done
+	echo null
+}
+
+gh issue list --state open --label in-progress --limit 500 --json number --jq '.[].number' >"$tmp/wip" ||
+	die "cannot list issues in progress"
+: >"$tmp/started"
+while read -r n; do epic_of "$n" | jq -r '.number? // empty' >>"$tmp/started"; done <"$tmp/wip"
+
+gh issue list --state open --label ready-for-agent --limit 500 \
+	--search 'no:assignee -label:in-progress -label:epic -is:blocked sort:created-asc' \
+	--json number,title,createdAt,labels --jq '.[] | {number, title, createdAt, labels: [.labels[].name]} | @json' |
+	while IFS= read -r issue; do
+		n=$(printf '%s' "$issue" | jq -r .number)
+		printf '%s' "$issue" | jq -c --argjson e "$(epic_of "$n")" --rawfile started "$tmp/started" \
+			'. + {epic: (if $e == null then null else
+				{number: $e.number, createdAt: $e.createdAt,
+				 started: ($e.completed > 0 or ($started | split("\n") | index($e.number | tostring) != null))} end)}'
+	done | jq -s -r -L "$lib" 'include "frontier"; rank | .[] | "\(.number)\t\(.title)"' ||
+	die "cannot rank the frontier"
