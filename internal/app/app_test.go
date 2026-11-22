@@ -6,10 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/contract/contracttest"
 )
 
 func newServer(t *testing.T) *httptest.Server {
@@ -34,6 +39,31 @@ func get(t *testing.T, url string) (*http.Response, []byte) {
 	if err != nil {
 		t.Fatalf("read %s: %v", url, err)
 	}
+	contracttest.Conforms(t, resp, body)
+	return resp, body
+}
+
+// do sends one request and returns the response with its body read. Every
+// response is validated against the spec.
+func do(t *testing.T, method, url string, mutate func(*http.Request)) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), method, url, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mutate != nil {
+		mutate(req)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // test server URL
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contracttest.Conforms(t, resp, body)
 	return resp, body
 }
 
@@ -105,15 +135,11 @@ func TestSpecDocumentsAreEquivalent(t *testing.T) {
 
 func TestSpecEndpointsOnlyAnswerGet(t *testing.T) {
 	srv := newServer(t)
-	resp, err := http.Post(srv.URL+"/openapi.json", "application/json", strings.NewReader("{}")) //nolint:gosec // test server URL
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	resp, body := do(t, http.MethodPost, srv.URL+"/openapi.json", nil)
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status %d, want 405", resp.StatusCode)
 	}
-	assertEnvelope(t, resp, "method_not_allowed")
+	assertEnvelope(t, body, "method_not_allowed")
 	if got := resp.Header.Get("Allow"); !strings.Contains(got, "GET") {
 		t.Errorf("Allow = %q, want GET", got)
 	}
@@ -121,30 +147,166 @@ func TestSpecEndpointsOnlyAnswerGet(t *testing.T) {
 
 func TestUnknownPathIsTheNotFoundEnvelope(t *testing.T) {
 	srv := newServer(t)
-	resp, err := http.Get(srv.URL + "/nope") //nolint:gosec // test server URL
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	resp, body := get(t, srv.URL+"/nope")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", resp.StatusCode)
 	}
-	assertEnvelope(t, resp, "not_found")
+	assertEnvelope(t, body, "not_found")
 }
 
-func assertEnvelope(t *testing.T, resp *http.Response, code string) {
+// specOperations returns "METHOD path" for every operation in the spec.
+func specOperations(t *testing.T) []string {
+	t.Helper()
+	var doc struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(contract.SpecYAML(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var ops []string
+	for path, item := range doc.Paths {
+		for key := range item {
+			switch m := strings.ToUpper(key); m {
+			case "GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE":
+				ops = append(ops, m+" "+path)
+			}
+		}
+	}
+	sort.Strings(ops)
+	return ops
+}
+
+func TestRoutesAndSpecAgree(t *testing.T) {
+	routes, err := publicRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var registered []string
+	for _, r := range routes {
+		for _, m := range r.methods {
+			registered = append(registered, m+" "+r.path)
+		}
+	}
+	sort.Strings(registered)
+	ops := specOperations(t)
+
+	// Both directions on the table the router is built from.
+	for _, r := range registered {
+		if !contains(ops, r) {
+			t.Errorf("route %q is registered but not in the spec", r)
+		}
+	}
+	for _, o := range ops {
+		if !contains(registered, o) {
+			t.Errorf("operation %q is in the spec but not registered", o)
+		}
+	}
+
+	// And against the live router: every operation must reach a handler, not
+	// the not-found fallback. (Path templates are skipped: they need a value.)
+	srv := newServer(t)
+	for _, o := range ops {
+		method, path, _ := strings.Cut(o, " ")
+		if strings.Contains(path, "{") {
+			continue
+		}
+		resp, _ := do(t, method, srv.URL+path, nil)
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+			t.Errorf("%s answers %d: the operation is in the spec but the router does not serve it", o, resp.StatusCode)
+		}
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// leaks matches what an error body must never contain: addresses, ports,
+// hostnames, file paths and stack traces.
+var leaks = map[string]*regexp.Regexp{
+	"IPv4 address": regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}\b`),
+	"IPv6 address": regexp.MustCompile(`(?i)\[?[0-9a-f]{0,4}(:[0-9a-f]{0,4}){3,}\]?`),
+	"port":         regexp.MustCompile(`:\d{2,5}\b`),
+	"hostname":     regexp.MustCompile(`(?i)\b[a-z0-9-]+(\.[a-z0-9-]+)+\b`),
+	"file path":    regexp.MustCompile(`(^|[\s"'(=])(\.{0,2}/|[a-zA-Z]:\\)[\w.-]`),
+	"stack trace":  regexp.MustCompile(`(?i)goroutine \d|\.go:\d|runtime\.|panic|\bat [\w.]+\(`),
+}
+
+func TestErrorEnvelopesDoNotLeak(t *testing.T) {
+	srv := newServer(t)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	type attempt struct {
+		method, path string
+		mutate       func(*http.Request)
+	}
+	hostile := func(r *http.Request) { r.Host = "internal.example.test:8443" }
+	attempts := []attempt{
+		{http.MethodGet, "/nope", nil},
+		{http.MethodGet, "/etc/passwd", nil},
+		{http.MethodGet, "/..%2f..%2fetc/passwd", nil},
+		{http.MethodGet, "/C:/Windows/System32", nil},
+		{http.MethodGet, "/10.0.0.1:8080/x.go", nil},
+		{http.MethodGet, "/nope", hostile},
+		{http.MethodPost, "/openapi.yaml", nil},
+		{http.MethodDelete, "/openapi.json", hostile},
+	}
+	for _, a := range attempts {
+		resp, body := do(t, a.method, srv.URL+a.path, a.mutate)
+		if resp.StatusCode < 400 {
+			t.Errorf("%s %s: status %d, want an error", a.method, a.path, resp.StatusCode)
+			continue
+		}
+		assertEnvelope(t, body, "")
+		for name, re := range leaks {
+			if m := re.FindString(string(body)); m != "" {
+				t.Errorf("%s %s: error body contains a %s (%q): %s", a.method, a.path, name, m, body)
+			}
+		}
+		for _, echo := range []string{host, "internal.example", a.path, strings.TrimPrefix(a.path, "/")} {
+			if echo != "" && strings.Contains(string(body), echo) {
+				t.Errorf("%s %s: error body echoes the request (%q): %s", a.method, a.path, echo, body)
+			}
+		}
+	}
+}
+
+func TestEveryErrorCarriesAHint(t *testing.T) {
+	srv := newServer(t)
+	for _, c := range []struct {
+		method, path string
+		code         string
+	}{
+		{http.MethodGet, "/nope", "not_found"},
+		{http.MethodPost, "/openapi.json", "method_not_allowed"},
+	} {
+		_, body := do(t, c.method, srv.URL+c.path, nil)
+		assertEnvelope(t, body, c.code)
+	}
+}
+
+// assertEnvelope checks body is the error envelope with a next-step hint, and
+// the given code when code is not empty.
+func assertEnvelope(t *testing.T, body []byte, code string) {
 	t.Helper()
 	var env struct {
 		Error struct {
-			Code    string         `json:"code"`
-			Message string         `json:"message"`
-			Details map[string]any `json:"details"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details struct {
+				Hint string `json:"hint"`
+			} `json:"details"`
 		} `json:"error"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("body is not the error envelope: %v", err)
 	}
-	if env.Error.Code != code || env.Error.Message == "" || env.Error.Details == nil {
-		t.Errorf("envelope = %+v, want code %q with message and details", env.Error, code)
+	e := env.Error
+	if e.Code == "" || (code != "" && e.Code != code) || e.Message == "" || e.Details.Hint == "" {
+		t.Errorf("envelope = %+v, want code %q with a message and a details.hint", e, code)
 	}
 }
