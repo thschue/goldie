@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -101,18 +102,25 @@ func runServer(out io.Writer) error {
 		close(force)
 	}()
 
-	public, err := app.PublicHandler(app.Options{
-		SwaggerUI:  cfg.SwaggerUIEnabled,
-		ContentDir: cfg.ContentDir,
-		APIToken:   cfg.APIToken,
-		APITokens:  cfg.APITokens,
-		RateLimit:  cfg.RateLimit,
-	})
+	public, err := app.PublicHandler(publicOptions(cfg, logger))
 	if err != nil {
 		return handlerError(err)
 	}
 	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public, Telemetry: tel}
 	return srv.Serve(ctx, force)
+}
+
+// publicOptions are the PublicHandler settings from cfg, with the server's
+// component logger, so what the public handler logs reaches the operator's log.
+func publicOptions(cfg platform.Config, logger *slog.Logger) app.Options {
+	return app.Options{
+		SwaggerUI:  cfg.SwaggerUIEnabled,
+		ContentDir: cfg.ContentDir,
+		APIToken:   cfg.APIToken,
+		APITokens:  cfg.APITokens,
+		RateLimit:  cfg.RateLimit,
+		Logger:     logger,
+	}
 }
 
 // handlerError labels a PublicHandler failure: a settings problem is invalid

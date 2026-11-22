@@ -72,6 +72,11 @@ token and no other. The endpoint is stateless and answers with JSON: there are n
 standing event stream and no tool-list change notifications (the tool set is fixed), and each
 request must finish within 10 seconds, so connected agents never hold up shutdown.
 
+The server advertises its capabilities explicitly: tools, and not the SDK's default `logging`
+capability, which nothing in goldie uses, so there are no MCP log notifications. If an API handler
+fails unexpectedly behind a tool call, the tool answers with the 500 envelope and the server logs one
+line with the API request's method and path, never the failure's details.
+
 ```json
 {"mcpServers": {"goldie": {"type": "http", "url": "http://localhost:8080/mcp",
   "headers": {"Authorization": "Bearer ${GOLDIE_TOKEN}"}}}}

@@ -4,6 +4,7 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -154,6 +155,7 @@ type Options struct {
 	APIToken   string             // one operator token, the shorthand (GOLDIE_API_TOKEN)
 	APITokens  string             // name:role:token lines (GOLDIE_API_TOKENS)
 	RateLimit  platform.RateLimit // per-token limit as LoadConfig parsed it (GOLDIE_RATE_LIMIT)
+	Logger     *slog.Logger       // the server's component logger; nil discards
 }
 
 // rateLimiter builds the per-token limiter from the RateLimit LoadConfig
@@ -261,7 +263,11 @@ func PublicHandler(opts Options) (http.Handler, error) {
 			return nil, err
 		}
 	}
-	addMCP(m, m)
+	logger := opts.Logger
+	if logger == nil {
+		logger = discardLogger
+	}
+	addMCP(m, m, logger)
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")
