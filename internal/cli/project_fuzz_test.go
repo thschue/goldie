@@ -13,12 +13,12 @@ func FuzzNormaliseRemote(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
-		id, ok := NormaliseRemote(in)
+		id, ok := normaliseRemote(in)
 		if !ok {
 			return
 		}
 		if strings.ContainsAny(id, "@ \t\n") || !validProjectID(id) || id != strings.ToLower(id) {
-			t.Errorf("NormaliseRemote(%q) = %q", in, id)
+			t.Errorf("normaliseRemote(%q) = %q", in, id)
 		}
 	})
 }
@@ -38,13 +38,13 @@ func FuzzProjectFiles(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, in string) {
 		for _, u := range remoteURLs(in) {
-			if id, ok := NormaliseRemote(u); ok && !validProjectID(id) {
+			if id, ok := normaliseRemote(u); ok && !validProjectID(id) {
 				t.Errorf("remote %q gave %q", u, id)
 			}
 		}
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, ".goldie", "config.yaml"), in)
-		if p, err := ResolveProject(dir, "", ""); err == nil && p.ID != "" && !validProjectID(p.ID) {
+		if p, err := resolveProject(dir, "", ""); err == nil && p.ID != "" && !validProjectID(p.ID) {
 			t.Errorf("config.yaml %q gave %q", in, p.ID)
 		}
 	})

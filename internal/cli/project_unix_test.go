@@ -57,7 +57,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 			dir := mk(t)
 			done := make(chan error, 1)
 			go func() {
-				_, err := ResolveProject(dir, "", "")
+				_, err := resolveProject(dir, "", "")
 				done <- err
 			}()
 			select {
@@ -69,7 +69,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 						_ = f.Close()
 					}
 				}
-				t.Fatal("ResolveProject blocked on a non-regular file")
+				t.Fatal("resolveProject blocked on a non-regular file")
 			}
 		})
 	}

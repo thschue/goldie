@@ -148,16 +148,16 @@ func (c *commander) status(ctx context.Context) error {
 }
 
 // project resolves the Project for the working directory.
-func (c *commander) project() (Project, error) {
+func (c *commander) project() (detectedProject, error) {
 	dir := c.env.Dir
 	if dir == "" {
 		var err error
 		if dir, err = os.Getwd(); err != nil {
-			return Project{}, errors.New("cannot read the working directory")
+			return detectedProject{}, errors.New("cannot read the working directory")
 		}
 	}
 	envValue, _ := c.env.Lookup(EnvProject)
-	return ResolveProject(dir, c.s.project, envValue)
+	return resolveProject(dir, c.s.project, envValue)
 }
 
 // version prints the client version, and the server's API version when an

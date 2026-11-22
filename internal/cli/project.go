@@ -15,11 +15,11 @@ import (
 // How a Project was found, in the order of precedence. These are the words
 // `goldie status` prints and the JSON "projectSource" carries.
 const (
-	SourceFlag     = "--project"
-	SourceEnv      = EnvProject
-	SourceConfig   = ".goldie/config.yaml"
-	SourceUpstream = "git remote upstream"
-	SourceOrigin   = "git remote origin"
+	sourceFlag     = "--project"
+	sourceEnv      = EnvProject
+	sourceConfig   = ".goldie/config.yaml"
+	sourceUpstream = "git remote upstream"
+	sourceOrigin   = "git remote origin"
 )
 
 // maxProjectFile bounds every file the detection reads. Both .git/config and
@@ -29,25 +29,25 @@ const maxProjectFile = 1 << 20
 // maxWalkUp bounds how many parent directories the detection visits.
 const maxWalkUp = 64
 
-// Project is a detected or configured Project and where it came from.
-type Project struct {
+// detectedProject is a detected or configured Project and where it came from.
+type detectedProject struct {
 	ID     string // host/org/repo, or the value given by the user
-	Source string // one of the Source constants
+	Source string // one of the source constants
 }
 
-// ResolveProject applies the override order: --project, GOLDIE_PROJECT,
+// resolveProject applies the override order: --project, GOLDIE_PROJECT,
 // .goldie/config.yaml, then the git remotes `upstream` and `origin`. dir is
 // the working directory. It returns the zero Project and no error when
 // nothing names one, for example outside a git repository. A broken
 // .goldie/config.yaml is an error: the user wrote it to be obeyed.
-func ResolveProject(dir, flagValue, envValue string) (Project, error) {
-	for _, c := range []struct{ v, source string }{{flagValue, SourceFlag}, {envValue, SourceEnv}} {
+func resolveProject(dir, flagValue, envValue string) (detectedProject, error) {
+	for _, c := range []struct{ v, source string }{{flagValue, sourceFlag}, {envValue, sourceEnv}} {
 		if v := strings.TrimSpace(c.v); v != "" {
 			id, err := normaliseConfigured(v)
 			if err != nil {
-				return Project{}, fmt.Errorf("%s: %w", c.source, err)
+				return detectedProject{}, fmt.Errorf("%s: %w", c.source, err)
 			}
-			return Project{ID: id, Source: c.source}, nil
+			return detectedProject{ID: id, Source: c.source}, nil
 		}
 	}
 	root, gitConfig, inRepo := findGitConfig(dir)
@@ -56,10 +56,10 @@ func ResolveProject(dir, flagValue, envValue string) (Project, error) {
 	}
 	id, err := projectFromConfigFile(dir, root)
 	if err != nil {
-		return Project{}, err
+		return detectedProject{}, err
 	}
 	if id != "" {
-		return Project{ID: id, Source: SourceConfig}, nil
+		return detectedProject{ID: id, Source: sourceConfig}, nil
 	}
 	return projectFromRemotes(gitConfig), nil
 }
@@ -67,7 +67,7 @@ func ResolveProject(dir, flagValue, envValue string) (Project, error) {
 // normaliseConfigured normalises a Project the user typed: a remote URL
 // becomes host/org/repo, anything else is kept as written.
 func normaliseConfigured(v string) (string, error) {
-	if id, ok := NormaliseRemote(v); ok {
+	if id, ok := normaliseRemote(v); ok {
 		return id, nil
 	}
 	// Anything that looks like a URL or carries userinfo but cannot be read is
@@ -140,7 +140,7 @@ func projectFromConfigFile(dir, root string) (string, error) {
 		}
 		id, err := normaliseConfigured(strings.TrimSpace(cfg.Project))
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", SourceConfig, err)
+			return "", fmt.Errorf("%s: %w", sourceConfig, err)
 		}
 		return id, nil
 	}
@@ -149,17 +149,17 @@ func projectFromConfigFile(dir, root string) (string, error) {
 
 // projectFromRemotes detects the Project from the `upstream` remote, else
 // `origin`, of a git config's text.
-func projectFromRemotes(cfg string) Project {
+func projectFromRemotes(cfg string) detectedProject {
 	urls := remoteURLs(cfg)
 	for _, r := range []struct{ name, source string }{
-		{"upstream", SourceUpstream},
-		{"origin", SourceOrigin},
+		{"upstream", sourceUpstream},
+		{"origin", sourceOrigin},
 	} {
-		if id, ok := NormaliseRemote(urls[r.name]); ok {
-			return Project{ID: id, Source: r.source}
+		if id, ok := normaliseRemote(urls[r.name]); ok {
+			return detectedProject{ID: id, Source: r.source}
 		}
 	}
-	return Project{}
+	return detectedProject{}
 }
 
 // ancestors lists dir and its parents, nearest first.
@@ -307,12 +307,12 @@ func unquote(v string) string {
 	return v
 }
 
-// NormaliseRemote turns a git remote URL into host/org/repo: lower case,
+// normaliseRemote turns a git remote URL into host/org/repo: lower case,
 // without scheme, userinfo, port, `.git` suffix or trailing slash. It accepts
 // the scp form (git@host:org/repo.git), ssh://, git://, http:// and https://.
 // Userinfo is dropped so a token in a remote URL never reaches the output. ok
 // is false for a local path or anything it cannot read as host plus path.
-func NormaliseRemote(raw string) (id string, ok bool) {
+func normaliseRemote(raw string) (id string, ok bool) {
 	raw = strings.TrimSpace(raw)
 	var host, path string
 	if strings.Contains(raw, "://") {
@@ -352,7 +352,7 @@ func NormaliseRemote(raw string) (id string, ok bool) {
 }
 
 // describe is the status line for a Project.
-func (p Project) describe() string {
+func (p detectedProject) describe() string {
 	if p.ID == "" {
 		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"
 	}
