@@ -21,8 +21,9 @@ are asked only about **security and product direction**, never about mechanical 
   me". Neither needs an issue, so no PR is orphaned.
 - **Gates are a script, not a judgement.** The script holds a PR for the maintainer only for agent
   guardrails and instruction files, the decision record, CI and release, architecture
-  enforcement, the check tooling, new dependencies, or a breaking contract change. The reviewer
-  always runs `main`'s copy, so a change can't loosen the gate that judges it. Everything else that review finds clean
+  enforcement, the gate tooling, new dependencies, or a breaking contract change. Changes to the
+  task runner are judged by the reviewer and reach a human only when they weaken a check. The
+  reviewer always runs `main`'s copy, so a change can't loosen the gate that judges it. Everything else that review finds clean
   auto-merges, and CI still has to pass.
 - **Guardrails are enforced by the harness:** a pre-tool hook, a permission allowlist and agent
   definitions with pinned models and tools. Prose explains them; it doesn't carry them.

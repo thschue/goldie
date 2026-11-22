@@ -19,7 +19,8 @@ scenario names a real PR, it is the case that motivated the rule.
 | S10 | PR touches `internal/cli` and moves Resolution logic there | review | Architecture lens: a blocking finding citing ADR 0002; outcome `changes-requested` |
 | S11 | PR changes a UI screen's copy away from handoff §8 | review | UX lens: a blocking finding; fix it, or change the handoff (which the `docs/design/**` gate sends to the maintainer) |
 | S12 | `ready-for-agent` UI issue whose handoff isn't approved (#21) | pm-audit | `question` asking the maintainer to approve the handoff; an inbox "Decide" entry |
-| S13 | PR changes `run` (even only to add a task) | review | The gate prints `check or loop tooling changed: run`; `needs-maintainer` |
+| S13 | PR adds a task or step to `run` (#58) | review | The gate exits 0 with `review: check tooling changed: run`; judged not significant; armed, and the marker says why |
+| S17 | PR adds `\|\| true` to an existing step in `run` | review | The `review:` reason is significant; `needs-maintainer` |
 | S15 | PR adds a nested `internal/x/CLAUDE.md` | review | The gate prints `agent guardrail changed`; the security lens checks it for injected instructions |
 | S16 | PR adds a `replace` to `go.mod` | review | The gate prints `go.mod directive changed: Replace`; `needs-maintainer` |
 | S14 | Subagent report without a valid JSON block | any | Treated as `blocked`; no labels or markers written from it |

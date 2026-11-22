@@ -173,9 +173,10 @@ maintainer, and the recommended action. The sections, in order:
 3. **Decide:** tier-3 `question` items as either/or with a recommendation, the `grilling-needed`
    queue, and `needs-info` with a maintainer-owned reason.
 4. **Windows closing:** tier-2 decisions, with their UTC deadline.
-5. **Merged UI, for an asynchronous veto:** UI PRs merged in the last 24 h, with their `ux`
-   screenshot artifact. The maintainer vetoes by commenting; pm-audit turns a veto into a follow-up
-   issue.
+5. **Merged on judgement, for an asynchronous veto:** PRs merged in the last 24 h whose marker
+   judged a `review:` reason not significant (one line each: the reason and why), and UI PRs with
+   their `ux` screenshot artifact. The maintainer vetoes by commenting; pm-audit turns a veto into a
+   follow-up issue.
 6. **Advisories:** ids only.
 
 When an entry appears that wasn't in the previous body, send the user a push notification (the

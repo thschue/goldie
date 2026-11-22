@@ -165,14 +165,16 @@ Outcomes:
   `fixed=<new head> reason=self-fix`, and arm nothing. The next tick runs a fresh delta review.
 - **Clean.** Run `main`'s copy of the gate on the reviewed SHA
   ([gates](./label-contract.md#gates)), never the PR's `./run gate`.
-  - **Own PR, the gate exits 0:**
+  - **Own PR, the gate exits 0:** judge each `review:` reason by the
+    [significance](./label-contract.md#significance) rules. If none is significant:
     - `gh pr ready`;
     - `gh pr merge <n> --auto --squash --match-head-commit <sha>`;
-    - post a marker with `reason=clean`.
-  - **The gate exits 1 or 2, or the PR is external:**
+    - post a marker with `reason=clean`. List each `review:` reason with a one-line "not
+      significant because …".
+  - **The gate exits 1 or 2, a `review:` reason is significant, or the PR is external:**
     - add `needs-maintainer`, and leave auto-merge off;
-    - post a marker with `reason=needs-maintainer`, listing the gate reasons and, for each new
-      dependency, the verified brief in three lines.
+    - post a marker with `reason=needs-maintainer`, listing the gate reasons, why a `review:`
+      reason is significant, and, for each new dependency, the verified brief in three lines.
 
     The maintainer approves by merging.
 - **Changes requested.** For own PRs:

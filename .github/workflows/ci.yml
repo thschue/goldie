@@ -138,8 +138,9 @@ jobs:
           {
             echo "## agent-gate"
             case "$status" in
-            0) echo "No human gate: this PR may auto-merge after a clean review." ;;
-            1) echo "Needs the maintainer:"; echo; printf '%s\n' "$out" | sed 's/^gate: /- /' ;;
+            0) echo "No hard gate: this PR may auto-merge after a clean review."
+               if [ -n "$out" ]; then echo; echo "The reviewer judges whether these are significant:"; echo; printf '%s\n' "$out" | sed 's/^review: /- /'; fi ;;
+            1) echo "Needs the maintainer:"; echo; printf '%s\n' "$out" | sed 's/^gate: /- /; s/^review: /- (reviewer) /' ;;
             *) echo "The gate failed to run (exit $status):"; echo; printf '%s\n' "$out" ;;
             esac
           } >>"$GITHUB_STEP_SUMMARY"
