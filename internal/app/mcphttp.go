@@ -23,7 +23,7 @@ const inProcessBase = "http://goldie.in-process"
 
 // addMCP registers POST /mcp on m: the MCP server of internal/mcp over
 // streamable HTTP (ADR 0003, mode all). The route is behind the token like
-// every /api/ path, so a request without it is the 401 envelope before MCP
+// every /api/ path, so a request without one is the 401 envelope before MCP
 // sees it, and GET and DELETE are the 405 envelope.
 //
 // The handler is stateless and answers with plain JSON: there are no sessions

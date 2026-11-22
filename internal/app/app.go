@@ -24,22 +24,32 @@ type route struct {
 // registers the spec's operations on it, so the generated code drives routing
 // and parameter decoding. It records every route it registers, so the
 // route-coverage test reads exactly the table the router is built from; it
-// puts every path but the OpenAPI documents and Swagger UI behind the token;
+// puts every path but the OpenAPI documents and Swagger UI behind the tokens;
 // and it answers each path's other methods with the 405 envelope.
 type publicMux struct {
 	mux    *http.ServeMux
-	token  string
+	tokens *api.Tokens
 	routes []route
 }
 
 // newPublicMux returns the router with the spec's operations over snap
-// registered, and nothing else.
+// registered, and nothing else, guarded by token as the GOLDIE_API_TOKEN
+// shorthand. A token that fails api.CheckToken rejects every request.
 func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
+	tokens, err := api.OperatorToken(token)
+	if err != nil {
+		tokens = &api.Tokens{}
+	}
+	return newPublicMuxWith(snap, tokens)
+}
+
+// newPublicMuxWith is newPublicMux guarded by a token set.
+func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens) (*publicMux, error) {
 	srv, err := api.NewServer(snap)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), token: token}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens}
 	srv.Register(m)
 	return m, nil
 }
@@ -83,7 +93,8 @@ var openPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 // guard adds the Swagger UI Content-Security-Policy when path is under
 // /swagger-ui, 405s included, and leaves the OpenAPI documents open. Every
 // other path, /api/ and any operation the spec adds later, is behind the
-// token: a new route fails closed.
+// tokens: a new route fails closed. Every operation today is open to readers;
+// an operator-only one (sync, activity) passes api.RoleOperator when it lands.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	switch {
 	case path == "/swagger-ui" || strings.HasPrefix(path, "/swagger-ui/"):
@@ -91,7 +102,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	case openPaths[path]:
 		return h
 	}
-	return api.RequireToken(m.token, h)
+	return m.tokens.Require(api.RoleReader, h)
 }
 
 // methodNotAllowed answers a method that is not registered for path. The Allow
@@ -130,7 +141,31 @@ func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.Se
 type Options struct {
 	SwaggerUI  bool   // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
 	ContentDir string // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
-	APIToken   string // the bearer token for /api/ (GOLDIE_API_TOKEN)
+	APIToken   string // one operator token, the shorthand (GOLDIE_API_TOKEN)
+	APITokens  string // name:role:token lines (GOLDIE_API_TOKENS)
+}
+
+// apiTokens builds the token set from exactly one of GOLDIE_API_TOKEN and
+// GOLDIE_API_TOKENS. Errors name the variable and never contain a token, a
+// digest or a token's length.
+func apiTokens(opts Options) (*api.Tokens, error) {
+	switch {
+	case opts.APIToken != "" && opts.APITokens != "":
+		return nil, fmt.Errorf("%s and %s are both set: set exactly one", platform.EnvAPIToken, platform.EnvAPITokens)
+	case opts.APIToken == "" && opts.APITokens == "":
+		return nil, fmt.Errorf("%s or %s is not set: the API needs a token", platform.EnvAPITokens, platform.EnvAPIToken)
+	case opts.APITokens != "":
+		tokens, err := api.ParseTokens(opts.APITokens)
+		if err != nil {
+			return nil, fmt.Errorf("%s %w", platform.EnvAPITokens, err)
+		}
+		return tokens, nil
+	}
+	tokens, err := api.OperatorToken(opts.APIToken)
+	if err != nil {
+		return nil, fmt.Errorf("%s %w", platform.EnvAPIToken, err)
+	}
+	return tokens, nil
 }
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
@@ -181,15 +216,16 @@ func (e *ConfigError) Unwrap() error { return e.err }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
 // loads the dir Source and serves the API under /api/, every path of which
-// requires the token; the OpenAPI document at /openapi.yaml and
-// /openapi.json; MCP over streamable HTTP at /mcp, which needs the token too;
+// requires a configured token; the OpenAPI document at /openapi.yaml and
+// /openapi.json; MCP over streamable HTTP at /mcp, which needs a token too;
 // and, unless switched off, Swagger UI at /swagger-ui. Anything else is the
-// not-found envelope. A missing token or unloadable content is an
-// error naming the variable, so the server fails at startup (PC-04). Platform
-// stays unaware of the contract: this is where the two meet.
+// not-found envelope. A missing token, a bad token line or unloadable content
+// is an error naming the variable, so the server fails at startup (PC-04).
+// Platform stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
-	if err := api.CheckToken(opts.APIToken); err != nil {
-		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvAPIToken, err)}
+	tokens, err := apiTokens(opts)
+	if err != nil {
+		return nil, &ConfigError{err}
 	}
 	if opts.ContentDir == "" {
 		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
@@ -198,7 +234,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
-	m, err := newPublicMux(snap, opts.APIToken)
+	m, err := newPublicMuxWith(snap, tokens)
 	if err != nil {
 		return nil, err
 	}

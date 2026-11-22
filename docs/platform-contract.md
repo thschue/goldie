@@ -64,14 +64,20 @@ and running `./run regen`.
 - Swagger UI is served at `/swagger-ui` on the public listener, from assets embedded in the binary
   (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
   off (404). It is registered on the same mux as the API, so the auth of #11 covers it.
-- `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and
-  `GOLDIE_API_TOKEN`, best set as `GOLDIE_API_TOKEN_FILE`; without either, or with a token shorter
-  than 32 bytes (`openssl rand -hex 32` makes one), it exits non-zero naming the variable and never
-  echoing the token or its length. Every path under `/api/` requires `Authorization: Bearer <token>`,
-  compared in constant time, and answers 401 in the error envelope otherwise. The startup report
-  shows the token as `(redacted)`. Until #11, the token does not cover `/openapi.*` or `/swagger-ui`.
-  This single token stands in for ADR 0008's named tokens with Roles, which #11 brings; like every
-  config variable, `GOLDIE_API_TOKEN` may change in a `0.x` minor release (ADR 0011).
+- `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and exactly one
+  of `GOLDIE_API_TOKENS` and `GOLDIE_API_TOKEN`, best set through their `_FILE` forms.
+  `GOLDIE_API_TOKENS` holds ADR 0008's named tokens with Roles, one per line: `name:role:token`, or
+  the recommended `name:role:sha256:<hex>` with the token's hex SHA-256, so the server never holds
+  the token. The Role is `reader` (search, look up, list, fetch bundles) or `operator` (also sync
+  and activity). `GOLDIE_API_TOKEN` is the shorthand for one operator token named `api-token`.
+  Tokens must be at least 32 bytes; `openssl rand -hex 32` makes one, and the token behind a hash
+  must be as strong. A bad line, a reused name or token, or a short token makes the server exit
+  non-zero naming the variable and the line number, never the token, its digest or its length.
+  Every path under `/api/` requires `Authorization: Bearer <token>`; the server hashes it and
+  compares it with every configured digest in constant time, and answers 401 in the error envelope
+  otherwise. The handler sees the token's name, never its secret. The startup report shows both
+  variables as `(redacted)`. Until #11 is done, the tokens do not cover `/openapi.*` or
+  `/swagger-ui`. Like every config variable, these may change in a `0.x` minor release (ADR 0011).
 - Nested article ids are one `%2F`-encoded path segment (ADR 0016). A reverse proxy in front of the
   public listener must pass `%2F` through unchanged: Apache needs `AllowEncodedSlashes NoDecode`, and
   nginx must not carry a URI in `proxy_pass`.
