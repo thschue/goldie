@@ -50,14 +50,18 @@ func ResolveProject(dir, flagValue, envValue string) (Project, error) {
 			return Project{ID: id, Source: c.source}, nil
 		}
 	}
-	id, err := projectFromConfigFile(dir)
+	root, gitConfig, inRepo := findGitConfig(dir)
+	if !inRepo {
+		root = dir // outside a repository only the working directory counts
+	}
+	id, err := projectFromConfigFile(dir, root)
 	if err != nil {
 		return Project{}, err
 	}
 	if id != "" {
 		return Project{ID: id, Source: SourceConfig}, nil
 	}
-	return projectFromGit(dir), nil
+	return projectFromRemotes(gitConfig), nil
 }
 
 // normaliseConfigured normalises a Project the user typed: a remote URL
@@ -103,9 +107,21 @@ func validProjectID(id string) bool {
 }
 
 // projectFromConfigFile reads `project:` from the nearest .goldie/config.yaml
-// at or above dir.
-func projectFromConfigFile(dir string) (string, error) {
-	for _, d := range ancestors(dir) {
+// from dir up to root, the repository root. It never looks above root: a
+// repository uses its own .goldie/, not one of a checkout it is nested in.
+func projectFromConfigFile(dir, root string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil
+	}
+	all, dirs := ancestors(dir), []string(nil)
+	for i, d := range all {
+		if d == absRoot {
+			dirs = all[:i+1]
+			break
+		}
+	}
+	for _, d := range dirs {
 		b, err := readCapped(filepath.Join(d, ".goldie", "config.yaml"))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -131,13 +147,9 @@ func projectFromConfigFile(dir string) (string, error) {
 	return "", nil
 }
 
-// projectFromGit detects the Project from the `upstream` remote, else
-// `origin`, reading .git/config without running git.
-func projectFromGit(dir string) Project {
-	cfg, ok := findGitConfig(dir)
-	if !ok {
-		return Project{}
-	}
+// projectFromRemotes detects the Project from the `upstream` remote, else
+// `origin`, of a git config's text.
+func projectFromRemotes(cfg string) Project {
 	urls := remoteURLs(cfg)
 	for _, r := range []struct{ name, source string }{
 		{"upstream", SourceUpstream},
@@ -197,11 +209,13 @@ func readCapped(path string) ([]byte, error) {
 	return b, nil
 }
 
-// findGitConfig walks up from dir to the repository and returns the text of
-// its config. A `.git` directory holds the config itself. A `.git` file
-// (worktree or submodule) points at a gitdir; a worktree's gitdir names the
-// main repository's directory in `commondir`, where the shared config lives.
-func findGitConfig(dir string) (string, bool) {
+// findGitConfig walks up from dir to the repository root, the nearest
+// directory with a `.git`, and returns it and the text of its config (empty
+// when it cannot be read). inRepo is false when no `.git` is found. A `.git`
+// directory holds the config itself. A `.git` file (worktree or submodule)
+// points at a gitdir; a worktree's gitdir names the main repository's
+// directory in `commondir`, where the shared config lives.
+func findGitConfig(dir string) (root, cfg string, inRepo bool) {
 	for _, d := range ancestors(dir) {
 		dotGit := filepath.Join(d, ".git")
 		fi, err := os.Stat(dotGit)
@@ -212,11 +226,11 @@ func findGitConfig(dir string) (string, bool) {
 		if !fi.IsDir() {
 			b, err := readCapped(dotGit)
 			if err != nil {
-				return "", false
+				return d, "", true
 			}
 			target, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
 			if !ok {
-				return "", false
+				return d, "", true
 			}
 			gitDir = resolveFrom(d, strings.TrimSpace(target))
 		}
@@ -225,11 +239,11 @@ func findGitConfig(dir string) (string, bool) {
 		}
 		b, err := readCapped(filepath.Join(gitDir, "config"))
 		if err != nil {
-			return "", false
+			return d, "", true
 		}
-		return string(b), true
+		return d, string(b), true
 	}
-	return "", false
+	return "", "", false
 }
 
 func resolveFrom(base, p string) string {

@@ -194,6 +194,40 @@ func TestResolveProjectOverrideOrder(t *testing.T) {
 	}
 }
 
+// TestResolveProjectConfigFileStopsAtRepositoryRoot checks that a repository
+// uses its own .goldie/config.yaml, never one of a checkout it is nested in.
+func TestResolveProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
+	outer := repo(t, "[remote \"origin\"]\n\turl = https://evil.example/other/outer\n")
+	write(t, filepath.Join(outer, ".goldie", "config.yaml"), "project: evil.example/other/repo\n")
+	inner := filepath.Join(outer, "vendor", "inner")
+	write(t, filepath.Join(inner, ".git", "config"), "[remote \"origin\"]\n\turl = git@github.com:acme/inner.git\n")
+	sub := filepath.Join(inner, "pkg", "deep")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ResolveProject(sub, "", ""); err != nil || got.ID != "github.com/acme/inner" || got.Source != SourceOrigin {
+		t.Errorf("nested clone: got %+v, %v; want its own origin", got, err)
+	}
+	// The repository's own config is found from a subdirectory.
+	write(t, filepath.Join(inner, ".goldie", "config.yaml"), "project: github.com/acme/configured\n")
+	if got, err := ResolveProject(sub, "", ""); err != nil || got.ID != "github.com/acme/configured" || got.Source != SourceConfig {
+		t.Errorf("own config from a subdirectory: got %+v, %v", got, err)
+	}
+	// Outside a repository only the working directory's config counts.
+	plain := t.TempDir()
+	write(t, filepath.Join(plain, ".goldie", "config.yaml"), "project: evil.example/other/repo\n")
+	below := filepath.Join(plain, "below")
+	if err := os.MkdirAll(below, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ResolveProject(below, "", ""); err != nil || got.ID != "" {
+		t.Errorf("outside a repository: got %+v, %v; want none", got, err)
+	}
+	if got, err := ResolveProject(plain, "", ""); err != nil || got.Source != SourceConfig {
+		t.Errorf("working directory config outside a repository: got %+v, %v", got, err)
+	}
+}
+
 func TestResolveProjectConfigFileErrorsAndUntrustedValues(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: [unclosed\n")
