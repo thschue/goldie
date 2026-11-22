@@ -76,7 +76,13 @@ func (s DirSource) Load() (*Snapshot, error) {
 		return nil, errors.New("content directory is not readable")
 	}
 	defer func() { _ = root.Close() }()
-	fsys := root.FS()
+	return loadFS(root.FS())
+}
+
+// loadFS is the loader every Source shares: it reads global/articles/** and
+// projects/<host>/<org>/<repo>/articles/** from fsys into a Snapshot, and names
+// an invalid file relative to the root of fsys.
+func loadFS(fsys fs.FS) (*Snapshot, error) {
 	global, err := loadArticles(fsys, articlesDir, ScopeGlobal)
 	if err != nil {
 		return nil, err
