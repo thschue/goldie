@@ -1,7 +1,8 @@
 # Vendored: swagger-ui-dist
 
 These files are copied unmodified from the `swagger-ui-dist` npm package. Do not edit them; to
-upgrade, replace them from a newer release and update this file.
+upgrade, replace them from a newer release and update this file. If the vendored `NOTICE` changed,
+refresh the Swagger UI section of the root `NOTICE` with the new text, verbatim.
 
 - Package: `swagger-ui-dist` 5.35.0 (Apache-2.0), published 2026-11-13
 - Source: https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.35.0.tgz
