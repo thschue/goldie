@@ -1,0 +1,6 @@
+Server: reachable
+API: Goldie API 0.1.0
+Auth: token accepted
+Project: problem: --project: the Project is not host/org/repo: a lower-case host, then an org and a repo of letters, digits, '.', '_' and '-'
+
+Search with: goldie search <words>

@@ -147,9 +147,29 @@ func TestCLIStatusNeverPrintsRemoteCredentials(t *testing.T) {
 			t.Errorf("%v lacks the Project:\n%s", args, out)
 		}
 	}
-	// A credential in an unreadable value never reaches the error either.
-	_, err := runCLIIn(t, t.TempDir(), "status", "--addr", srv.URL, "--project", "user:"+secret+"@host")
+	// A credential in an unreadable value never reaches the output. status
+	// reports the problem on its Project: line and exits 0 (#145).
+	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
+		out, err := runCLIIn(t, t.TempDir(), append(args, "--addr", srv.URL, "--project", "user:"+secret+"@host")...)
+		if err != nil {
+			t.Errorf("%v: err = %v, want exit 0 with the problem reported", args, err)
+			continue
+		}
+		for _, leak := range []string{secret, "user:", "@host"} {
+			if strings.Contains(out, leak) {
+				t.Errorf("%v leaks %q:\n%s", args, leak, out)
+			}
+		}
+		if args[len(args)-1] == "status" && !strings.HasPrefix(projectLine(t, out), "Project:") {
+			t.Errorf("%v: no Project: line in:\n%s", args, out)
+		}
+		if len(args) == 2 && !strings.Contains(out, "projectError") {
+			t.Errorf("%v lacks projectError:\n%s", args, out)
+		}
+	}
+	// Commands that still fail on a bad Project never echo the credential in the error.
+	_, err := runCLIIn(t, t.TempDir(), "search", "kubernetes", "--addr", srv.URL, "--project", "user:"+secret+"@host")
 	if err == nil || strings.Contains(err.Error(), secret) {
-		t.Errorf("err = %v, want an error without the credential", err)
+		t.Errorf("search err = %v, want an error without the credential", err)
 	}
 }
