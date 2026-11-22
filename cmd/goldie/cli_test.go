@@ -16,6 +16,15 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files in testdata/golden")
 
+// goldenDir is absolute because runCLI changes the working directory.
+var goldenDir = func() string {
+	d, err := filepath.Abs(filepath.Join("testdata", "golden"))
+	if err != nil {
+		panic(err)
+	}
+	return d
+}()
+
 const cliToken = "cli-test-token-0123456789abcdef0123456789"
 
 // cliServer is a real in-process server over the example content.
@@ -35,7 +44,7 @@ func cliServer(t *testing.T) *httptest.Server {
 func golden(t *testing.T, name, got, addr string) {
 	t.Helper()
 	got = strings.ReplaceAll(got, addr, "<addr>")
-	path := filepath.Join("testdata", "golden", name+".golden")
+	path := filepath.Join(goldenDir, name+".golden")
 	if *update {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -55,10 +64,19 @@ func golden(t *testing.T, name, got, addr string) {
 
 func runCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	for _, name := range []string{"GOLDIE_ADDR", "GOLDIE_TOKEN", "GOLDIE_TOKEN_FILE"} {
+	return runCLIIn(t, t.TempDir(), args...)
+}
+
+// runCLIIn runs the CLI with dir as the working directory, which is where
+// Project detection starts. Detection reads the directory, so the default is
+// an empty one rather than this checkout.
+func runCLIIn(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	for _, name := range []string{"GOLDIE_ADDR", "GOLDIE_TOKEN", "GOLDIE_TOKEN_FILE", "GOLDIE_PROJECT"} {
 		t.Setenv(name, "")
 		_ = os.Unsetenv(name)
 	}
+	t.Chdir(dir)
 	var out bytes.Buffer
 	err := run(args, &out)
 	return out.String(), err
@@ -78,6 +96,8 @@ func TestCLIGolden(t *testing.T) {
 		{"lookup_json", []string{"lookup", "platform/deploy", "--json"}},
 		{"status", []string{"status"}},
 		{"status_json", []string{"status", "--json"}},
+		{"status_project", []string{"status", "--project", "git@GitHub.com:Acme/Widgets.git"}},
+		{"status_project_json", []string{"status", "--json", "--project", "github.com/acme/widgets"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

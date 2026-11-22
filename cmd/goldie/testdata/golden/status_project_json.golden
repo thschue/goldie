@@ -1,0 +1,9 @@
+{
+  "api": "Goldie API",
+  "apiVersion": "0.1.0",
+  "project": "github.com/acme/widgets",
+  "projectSource": "--project",
+  "reachable": true,
+  "tokenAccepted": true,
+  "tokenGiven": true
+}

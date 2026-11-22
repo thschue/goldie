@@ -1,0 +1,6 @@
+Server: reachable
+API: Goldie API 0.1.0
+Auth: token accepted
+Project: github.com/acme/widgets (from --project)
+
+Search with: goldie search <words>

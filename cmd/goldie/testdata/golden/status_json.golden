@@ -1,6 +1,9 @@
 {
   "api": "Goldie API",
   "apiVersion": "0.1.0",
+  "project": null,
+  "projectSource": null,
   "reachable": true,
-  "tokenAccepted": true
+  "tokenAccepted": true,
+  "tokenGiven": true
 }

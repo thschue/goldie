@@ -22,11 +22,13 @@ import (
 const (
 	EnvAddr  = platform.EnvAddr
 	EnvToken = platform.EnvToken
+	// EnvProject names the Project, overriding detection from git remotes.
+	EnvProject = platform.EnvProject
 )
 
 // Usage is the one-line usage of the client commands, without the program
 // name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> | lookup <id> | status | version  [--addr URL] [--token TOKEN] [--json]"
+const Usage = "search <words> | lookup <id> | status | version  [--addr URL] [--token TOKEN] [--project ID] [--json]"
 
 // requestTimeout bounds every API call.
 const requestTimeout = 30 * time.Second
@@ -53,6 +55,7 @@ type Env struct {
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
 	Out      io.Writer                    // results
 	Client   *http.Client                 // nil: a client with a timeout
+	Dir      string                       // working directory for Project detection; "": the process's
 }
 
 // DefaultEnv is the process environment.
@@ -62,7 +65,7 @@ func DefaultEnv(out io.Writer) Env {
 
 // settings are the flags and variables common to every command.
 type settings struct {
-	addr, token string
+	addr, token, project string
 	json        bool
 }
 
@@ -77,6 +80,7 @@ func Run(ctx context.Context, args []string, env Env) error {
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&s.addr, "addr", "", "server address")
 	fs.StringVar(&s.token, "token", "", "API token")
+	fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	fs.BoolVar(&s.json, "json", false, "print JSON")
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
@@ -98,7 +102,7 @@ func Run(ctx context.Context, args []string, env Env) error {
 	}
 	limited := *httpc
 	limited.Transport = limitTransport{base: httpc.Transport}
-	c := &commander{s: s, out: env.Out, http: &limited}
+	c := &commander{s: s, out: env.Out, http: &limited, env: env}
 
 	switch name {
 	case "search":
@@ -145,6 +149,7 @@ type commander struct {
 	s    settings
 	out  io.Writer
 	http *http.Client
+	env  Env
 }
 
 // client builds the generated client for the configured address. With

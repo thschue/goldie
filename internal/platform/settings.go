@@ -52,12 +52,17 @@ var TelemetrySettings = []SettingSpec{
 // also has a _FILE form (PC-05).
 const EnvToken = "GOLDIE_TOKEN"
 
+// EnvProject names the Project the client commands work for. It overrides
+// the detection from git remotes and is overridden by --project.
+const EnvProject = "GOLDIE_PROJECT"
+
 // ClientSettings lists the variables the client commands (search, lookup,
 // status, version) read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
 	{EnvAddr, "", "Server URL, http:// or https://, that the client commands talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
 	{EnvToken, "", "Secret: set it with GOLDIE_TOKEN_FILE. The bearer token that search, lookup and status send; --token overrides it. status works without it."},
+	{EnvProject, "", "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it."},
 }
 
 // def returns the registered default of a variable. A variable missing from

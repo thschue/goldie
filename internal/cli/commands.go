@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -110,6 +111,10 @@ func (c *commander) status(ctx context.Context) error {
 		return apiError(doc.HTTPResponse, doc.Body)
 	}
 	title, apiVersion := specInfo(*doc.JSON200)
+	project, err := c.project()
+	if err != nil {
+		return err
+	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
 	if c.s.token != "" {
@@ -130,11 +135,29 @@ func (c *commander) status(ctx context.Context) error {
 		}
 	}
 	if c.s.json {
-		return c.printJSON(map[string]any{"reachable": true, "api": title, "apiVersion": apiVersion, "tokenAccepted": accepted})
+		out := map[string]any{"reachable": true, "api": title, "apiVersion": apiVersion,
+			"tokenGiven": c.s.token != "", "tokenAccepted": accepted, "project": nil, "projectSource": nil}
+		if project.ID != "" {
+			out["project"], out["projectSource"] = project.ID, project.Source
+		}
+		return c.printJSON(out)
 	}
-	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\n\nSearch with: goldie search <words>\n",
-		cleanLine(title), cleanLine(apiVersion), auth)
+	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
+		cleanLine(title), cleanLine(apiVersion), auth, project.describe())
 	return err
+}
+
+// project resolves the Project for the working directory.
+func (c *commander) project() (Project, error) {
+	dir := c.env.Dir
+	if dir == "" {
+		var err error
+		if dir, err = os.Getwd(); err != nil {
+			return Project{}, errors.New("cannot read the working directory")
+		}
+	}
+	envValue, _ := c.env.Lookup(EnvProject)
+	return ResolveProject(dir, c.s.project, envValue)
 }
 
 // version prints the client version, and the server's API version when an
