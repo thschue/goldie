@@ -15,7 +15,12 @@ import (
 // OTEL_* variables the SDK parses itself (timeouts, TLS paths, compression)
 // may be rejected by it, and it prints the value. The SDK's logger goes
 // through goldie's: the value reaches neither stderr nor the log, and a fixed
-// warning names the problem instead (PC-05).
+// warning names the problem instead (PC-05). Every case must end in one of two
+// outcomes: SetupTelemetry fails naming the variable, or the fixed warning is
+// logged. Silence is a failure.
+//
+// This test must never run in parallel: it uses t.Setenv, replaces os.Stderr
+// and sets the process-wide otel error handler and logger.
 func TestTelemetrySDKRejectedValueNeverReachesStderrOrLog(t *testing.T) {
 	const secret = "s3cr3t-marker"
 	cases := map[string]string{
@@ -25,17 +30,29 @@ func TestTelemetrySDKRejectedValueNeverReachesStderrOrLog(t *testing.T) {
 		"OTEL_EXPORTER_OTLP_CERTIFICATE":      "/no/such/" + secret + ".pem",
 		"OTEL_EXPORTER_OTLP_CLIENT_KEY":       "/no/such/" + secret + ".key",
 	}
+	// The SDK reads a client key only together with a client certificate.
+	companions := map[string]map[string]string{
+		"OTEL_EXPORTER_OTLP_CLIENT_KEY": {"OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE": "/no/such/cert.pem"},
+	}
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318")
 			t.Setenv(name, v)
+			for k, cv := range companions[name] {
+				t.Setenv(k, cv)
+			}
 			var logged string
+			failed := false
 			stderr := captureStderr(t, func() {
 				tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
 				if err != nil {
+					failed = true
 					// goldie refusing the value, naming the variable only, is fine.
 					if strings.Contains(err.Error(), secret) {
 						t.Errorf("error echoes the value: %v", err)
+					}
+					if !strings.Contains(err.Error(), name) {
+						t.Errorf("error does not name %s: %v", name, err)
 					}
 					return
 				}
@@ -47,7 +64,7 @@ func TestTelemetrySDKRejectedValueNeverReachesStderrOrLog(t *testing.T) {
 			if strings.Contains(stderr, secret) {
 				t.Errorf("value reached stderr: %s", stderr)
 			}
-			if strings.HasSuffix(name, "TIMEOUT") && !strings.Contains(logged, "OpenTelemetry SDK reported") {
+			if !failed && !strings.Contains(logged, "OpenTelemetry SDK reported") {
 				t.Errorf("the SDK rejection was not reported: %q", logged)
 			}
 			if strings.Contains(logged, secret) {
