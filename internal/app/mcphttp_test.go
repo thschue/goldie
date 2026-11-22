@@ -23,3 +23,16 @@ func TestMCPOverHTTPOpensNoEventStream(t *testing.T) {
 		}
 	}
 }
+
+// Every named token, reader, operator and hashed reader alike, reaches the
+// tools over /mcp; the shorthand token, configured nowhere here, does not.
+func TestMCPOverHTTPAcceptsEveryNamedToken(t *testing.T) {
+	srv := tokenServer(t, Options{APITokens: namedTokenLines()})
+	for _, token := range []string{readerToken, operatorToken, hashedSecret} {
+		assertToolsAnswerOverHTTP(t, mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(token, http.DefaultTransport)))
+	}
+	if cs, err := connectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport)); err == nil {
+		_ = cs.Close()
+		t.Error("an unconfigured token connected")
+	}
+}
