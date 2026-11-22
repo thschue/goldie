@@ -353,6 +353,33 @@ func TestTelemetryHeaderValuesArePercentDecoded(t *testing.T) {
 	}
 }
 
+// Span attributes copy request data an unauthenticated caller controls (user
+// agent, Host, path, X-Forwarded-For). Unbounded, every queued span could hold
+// up to the 1 MiB header limit until the collector takes it.
+func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
+	spans := newSpanSink()
+	tel := newTelemetry(telemetryResource(), spans, nil)
+	app, _, stop := startTraced(t, tel, &syncBuffer{})
+	req, _ := http.NewRequest("GET", "http://"+app+"/"+strings.Repeat("p", 4000), nil)
+	req.Header.Set("User-Agent", strings.Repeat("A", 100_000))
+	req.Header.Set("X-Forwarded-For", strings.Repeat("1", 100_000))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	stop()
+	got := spans.spans()
+	if len(got) != 1 {
+		t.Fatalf("got %d spans, want 1", len(got))
+	}
+	for _, kv := range got[0].Attributes {
+		if n := len(kv.Value.String()); n > defaultSpanAttributeValueLimit {
+			t.Errorf("span attribute %s is %d bytes, want at most %d", kv.Key, n, defaultSpanAttributeValueLimit)
+		}
+	}
+}
+
 // A malformed escape fails startup without echoing the value. Accepting it
 // would let the SDK's own env parser print the raw header to stderr.
 func TestTelemetryHeaderBadEscapeFailsWithoutEcho(t *testing.T) {

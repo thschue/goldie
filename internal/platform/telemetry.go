@@ -54,12 +54,23 @@ func telemetryResource() *resource.Resource {
 	return base
 }
 
+// defaultSpanAttributeValueLimit caps each span attribute value when
+// OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT is unset (the SDK default is
+// unlimited). Server spans copy caller-controlled request data, and queued
+// spans stay in memory until the collector accepts them.
+const defaultSpanAttributeValueLimit = 1024
+
 // newTelemetry wires the providers around the given exporters. Batch
 // processors keep export off the request path; Shutdown flushes them.
 func newTelemetry(res *resource.Resource, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
 	t := &Telemetry{}
 	if spans != nil {
-		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans))
+		limits := sdktrace.NewSpanLimits() // honours the OTEL_SPAN_* limit variables
+		if limits.AttributeValueLengthLimit < 0 {
+			limits.AttributeValueLengthLimit = defaultSpanAttributeValueLimit
+		}
+		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
+			sdktrace.WithRawSpanLimits(limits))
 	}
 	if logs != nil {
 		t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),

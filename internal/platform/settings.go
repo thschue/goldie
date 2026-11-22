@@ -40,6 +40,7 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
 	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
 	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
+	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
 	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes. goldie always sets service.version and goldie.mode (all)."},
 }
