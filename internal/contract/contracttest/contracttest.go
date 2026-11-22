@@ -124,18 +124,47 @@ func escape(s string) string {
 var paramRE = regexp.MustCompile(`\\\{[^/]*?\\\}`)
 
 // findOperation matches the request path against the spec's path templates.
+// Only templates that offer the method compete, as in the server's
+// method-qualified net/http ServeMux routes. Among those, the most specific one
+// decides, as OpenAPI requires: comparing segment by segment from the left, a
+// literal segment beats a templated one. A request no matching template offers
+// the method for is reported as unmatched (the router's 405). The result never
+// depends on map order.
 func findOperation(doc map[string]any, method, path string) (map[string]any, string) {
 	paths, _ := doc["paths"].(map[string]any)
+	best := ""
+	var bestOp map[string]any
 	for tmpl, item := range paths {
+		op, ok := item.(map[string]any)[method].(map[string]any)
+		if !ok {
+			continue
+		}
 		re := paramRE.ReplaceAllString(regexp.QuoteMeta(tmpl), `[^/]+`)
 		if !regexp.MustCompile("^" + re + "$").MatchString(path) {
 			continue
 		}
-		if op, ok := item.(map[string]any)[method].(map[string]any); ok {
-			return op, "#/paths/" + escape(tmpl) + "/" + method
+		if bestOp == nil || moreSpecific(tmpl, best) {
+			best, bestOp = tmpl, op
 		}
 	}
-	return nil, ""
+	if bestOp == nil {
+		return nil, ""
+	}
+	return bestOp, "#/paths/" + escape(best) + "/" + method
+}
+
+// moreSpecific reports whether template a is more specific than b: at the
+// first segment where one is literal and the other templated, the literal one
+// wins. Equal shapes fall back to string order so the choice stays stable.
+func moreSpecific(a, b string) bool {
+	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		at, bt := strings.Contains(as[i], "{"), strings.Contains(bs[i], "{")
+		if at != bt {
+			return bt
+		}
+	}
+	return a < b
 }
 
 // findResponse picks the declared response: exact code, then range, then default.
