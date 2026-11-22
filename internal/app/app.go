@@ -243,9 +243,9 @@ func (e *ConfigError) Unwrap() error { return e.err }
 // requires a configured token; the OpenAPI document at /openapi.yaml and
 // /openapi.json and, unless switched off, Swagger UI at /swagger-ui, which
 // take the same token; and MCP over streamable HTTP at /mcp, which needs a
-// token too. Anything else is the
-// not-found envelope. A missing token, a bad token line or unloadable content
-// is an error naming the variable, so the server fails at startup (PC-04).
+// token too. Anything else is the not-found envelope. A missing token, a bad
+// token line or unloadable content is an error naming the variable, so the
+// server fails at startup (PC-04).
 // Platform stays unaware of the contract: this is where the two meet.
 func PublicHandler(opts Options) (http.Handler, error) {
 	tokens, err := apiTokens(opts)

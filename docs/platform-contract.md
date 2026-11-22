@@ -63,9 +63,11 @@ and running `./run regen`.
   of PC-11 has its own issue.
 - Swagger UI is served at `/swagger-ui` on the public listener, from assets embedded in the binary
   (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
-  off (404). It is registered on the same mux as the API and takes the same token (see below). The
-  browser sends the token that opened the page with the page's fetch of `/openapi.json`; the page
-  never embeds or stores it. "Authorize" sets the token for "Try it out".
+  off (404). It is registered on the same mux as the API and takes the same Bearer token (see
+  below). A browser does not add that header by itself, so opening the page needs a reverse proxy
+  or a browser extension that adds `Authorization: Bearer <token>` to every request, the page's
+  fetch of `/openapi.json` included. The page never embeds or stores the token. "Authorize" sets the
+  token for "Try it out".
 - `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and exactly one
   of `GOLDIE_API_TOKENS` and `GOLDIE_API_TOKEN`, best set through their `_FILE` forms.
   `GOLDIE_API_TOKENS` holds ADR 0008's named tokens with Roles, one per line: `name:role:token`, or
