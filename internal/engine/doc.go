@@ -1,7 +1,8 @@
 // Package engine owns Items, Kinds, validation, digests, keyword search,
-// Resolution, Sources and Snapshots. It is pure: it serves no HTTP, has no
-// transport layer and imports no other goldie module. That does not stop a
-// Source from fetching its content, for example by cloning a git repository.
+// Resolution, Sources and Snapshots. It is pure: it serves no HTTP, owns no
+// inbound transport (that is the API's job) and imports no other goldie
+// module. A Source may still be a client of a remote, for example by cloning a
+// git repository.
 //
 // A DirSource loads global/articles/** and
 // projects/<host>/<org>/<repo>/articles/** from a directory into an immutable
