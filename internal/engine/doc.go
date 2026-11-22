@@ -7,4 +7,10 @@
 // Snapshot. Search and Article see global articles only; SearchIn and ArticleIn
 // take a Project and resolve its articles before global ones, ranking with the
 // keyword scoring of ADR 0005.
+//
+// A Syncer polls one Source and serves its latest good Snapshot. A successful
+// load swaps the Snapshot atomically for concurrent readers; a failed or
+// panicking load keeps the previous one. Status reports the Source's opaque
+// revision, the poll times and the last error, redacted of paths, URLs,
+// addresses and credentials.
 package engine
