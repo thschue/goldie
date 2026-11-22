@@ -378,3 +378,84 @@ func TestMultipartTempFileIsRemovedAfterWrappedHandlerResponds(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A handler that discards the form (r.MultipartForm = nil) must not make the
+// copy-back wipe the original request's form: net/http removes the temp files
+// through the original request, so a nil on the restored request is not copied.
+// The form is parsed on the original request before the wrapped handler runs
+// (a parse inside the wrapped handler lands on the restored copy only, which
+// the handler's own nil then discards, and no guard can recover it).
+func TestMultipartTempFileIsRemovedWhenWrappedHandlerNilsTheForm(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), &logSink{})
+	const content = "file-part-content-that-exceeds-the-tiny-memory-limit"
+	var during int
+	var sawFile bool
+	inner := tel.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, _, err := r.FormFile("upload")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		b, _ := io.ReadAll(f)
+		_ = f.Close()
+		sawFile = string(b) == content
+		entries, _ := os.ReadDir(tmp)
+		during = len(entries)
+		r.MultipartForm = nil // the handler discards the form
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1); err != nil { // 1 byte: the file part spills to disk
+			t.Errorf("ParseMultipartForm: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("upload", "u.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = part.Write([]byte(content))
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(srv.URL, mw.FormDataContentType(), &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status %d, want 204", resp.StatusCode)
+	}
+	if !sawFile {
+		t.Fatal("the wrapped handler did not read the uploaded file")
+	}
+	if during == 0 {
+		t.Fatal("no temp file existed while the handler ran: the test does not exercise a spill to disk")
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		entries, err := os.ReadDir(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d temp file(s) left in TMPDIR after the response: the copy-back wiped the original request's MultipartForm", len(entries))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
