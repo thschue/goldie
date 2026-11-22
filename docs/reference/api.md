@@ -46,6 +46,7 @@ Operation ID: `listProjects`
 |---|---|---|
 | `200` | The Projects the server holds, sorted. | `application/json` (`ProjectList`) |
 | `401` | No bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/search`
