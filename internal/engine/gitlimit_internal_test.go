@@ -37,7 +37,7 @@ func (r *endlessPack) Read(p []byte) (int, error) {
 func TestPackWriterStopsAtTheLimit(t *testing.T) {
 	const limit = 1 << 20
 	b := &gitBudget{mem: limit}
-	s := newBudgetStorage(b)
+	s := newLoadStorage(context.Background(), b)
 	r := &endlessPack{}
 	err := packfile.UpdateObjectStorage(s, r)
 	if !errors.Is(err, errLoadLimit) || !b.exceeded() {
@@ -79,7 +79,7 @@ func TestCheckPackStopsBeforeUnpacking(t *testing.T) {
 		t.Fatalf("pack is %d bytes; the test needs it well under the budget", pack.Len())
 	}
 	b := &gitBudget{mem: limit}
-	s := newBudgetStorage(b)
+	s := newLoadStorage(context.Background(), b)
 	if err := packfile.UpdateObjectStorage(s, bytes.NewReader(pack.Bytes())); !errors.Is(err, errLoadLimit) {
 		t.Fatalf("err = %v, want the load limit", err)
 	}
@@ -88,7 +88,7 @@ func TestCheckPackStopsBeforeUnpacking(t *testing.T) {
 	}
 
 	// With room for it, the same pack unpacks.
-	s = newBudgetStorage(&gitBudget{mem: 16 << 20})
+	s = newLoadStorage(context.Background(), &gitBudget{mem: 16 << 20})
 	if err := packfile.UpdateObjectStorage(s, bytes.NewReader(pack.Bytes())); err != nil || len(s.Objects) != 1 {
 		t.Fatalf("err = %v, objects = %d", err, len(s.Objects))
 	}
@@ -187,7 +187,7 @@ func TestGitMemoryChargeCoversMeasuredPeak(t *testing.T) {
 
 	const room = 1 << 30
 	b := &gitBudget{wire: room, mem: room}
-	s := newBudgetStorage(b)
+	s := newLoadStorage(context.Background(), b)
 	var err error
 	peak, samples := peakLiveHeap(func() { err = packfile.UpdateObjectStorage(s, bytes.NewReader(pack)) })
 	if err != nil || len(s.Objects) != n {
@@ -207,7 +207,7 @@ func TestGitMemoryChargeCoversMeasuredPeak(t *testing.T) {
 
 	// A budget of exactly the measured peak refuses the pack, before any
 	// object is unpacked.
-	s = newBudgetStorage(&gitBudget{wire: room, mem: peak})
+	s = newLoadStorage(context.Background(), &gitBudget{wire: room, mem: peak})
 	if err := packfile.UpdateObjectStorage(s, bytes.NewReader(pack)); !errors.Is(err, errLoadLimit) {
 		t.Fatalf("err = %v under a budget of the measured peak %d, want the load limit", err, peak)
 	}
