@@ -6,7 +6,7 @@
 # say. It is defence in depth under the loop specs and the main ruleset, not
 # a replacement for them: it matches command text, so it catches mistakes,
 # not a determined attacker. Registered in .claude/settings.json; cases in
-# testdata/loop-guard/cases.tsv, run by `./run guard-fixture`.
+# testdata/loop-guard/cases.tsv, run by `./run check-harness`.
 set -euf
 LC_ALL=C
 export LC_ALL
@@ -94,15 +94,13 @@ printf '%s\n' "$segments" | {
 		"git push" | "git push "* | "git push	"*) check_push "$seg" ;;
 		"gh pr merge" | "gh pr merge "*)
 			has "$seg" "[[:space:]]--admin${end}" && deny "never merge with --admin"
-			if ! has "$seg" "[[:space:]]--disable-auto${end}"; then
-				has "$seg" "[[:space:]]--auto${end}" || deny "merge only through auto-merge (--auto)"
-				has "$seg" "[[:space:]]--match-head-commit[[:space:]=]" ||
-					deny "auto-merge only with --match-head-commit <reviewed sha>"
-			fi
+			# scripts/merge-pr checks the review marker, main's gate and the
+			# test lock first (ADR 0018); only disarming is allowed directly.
+			has "$seg" "[[:space:]]--disable-auto${end}" || deny "merge only through scripts/merge-pr <pr> <sha>"
 			;;
 		"gh api "*) check_api "$seg" ;;
 		"gh repo delete"* | "gh repo edit"* | "gh repo rename"* | "gh repo archive"* | \
-			"gh label delete"* | "gh label edit"* | "gh secret"* | "gh ruleset"* | "gh variable"*)
+			"gh label delete"* | "gh label edit"* | "gh label create"* | "gh label clone"* | "gh secret"* | "gh ruleset"* | "gh variable"*)
 			deny "repository settings, labels and secrets are the maintainer's" ;;
 		docker | docker\ * | podman | podman\ * | kubectl | kubectl\ * | kind\ * | minikube\ * | \
 			gcloud | gcloud\ * | aws | aws\ * | az | az\ * | terraform | terraform\ * | tofu | tofu\ *)

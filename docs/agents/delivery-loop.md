@@ -62,8 +62,8 @@ reason), consults, test change requests, and harness feedback filed.
      `needs-info reason=round-cap` with the findings and a recommendation.
    - LOW findings never cause a round. The ones left are filed as one follow-up issue
      (`needs-triage`).
-5. **Finish.** Post one marker comment for the head, listing the findings by agent: fixed, or why
-   not. Then:
+5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
+   agent: fixed, or why not. Then:
    - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker, `main`'s gate and the test
      lock, marks the PR ready, and queues it. Exit 1 means the gate holds it: add
      `needs-maintainer` and post the reasons (for a new dependency, the verified brief in three

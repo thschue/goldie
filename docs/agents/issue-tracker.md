@@ -51,6 +51,11 @@ Rank it by the [order of work](./README.md#order-of-work); a delivery session ta
 `area:` lane first.
 
 ```sh
+gh issue list --state open --label ready-for-agent --limit 500 --json number,title,labels,createdAt \
+  --search 'no:assignee -label:in-progress -label:epic -is:blocked'
+```
+
+```sh
 # open issues this one blocks (critical-path count, first level)
 gh api repos/thschue/goldie/issues/<n>/dependencies/blocking --jq '[.[] | select(.state=="open")] | length'
 ```

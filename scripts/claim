@@ -1,0 +1,65 @@
+#!/bin/sh
+# claim: claim an issue for this delivery session (docs/agents/delivery-loop.md).
+#
+#   scripts/claim <issue> <type>
+#
+# <type> is the Conventional Commit type of the work (feat, fix, ...). The
+# claim is a push of a fresh claim commit to the deterministic branch
+# <type>/issue-<n>-<slug of the issue title>: git accepts the first push and
+# rejects every later one, so two sessions can never both claim an issue.
+# The winner then opens the draft PR, posts the claim marker for
+# $GOLDIE_SESSION (default: the short host name), and sets `in-progress` and
+# the assignee.
+#
+# Prints "branch=<branch> pr=<number>" and exits 0 on a claim, 3 when the
+# issue isn't claimable or another session won, 2 on a usage or tool error.
+set -eu
+LC_ALL=C
+export LC_ALL
+
+die() { printf 'claim: %s\n' "$*" >&2; exit 2; }
+lost() { printf 'claim: %s\n' "$*" >&2; exit 3; }
+
+[ $# -eq 2 ] || die "usage: scripts/claim <issue> <type>"
+n=$1
+type=$2
+case "$n" in '' | *[!0-9]*) die "not an issue number: $n" ;; esac
+case "$type" in
+feat | fix | docs | refactor | test | build | ci | chore | perf | style | revert) ;;
+*) die "not a Conventional Commit type: $type" ;;
+esac
+session=${GOLDIE_SESSION:-$(hostname -s)}
+
+issue=$(gh issue view "$n" --json state,title,labels,assignees) || die "cannot read issue $n"
+printf '%s' "$issue" | jq -e '
+	.state == "OPEN" and (.assignees | length == 0)
+	and ([.labels[].name] | index("ready-for-agent") and (index("epic") | not) and (index("in-progress") | not))
+' >/dev/null || lost "issue $n is not claimable (closed, assigned, in progress, an epic, or not ready-for-agent)"
+
+title=$(printf '%s' "$issue" | jq -r .title)
+# The PR title is a Conventional Commit: keep an issue title that is one.
+if printf '%s\n' "$title" | grep -Eq '^[a-z]+(\([^)]*\))?!?: '; then
+	pr_title=$title
+else
+	pr_title="$type: $title"
+fi
+slug=$(printf '%s\n' "$title" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //' | tr 'A-Z' 'a-z' |
+	sed -E 's/[^a-z0-9]+/-/g; s/^-+//' | cut -c1-40 | sed -E 's/-+$//')
+branch="$type/issue-$n-$slug"
+
+git fetch -q origin main || die "cannot fetch origin main"
+if git ls-remote --heads origin | grep -q "/issue-$n-"; then
+	lost "a branch for issue $n already exists"
+fi
+commit=$(git commit-tree "origin/main^{tree}" -p origin/main -m "chore: claim #$n ($session)") ||
+	die "cannot create the claim commit"
+git push -q origin "$commit:refs/heads/$branch" 2>/dev/null || lost "another session claimed issue $n"
+
+body=$(printf 'Closes #%s\n\nClaimed by the delivery session `%s`; the plan follows from the implementer.\n' "$n" "$session")
+url=$(gh pr create --draft --base main --head "$branch" --title "$pr_title" --body "$body") ||
+	die "claimed $branch but cannot open the draft PR"
+pr=${url##*/}
+gh pr comment "$pr" --body "$(printf 'Claimed by `%s`.\n\n<!-- goldie-loop:claim session=%s -->' "$session" "$session")" >/dev/null ||
+	die "cannot post the claim marker on PR $pr"
+gh issue edit "$n" --add-label in-progress --add-assignee @me >/dev/null || die "cannot label issue $n"
+printf 'branch=%s pr=%s\n' "$branch" "$pr"

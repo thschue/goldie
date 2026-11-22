@@ -1,0 +1,11 @@
+#!/bin/sh
+# A fake gh for the merge-pr fixture (./run merge-pr-fixture). The loop
+# account is "loop"; `gh pr view` answers from $FAKE_GH_DIR/pr.json, and
+# every write is recorded in $FAKE_GH_DIR/gh.log.
+set -eu
+case "$1 $2" in
+"api user") printf 'loop\n' ;;
+"pr view") cat "$FAKE_GH_DIR/pr.json" ;;
+"pr ready" | "pr merge") printf '%s\n' "$*" >>"$FAKE_GH_DIR/gh.log" ;;
+*) printf 'fake gh: unexpected call: %s\n' "$*" >&2; exit 1 ;;
+esac

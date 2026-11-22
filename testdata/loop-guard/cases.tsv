@@ -2,7 +2,9 @@
 allow	git push --force-with-lease=feat/x:0123abc origin HEAD:feat/x
 allow	git push -u origin feat/issue-5-main-page
 allow	git status && git log --oneline -3
-allow	gh pr merge 53 --auto --squash --match-head-commit 7c60172304eaff98e5a3f84b4fbdb8ef358399cd
+deny	gh pr merge 53 --auto --squash --match-head-commit 7c60172304eaff98e5a3f84b4fbdb8ef358399cd
+allow	scripts/merge-pr 53 7c60172304eaff98e5a3f84b4fbdb8ef358399cd
+allow	scripts/claim 42 feat
 allow	gh pr merge 53 --disable-auto
 allow	gh pr view 53 --json labels
 allow	gh api repos/thschue/goldie/pulls/53
@@ -52,3 +54,4 @@ deny	gh api -X DELETE repos/thschue/goldie/labels/in-review
 deny	gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'
 deny	git push --force-with-lease origin feat/x
 deny	gh label edit in-review --name x
+deny	gh label create area:x

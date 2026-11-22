@@ -7,7 +7,7 @@
 # ("gate: …": the maintainer decides), 0 when there is none, and 2 on a
 # usage, git or tool error (a caller treats 2 as a hard reason). Review
 # reasons ("review: …") don't change the exit code: the reviewer judges
-# whether the change is significant (docs/agents/label-contract.md#gates).
+# whether the change is significant (docs/agents/README.md#gates).
 # <base> and <head> are git revisions; the diff is <base>...<head>, without
 # rename detection. Run it from the repository root.
 #
@@ -79,13 +79,14 @@ while IFS= read -r f; do
 		removed=$(git diff --numstat --no-renames "$mb" "$head" -- NOTICE | cut -f2) ||
 			die "git diff failed"
 		if [ "$removed" = 0 ]; then review "attribution added: $f"; else gate "decision record changed: $f"; fi ;;
-	.github/* | release-please-config.json | .goreleaser.*)
+	.github/* | release-please-config.json | .goreleaser.* | renovate.json | .renovaterc*)
 		gate "CI or release configuration changed: $f" ;;
 	.golangci.* | testdata/depguard/*)
 		gate "architecture enforcement changed: $f" ;;
 	run)
 		review "check tooling changed: $f" ;;
-	scripts/* | testdata/agent-gate/* | testdata/loop-guard/*)
+	scripts/* | testdata/agent-gate/* | testdata/loop-guard/* | testdata/test-lock/* | \
+		testdata/review-lenses/* | testdata/claim/* | testdata/merge-pr/*)
 		gate "loop tooling changed: $f" ;;
 	.gitattributes | */.gitattributes | go.work | go.work.sum | vendor/*)
 		gate "build or diff configuration changed: $f" ;;

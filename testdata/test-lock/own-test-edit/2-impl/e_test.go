@@ -1,0 +1,9 @@
+package a
+
+import "testing"
+
+func TestE(t *testing.T) {
+	if A() != 0 {
+		t.Fatal("x")
+	}
+}

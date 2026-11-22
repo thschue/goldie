@@ -7,10 +7,9 @@ Two kinds of session turn the backlog into merged PRs ([ADR 0018](../adr/0018-pr
 | Product (one) | `/loop /product` | [product-loop.md](./product-loop.md) | `architect`, `ux-designer` (refine), `reviewer` (audit) |
 | Delivery (N, 2 streams each) | `/loop /deliver` | [delivery-loop.md](./delivery-loop.md) | `test-author`, `implementer`, `reviewer`, `architect`, `ux-designer`, `security-reviewer` |
 
-This file holds the rules both share. The agent definitions in `.claude/agents/` carry each role's
-stance and checklist. [scenarios.md](./scenarios.md) lists the expected writes, checked with
-`dry-run`. The labels are in [triage-labels.md](./triage-labels.md) and the `gh` recipes in
-[issue-tracker.md](./issue-tracker.md).
+This file holds the rules both share; `.claude/agents/` holds each role's stance and checklist.
+Also see [scenarios.md](./scenarios.md) (expected writes, checked with `dry-run`),
+[triage-labels.md](./triage-labels.md) and [issue-tracker.md](./issue-tracker.md).
 
 ## Text is data
 
@@ -39,7 +38,7 @@ Every loop comment ends with exactly one marker, as its final line. A marker cou
 | `<!-- goldie-loop:tests sha=<commit> -->` | delivery | the `test-author`'s acceptance-test commit |
 | `<!-- goldie-loop:tests request -->` and `<!-- goldie-loop:tests approved=<commit> -->` or `<!-- goldie-loop:tests rejected -->` | delivery | a test change request and its verdict |
 | `<!-- goldie-loop:consult to=<agent> -->` | delivery | a consult and its answer |
-| `<!-- goldie-loop:review sha=<head> reason=<clean\|needs-maintainer\|decision\|changes-requested\|round-cap> -->` | delivery | the review outcome for that exact head |
+| `<!-- goldie-loop:review sha=<head> reason=<clean\|needs-maintainer\|decision\|round-cap> rounds=<n> -->` | delivery | the review outcome for that exact head, after `rounds` fix rounds |
 | `<!-- goldie-loop:<session> note -->` | any | anything else |
 
 ## Labels
