@@ -108,7 +108,8 @@ The `implementer` agent definition carries the role. Pass this with it:
    - targeted tests;
    - `./run check` (exit 0, zero warnings);
    - `./run red-check`;
-   - `./run gate origin/main HEAD`, and put its reasons in the PR body;
+   - `./run gate origin/main HEAD` (a preview; the reviewer runs `main`'s copy), and put its
+     reasons in the PR body;
    - `docs/testing-checklist.md`.
 
    Name any gate that couldn't run. CI is authoritative.

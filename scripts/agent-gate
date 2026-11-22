@@ -3,23 +3,26 @@
 #
 #   scripts/agent-gate <base> <head>
 #
-# Prints one "gate: <reason>" line per reason and exits 1 when there is any,
-# 0 when the change may auto-merge, 2 on a usage or git error. <base> and
-# <head> are git revisions; the diff is <base>...<head> (from the merge base),
-# without rename detection, the same measure the review loop uses.
+# Prints one "gate: <reason>: <details>" line per reason and exits 1 when
+# there is any, 0 when the change may auto-merge after a clean review, and 2
+# on a usage, git or tool error (a caller treats 2 as "needs the maintainer").
+# <base> and <head> are git revisions; the diff is <base>...<head>, without
+# rename detection. Run it from the repository root.
 #
 # Human gates are kept for security and product direction only:
-#   - agent guardrails, the decision record, CI/release/architecture
-#     enforcement, deployment, and this gate itself (by path);
-#   - a new direct Go dependency, a new web dependency, or a new pinned tool
-#     (`<module>@<version>`) in `run` or `scripts/`;
-#   - a step removed from `./run check`;
+#   - by path: agent guardrails and instruction files (anywhere in the tree),
+#     the knowledge served to agents, the decision record, CI and release,
+#     architecture enforcement, the check and loop tooling (`run`,
+#     `scripts/`), git attributes, workspaces and vendoring, deployment;
+#   - a new direct Go dependency, a go.mod replace, exclude, retract,
+#     godebug, tool or ignore change, a Go or toolchain downgrade;
+#   - a new web dependency, or a new pinned tool (`<module>@<version>`);
 #   - a breaking change to the API contract (ADR 0011), through
-#     `./run contract-compat` ($GATE_RUN overrides which `run` is used, so CI
-#     can run main's copy against a PR).
-# Version bumps of existing modules, indirect requirements and go.sum churn
-# are not gated. Run it from the repository root.
-set -eu
+#     `./run contract-compat`. $GATE_RUN names the `run` to use: callers pass
+#     main's copy, so a change can't loosen the check that judges it.
+# Version bumps of existing modules, new indirect requirements (CI enforces
+# `go mod tidy`) and go.sum churn are not gated.
+set -euf
 LC_ALL=C
 export LC_ALL
 
@@ -32,18 +35,33 @@ git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "unknown revis
 git rev-parse --verify --quiet "$head^{commit}" >/dev/null || die "unknown revision: $head"
 mb=$(git merge-base "$base" "$head") || die "no merge base between $base and $head"
 
-reasons=$(mktemp) || die "cannot create a temporary file"
-trap 'rm -f "$reasons"' EXIT INT TERM
+tmp=$(mktemp -d) || die "cannot create a temporary directory"
+trap 'rm -rf "$tmp"' EXIT INT TERM
+reasons="$tmp/reasons"
+: >"$reasons"
 gate() { printf 'gate: %s\n' "$*" >>"$reasons"; }
 
-# show <rev> <path>: the file at that revision, or nothing when it is absent.
-show() { git show "$1:$2" 2>/dev/null || true; }
+# exists <rev> <path>; show <rev> <path>: the file at that revision. A file
+# that is absent reads as empty; any other git failure stops the gate.
+exists() { git cat-file -e "$1:$2" 2>/dev/null; }
+show() {
+	exists "$1" "$2" || return 0
+	git show "$1:$2" || die "cannot read $2 at $1"
+}
+changed() { grep -qx -- "$1" "$tmp/files"; }
+new_lines() { # new_lines <old file> <new file>: lines of <new> not in <old>
+	sort -u "$1" >"$1.s"
+	sort -u "$2" | comm -13 "$1.s" -
+}
 
 # --- 1. Gated paths -----------------------------------------------------------
-files=$(git diff --name-only --no-renames "$mb" "$head") || die "git diff failed"
-printf '%s\n' "$files" | while IFS= read -r f; do
+git diff --name-only --no-renames "$mb" "$head" >"$tmp/files" || die "git diff failed"
+while IFS= read -r f; do
 	case "$f" in
-	docs/agents/* | .claude/* | CLAUDE.md | AGENTS.md | SECURITY.md)
+	\"*)
+		gate "unusual file name (quoted by git): $f" ;;
+	docs/agents/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | \
+		SECURITY.md | .mcp.json | */.mcp.json | .claude.json | examples/knowledge/*)
 		gate "agent guardrail changed: $f" ;;
 	CONTEXT.md | docs/adr/* | docs/design/* | LICENSE | NOTICE)
 		gate "decision record changed: $f" ;;
@@ -51,88 +69,85 @@ printf '%s\n' "$files" | while IFS= read -r f; do
 		gate "CI or release configuration changed: $f" ;;
 	.golangci.* | testdata/depguard/*)
 		gate "architecture enforcement changed: $f" ;;
-	scripts/agent-gate | scripts/loop-guard | testdata/agent-gate/* | testdata/loop-guard/*)
-		gate "agent gate changed: $f" ;;
+	run | scripts/* | testdata/agent-gate/* | testdata/loop-guard/*)
+		gate "check or loop tooling changed: $f" ;;
+	.gitattributes | */.gitattributes | go.work | go.work.sum | vendor/*)
+		gate "build or diff configuration changed: $f" ;;
+	package.json | */package.json)
+		if [ "$f" != web/package.json ]; then gate "new package manifest: $f"; fi ;;
 	deploy/* | Dockerfile | */Dockerfile)
 		gate "deployment changed: $f" ;;
 	esac
-done
+done <"$tmp/files"
 
-# --- 2. New direct Go dependencies -------------------------------------------
-# direct_requires: module paths required without "// indirect", from both the
-# block form and the single-line form of `require`.
-direct_requires() {
-	awk '
-		/^require[ \t]*\(/ { inblock = 1; next }
-		inblock && /^\)/ { inblock = 0; next }
-		inblock { line = $0 }
-		!inblock && /^require[ \t]/ { line = $0; sub(/^require[ \t]+/, "", line) }
-		line != "" {
-			sub(/^[ \t]+/, "", line)
-			if (line !~ /\/\/[ \t]*indirect/) { split(line, w, /[ \t]+/); if (w[1] != "") print w[1] }
-			line = ""
-		}
-	' | sort -u
+# --- 2. go.mod -------------------------------------------------------------------
+modjson() { # modjson <file>: `go mod edit -json`, or {} for an empty file
+	# GOTOOLCHAIN=local: reading a go.mod must never download a toolchain.
+	if [ -s "$1" ]; then GOTOOLCHAIN=local go mod edit -json "$1" || die "cannot parse go.mod"; else echo '{}'; fi
 }
-new_lines() { # new_lines <old> <new>: lines in <new> that are not in <old>
-	printf '%s\n' "$1" | sed '/^$/d' | sort -u >"$reasons.old"
-	printf '%s\n' "$2" | sed '/^$/d' | sort -u | comm -13 "$reasons.old" -
-	rm -f "$reasons.old"
-}
-if printf '%s\n' "$files" | grep -qx 'go.mod'; then
-	old=$(show "$mb" go.mod | direct_requires)
-	new=$(show "$head" go.mod | direct_requires)
-	for m in $(new_lines "$old" "$new"); do gate "new direct Go dependency: $m"; done
+if changed go.mod; then
+	command -v go >/dev/null 2>&1 || die "go is required to read go.mod"
+	command -v jq >/dev/null 2>&1 || die "jq is required to read go.mod"
+	show "$mb" go.mod >"$tmp/old.mod"
+	show "$head" go.mod >"$tmp/new.mod"
+	modjson "$tmp/old.mod" >"$tmp/old.json"
+	modjson "$tmp/new.mod" >"$tmp/new.json"
+	direct='(.Require // []) | map(select(.Indirect | not)) | .[].Path'
+	jq -r "$direct" "$tmp/old.json" >"$tmp/old.req" || die "jq failed on go.mod"
+	jq -r "$direct" "$tmp/new.json" >"$tmp/new.req" || die "jq failed on go.mod"
+	for m in $(new_lines "$tmp/old.req" "$tmp/new.req"); do gate "new direct Go dependency: $m"; done
+	for k in Replace Exclude Retract GoDebug Tool Ignore; do
+		o=$(jq -cS ".$k // []" "$tmp/old.json")
+		n=$(jq -cS ".$k // []" "$tmp/new.json")
+		if [ "$o" != "$n" ]; then gate "go.mod directive changed: $k"; fi
+	done
+	# A downgrade (or removal) of the go or toolchain line can bring back fixed
+	# bugs; an upgrade is an ordinary version bump.
+	for k in Go Toolchain; do
+		o=$(jq -r ".$k // empty" "$tmp/old.json" | sed 's/^go//')
+		n=$(jq -r ".$k // empty" "$tmp/new.json" | sed 's/^go//')
+		if [ -z "$o" ] || [ "$o" = "$n" ]; then continue; fi
+		lowest=$(printf '%s\n%s\n' "$o" "${n:-0}" | sort -t. -k1,1n -k2,2n -k3,3n | head -1)
+		if [ "$lowest" != "$o" ]; then gate "go.mod downgrade: $k $o to ${n:-none}"; fi
+	done
 fi
 
 # --- 3. New web dependencies ---------------------------------------------------
-if printf '%s\n' "$files" | grep -qx 'web/package.json'; then
+if changed web/package.json; then
 	command -v jq >/dev/null 2>&1 || die "jq is required to read web/package.json"
-	deps='[(.dependencies // {}), (.devDependencies // {}), (.optionalDependencies // {}), (.peerDependencies // {})] | add | keys[]'
-	old=$(show "$mb" web/package.json | jq -r "$deps" 2>/dev/null || true)
-	new=$(show "$head" web/package.json | jq -r "$deps") || die "web/package.json at $head is not valid JSON"
-	for m in $(new_lines "$old" "$new"); do gate "new web dependency: $m"; done
+	deps='[(.dependencies // {}), (.devDependencies // {}), (.optionalDependencies // {}), (.peerDependencies // {})] | add // {} | keys[]'
+	show "$mb" web/package.json | jq -r "$deps" >"$tmp/old.web" 2>/dev/null || : >"$tmp/old.web"
+	show "$head" web/package.json | jq -r "$deps" >"$tmp/new.web" ||
+		die "web/package.json at $head is not valid JSON"
+	for m in $(new_lines "$tmp/old.web" "$tmp/new.web"); do gate "new web dependency: $m"; done
 fi
 
 # --- 4. New pinned tools -------------------------------------------------------
-# A tool is pinned as "<module path>@<version or variable>" in `run` or a
-# script, and run through `go run`. A new module path is a new dependency.
-tool_pins() {
-	grep -oE '[a-z0-9.-]+\.[a-z]{2,}/[A-Za-z0-9._~/-]+@' | sed 's/@$//' | sort -u
+# A tool is pinned as "<module path>@<version>" in `run` or a script and
+# installed with `go install`. A new module path is a new dependency.
+pins() { # pins <rev>: tool module paths pinned in `run` and scripts/ at <rev>
+	{
+		show "$1" run
+		git ls-tree -r --name-only "$1" -- scripts | while IFS= read -r s; do show "$1" "$s"; done
+	} | grep -oE '[a-z0-9.-]+\.[a-z]{2,}/[A-Za-z0-9._~/-]+@' | sed 's/@$//' | sort -u
 }
-pin_files() { # pin_files <rev>: the contents of `run` and every script at <rev>
-	show "$1" run
-	for s in $(git ls-tree -r --name-only "$1" -- scripts 2>/dev/null); do show "$1" "$s"; done
-}
-if printf '%s\n' "$files" | grep -qE '^(run|scripts/.*)$'; then
-	old=$(pin_files "$mb" | tool_pins)
-	new=$(pin_files "$head" | tool_pins)
-	for m in $(new_lines "$old" "$new"); do gate "new pinned tool: $m"; done
+if grep -qE '^(run|scripts/.*)$' "$tmp/files"; then
+	pins "$mb" >"$tmp/old.pins"
+	pins "$head" >"$tmp/new.pins"
+	for m in $(new_lines "$tmp/old.pins" "$tmp/new.pins"); do gate "new pinned tool: $m"; done
 fi
 
-# --- 5. Steps removed from ./run check ----------------------------------------
-# The steps are the cmd_* calls in the bodies of cmd_check and its groups.
-check_steps() {
-	awk '/^cmd_check[a-z_]*\(\)/ { on = 1; next } on && /^}/ { on = 0 } on { split($0, w, /[ \t]+/); step = (w[1] == "" ? w[2] : w[1]); if (step ~ /^cmd_[a-z_]+$/) print step }' | sort -u
-}
-if printf '%s\n' "$files" | grep -qx 'run'; then
-	old=$(show "$mb" run | check_steps)
-	new=$(show "$head" run | check_steps)
-	for s in $(new_lines "$new" "$old"); do gate "step removed from ./run check: $s"; done
-fi
-
-# --- 6. Breaking API contract changes ------------------------------------------
+# --- 5. Breaking API contract changes ------------------------------------------
 spec=internal/contract/openapi.yaml
-if printf '%s\n' "$files" | grep -qx "$spec" && git cat-file -e "$mb:$spec" 2>/dev/null; then
-	if ! git cat-file -e "$head:$spec" 2>/dev/null; then
+if changed "$spec" && exists "$mb" "$spec"; then
+	if ! exists "$head" "$spec"; then
 		gate "API contract removed: $spec"
 	else
-		git show "$mb:$spec" >"$reasons.old.yaml"
-		git show "$head:$spec" >"$reasons.new.yaml"
+		show "$mb" "$spec" >"$tmp/old.yaml"
+		show "$head" "$spec" >"$tmp/new.yaml"
 		status=0
 		"${GATE_RUN:-$(git rev-parse --show-toplevel)/run}" contract-compat \
-			"$reasons.old.yaml" "$reasons.new.yaml" >/dev/null 2>&1 || status=$?
-		rm -f "$reasons.old.yaml" "$reasons.new.yaml"
+			"$tmp/old.yaml" "$tmp/new.yaml" >/dev/null 2>&1 || status=$?
 		case "$status" in
 		0) ;;
 		1) gate "breaking API contract change (ADR 0011, see ./run contract-compat)" ;;
@@ -141,7 +156,7 @@ if printf '%s\n' "$files" | grep -qx "$spec" && git cat-file -e "$mb:$spec" 2>/d
 	fi
 fi
 
-# Print one line per reason with up to three details, so a large PR still
+# Print one line per reason with up to three details, so a large change still
 # reads as a short list: "gate: <reason>: a, b, c and 49 more".
 if [ -s "$reasons" ]; then
 	sort -u "$reasons" | awk '

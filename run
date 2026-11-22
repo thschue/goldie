@@ -2,7 +2,7 @@
 # goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
 #
 #   ./run check      everything CI runs (the four check-* groups below)
-#   ./run check-lint     format, build, golangci-lint, depguard fixture
+#   ./run check-lint     format, go mod tidy, build, golangci-lint, depguard fixture
 #   ./run check-spec     spec lint and its fixture, contract-compat fixture
 #   ./run check-harness  agent-gate, loop-guard and agent-definition checks
 #   ./run check-test     go test -race
@@ -62,6 +62,13 @@ cmd_fmt() {
 		printf '%s\n' "$unformatted" >&2
 		die "files above are not gofmt-formatted (run: gofmt -w <file>)"
 	fi
+}
+
+# go.mod and go.sum must be tidy. This also keeps the "// indirect" markers
+# honest, which scripts/agent-gate relies on to tell new direct dependencies.
+cmd_tidy() {
+	say "go mod tidy (no diff)"
+	go mod tidy -diff || die "go.mod or go.sum is not tidy (run: go mod tidy)"
 }
 
 cmd_build() {
@@ -280,9 +287,10 @@ cmd_versions() {
 }
 
 # CI runs the four groups as parallel jobs; `check` runs them in sequence.
-# scripts/agent-gate reads these bodies: removing a step needs the maintainer.
+# `run` is a gated path: any change to it needs the maintainer.
 cmd_check_lint() {
 	cmd_fmt
+	cmd_tidy
 	cmd_build
 	cmd_lint
 	cmd_lint_fixture

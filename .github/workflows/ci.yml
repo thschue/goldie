@@ -111,7 +111,7 @@ jobs:
           BASE: origin/${{ github.base_ref }}
         run: |
           gate=scripts/agent-gate
-          export GATE_RUN="$PWD/run"
+          export GATE_RUN="$PWD/run" GOLDIE_TOOLS="$PWD/.tools"
           if git cat-file -e "$BASE:scripts/agent-gate" 2>/dev/null; then
             git show "$BASE:scripts/agent-gate" >"$RUNNER_TEMP/agent-gate"
             git show "$BASE:run" >"$RUNNER_TEMP/run"

@@ -71,10 +71,11 @@ internal/platform config, logging, admin port, readiness, drain, telemetry
 4. Before leaving draft: `./run check` is green, `./run red-check` shows the new tests fail without
    the change, `docs/testing-checklist.md` is worked through, and the built-in `/security-review`
    has run on the diff.
-5. `./run gate origin/main HEAD` says whether a PR needs the maintainer: agent guardrails, the
-   decision record, CI and release, architecture enforcement, new dependencies, a weakened check or a
-   breaking contract change ([gates](docs/agents/label-contract.md#gates), ADR 0012). Everything else
-   that review finds clean auto-merges.
+5. `./run gate origin/main HEAD` says whether a PR needs the maintainer: agent guardrails and
+   instruction files, the decision record, CI and release, architecture enforcement, the check
+   tooling (`run`, `scripts/`), new dependencies or `go.mod` directives, or a breaking contract
+   change ([gates](docs/agents/label-contract.md#gates), ADR 0012). Everything else that review finds
+   clean auto-merges.
 
 ## Issue tracker and labels
 

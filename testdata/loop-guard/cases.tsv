@@ -28,3 +28,27 @@ deny	gh repo edit --enable-auto-merge=false
 deny	docker build .
 deny	echo hi; kubectl get pods
 deny	helm install goldie deploy/helm/goldie
+allow	git fetch origin main && git rebase origin/main && git push --force-with-lease=feat/x:0123abc origin HEAD:feat/x
+allow	git push -u origin feat/x && git branch -d old-local
+allow	git commit -m "rebase onto main" && git push -u origin feat/x
+allow	gh api repos/thschue/goldie/issues/5/labels -f labels[]=in-progress
+allow	gh api -X DELETE repos/thschue/goldie/issues/5/labels/in-progress
+allow	gh api repos/thschue/goldie/rulesets
+allow	gh api graphql -f query='query { viewer { login } }'
+allow	GH_PAGER= gh pr view 5
+deny	git -C ../goldie push origin main
+deny	env X=1 git push origin main
+deny	GIT_TRACE=1 git push origin HEAD:main
+deny	git -c push.default=current push --force origin feat/x
+deny	gh -R thschue/goldie pr merge 5 --squash
+deny	gh --repo thschue/goldie pr merge 5 --admin --auto --match-head-commit abc
+deny	gh api repos/thschue/goldie/rulesets -f name=x
+deny	gh api -X put repos/thschue/goldie/pulls/5/merge
+deny	gh api repos/thschue/goldie/merges -f base=main -f head=feat/x
+deny	gh api -X PATCH repos/thschue/goldie/git/refs/heads/main -f sha=abc
+deny	gh api repos/thschue/goldie/statuses/abc -f state=success -f context="lint and test"
+deny	gh api -X PATCH repos/thschue/goldie -f visibility=private
+deny	gh api -X DELETE repos/thschue/goldie/labels/in-review
+deny	gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'
+deny	git push --force-with-lease origin feat/x
+deny	gh label edit in-review --name x

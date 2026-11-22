@@ -1,0 +1,2 @@
+gate: go.mod directive changed: GoDebug, Replace, Tool
+gate: go.mod downgrade: Toolchain 1.27.4 to 1.27.1

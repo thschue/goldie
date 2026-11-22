@@ -16,14 +16,15 @@ prose kept an agent from merging with `--admin` or pushing to `main`.
 ## Decision
 
 - **Human gates exist for security and product direction only**, and a script decides them:
-  `scripts/agent-gate` (`./run gate <base> <head>`). It gates:
-  - agent guardrails;
+  `scripts/agent-gate`, which the review loop always runs from `main`. It gates:
+  - agent guardrails and instruction files anywhere in the tree;
   - the decision record;
   - CI, release and architecture enforcement;
   - deployment;
-  - the gate itself;
+  - the check and loop tooling (`run`, `scripts/`), because the PR's own `run` defines what green
+    CI means;
   - a new direct dependency or pinned tool, after the loop has vetted it with a dependency brief;
-  - a step removed from `./run check`;
+  - a `go.mod` `replace` or similar directive;
   - a breaking change to the API contract.
 
   Everything else that a fresh reviewer finds clean auto-merges, and GitHub waits for CI.
@@ -49,8 +50,10 @@ prose kept an agent from merging with `--admin` or pushing to `main`.
 
 Most PRs merge without a human. The maintainer sees a short inbox of real decisions. The cost:
 - **More rides on CI and the reviewer.** A weakened check would let bad code through. The gate
-  therefore covers the gate itself, the linter configuration and the steps of `./run check`, and CI
-  evaluates PRs with `main`'s copy of the gate.
+  therefore covers everything that defines the checks (`run`, `scripts/`, the linter configuration,
+  CI). The loop and CI run `main`'s copy of the gate, so a PR can't loosen the gate that judges it.
+  The `main` ruleset pins the required checks to the GitHub Actions app, so a written commit status
+  can't stand in for them.
 - **The hook matches command text.** It stops mistakes, not a determined attacker. Branch rules and
   the review remain the real controls.
 - **This ADR changes earlier practice.** ADR 0001 calls the depguard rules a protected path; they
