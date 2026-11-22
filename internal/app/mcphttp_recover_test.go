@@ -17,7 +17,7 @@ func TestMCPToolSurvivesAPanickingAPIHandler(t *testing.T) {
 	const secret = "panic-value-with-a-secret-0123456789"
 	boom := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(secret) })
 	ct, st := sdk.NewInMemoryTransports()
-	ss, err := gmcp.New(inProcessClient(boom, "Bearer "+testToken)).Connect(t.Context(), st, nil)
+	ss, err := gmcp.New(transportClient(handlerTransport{h: boom, log: discardLogger}, "Bearer "+testToken)).Connect(t.Context(), st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
