@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"math"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -92,19 +92,32 @@ func defaultTraceSettings() traceSettings {
 	return ts
 }
 
+// The span limit variables, each with its SDK fallback where one exists.
+const (
+	envSpanAttrValueLen = "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT"
+	envAttrValueLen     = "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT"
+	envSpanAttrCount    = "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT"
+	envAttrCount        = "OTEL_ATTRIBUTE_COUNT_LIMIT"
+	envSpanEventCount   = "OTEL_SPAN_EVENT_COUNT_LIMIT"
+	envSpanLinkCount    = "OTEL_SPAN_LINK_COUNT_LIMIT"
+	envEventAttrCount   = "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT"
+	envLinkAttrCount    = "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT"
+)
+
 // parseTraceSettings reads OTEL_TRACES_SAMPLER{,_ARG} and the span limit
 // variables through get. Errors name the variable, never the value.
 func parseTraceSettings(get func(string) string) (traceSettings, error) {
 	var errs []error
-	// The SDK's documented defaults, not NewSpanLimits, which reads the
-	// process environment: only lookup decides.
+	// The SDK's defaults, not NewSpanLimits, which reads the process
+	// environment: only lookup decides. The value length keeps goldie's cap.
 	ts := traceSettings{limits: sdktrace.SpanLimits{
 		AttributeValueLengthLimit:   defaultSpanAttributeValueLimit,
-		AttributeCountLimit:         128,
-		EventCountLimit:             128,
-		LinkCountLimit:              128,
-		AttributePerEventCountLimit: 128,
-		AttributePerLinkCountLimit:  128,
+		AttributeValueDepthLimit:    sdktrace.DefaultAttributeValueDepthLimit,
+		AttributeCountLimit:         sdktrace.DefaultAttributeCountLimit,
+		EventCountLimit:             sdktrace.DefaultEventCountLimit,
+		LinkCountLimit:              sdktrace.DefaultLinkCountLimit,
+		AttributePerEventCountLimit: sdktrace.DefaultAttributePerEventCountLimit,
+		AttributePerLinkCountLimit:  sdktrace.DefaultAttributePerLinkCountLimit,
 	}}
 	limit := func(dst *int, names ...string) {
 		for _, name := range names {
@@ -121,12 +134,12 @@ func parseTraceSettings(get func(string) string) (traceSettings, error) {
 			return
 		}
 	}
-	limit(&ts.limits.AttributeValueLengthLimit, "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT")
-	limit(&ts.limits.AttributeCountLimit, "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "OTEL_ATTRIBUTE_COUNT_LIMIT")
-	limit(&ts.limits.EventCountLimit, "OTEL_SPAN_EVENT_COUNT_LIMIT")
-	limit(&ts.limits.LinkCountLimit, "OTEL_SPAN_LINK_COUNT_LIMIT")
-	limit(&ts.limits.AttributePerEventCountLimit, "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT")
-	limit(&ts.limits.AttributePerLinkCountLimit, "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT")
+	limit(&ts.limits.AttributeValueLengthLimit, envSpanAttrValueLen, envAttrValueLen)
+	limit(&ts.limits.AttributeCountLimit, envSpanAttrCount, envAttrCount)
+	limit(&ts.limits.EventCountLimit, envSpanEventCount)
+	limit(&ts.limits.LinkCountLimit, envSpanLinkCount)
+	limit(&ts.limits.AttributePerEventCountLimit, envEventAttrCount)
+	limit(&ts.limits.AttributePerLinkCountLimit, envLinkAttrCount)
 
 	arg := get(envOTelSamplerArg)
 	ratio := func() (float64, bool) {
