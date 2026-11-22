@@ -214,6 +214,20 @@ func loadDir(ctx context.Context, dir string) (*engine.Syncer, error) {
 	return syncer, nil
 }
 
+// ValidateDir runs the content load the server runs at startup over dir, else
+// the working directory, and returns nil when it succeeds. A failure reads
+// "content does not load: " and the loader's reason, the words server -dev
+// ends with; it never names dir.
+func ValidateDir(ctx context.Context, dir string) error {
+	if dir == "" {
+		dir = "."
+	}
+	if _, err := loadDir(ctx, dir); err != nil {
+		return fmt.Errorf("content does not load: %w", err)
+	}
+	return nil
+}
+
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
 // they are not in the spec and not in the route table, but they are registered on
 // the same router as the API routes, so the tokens guard them too (#101).
