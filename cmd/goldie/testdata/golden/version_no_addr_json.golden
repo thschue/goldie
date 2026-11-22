@@ -1,0 +1,6 @@
+{
+  "hint": "set GOLDIE_ADDR to the server address to see the server API version",
+  "serverApiVersion": null,
+  "serverNote": "no server address set",
+  "version": "<version>"
+}

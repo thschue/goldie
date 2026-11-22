@@ -1,0 +1,6 @@
+{
+  "hint": "check that the server is running and the address is right",
+  "serverApiVersion": null,
+  "serverNote": "the server cannot be reached",
+  "version": "<version>"
+}
