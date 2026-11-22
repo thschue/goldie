@@ -392,7 +392,7 @@ func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 
 // SDK export errors carry the collector URL, which can hold credentials
 // (PC-05): only a fixed warning is logged, at most once a minute.
-func TestTelemetryReportErrorsToRedactsAndRateLimits(t *testing.T) {
+func TestTelemetryOTelErrorHandlerRedactsAndRateLimits(t *testing.T) {
 	prev := otel.GetErrorHandler()
 	t.Cleanup(func() { otel.SetErrorHandler(prev) })
 	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), nil)
