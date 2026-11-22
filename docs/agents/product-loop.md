@@ -86,9 +86,9 @@ Each step runs only after the steps before it are done.
 5. **Audit** (only when the buffer is full). Each day, sample about 1 in 5 merged PRs that no gate
    held, with the `reviewer` in audit mode on the merged diff. File each finding as a follow-up; a
    bug becomes a found-fix issue with `bug`, and a security finding takes the disclosure path.
-6. **Architecture sweep** (only when the buffer is full), every 10 merges or 7 days. Run
-   `improve-codebase-architecture` on the audit worktree, and file at most 3 deepening opportunities
-   with files, pattern and ADR.
+6. **Architecture sweep** (only when the buffer is full), every 10 merges or 7 days: the
+   `architect` subagent in sweep mode on the audit worktree. File its candidates (at most 3) with
+   files, pattern and ADR.
 7. **Inbox and metrics.** Rewrite the inbox, then append to the ledger.
 
 ## Decision rights

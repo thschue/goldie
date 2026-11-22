@@ -1,7 +1,7 @@
 ---
 name: delivery
-description: Turn ready issues into merged pull requests, two streams at a time. Each stream owns one issue end to end - claim, acceptance tests, implementation, fresh review, fixes, merge queue - and never hands it to another session.
-keywords: [delivery, implement, review, stream, acceptance tests, tdd, merge queue, pull request, ready-for-agent]
+description: Turn ready issues into merged pull requests, two streams at a time. Each stream owns one issue end to end - claim, acceptance tests, implementation, fresh review, fixes, merge - and never hands it to another session.
+keywords: [delivery, implement, review, stream, acceptance tests, tdd, auto-merge, pull request, ready-for-agent]
 interval: self-paced
 agents: [test-author, implementer, reviewer, architect, ux-designer, security-reviewer]
 skills: [tdd]
@@ -21,8 +21,8 @@ Run one tick. The repository's loop rules are authoritative; this Item is the su
    - `agent:reviewer` reviews with fresh eyes (with `agent:architect`, `agent:ux-designer` or
      `agent:security-reviewer` when their triggers match);
    - the same implementer fixes the findings, at most twice;
-   - the merge script checks the gate and the test lock and queues the PR.
+   - the merge script checks the gate and the test lock and merges the PR.
 5. Subagents talk only through you, as logged consults. Implementers never change a test they
    didn't add without the test author's approval.
 
-Report streams advanced, claims, merges queued, and anything held or parked.
+Report streams advanced, claims, merges, and anything held or parked.

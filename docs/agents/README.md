@@ -127,14 +127,9 @@ Reproduce it on `origin/main` first; a bug only claimed in text that doesn't rep
 
 ## Humans decide
 
-The maintainer decides only:
-- product direction beyond the record;
-- security posture, secrets and credentials;
-- **the harness** (this directory, `.claude/`, `scripts/`, CI);
-- releases (when, which version, what goes in);
-- licensing, cost and external commitments;
-- deleting user data or removing a feature;
-- closing an external contributor's PR.
+The maintainer decides only: product direction beyond the record; security posture, secrets and
+credentials; **the harness** (this directory, `.claude/`, `scripts/`, CI); releases; licensing, cost
+and external commitments; deleting user data or a feature; closing an external contributor's PR.
 
 Everything else, the loops decide and record. A question goes to the maintainer as one concrete
 either/or with a recommendation, through the product session's `Maintainer inbox`.
@@ -148,7 +143,8 @@ Never open a harness PR. The maintainer ships a batch weekly.
 - `scripts/loop-guard` (`PreToolUse` hook) blocks pushes to `main`, force-pushes without a lease,
   remote branch deletion, any merge other than `scripts/merge-pr` (and `--admin`), API merges, ref
   writes, statuses, settings, labels, secrets, containers and cloud CLIs. Cases are in
-  `testdata/loop-guard/cases.tsv`.
+  `testdata/loop-guard/cases.tsv`. It matches command text, so post every comment and PR body
+  with `--body-file`, and never `go clean -cache` (the cache is shared between sessions).
 - The allowlist in `.claude/settings.json` means a permission prompt in a loop is a harness bug: file
   it as harness feedback.
 - Agent definitions pin model and tools; they are copies of `examples/knowledge/global/agents/`
@@ -157,12 +153,8 @@ Never open a harness PR. The maintainer ships a batch weekly.
 ## Reports and dry runs
 
 Every subagent report ends with one fenced `json` block, parsed with `jq` before any write:
-- `outcome`, `pr` and `head_sha`;
-- `findings`: `[{agent, severity, class, area, file}]`;
-- `gates`: `[{name, result}]`;
-- `consult` (optional): `{to, question, options, recommendation}`;
-- `test_change_request` (optional): `{file, reason, diff}`;
-- `notes`.
-
-A report without a valid block counts as `blocked`. `dry-run` as a command argument writes nothing
+`outcome`, `pr`, `head_sha`, `findings` (`[{agent, severity, class, area, file}]`), `gates`
+(`[{name, result}]`), `notes`, and optionally `consult` (`{to, question, options,
+recommendation}`) or `test_change_request` (`{file, reason, diff}`). A report without a valid block
+counts as `blocked` ([what to do](./delivery-loop.md#between-subagents)). `dry-run` as a command argument writes nothing
 and prints each write as `WOULD <action> <target>`.
