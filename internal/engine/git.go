@@ -293,7 +293,7 @@ func (s *GitSource) Load(parent context.Context) (*Snapshot, error) {
 	s.load.Lock()
 	defer s.load.Unlock()
 	if parent.Err() != nil {
-		return nil, errors.New("git source: " + errLoadCancelled.Error())
+		return nil, errGitLoadCancelled()
 	}
 	budget := &gitBudget{wire: s.maxWire, mem: s.maxMem}
 	ctx, cancel := context.WithTimeout(context.WithValue(parent, gitBudgetKey{}, budget), s.timeout)
@@ -412,6 +412,13 @@ func headCommit(repo *git.Repository) (*object.Commit, error) {
 	return tag.Commit()
 }
 
+// errGitLoadCancelled is the fixed error of a Load whose parent ended, before
+// or during the fetch. Both paths build it here, so its text cannot drift; it
+// wraps nothing and names no URL, address or path.
+func errGitLoadCancelled() error {
+	return errors.New("git source: " + errLoadCancelled.Error())
+}
+
 // fetchError maps a transport error to a fixed message. The library's own
 // text can carry the URL, user info, addresses or paths, so it is never
 // passed on. A Load stopped by its budget, or by the end of parent, says so,
@@ -429,7 +436,7 @@ func (s *GitSource) fetchError(parent context.Context, err error, budget *gitBud
 	case budget.exceeded():
 		msg = "the repository " + errLoadLimit.Error()
 	case parent.Err() != nil:
-		msg = errLoadCancelled.Error()
+		return errGitLoadCancelled()
 	case errors.Is(err, errHostKeyNotTrusted),
 		// The server has no key of a type KnownHosts lists for it; x/crypto
 		// has no error type for that, only this text.
