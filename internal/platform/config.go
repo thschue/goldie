@@ -43,13 +43,15 @@ type Config struct {
 	RateLimit     RateLimit // the per-token request limit, default applied (ParseRateLimit)
 	rateLimitText string    // RateLimit as written, for the startup report
 
-	MinClientVersion string // the oldest X-Goldie-Client version served, as written; "" for no gate
+	MinClientVersion     Semver // the oldest X-Goldie-Client version served (ParseSemver); zero for no gate
+	minClientVersionText string // MinClientVersion as written, for the startup report
 
 	// SetupTelemetry owns GOLDIE_TELEMETRY_CLIENT_INFO and fails startup on a
 	// bad value; this copy is only for the startup report.
 	telemetryClientInfo bool
 
 	// The server role validates these at startup; health does not need them.
+	// LoadConfig checks only that the two token variables are not both set.
 	ContentDir string // root of the dir Source
 	APIToken   string // the shorthand for one operator token; secret
 	APITokens  string // name:role:token lines, as read; secret
@@ -96,16 +98,21 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
+	if err := CheckAPITokenPairing(cfg.APIToken, cfg.APITokens); err != nil {
+		errs = append(errs, err)
+	}
 	cfg.rateLimitText = str(EnvRateLimit, def(EnvRateLimit))
 	if l, err := ParseRateLimit(cfg.rateLimitText); err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvRateLimit, err))
 	} else {
 		cfg.RateLimit = l
 	}
-	cfg.MinClientVersion = str(EnvMinClientVersion, def(EnvMinClientVersion))
-	if cfg.MinClientVersion != "" {
-		if _, err := ParseSemver(cfg.MinClientVersion); err != nil {
+	cfg.minClientVersionText = str(EnvMinClientVersion, def(EnvMinClientVersion))
+	if cfg.minClientVersionText != "" {
+		if v, err := ParseSemver(cfg.minClientVersionText); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", EnvMinClientVersion, err))
+		} else {
+			cfg.MinClientVersion = v
 		}
 	}
 	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
@@ -127,6 +134,18 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s and %s must differ: the admin port is never the public listener", EnvAddr, EnvAdminAddr))
 	}
 	return cfg, errors.Join(errs...)
+}
+
+// CheckAPITokenPairing refuses GOLDIE_API_TOKEN and GOLDIE_API_TOKENS set
+// together, after their _FILE forms are read: which one counts would be a
+// guess. LoadConfig reports it with every other problem, so goldie health
+// refuses it too; neither set is the server role's check, because health needs
+// no token. The error names both variables and never a token.
+func CheckAPITokenPairing(token, tokens string) error {
+	if token != "" && tokens != "" {
+		return fmt.Errorf("%s and %s are both set: set exactly one", EnvAPIToken, EnvAPITokens)
+	}
+	return nil
 }
 
 // Setting resolves one variable that may also be given as NAME_FILE (PC-05).
@@ -183,7 +202,7 @@ func (c Config) effective() map[string]any {
 		EnvAPIToken:            c.APIToken,
 		EnvAPITokens:           c.APITokens,
 		EnvRateLimit:           c.rateLimitText,
-		EnvMinClientVersion:    c.MinClientVersion,
+		EnvMinClientVersion:    c.minClientVersionText,
 		EnvTelemetryClientInfo: c.telemetryClientInfo,
 	}
 }

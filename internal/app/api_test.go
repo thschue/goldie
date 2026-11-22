@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -302,14 +301,7 @@ func TestAPIOnlyAnswersGet(t *testing.T) {
 // An operation the spec adds outside /api/ is behind the token until someone
 // opens it on purpose: the router's guard fails closed.
 func TestNewRoutesNeedTheTokenByDefault(t *testing.T) {
-	snap, err := engine.NewDirSource(testContent).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := newPublicMux(staticSnapshot(snap), testToken)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := testPublicMux(t)
 	m.HandleFunc("GET /v2/future", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	for name, mutate := range map[string]func(*http.Request){"no token": nil, "wrong token": bearer("wrong")} {
 		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v2/future", nil)
@@ -334,14 +326,7 @@ func TestNewRoutesNeedTheTokenByDefault(t *testing.T) {
 // A route pattern without a method fails at registration instead of
 // registering an empty path.
 func TestRoutePatternWithoutMethodPanics(t *testing.T) {
-	snap, err := engine.NewDirSource(testContent).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := newPublicMux(staticSnapshot(snap), testToken)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := testPublicMux(t)
 	before := len(m.routes)
 	for _, pattern := range []string{"/v2/future", " /v2/future", "GET "} {
 		func() {
@@ -368,20 +353,21 @@ func TestPublicHandlerFailsFastOnBadSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	missing := filepath.Join(t.TempDir(), "missing-dir")
+	rl := platform.DefaultRateLimit()
 	for name, tc := range map[string]struct {
-		opts    Options
+		opts    platform.Config
 		varName string
 		hidden  string // must not appear in the error
 	}{
-		"no token":           {Options{ContentDir: testContent}, platform.EnvAPIToken, ""},
-		"token with a space": {Options{ContentDir: testContent, APIToken: marker}, platform.EnvAPIToken, marker},
-		"token with a tab":   {Options{ContentDir: testContent, APIToken: "abc\tdef0123456789abcdef0123456789"}, platform.EnvAPIToken, "abc"},
-		"token too short":    {Options{ContentDir: testContent, APIToken: testToken[:31]}, platform.EnvAPIToken, testToken[:31]},
-		"no content dir":     {Options{APIToken: testToken}, platform.EnvContentDir, ""},
-		"missing content":    {Options{APIToken: testToken, ContentDir: missing}, platform.EnvContentDir, missing},
-		"invalid article":    {Options{APIToken: testToken, ContentDir: broken}, platform.EnvContentDir, broken},
+		"no token":           {platform.Config{ContentDir: testContent, RateLimit: rl}, platform.EnvAPIToken, ""},
+		"token with a space": {platform.Config{ContentDir: testContent, APIToken: marker, RateLimit: rl}, platform.EnvAPIToken, marker},
+		"token with a tab":   {platform.Config{ContentDir: testContent, APIToken: "abc\tdef0123456789abcdef0123456789", RateLimit: rl}, platform.EnvAPIToken, "abc"},
+		"token too short":    {platform.Config{ContentDir: testContent, APIToken: testToken[:31], RateLimit: rl}, platform.EnvAPIToken, testToken[:31]},
+		"no content dir":     {platform.Config{APIToken: testToken, RateLimit: rl}, platform.EnvContentDir, ""},
+		"missing content":    {platform.Config{APIToken: testToken, ContentDir: missing, RateLimit: rl}, platform.EnvContentDir, missing},
+		"invalid article":    {platform.Config{APIToken: testToken, ContentDir: broken, RateLimit: rl}, platform.EnvContentDir, broken},
 	} {
-		_, err := PublicHandler(tc.opts)
+		_, err := PublicHandler(tc.opts, nil)
 		if err == nil || !strings.Contains(err.Error(), tc.varName) {
 			t.Errorf("%s: err = %v, want it to name %s", name, err, tc.varName)
 			continue

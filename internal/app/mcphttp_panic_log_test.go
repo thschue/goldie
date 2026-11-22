@@ -12,7 +12,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -60,14 +59,7 @@ func (secretStringer) String() string { return "stringer " + panicSecret }
 // logging to the returned buffer through the server's JSON logger.
 func mcpServerWithAPI(t *testing.T, api func(m *publicMux) http.Handler) (*httptest.Server, *lockedBuffer) {
 	t.Helper()
-	snap, err := engine.NewDirSource(testContent).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, err := newPublicMux(staticSnapshot(snap), testToken)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := testPublicMux(t)
 	logs := &lockedBuffer{}
 	addMCP(m, api(m), platform.NewLogger(logs, slog.LevelDebug, "server"))
 	srv := httptest.NewServer(m)
@@ -188,7 +180,13 @@ func TestMCPOverHTTPLogsNothingWhenTheAPIAnswers(t *testing.T) {
 // logs nothing while the API answers.
 func TestPublicHandlerTakesTheServerLogger(t *testing.T) {
 	logs := &lockedBuffer{}
-	srv := newServerWith(t, Options{Logger: platform.NewLogger(logs, slog.LevelDebug, "server")})
+	h, err := PublicHandler(platform.Config{ContentDir: testContent, APIToken: testToken, RateLimit: platform.DefaultRateLimit()},
+		platform.NewLogger(logs, slog.LevelDebug, "server"))
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
 	cs := mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport))
 	assertToolsAnswerOverHTTP(t, cs)
 	if got := logs.lines(); len(got) != 0 {

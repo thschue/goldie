@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // rawGet is an authenticated GET without the spec check: the Swagger UI files
@@ -121,7 +122,7 @@ func TestSwaggerUIOnlyServesTheListedFiles(t *testing.T) {
 }
 
 func TestSwaggerUIDisabledIsNotFound(t *testing.T) {
-	srv := newServerWith(t, Options{SwaggerUI: false})
+	srv := newServerWith(t, platform.Config{SwaggerUIEnabled: false})
 	for _, p := range swaggerPaths {
 		resp, body := apiGet(t, srv.URL+p)
 		if resp.StatusCode != http.StatusNotFound {
