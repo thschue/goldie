@@ -21,7 +21,7 @@ to every request, the page's fetch of `/openapi.json` included.
 ## CLI
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
-running server through the generated client. Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
+running server through the generated client, or an embedded one over local content (below). Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
 `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. Prefer `GOLDIE_TOKEN`
 or `GOLDIE_TOKEN_FILE` to `--token`: a `--token` value shows in the process list (`ps`) of the
 machine. The CLI follows no redirects, so a server cannot send the token elsewhere, and every
@@ -80,16 +80,26 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 
 ## MCP over stdio
 
+`goldie search`, `lookup`, `status` and `mcp` also work without a server: `--dir PATH` (or
+`GOLDIE_DIR`) starts an embedded server over a directory of content (`global/articles` under it) on
+loopback, with its own random token, and stops it when the command ends. Output is the same as
+against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, and also a
+`GOLDIE_ADDR` from the environment; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
+`--addr`, or `GOLDIE_DIR` and `GOLDIE_ADDR` both set in the environment, is an error naming both.
+Content that does not load stops the command with `content does not load: <reason>`. `version`
+and `init` ignore `--dir`: `init` checks registration only against a running server.
+
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
 `search_knowledge` and `get_article`. An agent's MCP client starts it as a subprocess. It talks to a
 running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
-(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable. Prefer the variables to
+(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content
+with `--dir` (or `GOLDIE_DIR`), as above. Prefer the variables to
 `--token`: a `--token` value shows in the process list (`ps`) and is saved in the MCP client's
 config, while the variables can name a file. A missing or invalid setting stops it at startup with a
 message on stderr that names the setting. Like the CLI, it follows no redirects and reads at most
 16 MiB of an answer; a tool call that meets either says so, without the address. Stdout carries only
-MCP messages; errors go to stderr. It exits when the client closes stdin. There is no local mode yet
-(#10): it needs a server address.
+MCP messages; errors go to stderr. It exits when the client closes stdin. Only the `.goldie/` local
+Scope (#269, #272) is still pending in local mode.
 
 ```json
 {"mcpServers": {"goldie": {"command": "goldie", "args": ["mcp", "--transport", "stdio"],
