@@ -66,7 +66,7 @@ func DefaultEnv(out io.Writer) Env {
 // settings are the flags and variables common to every command.
 type settings struct {
 	addr, token, project string
-	json        bool
+	json                 bool
 }
 
 // Run runs one client command. args[0] is the command name.
