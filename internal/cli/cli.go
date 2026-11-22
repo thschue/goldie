@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
@@ -34,18 +32,6 @@ const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | stat
 // --token, whose value shows in the process list.
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine"
 
-// requestTimeout bounds every API call.
-const requestTimeout = 30 * time.Second
-
-// maxResponseBytes bounds the body of every API answer the client reads.
-const maxResponseBytes = 16 << 20
-
-// errRedirect is returned for a 3xx answer. It carries nothing of the answer.
-var errRedirect = errors.New("the server answered with a redirect")
-
-// errTooLarge is returned by a body that exceeds maxResponseBytes.
-var errTooLarge = errors.New("response body too large")
-
 // IsCommand reports whether name is a client command, for the dispatcher in
 // cmd/goldie.
 func IsCommand(name string) bool {
@@ -61,7 +47,7 @@ type Env struct {
 	Lookup   platform.Lookup              // environment variables
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
 	Out      io.Writer                    // results
-	Client   *http.Client                 // nil: a client with a timeout
+	Client   *http.Client                 // nil: contract's client, with a timeout
 }
 
 // DefaultEnv is the process environment.
@@ -137,17 +123,20 @@ func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
 	return f
 }
 
-// Client returns the API client for the settings, after fs is parsed. A flag
-// overrides its variable: --addr over GOLDIE_ADDR, --token over GOLDIE_TOKEN
-// or GOLDIE_TOKEN_FILE. Every call sends the token, every answer is capped at
-// 16 MiB and every request has a timeout, as in the client commands. A missing
-// or invalid setting is an error that names it and shows no value.
-func (f *ClientFlags) Client(env Env) (*contract.ClientWithResponses, error) {
+// Resolve returns the server address and the API token for the settings,
+// after fs is parsed, for contract.NewAPIClient. A flag overrides its
+// variable: --addr over GOLDIE_ADDR, --token over GOLDIE_TOKEN or
+// GOLDIE_TOKEN_FILE. A missing or invalid setting is an error that names it
+// and shows no value.
+func (f *ClientFlags) Resolve(env Env) (addr, token string, err error) {
 	c, err := f.commander(env, true)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
-	return c.client(true)
+	if err := c.check(true); err != nil {
+		return "", "", err
+	}
+	return c.s.addr, c.s.token, nil
 }
 
 // commander resolves the settings from the flags and env. With needToken it
@@ -163,16 +152,7 @@ func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
 			return nil, err
 		}
 	}
-	httpc := &http.Client{Timeout: requestTimeout}
-	if env.Client != nil {
-		httpc = env.Client
-	}
-	limited := *httpc
-	limited.Transport = limitTransport{base: httpc.Transport}
-	// No redirects, whatever the injected client says: the token must never
-	// follow a Location the server picks.
-	limited.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &commander{s: s, out: env.Out, http: &limited, env: env}, nil
+	return &commander{s: s, out: env.Out, env: env}, nil
 }
 
 // parseInterleaved parses flags that may come before, between or after the
@@ -193,85 +173,37 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // commander holds what the commands share.
 type commander struct {
-	s    settings
-	out  io.Writer
-	http *http.Client
-	env  Env
+	s   settings
+	out io.Writer
+	env Env
 }
 
-// client builds the generated client for the configured address. With
+// check reports a missing or invalid address and, with withToken, a missing
+// token.
+func (c *commander) check(withToken bool) error {
+	if c.s.addr == "" {
+		return fmt.Errorf("no server address: set --addr or %s", EnvAddr)
+	}
+	if err := contract.CheckBaseURL(c.s.addr); err != nil {
+		return err
+	}
+	if withToken && c.s.token == "" {
+		return fmt.Errorf("no token: set --token, %s or %s_FILE", EnvToken, EnvToken)
+	}
+	return nil
+}
+
+// client builds the hardened API client for the configured address. With
 // withToken it sends the token as a bearer token and fails when there is none;
 // without, it sends no token, for status and version, which still answer
 // without one and then report less.
 func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error) {
-	if c.s.addr == "" {
-		return nil, fmt.Errorf("no server address: set --addr or %s", EnvAddr)
-	}
-	u, err := url.Parse(c.s.addr)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, errors.New("the server address must be an http:// or https:// URL")
-	}
-	if withToken && c.s.token == "" {
-		return nil, fmt.Errorf("no token: set --token, %s or %s_FILE", EnvToken, EnvToken)
-	}
-	opts := []contract.ClientOption{contract.WithHTTPClient(c.http),
-		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set(contract.ClientHeader, contract.ClientHeaderPrefix+platform.Version)
-			return nil
-		})}
-	if withToken {
-		token := c.s.token
-		opts = append(opts, contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("Authorization", "Bearer "+token)
-			return nil
-		}))
-	}
-	return contract.NewClientWithResponses(strings.TrimRight(c.s.addr, "/"), opts...)
-}
-
-// limitTransport caps every response body at maxResponseBytes, so a hostile
-// or broken server cannot make the client buffer an unbounded answer.
-type limitTransport struct{ base http.RoundTripper }
-
-func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	base := t.base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	resp, err := base.RoundTrip(r)
-	if err != nil {
+	if err := c.check(withToken); err != nil {
 		return nil, err
 	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		_ = resp.Body.Close()
-		return nil, errRedirect
+	token := ""
+	if withToken {
+		token = c.s.token
 	}
-	resp.Body = &limitedBody{rc: resp.Body, left: maxResponseBytes}
-	return resp, nil
+	return contract.NewAPIClient(c.s.addr, token, platform.Version, c.env.Client)
 }
-
-// limitedBody reads at most left bytes and fails with errTooLarge when the
-// body has more.
-type limitedBody struct {
-	rc   io.ReadCloser
-	left int64
-}
-
-func (b *limitedBody) Read(p []byte) (int, error) {
-	if b.left <= 0 {
-		var probe [1]byte
-		n, err := b.rc.Read(probe[:])
-		if n > 0 {
-			return 0, errTooLarge
-		}
-		return 0, err
-	}
-	if int64(len(p)) > b.left {
-		p = p[:b.left]
-	}
-	n, err := b.rc.Read(p)
-	b.left -= int64(n)
-	return n, err
-}
-
-func (b *limitedBody) Close() error { return b.rc.Close() }

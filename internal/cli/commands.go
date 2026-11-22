@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -54,8 +53,8 @@ func (c *commander) search(ctx context.Context, q string) error {
 	if err != nil {
 		return transportError(err)
 	}
-	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
-	if err != nil {
+	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
+	if err := answerError(e, err); err != nil {
 		return err
 	}
 	if resp.JSON200 == nil {
@@ -103,8 +102,8 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return transportError(err)
 	}
-	resp, err := parseOK(raw, contract.ParseGetArticleResponse)
-	if err != nil {
+	resp, e, err := contract.ParseOK(raw, contract.ParseGetArticleResponse)
+	if err := answerError(e, err); err != nil {
 		return err
 	}
 	if resp.JSON200 == nil {
@@ -211,7 +210,7 @@ func (c *commander) status(ctx context.Context) error {
 // probeToken checks the token with one search for project, so status reports
 // the token as accepted only where the API answers it, and passes on the
 // server's hint for an unregistered Project. Any answer other than 200 or 401
-// is read by parseOK, so a 429 stays a rate-limit error.
+// is read by contract.ParseOK, so a 429 stays a rate-limit error.
 func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId) (auth string, accepted bool, hint *string, err error) {
 	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
 	if err != nil {
@@ -221,11 +220,11 @@ func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *
 		_ = raw.Body.Close()
 		return "token rejected", false, nil, nil
 	}
-	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
-	switch {
-	case err != nil:
+	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
+	if err := answerError(e, err); err != nil {
 		return "", false, nil, err
-	case resp.JSON200 == nil:
+	}
+	if resp.JSON200 == nil {
 		return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
 	}
 	return "token accepted", true, resp.JSON200.Hint, nil
@@ -329,34 +328,13 @@ func specInfo(doc map[string]any) (title, version string) {
 // transportError words a transport failure. The cause is dropped: it can
 // carry the address, and the user already knows what they typed.
 func transportError(err error) error {
-	if errors.Is(err, errTooLarge) {
-		return fmt.Errorf("the server's answer is larger than %d MiB", maxResponseBytes>>20)
+	if errors.Is(err, contract.ErrTooLarge) {
+		return fmt.Errorf("the server's answer is larger than %d MiB", contract.MaxResponseBytes>>20)
 	}
-	if errors.Is(err, errRedirect) {
+	if errors.Is(err, contract.ErrRedirect) {
 		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
 	}
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
-}
-
-// parseOK hands raw to the generated parse only when the server answered 200.
-// Any other answer is read by apiError alone: the generated parser fails on a
-// 429 whose Retry-After is not an integer, which would turn the 429 into a
-// transport failure.
-func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, error) {
-	var zero T
-	if raw.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(raw.Body)
-		_ = raw.Body.Close()
-		if err != nil {
-			return zero, transportError(err)
-		}
-		return zero, apiError(raw, body)
-	}
-	resp, err := parse(raw)
-	if err != nil {
-		return zero, transportError(err)
-	}
-	return resp, nil
 }
 
 // apiError words an error response. contract.DecodeAPIError passes on only
@@ -367,7 +345,24 @@ func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (
 // a header the user does not see. Without a valid wait it says none, rather
 // than "0 seconds" or the server's raw value.
 func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
+	return wordAPIError(contract.DecodeAPIError(resp.StatusCode, resp.Header, body))
+}
+
+// answerError words what contract.ParseOK found wrong with an answer: an
+// unreadable or unparsable body as transportError, an error status as
+// apiError. It is nil for a 200.
+func answerError(e *contract.APIError, err error) error {
+	switch {
+	case err != nil:
+		return transportError(err)
+	case e != nil:
+		return wordAPIError(*e)
+	}
+	return nil
+}
+
+// wordAPIError is the text of e, as apiError describes.
+func wordAPIError(e contract.APIError) error {
 	status := http.StatusText(e.Status)
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
 	if e.Message == "" {
@@ -375,8 +370,8 @@ func apiError(resp *http.Response, body []byte) error {
 	}
 	hint := e.Hint
 	switch {
-	case e.RetryAfter > 0:
-		hint = fmt.Sprintf("Wait %s, then retry.", seconds(e.RetryAfter))
+	case e.Wait() != "":
+		hint = "Wait " + e.Wait() + ", then retry."
 	case e.Status == http.StatusTooManyRequests:
 		hint = "Wait a little, then retry."
 	}
@@ -384,14 +379,6 @@ func apiError(resp *http.Response, body []byte) error {
 		msg += "\nHint: " + hint
 	}
 	return errors.New(msg)
-}
-
-// seconds words a wait of n whole seconds.
-func seconds(n int) string {
-	if n == 1 {
-		return "1 second"
-	}
-	return fmt.Sprintf("%d seconds", n)
 }
 
 func cleanList(l []string) string {

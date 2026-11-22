@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -60,9 +59,12 @@ func search(ctx context.Context, c contract.ClientInterface, q string) *sdk.Call
 	if err != nil {
 		return failure(transportError(err))
 	}
-	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
-	if err != nil {
-		return failure(err)
+	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
+	switch {
+	case err != nil:
+		return failure(transportError(err))
+	case e != nil:
+		return failure(wordAPIError(*e))
 	}
 	if resp.JSON200 == nil {
 		return failure(apiError(resp.HTTPResponse, resp.Body))
@@ -91,9 +93,12 @@ func article(ctx context.Context, c contract.ClientInterface, id string) *sdk.Ca
 	if err != nil {
 		return failure(transportError(err))
 	}
-	resp, err := parseOK(raw, contract.ParseGetArticleResponse)
-	if err != nil {
-		return failure(err)
+	resp, e, err := contract.ParseOK(raw, contract.ParseGetArticleResponse)
+	switch {
+	case err != nil:
+		return failure(transportError(err))
+	case e != nil:
+		return failure(wordAPIError(*e))
 	}
 	if resp.JSON200 == nil {
 		return failure(apiError(resp.HTTPResponse, resp.Body))
@@ -112,34 +117,18 @@ func failure(err error) *sdk.CallToolResult {
 	return &sdk.CallToolResult{IsError: true, Content: []sdk.Content{&sdk.TextContent{Text: err.Error()}}}
 }
 
-// transportError words a failure to reach the API. The cause is dropped: it
-// carries the address.
+// transportError words a failure to reach the API or to read its answer. The
+// cause is dropped: it carries the address, and a redirect's Location.
 func transportError(err error) error {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	switch {
+	case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		return errors.New("the request to the knowledge server was cancelled or timed out")
+	case errors.Is(err, contract.ErrRedirect):
+		return errors.New("the knowledge server answered with a redirect; check the address")
+	case errors.Is(err, contract.ErrTooLarge):
+		return fmt.Errorf("the knowledge server's answer is larger than %d MiB, so it was not read", contract.MaxResponseBytes>>20)
 	}
 	return errors.New("cannot reach the knowledge server: it is not running or its address is wrong")
-}
-
-// parseOK hands raw to the generated parse only when the API answered 200.
-// Any other answer is read by apiError alone: the generated parser fails on a
-// 429 whose Retry-After is not an integer, which would turn the 429 into a
-// transport failure.
-func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, error) {
-	var zero T
-	if raw.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(raw.Body)
-		_ = raw.Body.Close()
-		if err != nil {
-			return zero, transportError(err)
-		}
-		return zero, apiError(raw, body)
-	}
-	resp, err := parse(raw)
-	if err != nil {
-		return zero, transportError(err)
-	}
-	return resp, nil
 }
 
 // apiError words an error response. contract.DecodeAPIError passes on only
@@ -150,7 +139,11 @@ func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (
 // instead of the server's, which points at Retry-After. Without a valid wait
 // it says none, rather than "0 seconds" or the server's raw value.
 func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
+	return wordAPIError(contract.DecodeAPIError(resp.StatusCode, resp.Header, body))
+}
+
+// wordAPIError is the text of e, as apiError describes.
+func wordAPIError(e contract.APIError) error {
 	status := http.StatusText(e.Status)
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
 	if e.Message == "" {
@@ -158,8 +151,8 @@ func apiError(resp *http.Response, body []byte) error {
 	}
 	hint := e.Hint
 	switch {
-	case e.RetryAfter > 0:
-		hint = fmt.Sprintf("Wait %s, then call the tool again.", seconds(e.RetryAfter))
+	case e.Wait() != "":
+		hint = "Wait " + e.Wait() + ", then call the tool again."
 	case e.Status == http.StatusTooManyRequests:
 		hint = "Wait a little, then call the tool again."
 	}
@@ -167,14 +160,6 @@ func apiError(resp *http.Response, body []byte) error {
 		return errors.New(msg)
 	}
 	return withHint(msg, hint)
-}
-
-// seconds words a wait of n whole seconds.
-func seconds(n int) string {
-	if n == 1 {
-		return "1 second"
-	}
-	return fmt.Sprintf("%d seconds", n)
 }
 
 // withHint words an error the agent can act on: what went wrong, then the
