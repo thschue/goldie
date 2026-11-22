@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | thschue/goldie#20 (UI design handoff) — unblocks #21, #22, #23 |
-| Status | **Draft for approval**, v0.2 (2026-11-21): v0.2 completes the token set, adds the missing contrast pairs, and fixes the copy and artboard-count inconsistencies found in implementer review |
+| Status | **Approved** 2026-11-22 (#161), v0.2 (2026-11-21): v0.2 completes the token set, adds the missing contrast pairs, and fixes the copy and artboard-count inconsistencies found in implementer review |
 | Screenshots | `docs/design/screenshots/` — gallery in §2.4 |
 | Prototype | Design canvas "Goldie Design Proposal": https://claude.ai/artifact/2qDw2RVLRTPwKkEwmmEChw (private until shared) |
 | Related | #12 + #22 (federated activity), #23 (assets + Decisions page), #31 (Grafana), #32 (usage figures), #33 (Secret-based Sources), #34 (Decisions as a Kind) |
