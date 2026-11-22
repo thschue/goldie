@@ -16,7 +16,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/contract/contracttest"
 	"github.com/thschue/goldie/internal/engine"
 )
@@ -171,15 +170,11 @@ func TestUnknownPathIsTheNotFoundEnvelope(t *testing.T) {
 	assertEnvelope(t, body, "not_found")
 }
 
-// specDoc is the spec as contracttest loads it: contract.SpecJSON, decoded.
+// specDoc is the spec as contracttest loads it.
 func specDoc(t *testing.T) map[string]any {
 	t.Helper()
-	raw, err := contract.SpecJSON()
+	doc, err := contracttest.Spec()
 	if err != nil {
-		t.Fatal(err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
 	return doc
