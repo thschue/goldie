@@ -1,0 +1,115 @@
+#!/bin/sh
+# loop-guard: a Claude Code PreToolUse hook for the Bash tool (ADR 0012).
+#
+# Reads the hook input JSON on stdin and blocks (exit 2, reason on stderr)
+# the commands no agent in this repository may run, whatever its instructions
+# say. It is defence in depth under the loop specs and the main ruleset, not
+# a replacement for them: it matches command text, so it catches mistakes,
+# not a determined attacker. Registered in .claude/settings.json; cases in
+# testdata/loop-guard/cases.tsv, run by `./run guard-fixture`.
+set -euf
+LC_ALL=C
+export LC_ALL
+
+deny() { printf 'loop-guard: %s\n' "$*" >&2; exit 2; }
+
+command -v jq >/dev/null 2>&1 || deny "jq is required by the loop-guard hook; install jq"
+cmd=$(jq -r '.tool_input.command // empty') || deny "cannot parse the hook input"
+[ -n "$cmd" ] || exit 0
+
+has() { printf '%s\n' "$1" | grep -Eq -- "$2"; }
+hasi() { printf '%s\n' "$1" | grep -Eiq -- "$2"; }
+end='([[:space:]]|$)'
+
+# Split the command into simple commands at shell separators and newlines,
+# and normalise each one: drop leading environment assignments, `env`,
+# `command` and `sudo`, git's -C/-c options and gh's -R/--repo option, so
+# the checks below see "git push …" and "gh pr merge …" whatever the prefix.
+segments=$(printf '%s\n' "$cmd" | awk '{
+	gsub(/&&|\|\||;|\||\(|\)|`|\$\(/, "\n")
+	print
+}' | sed -E \
+	-e 's/^[[:space:]]+//' \
+	-e ':a' -e 's/^(env|command|sudo|exec|time)[[:space:]]+//; s/^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+//; ta' \
+	-e ':b' -e 's/^git[[:space:]]+(-C|-c)[[:space:]]+[^[:space:]]+[[:space:]]+/git /; tb' \
+	-e ':c' -e 's/^gh[[:space:]]+(-R|--repo)[[:space:]=]+[^[:space:]]+[[:space:]]+/gh /; tc')
+
+current_branch() { git rev-parse --abbrev-ref HEAD 2>/dev/null || true; }
+
+check_push() { # check_push <segment starting with "git push">
+	seg=$1
+	if has "$seg" "[[:space:]:+](refs/heads/)?main${end}"; then
+		deny "never push to main; open a PR"
+	fi
+	if has "$seg" "[[:space:]](-f|--force|--force-if-includes|--mirror|--all)${end}|[[:space:]]\+[^[:space:]]+(:|${end})"; then
+		deny "force-push only with --force-with-lease=<branch>:<expected sha>"
+	fi
+	if has "$seg" "[[:space:]]--force-with-lease(${end}|=[^:[:space:]]+${end})"; then
+		deny "force-push only with --force-with-lease=<branch>:<expected sha>"
+	fi
+	if has "$seg" "[[:space:]](--delete|-d)${end}|[[:space:]]:[^[:space:]]+${end}"; then
+		deny "loops never delete remote branches"
+	fi
+	# No refspec, or HEAD: the target is the current branch.
+	args=$(printf '%s\n' "$seg" | sed -E 's/^git[[:space:]]+push//; s/[[:space:]]-[^[:space:]]+//g; s/^[[:space:]]+//')
+	set -- $args
+	if [ $# -le 1 ] || [ "${2:-}" = HEAD ]; then
+		[ "$(current_branch)" != main ] || deny "never push to main; open a PR"
+	fi
+}
+
+check_api() { # check_api <segment starting with "gh api">
+	seg=$1
+	write=false
+	if hasi "$seg" "[[:space:]](-X|--method)[[:space:]=]*(POST|PUT|PATCH|DELETE)${end}"; then
+		write=true
+	elif has "$seg" "[[:space:]](-f|-F|--field|--raw-field|--input)${end}|[[:space:]](-f|-F)[^[:space:]]"; then
+		hasi "$seg" "[[:space:]](-X|--method)[[:space:]=]*GET${end}" || write=true
+	fi
+	if has "$seg" "gh[[:space:]]+api[[:space:]]+['\"]?graphql" && hasi "$seg" "mutation"; then
+		deny "no GraphQL mutations; use the gh subcommands the loop specs name"
+	fi
+	$write || return 0
+	repo='repos/[^/[:space:]]+/[^/[:space:]]+'
+	if has "$seg" "pulls/[0-9]+/merge|${repo}/merges"; then
+		deny "never merge through the API; use gh pr merge --auto --match-head-commit"
+	fi
+	if has "$seg" "${repo}/git/refs"; then
+		deny "never write git refs through the API"
+	fi
+	if has "$seg" "${repo}/(statuses|check-runs|check-suites)"; then
+		deny "never write commit statuses or check runs"
+	fi
+	if has "$seg" "${repo}/(rulesets|branches/[^[:space:]]+/protection|collaborators|hooks|actions/secrets|actions/permissions|environments|keys|labels)"; then
+		deny "repository settings, rulesets, secrets, webhooks and labels are the maintainer's"
+	fi
+	if has "$seg" "${repo}/?['\"]?${end}"; then
+		deny "repository settings are the maintainer's"
+	fi
+}
+
+printf '%s\n' "$segments" | {
+	while IFS= read -r seg; do
+		case "$seg" in
+		"git push" | "git push "* | "git push	"*) check_push "$seg" ;;
+		"gh pr merge" | "gh pr merge "*)
+			has "$seg" "[[:space:]]--admin${end}" && deny "never merge with --admin"
+			if ! has "$seg" "[[:space:]]--disable-auto${end}"; then
+				has "$seg" "[[:space:]]--auto${end}" || deny "merge only through auto-merge (--auto)"
+				has "$seg" "[[:space:]]--match-head-commit[[:space:]=]" ||
+					deny "auto-merge only with --match-head-commit <reviewed sha>"
+			fi
+			;;
+		"gh api "*) check_api "$seg" ;;
+		"gh repo delete"* | "gh repo edit"* | "gh repo rename"* | "gh repo archive"* | \
+			"gh label delete"* | "gh label edit"* | "gh secret"* | "gh ruleset"* | "gh variable"*)
+			deny "repository settings, labels and secrets are the maintainer's" ;;
+		docker | docker\ * | podman | podman\ * | kubectl | kubectl\ * | kind\ * | minikube\ * | \
+			gcloud | gcloud\ * | aws | aws\ * | az | az\ * | terraform | terraform\ * | tofu | tofu\ *)
+			deny "no containers, clusters or cloud CLIs" ;;
+		helm | helm\ *)
+			has "$seg" "^helm[[:space:]]+(lint|template)${end}" || deny "only helm lint and helm template are allowed" ;;
+		esac
+	done
+} || exit $?
+exit 0

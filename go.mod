@@ -1,6 +1,6 @@
 module github.com/thschue/goldie
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/oapi-codegen/runtime v1.9.1

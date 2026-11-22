@@ -18,5 +18,6 @@ Supporting labels:
 - `priority`: at most 2 open at a time
 - `bug`, `security`: ranking hints
 
-The agent loops add flow labels on top of these. The [label contract](./label-contract.md) defines
-every label, who may set or remove it, and who may set the first `ready-for-agent`.
+The agent loops add four flow labels on top of these: `in-progress`, `in-review`,
+`changes-requested` and `needs-maintainer`. The [label contract](./label-contract.md) defines every
+label, who may set or remove it, and who may set the first `ready-for-agent`.

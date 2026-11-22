@@ -1,0 +1,1 @@
+gate: new direct Go dependency: github.com/added/direct, github.com/added/single

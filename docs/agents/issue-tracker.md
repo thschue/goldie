@@ -16,7 +16,7 @@ operation; inside a clone it infers the repository from the remote.
   **squash-merge** it. The review loop checks the title.
 - Before a PR leaves draft, work through `docs/testing-checklist.md`
   and run the built-in `/security-review` on your diff (not `/review-loop`, which is the review
-  loop).
+  loop). Run `./run gate origin/main HEAD` and put its reasons in the PR body.
 
 ## Recipes
 
@@ -46,12 +46,19 @@ The **frontier** is the set of issues an agent may start now. An issue is on the
 
 1. it is open and labelled `ready-for-agent`;
 2. it is not an `epic`;
-3. it has no `implementation-in-progress` label and no assignee;
+3. it has no `in-progress` label and no assignee;
 4. every native `blocked_by` dependency is closed;
 5. if `LOOP_MILESTONE` is set, it is in that milestone.
 
-Rank the frontier in this order: issues carrying `changes-requested` (loop-backs), then `bug`, then
-`security`, then `priority`, then oldest `createdAt` first.
+Rank the frontier in this order: `bug`, then `security`, then `priority` (pm-audit keeps it on the
+[critical path](./pm-audit-loop.md#4-planning)), then the number of open issues it unblocks, then the
+oldest `createdAt`. Handed-back PRs aren't on the frontier: the worker reworks them from its own
+queue, before it claims anything ([issue-worker loop](./issue-worker-loop.md)).
+
+```sh
+# open issues this one blocks (critical-path count, first level)
+gh api repos/thschue/goldie/issues/<n>/dependencies/blocking --jq '[.[] | select(.state=="open")] | length'
+```
 
 ## `gh` hygiene
 

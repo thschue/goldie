@@ -1,12 +1,19 @@
 #!/bin/sh
 # goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
 #
-#   ./run check      everything CI runs: format, build, lint, lint fixtures, spec lint,
-#                    regen drift check and fixture, tests
+#   ./run check      everything CI runs (the four check-* groups below)
+#   ./run check-lint     format, go mod tidy, build, golangci-lint, depguard fixture
+#   ./run check-spec     spec lint, regen drift check, and their fixtures
+#   ./run check-harness  agent-gate, loop-guard and agent-definition checks
+#   ./run check-test     go test -race
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
 #   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
-#   ./run lint-spec-fixture  prove vacuum rejects testdata/openapi/broken.yaml
+#   ./run contract-compat <old> <new>  fail on a breaking change between two specs
+#   ./run gate <base> <head>  reasons a change needs the maintainer (ADR 0012)
+#   ./run red-check [base]  the PR's new tests must fail on <base> (origin/main)
+#   ./run vuln       govulncheck on the module
+#   ./run sync-agents  copy example agent Items to .claude/agents
 #   ./run regen      regenerate generated code (OpenAPI Go types and strict server)
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
@@ -15,12 +22,18 @@
 # `./run check` must exit 0 with no output from the linters ("zero warnings").
 set -eu
 
-GOLANGCI_LINT_VERSION=v2.15.0
-# OpenAPI linter (MIT), run through `go run` like golangci-lint.
-VACUUM_VERSION=v0.42.3
-# OpenAPI Go code generator (Apache-2.0), run through `go run`. Its generated
-# code imports github.com/oapi-codegen/runtime, which is in go.mod.
-OAPI_CODEGEN_VERSION=v2.9.0
+# Pinned tools, as <package>@<version>. A new tool is a new dependency and
+# needs the maintainer (scripts/agent-gate); bumping a version does not.
+GOLANGCI_LINT=github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+# OpenAPI linter (MIT).
+VACUUM=github.com/daveshanley/vacuum@v0.42.3
+# OpenAPI breaking-change detector (Apache-2.0), for ADR 0011.
+OASDIFF=github.com/oasdiff/oasdiff@v1.38.0
+# Go vulnerability scanner (BSD-3-Clause), from the Go team.
+GOVULNCHECK=golang.org/x/vuln/cmd/govulncheck@v1.9.0
+# OpenAPI Go code generator (Apache-2.0). Its generated code imports
+# github.com/oapi-codegen/runtime, which is in go.mod.
+OAPI_CODEGEN=github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.9.0
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -28,15 +41,28 @@ ROOT=$(pwd)
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 
-# golangci-lint: use the pinned version from PATH when present, else run it
-# through the Go module proxy (cached after the first call).
-golangci() {
-	if command -v golangci-lint >/dev/null 2>&1 &&
-		golangci-lint version 2>&1 | grep -q "version ${GOLANGCI_LINT_VERSION#v}"; then
-		golangci-lint "$@"
-	else
-		go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}" "$@"
+# tool <package>@<version>: print the path of the pinned tool's binary,
+# installing it first. Each version gets its own directory under .tools/
+# (or $GOLDIE_TOOLS), so a bump never runs a stale binary. The tools' module
+# downloads go to .tools/mod rather than the shared module cache, so one CI
+# cache of .tools holds the binaries and every module they are built from;
+# after a bump only the changed modules are downloaded. -modcacherw keeps
+# that directory removable with rm -rf.
+tool() {
+	pkg=${1%@*}
+	ver=${1##*@}
+	tools="${GOLDIE_TOOLS:-$ROOT/.tools}"
+	dir="$tools/${pkg##*/}-$ver"
+	if [ ! -x "$dir/${pkg##*/}" ]; then
+		GOBIN="$dir" GOMODCACHE="$tools/mod" GOFLAGS="${GOFLAGS:+$GOFLAGS }-modcacherw" \
+			go install "$1" >&2 || die "cannot install $1"
 	fi
+	printf '%s\n' "$dir/${pkg##*/}"
+}
+
+golangci() {
+	bin=$(tool "$GOLANGCI_LINT")
+	"$bin" "$@"
 }
 
 cmd_fmt() {
@@ -46,6 +72,13 @@ cmd_fmt() {
 		printf '%s\n' "$unformatted" >&2
 		die "files above are not gofmt-formatted (run: gofmt -w <file>)"
 	fi
+}
+
+# go.mod and go.sum must be tidy. This also keeps the "// indirect" markers
+# honest, which scripts/agent-gate relies on to tell new direct dependencies.
+cmd_tidy() {
+	say "go mod tidy (no diff)"
+	go mod tidy -diff || die "go.mod or go.sum is not tidy (run: go mod tidy)"
 }
 
 cmd_build() {
@@ -85,11 +118,11 @@ cmd_lint_fixture() {
 vacuum() {
 	cfgdir=$(mktemp -d) || die "cannot create a temporary directory for vacuum"
 	: >"$cfgdir/vacuum.conf.yaml"
-	pkg="github.com/daveshanley/vacuum@${VACUUM_VERSION}"
+	bin=$(tool "$VACUUM")
 	status=0
 	(
 		for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
-		exec go run "$pkg" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
+		exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
 			--no-update-check --no-banner --no-style --details --fail-severity info "$@"
 	) || status=$?
 	rm -rf "$cfgdir"
@@ -117,6 +150,133 @@ cmd_lint_spec_fixture() {
 	fi
 }
 
+# contract-compat <old spec> <new spec>: exit 1 with oasdiff's findings when
+# the new spec breaks the old one (ADR 0011: the contract is additive-only).
+# scripts/agent-gate calls it to send a breaking change to the maintainer.
+cmd_contract_compat() {
+	[ $# -eq 2 ] || die "usage: ./run contract-compat <old spec> <new spec>"
+	bin=$(tool "$OASDIFF")
+	"$bin" breaking "$1" "$2" --fail-on ERR
+}
+
+# The breaking fixture removes an endpoint: contract-compat must report it,
+# and must accept the spec against itself.
+cmd_contract_compat_fixture() {
+	say "contract-compat fixture (a removed endpoint must be reported)"
+	cmd_contract_compat internal/contract/openapi.yaml internal/contract/openapi.yaml >/dev/null ||
+		die "contract-compat rejects the spec against itself"
+	status=0
+	out=$(cmd_contract_compat internal/contract/openapi.yaml testdata/openapi/breaking.yaml 2>&1) || status=$?
+	if [ "$status" != 1 ] || ! printf '%s\n' "$out" | grep -q 'api-path-removed'; then
+		printf '%s\n' "$out" >&2
+		die "contract-compat did not report the removed endpoint (exit $status)"
+	fi
+}
+
+cmd_gate() {
+	scripts/agent-gate "$@"
+}
+
+# Each case in testdata/agent-gate/ has a base/ and a head/ tree and the
+# expected output. The case is committed into a throwaway repository and the
+# gate must print exactly the expected reasons, with exit 1 when there are any.
+cmd_gate_fixture() {
+	say "agent-gate fixture (each case gives its expected reasons)"
+	for case in testdata/agent-gate/*/; do
+		name=$(basename "$case")
+		repo=$(mktemp -d) || die "cannot create a temporary directory"
+		(
+			# The throwaway repository ignores the user's git config (signing,
+			# hooks, templates), so the case runs the same everywhere.
+			GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+			export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
+			cd "$repo"
+			git init -q -b main
+			cp -R "$ROOT/${case}base/." .
+			git add -A && git -c user.name=fixture -c user.email=fixture@invalid commit -qm base
+			git rm -rq . && cp -R "$ROOT/${case}head/." .
+			git add -A && git -c user.name=fixture -c user.email=fixture@invalid commit -qm head
+		) || { rm -rf "$repo"; die "cannot build the $name case"; }
+		status=0
+		out=$(cd "$repo" && GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+			"$ROOT/scripts/agent-gate" HEAD~1 HEAD 2>&1) || status=$?
+		rm -rf "$repo"
+		want=$(cat "${case}expected")
+		wstatus=0
+		[ -z "$want" ] || wstatus=1
+		if [ "$out" != "$want" ] || [ "$status" != "$wstatus" ]; then
+			printf 'want (exit %s):\n%s\ngot (exit %s):\n%s\n' "$wstatus" "$want" "$status" "$out" >&2
+			die "agent-gate case $name failed"
+		fi
+	done
+}
+
+# Every line of testdata/loop-guard/cases.tsv is "allow" or "deny", a tab and
+# a command; the hook must block exactly the "deny" lines.
+cmd_guard_fixture() {
+	say "loop-guard fixture (the hook blocks exactly the denied commands)"
+	command -v jq >/dev/null 2>&1 || die "jq is required for the loop-guard fixture"
+	tab=$(printf '\t')
+	grep -v '^#' testdata/loop-guard/cases.tsv | while IFS="$tab" read -r want cmd; do
+		status=0
+		jq -n --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}}' |
+			scripts/loop-guard 2>/dev/null || status=$?
+		got=allow
+		[ "$status" = 2 ] && got=deny
+		[ "$got" = "$want" ] || die "loop-guard: want $want, got $got (exit $status): $cmd"
+	done
+}
+
+# .claude/agents/ holds byte copies of the example agent Items, so the agents
+# the loops dispatch are the Items goldie serves (one source of truth).
+cmd_sync_agents() {
+	mkdir -p .claude/agents
+	rm -f .claude/agents/*.md
+	cp examples/knowledge/global/agents/*.md .claude/agents/
+}
+
+cmd_agents_check() {
+	say "agent definitions match their Items"
+	out=$(diff -r examples/knowledge/global/agents .claude/agents 2>&1) || {
+		printf '%s\n' "$out" >&2
+		die ".claude/agents differs from examples/knowledge/global/agents (run: ./run sync-agents)"
+	}
+}
+
+# red-check [base]: copy the test files the branch changed onto <base> (default
+# origin/main) and require the tests to fail there, as proof that they were
+# red first. A reviewer tool, not part of check: a test that pins existing
+# behaviour passes on <base> by design, and the reviewer judges that case.
+cmd_red_check() {
+	base=${1:-origin/main}
+	mb=$(git merge-base "$base" HEAD) || die "no merge base with $base"
+	tests=$(git diff --name-only --no-renames --diff-filter=AM "$mb" HEAD -- '*_test.go')
+	if [ -z "$tests" ]; then
+		say "red-check: the branch changes no test files"
+		return 0
+	fi
+	wt=$(mktemp -d) || die "cannot create a temporary directory"
+	git worktree add -q --detach "$wt" "$mb" || die "cannot create a worktree at $mb"
+	for t in $tests; do
+		mkdir -p "$wt/$(dirname "$t")"
+		git show "HEAD:$t" >"$wt/$t"
+	done
+	pkgs=$(printf '%s\n' "$tests" | sed 's#/[^/]*$##' | sort -u | sed 's#^#./#')
+	status=0
+	(cd "$wt" && go test -count=1 $pkgs) >/dev/null 2>&1 || status=$?
+	git worktree remove --force "$wt"
+	if [ "$status" = 0 ]; then
+		die "red-check: the changed tests pass on $base; they don't prove the change"
+	fi
+	say "red-check: the changed tests fail on $base"
+}
+
+cmd_vuln() {
+	say "govulncheck"
+	bin=$(tool "$GOVULNCHECK")
+	"$bin" ./...
+}
+
 cmd_test() {
 	say "go test"
 	go test -count=1 "$@" ./...
@@ -133,8 +293,8 @@ CONTRACT_GEN=internal/contract/contract.gen.go
 # non-zero on failure, so the caller can clean up before it dies.
 oapi_codegen() {
 	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
-	if go run "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}" \
-		-config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
+	bin=$(tool "$OAPI_CODEGEN")
+	if "$bin" -config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
 		rm -f "$tmp"
 	else
 		rm -f "$tmp"
@@ -143,7 +303,7 @@ oapi_codegen() {
 }
 
 cmd_regen() {
-	say "regen: oapi-codegen $OAPI_CODEGEN_VERSION"
+	say "regen: oapi-codegen ${OAPI_CODEGEN##*@}"
 	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN" || die "oapi-codegen failed for $CONTRACT_SPEC"
 	# TypeScript types and component docs register here as their issues land.
 }
@@ -178,29 +338,53 @@ cmd_regen_fixture() {
 	fi
 }
 
+
 cmd_versions() {
 	printf 'go (module requires): %s\n' "$(awk '$1 == "go" {print $2}' go.mod)"
 	printf 'go (installed):       %s\n' "$(go version)"
-	printf 'golangci-lint (pinned): %s\n' "$GOLANGCI_LINT_VERSION"
-	printf 'vacuum (pinned):        %s\n' "$VACUUM_VERSION"
-	printf 'oapi-codegen (pinned):  %s\n' "$OAPI_CODEGEN_VERSION"
+	for t in "$GOLANGCI_LINT" "$VACUUM" "$OASDIFF" "$GOVULNCHECK" "$OAPI_CODEGEN"; do
+		printf 'pinned: %s\n' "$t"
+	done
 }
 
-cmd_check() {
+# CI runs the four groups as parallel jobs; `check` runs them in sequence.
+# `run` is a gated path: any change to it needs the maintainer.
+cmd_check_lint() {
 	cmd_fmt
+	cmd_tidy
 	cmd_build
 	cmd_lint
 	cmd_lint_fixture
+}
+
+cmd_check_spec() {
 	cmd_lint_spec
 	cmd_lint_spec_fixture
+	cmd_contract_compat_fixture
 	cmd_regen_check
 	cmd_regen_fixture
-	cmd_test
+}
+
+cmd_check_harness() {
+	cmd_gate_fixture
+	cmd_guard_fixture
+	cmd_agents_check
+}
+
+cmd_check_test() {
+	cmd_test -race
+}
+
+cmd_check() {
+	cmd_check_lint
+	cmd_check_spec
+	cmd_check_harness
+	cmd_check_test
 	say "check passed"
 }
 
 usage() {
-	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+	awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
@@ -208,10 +392,19 @@ sub=$1
 shift
 case "$sub" in
 check) cmd_check ;;
+check-lint) cmd_check_lint ;;
+check-spec) cmd_check_spec ;;
+check-harness) cmd_check_harness ;;
+check-test) cmd_check_test ;;
 test) cmd_test "$@" ;;
 lint) cmd_lint ;;
 lint-spec) cmd_lint_spec ;;
 lint-spec-fixture) cmd_lint_spec_fixture ;;
+contract-compat) cmd_contract_compat "$@" ;;
+gate) cmd_gate "$@" ;;
+red-check) cmd_red_check "$@" ;;
+vuln) cmd_vuln ;;
+sync-agents) cmd_sync_agents ;;
 regen) cmd_regen ;;
 regen-check) cmd_regen_check ;;
 regen-fixture) cmd_regen_fixture ;;
