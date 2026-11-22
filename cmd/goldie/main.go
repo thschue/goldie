@@ -97,6 +97,7 @@ func runServer(out io.Writer) error {
 		SwaggerUI:  cfg.SwaggerUIEnabled,
 		ContentDir: cfg.ContentDir,
 		APIToken:   cfg.APIToken,
+		APITokens:  cfg.APITokens,
 	})
 	if err != nil {
 		return handlerError(err)
