@@ -1,10 +1,13 @@
 package contracttest
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 func response(method, path string, status int, contentType, body string) (*http.Response, []byte) {
@@ -60,8 +63,6 @@ func TestCheck(t *testing.T) {
 	}
 }
 
-// Overlapping templates must resolve to the most specific one on every run,
-// not in Go's random map order.
 func TestSpecDecodesFreshDocuments(t *testing.T) {
 	a, err := Spec()
 	if err != nil {
@@ -80,6 +81,8 @@ func TestSpecDecodesFreshDocuments(t *testing.T) {
 	}
 }
 
+// Overlapping templates must resolve to the most specific one on every run,
+// not in Go's random map order.
 func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 	op := func(id string) map[string]any { return map[string]any{"operationId": id} }
 	doc := map[string]any{"paths": map[string]any{
@@ -112,5 +115,84 @@ func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Spec only decodes: building the schema compiler is for Check, which validates
+// responses. Decoding the raw document is the floor; Spec must stay near it.
+func TestSpecOnlyDecodes(t *testing.T) {
+	raw, err := contract.SpecJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decode := testing.AllocsPerRun(5, func() {
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+	})
+	spec := testing.AllocsPerRun(5, func() {
+		if _, err := Spec(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if limit := decode*1.1 + 50; spec > limit {
+		t.Errorf("Spec allocates %.0f times, decoding alone %.0f: it does more than decode", spec, decode)
+	}
+}
+
+func TestExamplePathSubstitutesExamplesFromTheSpec(t *testing.T) {
+	for _, method := range []string{"get", "GET"} {
+		got, err := ExamplePath(method, "/api/v1/articles/{id}")
+		if err != nil || got != "/api/v1/articles/platform%2Fdeploy" {
+			t.Errorf("ExamplePath(%q) = %q, %v; want /api/v1/articles/platform%%2Fdeploy", method, got, err)
+		}
+	}
+	if got, err := ExamplePath("get", "/api/v1/search"); err != nil || got != "/api/v1/search" {
+		t.Errorf("an untemplated path = %q, %v; want it unchanged", got, err)
+	}
+	if got, err := ExamplePath("get", "/no/{such}/operation"); err == nil {
+		t.Errorf("a template the spec has no operation for gave %q, want an error", got)
+	}
+}
+
+func TestExamplePathUsesPathAndOperationParameters(t *testing.T) {
+	doc := map[string]any{"paths": map[string]any{
+		"/a/{id}/b/{n}": map[string]any{
+			"parameters": []any{
+				map[string]any{"name": "n", "in": "path", "example": "7"},
+				map[string]any{"name": "id", "in": "path", "example": "from-path-item"},
+			},
+			"get": map[string]any{"parameters": []any{
+				map[string]any{"name": "id", "in": "path", "example": "x/y z"},
+			}},
+			"post": map[string]any{},
+		},
+		"/c/{id}": map[string]any{
+			"get": map[string]any{"parameters": []any{map[string]any{"name": "id", "in": "path"}}},
+		},
+		"/d/{id}/{other}": map[string]any{
+			"get": map[string]any{"parameters": []any{map[string]any{"name": "id", "in": "path", "example": "1"}}},
+		},
+	}}
+	for name, tc := range map[string]struct {
+		method, tmpl, want string
+	}{
+		"path-level and operation-level, operation wins, encoded as one segment": {"GET", "/a/{id}/b/{n}", "/a/x%2Fy%20z/b/7"},
+		"path-level parameter only": {"post", "/a/{id}/b/{n}", "/a/from-path-item/b/7"},
+	} {
+		got, err := examplePath(doc, tc.method, tc.tmpl)
+		if err != nil || got != tc.want {
+			t.Errorf("%s: examplePath = %q, %v; want %q", name, got, err, tc.want)
+		}
+	}
+	for name, tc := range map[string]struct{ tmpl, param string }{
+		"a parameter without an example":    {"/c/{id}", "id"},
+		"a template parameter not declared": {"/d/{id}/{other}", "other"},
+	} {
+		got, err := examplePath(doc, "get", tc.tmpl)
+		if err == nil || !strings.Contains(err.Error(), tc.param) {
+			t.Errorf("%s: got %q, %v; want an error naming %q", name, got, err, tc.param)
+		}
 	}
 }
