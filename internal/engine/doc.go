@@ -13,6 +13,15 @@
 // two entries of one name, and caps each load's steps, content bytes and path
 // length, so a tree that reuses subtrees cannot expand without bound.
 //
+// A GitSource loads a git repository over https or file through that tree
+// fs.FS. It uses go-git in process (no git binary) and clones into memory (no
+// disk), depth 1 over https. Each Load lists the remote refs first and clones
+// only when the ref moved; otherwise it returns the cached Snapshot. Its
+// revision is the commit SHA, and one Load is bounded by two minutes. A token
+// is a value, accepted only with https and sent as the basic-auth password;
+// credentials in the URL, http:// and git:// are rejected. Its errors are
+// fixed messages that never carry the URL, the token or a host path.
+//
 // Search and Article see global articles only; SearchIn and ArticleIn take a
 // Project and resolve its articles before global ones, ranking with the keyword
 // scoring of ADR 0005.
