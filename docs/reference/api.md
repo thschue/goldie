@@ -14,6 +14,40 @@ separate admin port and are not part of this document.
 
 ## Endpoints
 
+### `GET /api/v1/articles/{id}`
+
+Look up one article
+
+Returns one article by its id. Ids compare ignoring case. A miss is a
+404 whose hint points to search.
+
+Operation ID: `getArticle`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The article. | `application/json` (`Article`) |
+| `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
+| `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/search`
+
+Search articles by keyword
+
+Returns the articles that match the search words, best first. An exact
+keyword match scores 4, a keyword containing the word 1, and a name
+containing the word 2. Ties are ordered by id. No match is an empty
+list, not an error.
+
+Operation ID: `searchArticles`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The matching articles, best first. | `application/json` (`SearchResults`) |
+| `400` | The search words are missing or longer than 1024 bytes. | `application/json` (`ErrorEnvelope`) |
+| `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /openapi.json`
 
 Get the OpenAPI document as JSON
@@ -41,6 +75,17 @@ Operation ID: `getOpenAPIYAML`
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ## Schemas
+
+### `Article`
+
+One article.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `content` | `string` | yes | The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML. |
+| `id` | `string` | yes | The article id, its path under 'articles/' without '.md'. |
+| `keywords` | `array` | yes | The keywords from the article's frontmatter, lower case. |
+| `name` | `string` | yes | The article's display title, from its frontmatter. |
 
 ### `Error`
 
@@ -70,3 +115,24 @@ The body of every error response.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `error` | `Error` | yes |  |
+
+### `SearchHit`
+
+One article that matched a search.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | yes | The article id, for a lookup. |
+| `keywords` | `array` | yes | The article's keywords, lower case. |
+| `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
+| `name` | `string` | yes | The display title from the frontmatter. |
+| `score` | `integer` | yes | The relevance score; higher is better. |
+
+### `SearchResults`
+
+The result of a search.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `query` | `string` | yes | The search words as received. |
+| `results` | `array` | yes | The matching articles, best first, then by id. |

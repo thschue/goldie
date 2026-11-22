@@ -24,7 +24,93 @@ security:
 tags:
   - name: contract
     description: The API contract itself.
+  - name: articles
+    description: Search and look up articles.
 paths:
+  /api/v1/search:
+    get:
+      operationId: searchArticles
+      tags:
+        - articles
+      summary: Search articles by keyword
+      description: |
+        Returns the articles that match the search words, best first. An exact
+        keyword match scores 4, a keyword containing the word 1, and a name
+        containing the word 2. Ties are ordered by id. No match is an empty
+        list, not an error.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search words, separated by spaces. Matching ignores case.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          example: deploy kubernetes
+      responses:
+        "200":
+          description: The matching articles, best first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+        "400":
+          description: The search words are missing or longer than 1024 bytes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: The bearer token is missing or wrong.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/articles/{id}:
+    get:
+      operationId: getArticle
+      tags:
+        - articles
+      summary: Look up one article
+      description: |
+        Returns one article by its id. Ids compare ignoring case. A miss is a
+        404 whose hint points to search.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: |
+            The article id: its path under `articles/` without `.md` (ADR 0015).
+            A nested id contains `/`, which is sent percent-encoded as `%2F`,
+            as generated clients do.
+          schema:
+            type: string
+            minLength: 1
+          example: platform/deploy
+      responses:
+        "200":
+          description: The article.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "401":
+          description: No bearer token, or a wrong one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No article has this id; the hint points to search.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
@@ -67,10 +153,126 @@ components:
       scheme: bearer
       description: |
         A goldie token, sent as `Authorization: Bearer <token>`. Swagger UI's
-        "Authorize" button takes it, so "Try it out" sends it. Tokens are
-        issued and checked by the auth work (#11); until it lands the server
-        does not enforce this scheme.
+        "Authorize" button takes it, so "Try it out" sends it. The server
+        enforces it on every `/api/` path, where a missing or wrong token is a
+        401. The OpenAPI document and Swagger UI are not yet covered; the auth
+        work (#11) adds them.
   schemas:
+    SearchResults:
+      type: object
+      description: The result of a search.
+      examples:
+        - query: kubernetes
+          results:
+            - id: platform/deploy
+              name: Deploying to Kubernetes
+              keywords:
+                - kubernetes
+                - deploy
+              score: 6
+              matched:
+                - kubernetes
+                - name
+      required:
+        - query
+        - results
+      properties:
+        query:
+          type: string
+          description: The search words as received.
+          examples:
+            - deploy kubernetes
+        results:
+          type: array
+          description: The matching articles, best first, then by id.
+          items:
+            $ref: "#/components/schemas/SearchHit"
+          examples:
+            - []
+    SearchHit:
+      type: object
+      description: One article that matched a search.
+      examples:
+        - id: platform/deploy
+          name: Deploying to Kubernetes
+          keywords:
+            - kubernetes
+            - deploy
+          score: 6
+          matched:
+            - kubernetes
+            - name
+      required:
+        - id
+        - name
+        - keywords
+        - score
+        - matched
+      properties:
+        id:
+          type: string
+          description: The article id, for a lookup.
+          examples:
+            - platform/deploy
+        name:
+          type: string
+          description: The display title from the frontmatter.
+          examples:
+            - Deploying to Kubernetes
+        keywords:
+          type: array
+          description: The article's keywords, lower case.
+          items:
+            type: string
+          examples:
+            - - kubernetes
+              - deploy
+        score:
+          type: integer
+          minimum: 1
+          description: The relevance score; higher is better.
+          examples:
+            - 6
+        matched:
+          type: array
+          description: What matched, in order of first match - keywords, and `name` when the name matched.
+          items:
+            type: string
+          examples:
+            - - kubernetes
+              - name
+    Article:
+      type: object
+      description: One article.
+      required:
+        - id
+        - name
+        - keywords
+        - content
+      properties:
+        id:
+          type: string
+          description: The article id, its path under `articles/` without `.md`.
+          examples:
+            - platform/deploy
+        name:
+          type: string
+          description: The article's display title, from its frontmatter.
+          examples:
+            - Deploying to Kubernetes
+        keywords:
+          type: array
+          description: The keywords from the article's frontmatter, lower case.
+          items:
+            type: string
+          examples:
+            - - kubernetes
+              - deploy
+        content:
+          type: string
+          description: The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML.
+          examples:
+            - "Use the platform chart."
     ErrorEnvelope:
       type: object
       description: The body of every error response.
