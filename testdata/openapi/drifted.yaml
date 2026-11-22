@@ -1,0 +1,25 @@
+# A spec that differs from internal/contract/openapi.yaml: it has a schema the
+# committed generated code does not know. `./run regen-fixture` requires the
+# drift check to flag the committed contract.gen.go against this document.
+openapi: 3.1.0
+info:
+  title: Drifted
+  version: 0.0.0
+paths:
+  /drifted:
+    get:
+      operationId: getDrifted
+      responses:
+        "200":
+          description: Drifted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drifted"
+components:
+  schemas:
+    Drifted:
+      type: object
+      properties:
+        name:
+          type: string

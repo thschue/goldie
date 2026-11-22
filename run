@@ -3,7 +3,7 @@
 #
 #   ./run check      everything CI runs (the four check-* groups below)
 #   ./run check-lint     format, go mod tidy, build, golangci-lint, depguard fixture
-#   ./run check-spec     spec lint and its fixture, contract-compat fixture
+#   ./run check-spec     spec lint, regen drift check, and their fixtures
 #   ./run check-harness  agent-gate, loop-guard and agent-definition checks
 #   ./run check-test     go test -race
 #   ./run test       go test ./... (extra arguments are passed to go test)
@@ -14,7 +14,9 @@
 #   ./run red-check [base]  the PR's new tests must fail on <base> (origin/main)
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
-#   ./run regen      regenerate generated code (nothing to generate yet)
+#   ./run regen      regenerate generated code (OpenAPI Go types and strict server)
+#   ./run regen-check  fail if generated code differs from a fresh generation
+#   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run versions   print the toolchain versions this repository expects
 #
 # `./run check` must exit 0 with no output from the linters ("zero warnings").
@@ -29,6 +31,9 @@ VACUUM=github.com/daveshanley/vacuum@v0.42.3
 OASDIFF=github.com/oasdiff/oasdiff@v1.38.0
 # Go vulnerability scanner (BSD-3-Clause), from the Go team.
 GOVULNCHECK=golang.org/x/vuln/cmd/govulncheck@v1.9.0
+# OpenAPI Go code generator (Apache-2.0). Its generated code imports
+# github.com/oapi-codegen/runtime, which is in go.mod.
+OAPI_CODEGEN=github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.9.0
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -277,16 +282,67 @@ cmd_test() {
 	go test -count=1 "$@" ./...
 }
 
-cmd_regen() {
-	say "regen: nothing to generate yet"
-	# Generators (OpenAPI types and server, TypeScript types, component docs)
-	# register here as their issues land. `check` then verifies no drift.
+# Generated files, relative to the repository root.
+CONTRACT_SPEC=internal/contract/openapi.yaml
+CONTRACT_CONFIG=internal/contract/oapi-codegen.yaml
+CONTRACT_GEN=internal/contract/contract.gen.go
+
+# oapi_codegen <spec> <output>: generate Go types and the strict server from
+# <spec> into <output>. Generation is written to a temporary file first, so a
+# failed run never leaves a truncated generated file behind. It returns
+# non-zero on failure, so the caller can clean up before it dies.
+oapi_codegen() {
+	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
+	bin=$(tool "$OAPI_CODEGEN")
+	if "$bin" -config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
+		rm -f "$tmp"
+	else
+		rm -f "$tmp"
+		return 1
+	fi
 }
+
+cmd_regen() {
+	say "regen: oapi-codegen ${OAPI_CODEGEN##*@}"
+	oapi_codegen "$CONTRACT_SPEC" "$CONTRACT_GEN" || die "oapi-codegen failed for $CONTRACT_SPEC"
+	# TypeScript types and component docs register here as their issues land.
+}
+
+# drift <spec>: succeed when the committed generated code equals a fresh
+# generation from <spec>, return 1 when they differ, and die when they cannot
+# be compared, so the fixture never passes for the wrong reason.
+drift() {
+	fresh=$(mktemp) || die "cannot create a temporary file for the drift check"
+	if ! oapi_codegen "$1" "$fresh"; then
+		rm -f "$fresh"
+		die "oapi-codegen failed for $1"
+	fi
+	status=0
+	cmp -s "$fresh" "$CONTRACT_GEN" || status=$?
+	rm -f "$fresh"
+	[ "$status" -le 1 ] || die "cannot compare $CONTRACT_GEN with a fresh generation (cmp exit $status)"
+	return "$status"
+}
+
+cmd_regen_check() {
+	say "regen drift check (generated code must match the spec)"
+	drift "$CONTRACT_SPEC" || die "$CONTRACT_GEN is out of date with $CONTRACT_SPEC (run: ./run regen)"
+}
+
+# The drifted fixture is a spec the committed generated code was not made from:
+# the drift check must flag it, or it cannot catch a stale generated file.
+cmd_regen_fixture() {
+	say "regen drift fixture (a drifted spec must be flagged)"
+	if drift testdata/openapi/drifted.yaml; then
+		die "drift check did not fire for testdata/openapi/drifted.yaml"
+	fi
+}
+
 
 cmd_versions() {
 	printf 'go (module requires): %s\n' "$(awk '$1 == "go" {print $2}' go.mod)"
 	printf 'go (installed):       %s\n' "$(go version)"
-	for t in "$GOLANGCI_LINT" "$VACUUM" "$OASDIFF" "$GOVULNCHECK"; do
+	for t in "$GOLANGCI_LINT" "$VACUUM" "$OASDIFF" "$GOVULNCHECK" "$OAPI_CODEGEN"; do
 		printf 'pinned: %s\n' "$t"
 	done
 }
@@ -305,6 +361,8 @@ cmd_check_spec() {
 	cmd_lint_spec
 	cmd_lint_spec_fixture
 	cmd_contract_compat_fixture
+	cmd_regen_check
+	cmd_regen_fixture
 }
 
 cmd_check_harness() {
@@ -348,6 +406,8 @@ red-check) cmd_red_check "$@" ;;
 vuln) cmd_vuln ;;
 sync-agents) cmd_sync_agents ;;
 regen) cmd_regen ;;
+regen-check) cmd_regen_check ;;
+regen-fixture) cmd_regen_fixture ;;
 versions) cmd_versions ;;
 help | -h | --help) usage ;;
 *) usage >&2; exit 2 ;;
