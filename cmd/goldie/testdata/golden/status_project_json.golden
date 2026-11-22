@@ -1,6 +1,7 @@
 {
   "api": "Goldie API",
   "apiVersion": "0.1.0",
+  "hint": "The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.",
   "project": "github.com/acme/widgets",
   "projectSource": "--project",
   "reachable": true,

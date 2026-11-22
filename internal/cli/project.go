@@ -357,3 +357,13 @@ func (p detectedProject) describe() string {
 	}
 	return fmt.Sprintf("%s (from %s)", contract.CleanLine(p.ID), p.Source)
 }
+
+// param is the project= query value: the Project, or nil when none was found.
+// The ID is already lower-cased and valid (resolveProject).
+func (p detectedProject) param() *contract.ProjectId {
+	if p.ID == "" {
+		return nil
+	}
+	id := p.ID
+	return &id
+}

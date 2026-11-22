@@ -4,3 +4,4 @@ Auth: token accepted
 Project: github.com/acme/widgets (from --project)
 
 Search with: goldie search <words>
+Hint: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.

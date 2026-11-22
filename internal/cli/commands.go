@@ -41,11 +41,15 @@ func (c *commander) printJSON(v any) error {
 }
 
 func (c *commander) search(ctx context.Context, q string) error {
+	project, err := c.project()
+	if err != nil {
+		return err
+	}
 	cl, err := c.client(true)
 	if err != nil {
 		return err
 	}
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q})
+	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
 	if err != nil {
 		return transportError(err)
 	}
@@ -73,16 +77,21 @@ func (c *commander) search(ctx context.Context, q string) error {
 		b.WriteString("\nRead one with: goldie lookup <id>\n")
 	}
 	b.WriteString("Try other words: goldie search <words>\n")
+	writeHint(&b, resp.JSON200.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
 	return err
 }
 
 func (c *commander) lookup(ctx context.Context, id string) error {
+	project, err := c.project()
+	if err != nil {
+		return err
+	}
 	cl, err := c.client(true)
 	if err != nil {
 		return err
 	}
-	resp, err := cl.GetArticleWithResponse(ctx, id, nil)
+	resp, err := cl.GetArticleWithResponse(ctx, id, &contract.GetArticleParams{Project: project.param()})
 	if err != nil {
 		return transportError(err)
 	}
@@ -93,9 +102,19 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 		return c.printJSON(resp.JSON200)
 	}
 	a := resp.JSON200
-	_, err = fmt.Fprintf(c.out, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), cleanList(a.Keywords), strings.TrimRight(contract.CleanText(a.Content), "\n"))
+	writeHint(&b, a.Hint)
+	_, err = fmt.Fprint(c.out, b.String())
 	return err
+}
+
+// writeHint adds the server's hint for an unregistered Project, if any.
+func writeHint(b *strings.Builder, hint *string) {
+	if hint != nil && *hint != "" {
+		fmt.Fprintf(b, "Hint: %s\n", contract.CleanLine(*hint))
+	}
 }
 
 // status reports whether the server answers and whether it accepts the token.
@@ -124,17 +143,18 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
+	var hint *string
 	if c.s.token != "" {
 		authed, err := c.client(true)
 		if err != nil {
 			return err
 		}
-		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
+		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project.param()})
 		switch {
 		case err != nil:
 			return transportError(err)
 		case resp.JSON200 != nil:
-			auth, accepted = "token accepted", true
+			auth, accepted, hint = "token accepted", true, resp.JSON200.Hint
 		case resp.StatusCode() == http.StatusUnauthorized:
 			auth = "token rejected"
 		default:
@@ -147,10 +167,18 @@ func (c *commander) status(ctx context.Context) error {
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
+		if hint != nil && *hint != "" {
+			out["hint"] = contract.CleanLine(*hint)
+		}
 		return c.printJSON(out)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
 		contract.CleanLine(title), contract.CleanLine(apiVersion), auth, project.describe())
+	if err == nil {
+		var b strings.Builder
+		writeHint(&b, hint)
+		_, err = fmt.Fprint(c.out, b.String())
+	}
 	return err
 }
 
