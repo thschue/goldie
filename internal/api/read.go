@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -18,6 +19,48 @@ const maxQueryBytes = 1024
 // the generated router or SearchArticles rejects them.
 var badSearch = envelope("bad_request", "missing or invalid search words",
 	"Pass one q parameter with 1 to 1024 bytes of search words.")
+
+// projectIDPattern is the ProjectId schema's pattern, read from the spec so
+// the contract is the one definition (ADR 0018).
+var projectIDPattern = mustProjectPattern()
+
+func mustProjectPattern() *regexp.Regexp {
+	pattern, err := contract.ProjectIDPattern()
+	if err != nil {
+		panic(err)
+	}
+	return regexp.MustCompile(pattern)
+}
+
+// badProject is the 400 envelope for a project parameter that is not a ProjectId.
+var badProject = envelope("bad_request", "invalid project",
+	"Pass project as host/org/repo, for example github.com/acme/shop, or list the registered Projects with GET /api/v1/projects.")
+
+// unregisteredHint tells a caller that named a Project this server does not
+// hold that it got the global answer (ADR 0014).
+const unregisteredHint = "The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects."
+
+// maxProjectBytes is the spec's maxLength on ProjectId.
+const maxProjectBytes = 512
+
+// scopeHint validates the optional project parameter. It returns the Project
+// to resolve for, the hint when it is not registered, and false when the
+// parameter is not a ProjectId.
+func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *string, ok bool) {
+	if project == nil {
+		return "", nil, true
+	}
+	if len(*project) > maxProjectBytes || !projectIDPattern.MatchString(*project) {
+		return "", nil, false
+	}
+	for _, p := range s.snap.Projects() {
+		if strings.EqualFold(p, *project) {
+			return *project, nil, true
+		}
+	}
+	h := unregisteredHint
+	return "", &h, true
+}
 
 // searchPattern is the pattern the generated router registers the search
 // operation under; the mux reports it as the request's Pattern.
@@ -64,8 +107,12 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
 	}
-	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}}
-	for _, h := range s.snap.Search(q) {
+	proj, hint, ok := s.scopeHint(req.Params.Project)
+	if !ok {
+		return contract.SearchArticles400JSONResponse(badProject), nil
+	}
+	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
+	for _, h := range s.snap.SearchIn(proj, q) {
 		res.Results = append(res.Results, contract.SearchHit{
 			Id:       h.ID,
 			Name:     h.Name,
@@ -83,7 +130,11 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 // decoded, so a nested id sent as one %2F-encoded segment keeps its "/"
 // (ADR 0016).
 func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObject) (contract.GetArticleResponseObject, error) {
-	a, ok := s.snap.Article(req.Id)
+	proj, hint, valid := s.scopeHint(req.Params.Project)
+	if !valid {
+		return contract.GetArticle400JSONResponse(badProject), nil
+	}
+	a, ok := s.snap.ArticleIn(proj, req.Id)
 	if !ok {
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			"Search for the article with the search operation, then use an id from its results.")), nil
@@ -93,7 +144,13 @@ func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObj
 		Name:     a.Name,
 		Keywords: list(a.Keywords),
 		Content:  a.Content,
+		Hint:     hint,
 	}, nil
+}
+
+// ListProjects answers GET /api/v1/projects.
+func (s *Server) ListProjects(context.Context, contract.ListProjectsRequestObject) (contract.ListProjectsResponseObject, error) {
+	return contract.ListProjects200JSONResponse{Projects: list(s.snap.Projects())}, nil
 }
 
 // GetOpenAPIYAML answers GET /openapi.yaml with the embedded document.

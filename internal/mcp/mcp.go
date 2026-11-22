@@ -73,7 +73,7 @@ func search(ctx context.Context, c contract.ClientWithResponsesInterface, q stri
 }
 
 func article(ctx context.Context, c contract.ClientWithResponsesInterface, id string) *sdk.CallToolResult {
-	resp, err := c.GetArticleWithResponse(ctx, id)
+	resp, err := c.GetArticleWithResponse(ctx, id, nil)
 	if err != nil {
 		return failure(transportError(err))
 	}

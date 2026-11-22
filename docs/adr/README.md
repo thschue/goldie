@@ -21,3 +21,4 @@ Consequences.
 - [0015. Article identity is its path; frontmatter name is the title](0015-article-identity-is-its-path.md)
 - [0016. Nested article ids travel as one percent-encoded path segment](0016-nested-article-ids-are-one-encoded-path-segment.md)
 - [0017. Observability through OpenTelemetry, configured by the standard OTEL_* variables](0017-observability-through-opentelemetry.md)
+- [0018. Project identity is exactly host/org/repo, matched case-insensitively](0018-project-identity-is-host-org-repo-matched-case-insensitively.md)

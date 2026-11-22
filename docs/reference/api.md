@@ -26,8 +26,25 @@ Operation ID: `getArticle`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The article. | `application/json` (`Article`) |
+| `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
 | `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/projects`
+
+List the registered Projects
+
+Returns the Projects the server holds Scope for, sorted, as
+`host/org/repo` in the case they are stored in. A server with none
+answers an empty list. Pass one as `project` on search and lookup.
+
+Operation ID: `listProjects`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The registered Projects. | `application/json` (`ProjectList`) |
+| `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/search`
@@ -44,7 +61,7 @@ Operation ID: `searchArticles`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The matching articles, best first. | `application/json` (`SearchResults`) |
-| `400` | The search words are missing or longer than 1024 bytes. | `application/json` (`ErrorEnvelope`) |
+| `400` | The search words are missing or longer than 1024 bytes, or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
@@ -83,6 +100,7 @@ One article.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `content` | `string` | yes | The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the article is the global one, and this says what to do next. |
 | `id` | `string` | yes | The article id, its path under 'articles/' without '.md'. |
 | `keywords` | `array` | yes | The keywords from the article's frontmatter, lower case. |
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
@@ -116,6 +134,21 @@ The body of every error response.
 |---|---|---|---|
 | `error` | `Error` | yes |  |
 
+### `ProjectId`
+
+A Project: exactly three segments `host/org/repo` (ADR 0018). The host
+is a lower-case DNS name, the org and the repo use letters, digits, `.`,
+`_` and `-` and do not start with a dot. Clients send it lower-cased; the
+server matches it ignoring case.
+
+### `ProjectList`
+
+The registered Projects.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `projects` | `array` | yes | The Projects, sorted. |
+
 ### `SearchHit`
 
 One article that matched a search.
@@ -136,5 +169,6 @@ The result of a search.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the results are the global ones, and this says what to do next. |
 | `query` | `string` | yes | The search words as received. |
 | `results` | `array` | yes | The matching articles, best first, then by id. |
