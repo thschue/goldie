@@ -65,8 +65,8 @@ func TestLoadFSStopsAtTreeStepLimit(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	// 16^7 paths from 7 objects; plain files, so only the walk itself counts.
 	articles := b.bomb(16, 6, object.TreeEntry{Name: "f", Mode: filemode.Regular, Hash: b.blob("x")})
-	if err := b.loadWithin(time.Minute, b.underGlobalArticles(articles)); !errors.Is(err, errTreeTooLarge) {
-		t.Fatalf("err = %v, want errTreeTooLarge", err)
+	if err := b.loadWithin(time.Minute, b.underGlobalArticles(articles)); !errors.Is(err, errLoadLimit) {
+		t.Fatalf("err = %v, want errLoadLimit", err)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestLoadFSStopsAtTreeByteLimit(t *testing.T) {
 	}
 	fsys := b.fs(b.underGlobalArticles(articles))
 	fsys.b.bytes = 300 // four articles of 116 bytes each
-	if _, err := loadFS(fsys); !errors.Is(err, errTreeTooLarge) {
-		t.Fatalf("err = %v, want errTreeTooLarge", err)
+	if _, err := loadFS(fsys); !errors.Is(err, errLoadLimit) {
+		t.Fatalf("err = %v, want errLoadLimit", err)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestTreeFSReadLinkSpendsTheByteBudget(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}
 	fsys := b.fs(b.tree(object.TreeEntry{Name: "link", Mode: filemode.Symlink, Hash: b.blob("a/long/target")}))
 	fsys.b.bytes = 4
-	if _, err := fs.ReadLink(fsys, "link"); !errors.Is(err, errTreeTooLarge) {
-		t.Fatalf("err = %v, want errTreeTooLarge", err)
+	if _, err := fs.ReadLink(fsys, "link"); !errors.Is(err, errLoadLimit) {
+		t.Fatalf("err = %v, want errLoadLimit", err)
 	}
 }

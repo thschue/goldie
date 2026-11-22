@@ -24,6 +24,10 @@ const projectsDir = "projects"
 // without bound.
 const maxArticleBytes = 1 << 20
 
+// errLoadLimit is what an fs.FS returns, or wraps, once a load runs past its
+// limits on work or content read, for example a treeFS out of budget.
+var errLoadLimit = errors.New("content exceeds the load limits")
+
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
 	// ID is the article's identity: its path under <scope>/articles/ without
@@ -224,11 +228,14 @@ func readLimited(fsys fs.FS, p string) ([]byte, error) {
 	return raw, nil
 }
 
-// readErr hides why a read failed, except when a Source ran past its load
-// limits, which the operator needs to see.
+// readErr hides why a read failed, since an OS error can carry an absolute
+// path. It passes through the path-free errors about the content itself (load
+// limits, invalid trees), which the operator needs to fix the Source.
 func readErr(err error) error {
-	if errors.Is(err, errTreeTooLarge) {
-		return errTreeTooLarge
+	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName} {
+		if errors.Is(err, content) {
+			return content
+		}
 	}
 	return errors.New("cannot read")
 }

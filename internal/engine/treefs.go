@@ -29,9 +29,6 @@ const (
 	maxTreePathLen = 4096      // bytes in one path
 )
 
-// errTreeTooLarge is returned once a treeFS runs past its load limits.
-var errTreeTooLarge = errors.New("git tree exceeds the load limits")
-
 // treeFS is a read-only fs.FS over one git tree, so the shared loader reads a
 // commit without a working tree. It never follows a symlink: opening one or a
 // path through one fails, and only Lstat reports it. A submodule is an
@@ -75,7 +72,7 @@ func (b *treeBudget) index(t *object.Tree) (map[string]int, error) {
 	}
 	if len(t.Entries) > b.steps {
 		b.steps = 0
-		return nil, errTreeTooLarge
+		return nil, errLoadLimit
 	}
 	b.steps -= len(t.Entries)
 	m := make(map[string]int, len(t.Entries))
@@ -94,7 +91,7 @@ func (b *treeBudget) spend(steps int) error {
 	defer b.mu.Unlock()
 	if steps > b.steps {
 		b.steps = 0
-		return errTreeTooLarge
+		return errLoadLimit
 	}
 	b.steps -= steps
 	return nil
@@ -105,7 +102,7 @@ func (b *treeBudget) spendBytes(n int) error {
 	defer b.mu.Unlock()
 	if n > b.bytes {
 		b.bytes = 0
-		return errTreeTooLarge
+		return errLoadLimit
 	}
 	b.bytes -= n
 	return nil

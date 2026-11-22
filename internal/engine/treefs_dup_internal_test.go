@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing"
@@ -26,9 +27,22 @@ func TestLoadFSRejectsDuplicateEntryNames(t *testing.T) {
 		),
 		"listed file": b.underGlobalArticles(b.tree(article("one"), article("two"))),
 	} {
-		if snap, err := b.load(root); err == nil {
+		snap, err := b.load(root)
+		if err == nil {
 			a, _ := snap.Article("a")
 			t.Errorf("%s: loaded %q", name, a.Name)
+		} else if !errors.Is(err, errDuplicateEntry) {
+			t.Errorf("%s: err = %v, want errDuplicateEntry", name, err)
 		}
+	}
+}
+
+// The operator sees why a tree is invalid, not just that it is unreadable.
+func TestLoadTreeNamesABadEntryName(t *testing.T) {
+	b := treeBuilder{t, memory.NewStorage()}
+	md := b.blob("---\nname: X\n---\n")
+	root := b.underGlobalArticles(b.tree(object.TreeEntry{Name: "..", Mode: filemode.Regular, Hash: md}))
+	if _, err := b.load(root); !errors.Is(err, errBadEntryName) {
+		t.Fatalf("err = %v, want errBadEntryName", err)
 	}
 }
