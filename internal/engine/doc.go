@@ -30,8 +30,8 @@
 // basic-auth password. An ssh URL needs an unencrypted PEM private key and
 // known_hosts content; its user, git by default, is the login. The host key
 // is always verified from that content in memory: plain and hashed hosts,
-// [host]:port, negation and @revoked, while wildcards and @cert-authority fail
-// closed. No ~/.ssh file and no SSH agent is read. A password in the URL,
+// [host]:port, negation and @revoked, while wildcards, @cert-authority and
+// host certificates fail closed. No ~/.ssh file and no SSH agent is read. A password in the URL,
 // any other URL user, http:// and git:// are rejected. Errors are fixed
 // messages that never carry the URL, a credential, a key fingerprint,
 // known_hosts content or a host path.

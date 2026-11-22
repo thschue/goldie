@@ -23,8 +23,8 @@ var errHostKeyNotTrusted = errors.New("ssh host key not trusted")
 // knownhosts package only reads files, and the engine reads none (PC-11).
 //
 // Supported: plain and hashed (|1|salt|hash) host names, [host]:port, negated
-// patterns and @revoked. Wildcard patterns never match and @cert-authority
-// lines are ignored, so both fail closed.
+// patterns and @revoked. Wildcard patterns never match, and @cert-authority
+// lines and certificate blobs are ignored, so all of them fail closed.
 type knownHosts []knownHost
 
 type knownHost struct {
@@ -49,6 +49,9 @@ func parseKnownHosts(content string) (knownHosts, error) {
 			return nil, errors.New("git source: KnownHosts is not valid known_hosts content")
 		}
 		rest = next
+		if _, isCert := key.(*ssh.Certificate); isCert {
+			continue // a certificate blob is not a host key, whatever the marker
+		}
 		switch marker {
 		case "":
 			trusted++
@@ -65,8 +68,11 @@ func parseKnownHosts(content string) (knownHosts, error) {
 }
 
 // check is an ssh.HostKeyCallback: the key must be listed for the host and not
-// revoked for any host.
+// revoked for any host. A host certificate is never trusted.
 func (kh knownHosts) check(hostname string, _ net.Addr, key ssh.PublicKey) error {
+	if _, isCert := key.(*ssh.Certificate); isCert {
+		return errHostKeyNotTrusted
+	}
 	host := knownhosts.Normalize(hostname)
 	wire := key.Marshal()
 	for _, e := range kh {

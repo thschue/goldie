@@ -125,13 +125,22 @@ func (d *sshDialer) Dial(network, addr string) (net.Conn, error) {
 }
 
 func (d *sshDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return d.dialVia(ctx, proxy.FromEnvironmentUsing(&net.Dialer{Timeout: 30 * time.Second}), network, addr)
+}
+
+// dialVia dials through fwd. ALL_PROXY resolves through the same registry, so
+// it could name a load dialer; that would recurse, and it fails instead.
+func (d *sshDialer) dialVia(ctx context.Context, fwd proxy.Dialer, network, addr string) (net.Conn, error) {
+	if _, loop := fwd.(*sshDialer); loop {
+		return nil, errors.New("ALL_PROXY names a git ssh load dialer")
+	}
 	ctx, cancel := context.WithDeadline(ctx, d.deadline)
 	defer cancel()
 	var (
 		c   net.Conn
 		err error
 	)
-	switch fwd := proxy.FromEnvironmentUsing(&net.Dialer{Timeout: 30 * time.Second}).(type) {
+	switch fwd := fwd.(type) {
 	case proxy.ContextDialer:
 		c, err = fwd.DialContext(ctx, network, addr)
 	default:

@@ -374,7 +374,10 @@ func (s *GitSource) fetchError(err error, budget *gitBudget) error {
 	switch {
 	case budget.exceeded():
 		msg = "the repository " + errLoadLimit.Error()
-	case errors.Is(err, errHostKeyNotTrusted):
+	case errors.Is(err, errHostKeyNotTrusted),
+		// The server has no key of a type KnownHosts lists for it; x/crypto
+		// has no error type for that, only this text.
+		strings.Contains(err.Error(), "ssh: no common algorithm for host key"):
 		msg = "the SSH host key is not trusted by KnownHosts"
 	case errors.Is(err, transport.ErrAuthenticationRequired), errors.Is(err, transport.ErrAuthorizationFailed):
 		msg = "authentication failed; check the token"
