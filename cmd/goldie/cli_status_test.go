@@ -3,11 +3,118 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
+
+// statusJSON runs status --json in dir and decodes the answer.
+func statusJSON(t *testing.T, dir string, args ...string) map[string]any {
+	t.Helper()
+	out, err := runCLIIn(t, dir, append([]string{"status", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("status --json: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatalf("status --json is not JSON: %v\n%s", err, out)
+	}
+	return m
+}
+
+func TestCLIStatusJSONTokenGiven(t *testing.T) {
+	srv := cliServer(t)
+	cases := []struct {
+		name            string
+		args            []string
+		given, accepted bool
+	}{
+		{"no token", nil, false, false},
+		{"rejected token", []string{"--token", "wrong-token-value"}, true, false},
+		{"accepted token", []string{"--token", cliToken}, true, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := statusJSON(t, t.TempDir(), append([]string{"--addr", srv.URL}, c.args...)...)
+			if m["tokenGiven"] != c.given || m["tokenAccepted"] != c.accepted {
+				t.Errorf("tokenGiven=%v tokenAccepted=%v, want %v and %v", m["tokenGiven"], m["tokenAccepted"], c.given, c.accepted)
+			}
+		})
+	}
+}
+
+func TestCLIStatusNeverPrintsRemoteCredentials(t *testing.T) {
+	srv := cliServer(t)
+	const secret = "ghp_s3cretTokenValue"
+	dir := gitRepo(t, "[remote \"origin\"]\n\turl = https://user:"+secret+"@github.com/acme/widgets.git\n")
+	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
+		out, err := runCLIIn(t, dir, append(args, "--addr", srv.URL)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, secret) || strings.Contains(out, "user:") {
+			t.Errorf("%v leaks the remote's userinfo:\n%s", args, out)
+		}
+		if !strings.Contains(out, "github.com/acme/widgets") {
+			t.Errorf("%v lacks the Project:\n%s", args, out)
+		}
+	}
+	// A credential in an unreadable value never reaches the output. status
+	// reports the problem on its Project: line and exits 0 (#145).
+	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
+		out, err := runCLIIn(t, t.TempDir(), append(args, "--addr", srv.URL, "--project", "user:"+secret+"@host")...)
+		if err != nil {
+			t.Errorf("%v: err = %v, want exit 0 with the problem reported", args, err)
+			continue
+		}
+		for _, leak := range []string{secret, "user:", "@host"} {
+			if strings.Contains(out, leak) {
+				t.Errorf("%v leaks %q:\n%s", args, leak, out)
+			}
+		}
+		if args[len(args)-1] == "status" && !strings.HasPrefix(projectLine(t, out), "Project:") {
+			t.Errorf("%v: no Project: line in:\n%s", args, out)
+		}
+		if len(args) == 2 && !strings.Contains(out, "projectError") {
+			t.Errorf("%v lacks projectError:\n%s", args, out)
+		}
+	}
+	// Commands that still fail on a bad Project never echo the credential in the error.
+	_, err := runCLIIn(t, t.TempDir(), "search", "kubernetes", "--addr", srv.URL, "--project", "user:"+secret+"@host")
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Errorf("search err = %v, want an error without the credential", err)
+	}
+}
+
+func TestCLIStatusShowsTheUnregisteredHint(t *testing.T) {
+	srv := newScopedServer(t)
+	out, err := runScoped(t, t.TempDir(), "", scopedArgs(srv, "status", "--project", unregisteredProject)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Project: "+unregisteredProject) || !strings.Contains(strings.ToLower(out), "not registered") {
+		t.Errorf("status lacks the Project or its unregistered hint:\n%s", out)
+	}
+	out, err = runScoped(t, t.TempDir(), "", scopedArgs(srv, "status", "--project", registeredProject)...)
+	if err != nil || !strings.Contains(out, "Project: "+registeredProject) || strings.Contains(strings.ToLower(out), "not registered") {
+		t.Errorf("registered Project: %q, %v", out, err)
+	}
+	out, err = runScoped(t, t.TempDir(), "", scopedArgs(srv, "status")...)
+	if err != nil || strings.Contains(strings.ToLower(out), "not registered") {
+		t.Errorf("no Project: %q, %v", out, err)
+	}
+	// --json stays one JSON document and still names the Project.
+	m := statusJSON(t, t.TempDir(), "--addr", srv.URL, "--token", cliToken, "--project", unregisteredProject)
+	if m["project"] != unregisteredProject {
+		t.Errorf("status --json project = %v", m["project"])
+	}
+}
 
 // statusIn runs the CLI in dir with GOLDIE_PROJECT set to env (empty means
 // unset) and the other GOLDIE_* variables cleared.
@@ -362,5 +469,94 @@ func TestCLIStatusHintOnlyWhenNothingElseGivesAProject(t *testing.T) {
 				t.Errorf("no Project and no rejected remote must keep the none found text: %q", line)
 			}
 		})
+	}
+}
+
+// TestCLIStatusProjectProblemGolden pins the Project line and the additive JSON
+// fields for a bad Project and for a rejected remote, next to status_project.
+func TestCLIStatusProjectProblemGolden(t *testing.T) {
+	srv := cliServer(t)
+	base := []string{"--addr", srv.URL, "--token", cliToken}
+	rejected := func(t *testing.T) string {
+		return gitRepo(t, remoteCfg("origin", "https://git.internal.example/grp/sub/repo.git"))
+	}
+	plain := func(t *testing.T) string { return t.TempDir() }
+	cases := []struct {
+		name string
+		dir  func(t *testing.T) string
+		args []string
+	}{
+		{"status_project_problem", plain, []string{"status", "--project", "just-a-name"}},
+		{"status_project_problem_json", plain, []string{"status", "--json", "--project", "just-a-name"}},
+		{"status_project_rejected_remote", rejected, []string{"status"}},
+		{"status_project_rejected_remote_json", rejected, []string{"status", "--json"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			out, err := runCLIIn(t, c.dir(t), append(c.args, base...)...)
+			if err != nil {
+				t.Fatalf("run %v: %v", c.args, err)
+			}
+			for _, leak := range []string{"git.internal.example", "grp/sub", "just-a-name"} {
+				if strings.Contains(out, leak) {
+					t.Errorf("output leaks %q:\n%s", leak, out)
+				}
+			}
+			golden(t, c.name, out, srv.URL)
+		})
+	}
+}
+
+// statusLimitedServer serves the real API document, and answers every /api/
+// request with the 429 envelope and the given Retry-After value, so the
+// status command's token probe is the request over the limit.
+func statusLimitedServer(t *testing.T, retryAfter string) string {
+	t.Helper()
+	h, err := app.PublicHandler(platform.Config{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: platform.DefaultRateLimit()}, nil)
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			h.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Retry-After", retryAfter)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":"rate_limited","message":"too many requests for this API token",` +
+			`"details":{"hint":"Wait the number of seconds in the Retry-After header, then retry."}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+// The status token probe over the limit is the 429, with the wait when the
+// header gives one, and not a failure to reach the server when it does not:
+// the generated parser rejects a Retry-After that is not an integer.
+func TestCLIStatusProbeOverTheLimitIsThe429(t *testing.T) {
+	cases := map[string]string{"7": "7 seconds", "soon-marker": ""}
+	// Every server first: runCLI changes the working directory, and the
+	// content directory is relative to this one.
+	urls := map[string]string{}
+	for value := range cases {
+		urls[value] = statusLimitedServer(t, value)
+	}
+	for value, want := range cases {
+		_, err := runCLI(t, "status", "--addr", urls[value], "--token", cliToken)
+		if err == nil {
+			t.Errorf("Retry-After %q: expected an error", value)
+			continue
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "429") || strings.Contains(msg, "cannot reach") {
+			t.Errorf("Retry-After %q: error %q is not the 429", value, msg)
+		}
+		if want != "" && !strings.Contains(msg, want) {
+			t.Errorf("Retry-After %q: error %q lacks %q", value, msg, want)
+		}
+		if strings.Contains(msg, "marker") || strings.Contains(msg, "0 seconds") {
+			t.Errorf("Retry-After %q: error %q echoes the value or claims a wait", value, msg)
+		}
 	}
 }
