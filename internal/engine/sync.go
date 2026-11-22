@@ -30,7 +30,7 @@ type Syncer struct {
 	mu     sync.Mutex
 	status SyncStatus
 
-	// now and newTicker are replaced in tests, so no test waits on real time.
+	// now and newTicker are replaced in tests, so no test waits on a ticker.
 	now       func() time.Time
 	newTicker func(d time.Duration) (ticks <-chan time.Time, stop func())
 }
