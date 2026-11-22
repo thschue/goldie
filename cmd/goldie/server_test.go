@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -300,9 +301,17 @@ func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
 		{"GOLDIE_CONTENT_DIR", []string{token}},
 		{"GOLDIE_CONTENT_DIR", []string{token, "GOLDIE_CONTENT_DIR=" + filepath.Join(t.TempDir(), "missing")}},
 	} {
-		cmd := exec.Command(goldieBinary(t), "server")
+		// A server that wrongly starts must fail this case, not hang the run.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.CommandContext(ctx, goldieBinary(t), "server")
 		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADDR=127.0.0.1:0", "GOLDIE_ADMIN_ADDR=127.0.0.1:0"}, tc.env...)
 		out, err := cmd.CombinedOutput()
+		timedOut := ctx.Err() != nil
+		cancel()
+		if timedOut {
+			t.Errorf("%v: the server started instead of failing naming %s", tc.env, tc.name)
+			continue
+		}
 		if err == nil || !strings.Contains(string(out), tc.name) {
 			t.Errorf("%v: err = %v, want a failure naming %s: %s", tc.env, err, tc.name, out)
 		}
