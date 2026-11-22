@@ -164,8 +164,20 @@ func ancestors(dir string) []string {
 	return out
 }
 
-// readCapped reads a file of at most maxProjectFile bytes.
+// errNotRegular refuses a FIFO, device or socket, which could block the read.
+var errNotRegular = errors.New("not a regular file")
+
+// readCapped reads a regular file of at most maxProjectFile bytes. It checks
+// the type before opening, because opening a FIFO (or a symlink to one, or to
+// /dev/tty) planted in a checkout blocks.
 func readCapped(path string) ([]byte, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
