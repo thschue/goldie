@@ -31,7 +31,7 @@ type Article struct {
 	// article is the global one, and this says what to do next.
 	//
 	//
-	// Examples: The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Id The article id, its path under `articles/` without `.md`.
@@ -73,7 +73,7 @@ type Error struct {
 type ErrorDetails struct {
 	// Hint What the caller can do next.
 	//
-	// Examples: Check the request path against the OpenAPI document., Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to search all global content.
+	// Examples: Check the request path against the OpenAPI document., Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to get global guidance only.
 	Hint string `json:"hint"`
 }
 
@@ -147,7 +147,7 @@ type SearchResults struct {
 	// results are the global ones, and this says what to do next.
 	//
 	//
-	// Examples: The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Query The search words as received.
