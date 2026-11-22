@@ -51,7 +51,7 @@ func run(args []string, out io.Writer) error {
 }
 
 func usageError() error {
-	return errors.New("usage: goldie server | health [--ready] | " + app.MCPUsage + " | " + cli.Usage)
+	return errors.New("usage: goldie server | health [--ready] | " + app.MCPUsage + " | " + cli.Usage + "\n" + cli.TokenNote)
 }
 
 // runMCP serves MCP on stdin and stdout until the client closes stdin or a

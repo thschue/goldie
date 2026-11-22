@@ -199,6 +199,9 @@ func transportError(err error) error {
 	if errors.Is(err, errTooLarge) {
 		return fmt.Errorf("the server's answer is larger than %d MiB", maxResponseBytes>>20)
 	}
+	if errors.Is(err, errRedirect) {
+		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
+	}
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
 
