@@ -26,7 +26,7 @@ const maxArticleBytes = 1 << 20
 
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
-	// ID is the article's identity: its path under global/articles without
+	// ID is the article's identity: its path under <scope>/articles/ without
 	// ".md", slash separated. IDs compare case-insensitively (ADR 0015).
 	ID string
 	// Scope is ScopeGlobal, or the Project's "host/org/repo".
