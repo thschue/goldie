@@ -8,11 +8,13 @@
 # <type>/issue-<n>-<slug of the issue title>: git accepts the first push and
 # rejects every later one, so two sessions can never both claim an issue.
 # The winner then opens the draft PR, posts the claim marker for
-# $GOLDIE_SESSION (default: the short host name), and sets `in-progress` and
+# $GOLDIE_SESSION (default: the short node name), and sets `in-progress` and
 # the assignee.
 #
 # Prints "branch=<branch> pr=<number>" and exits 0 on a claim, 3 when the
-# issue isn't claimable or another session won, 2 on a usage or tool error.
+# issue isn't claimable or another session won, 2 on a usage or tool error
+# (an unreachable origin included: a failed push counts as lost only when the
+# branch now exists on origin).
 set -eu
 LC_ALL=C
 export LC_ALL
@@ -28,7 +30,7 @@ case "$type" in
 feat | fix | docs | refactor | test | build | ci | chore | perf | style | revert) ;;
 *) die "not a Conventional Commit type: $type" ;;
 esac
-session=${GOLDIE_SESSION:-$(hostname -s)}
+session=${GOLDIE_SESSION:-$(uname -n | cut -d. -f1)}
 
 issue=$(gh issue view "$n" --json state,title,labels,assignees) || die "cannot read issue $n"
 printf '%s' "$issue" | jq -e '
@@ -37,9 +39,13 @@ printf '%s' "$issue" | jq -e '
 ' >/dev/null || lost "issue $n is not claimable (closed, assigned, in progress, an epic, or not ready-for-agent)"
 
 title=$(printf '%s' "$issue" | jq -r .title)
-# The PR title is a Conventional Commit: keep an issue title that is one.
-if printf '%s\n' "$title" | grep -Eq '^[a-z]+(\([^)]*\))?!?: '; then
+# The PR title is a Conventional Commit: keep an issue title that is one, turn
+# an area prefix ("mcp: …") into the scope, and prefix anything else.
+types='feat|fix|docs|refactor|test|build|ci|chore|perf|style|revert'
+if printf '%s\n' "$title" | grep -Eq "^($types)(\([^)]*\))?!?: "; then
 	pr_title=$title
+elif printf '%s\n' "$title" | grep -Eq '^[a-z0-9-]+: '; then
+	pr_title="$type(${title%%: *}): ${title#*: }"
 else
 	pr_title="$type: $title"
 fi
@@ -48,12 +54,17 @@ slug=$(printf '%s\n' "$title" | sed -E 's/^[a-z]+(\([^)]*\))?!?: //' | tr 'A-Z' 
 branch="$type/issue-$n-$slug"
 
 git fetch -q origin main || die "cannot fetch origin main"
-if git ls-remote --heads origin | grep -q "/issue-$n-"; then
+heads=$(git ls-remote --heads origin) || die "cannot list the branches on origin"
+if printf '%s\n' "$heads" | grep -q "/issue-$n-"; then
 	lost "a branch for issue $n already exists"
 fi
 commit=$(git commit-tree "origin/main^{tree}" -p origin/main -m "chore: claim #$n ($session)") ||
 	die "cannot create the claim commit"
-git push -q origin "$commit:refs/heads/$branch" 2>/dev/null || lost "another session claimed issue $n"
+if ! git push -q origin "$commit:refs/heads/$branch" 2>/dev/null; then
+	git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1 &&
+		lost "another session claimed issue $n"
+	die "cannot push $branch to origin"
+fi
 
 body=$(printf 'Closes #%s\n\nClaimed by the delivery session `%s`; the plan follows from the implementer.\n' "$n" "$session")
 url=$(gh pr create --draft --base main --head "$branch" --title "$pr_title" --body "$body") ||
