@@ -1,9 +1,11 @@
 #!/bin/sh
 # goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
 #
-#   ./run check      everything CI runs: format, build, lint, lint fixture, tests
+#   ./run check      everything CI runs: format, build, lint, lint fixtures, spec lint, tests
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
+#   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
+#   ./run lint-spec-fixture  prove vacuum rejects testdata/openapi/broken.yaml
 #   ./run regen      regenerate generated code (nothing to generate yet)
 #   ./run versions   print the toolchain versions this repository expects
 #
@@ -11,6 +13,8 @@
 set -eu
 
 GOLANGCI_LINT_VERSION=v2.15.0
+# OpenAPI linter (MIT), run through `go run` like golangci-lint.
+VACUUM_VERSION=v0.42.3
 
 cd "$(dirname "$0")"
 ROOT=$(pwd)
@@ -65,6 +69,48 @@ cmd_lint_fixture() {
 	fi
 }
 
+# vacuum lints the OpenAPI document. --fail-severity info makes any finding
+# (error, warning or info) fail the run, so "zero warnings" holds for the spec.
+# An explicit empty --config keeps a ./vacuum.conf.yaml or a user config from
+# changing the rules the gate applies, and vacuum runs without any VACUUM_*
+# environment variable, which it would otherwise read as flag values.
+# --remote=false keeps the check offline: the spec is one self-contained file,
+# so no $ref is fetched.
+vacuum() {
+	cfgdir=$(mktemp -d) || die "cannot create a temporary directory for vacuum"
+	: >"$cfgdir/vacuum.conf.yaml"
+	pkg="github.com/daveshanley/vacuum@${VACUUM_VERSION}"
+	status=0
+	(
+		for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+		exec go run "$pkg" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
+			--no-update-check --no-banner --no-style --details --fail-severity info "$@"
+	) || status=$?
+	rm -rf "$cfgdir"
+	return "$status"
+}
+
+cmd_lint_spec() {
+	say "vacuum (OpenAPI spec)"
+	vacuum internal/contract/openapi.yaml
+}
+
+# The broken fixture must be rejected with lint findings (exit 1 and the
+# missing-operationId rule), or the spec linter is not doing its job. Any other
+# failure, such as a download or input error, fails this gate too.
+cmd_lint_spec_fixture() {
+	say "vacuum fixture (broken spec must be rejected)"
+	status=0
+	out=$(vacuum testdata/openapi/broken.yaml 2>&1) || status=$?
+	if [ "$status" = 0 ]; then
+		die "broken OpenAPI fixture passed lint: the spec linter does not fire"
+	fi
+	if [ "$status" != 1 ] || ! printf '%s\n' "$out" | grep -q 'operation-operationId'; then
+		printf '%s\n' "$out" >&2
+		die "broken OpenAPI fixture failed for the wrong reason (exit $status, expected lint findings)"
+	fi
+}
+
 cmd_test() {
 	say "go test"
 	go test -count=1 "$@" ./...
@@ -80,6 +126,7 @@ cmd_versions() {
 	printf 'go (module requires): %s\n' "$(awk '$1 == "go" {print $2}' go.mod)"
 	printf 'go (installed):       %s\n' "$(go version)"
 	printf 'golangci-lint (pinned): %s\n' "$GOLANGCI_LINT_VERSION"
+	printf 'vacuum (pinned):        %s\n' "$VACUUM_VERSION"
 }
 
 cmd_check() {
@@ -87,12 +134,14 @@ cmd_check() {
 	cmd_build
 	cmd_lint
 	cmd_lint_fixture
+	cmd_lint_spec
+	cmd_lint_spec_fixture
 	cmd_test
 	say "check passed"
 }
 
 usage() {
-	sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
@@ -102,6 +151,8 @@ case "$sub" in
 check) cmd_check ;;
 test) cmd_test "$@" ;;
 lint) cmd_lint ;;
+lint-spec) cmd_lint_spec ;;
+lint-spec-fixture) cmd_lint_spec_fixture ;;
 regen) cmd_regen ;;
 versions) cmd_versions ;;
 help | -h | --help) usage ;;

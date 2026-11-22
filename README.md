@@ -8,8 +8,11 @@ Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUD
 [CONTEXT.md](CONTEXT.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```sh
-./run check     # format, build, lint, import-rule fixture and tests
+./run check     # format, build, lint, import-rule fixture, OpenAPI lint and tests
 ```
+
+The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
+`/openapi.json`. The source is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
 
 ## Origins & credits
 

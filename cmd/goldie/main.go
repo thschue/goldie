@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -77,7 +78,11 @@ func runServer(out io.Writer) error {
 		close(force)
 	}()
 
-	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0)}
+	public, err := app.PublicHandler()
+	if err != nil {
+		return fmt.Errorf("build public handler: %w", err)
+	}
+	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public}
 	return srv.Serve(ctx, force)
 }
 

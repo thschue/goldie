@@ -176,6 +176,29 @@ func TestPC01And03BinaryServesProbesAndVersion(t *testing.T) {
 	}
 }
 
+// The OpenAPI document is served on the public listener only; the admin port
+// keeps to probes and version (PC-01).
+func TestBinaryServesOpenAPISpecOnPublicListener(t *testing.T) {
+	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
+	defer func() { _ = p.cmd.Process.Signal(syscall.SIGTERM); _ = p.waitExit(t, 5*time.Second) }()
+	for path, want := range map[string]string{
+		"/openapi.yaml": "application/yaml",
+		"/openapi.json": "application/json",
+	} {
+		resp, err := http.Get("http://" + p.app + path) //nolint:gosec // loopback test URL
+		if err != nil {
+			t.Fatalf("GET app %s: %v", path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), want) {
+			t.Errorf("app %s = %d %q, want 200 %q", path, resp.StatusCode, resp.Header.Get("Content-Type"), want)
+		}
+		if code, _ := httpGet(t, "http://"+p.admin+path); code != 404 {
+			t.Errorf("admin %s = %d, want 404", path, code)
+		}
+	}
+}
+
 func TestPC04InvalidConfigFailsFast(t *testing.T) {
 	for _, tc := range []struct{ env, name string }{
 		{"GOLDIE_LOG_LEVEL=loud", "GOLDIE_LOG_LEVEL"},
