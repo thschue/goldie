@@ -1,0 +1,51 @@
+#!/bin/sh
+# test-lock: refuse test changes an implementer may not make
+# (docs/agents/README.md#test-lock, ADR 0018).
+#
+#   scripts/test-lock <base> <head> [test-author commit...]
+#
+# Tests are the spec. On the branch <base>...<head>, a commit that isn't a
+# test-author commit may add test files and add lines to existing ones, but
+# may not modify or delete a line (whitespace aside) in a test file
+# (*_test.go, testdata/) that it or an earlier implementer commit on the
+# branch didn't create. A test-author commit may touch test files only.
+#
+# Prints one line per violation and exits 1 when there is any, 0 when there is
+# none, and 2 on a usage or git error. scripts/merge-pr runs main's copy.
+set -euf
+LC_ALL=C
+export LC_ALL
+
+die() { printf 'test-lock: %s\n' "$*" >&2; exit 2; }
+
+[ $# -ge 2 ] || die "usage: scripts/test-lock <base> <head> [test-author commit...]"
+mb=$(git merge-base "$1" "$2") || die "no merge base between $1 and $2"
+head=$2
+shift 2
+authors=""
+for a in "$@"; do
+	authors="$authors $(git rev-parse --verify --quiet "$a^{commit}")" || die "unknown test-author commit: $a"
+done
+is_author() { case " $authors " in *" $1 "*) return 0 ;; esac; return 1; }
+is_test() { case "$1" in *_test.go | testdata/* | */testdata/*) return 0 ;; esac; return 1; }
+
+out=$(mktemp) || die "cannot create a temporary file"
+trap 'rm -f "$out"' EXIT INT TERM
+own="" # test files created by implementer commits on the branch
+for c in $(git rev-list --reverse --no-merges "$mb..$head"); do
+	subject=$(git log -1 --format=%s "$c")
+	git diff-tree --no-commit-id -r --no-renames --name-status "$c" | while IFS="$(printf '\t')" read -r st f; do
+		if is_author "$c"; then
+			is_test "$f" || printf 'test-author commit "%s" touches a non-test file: %s\n' "$subject" "$f"
+		elif is_test "$f" && [ "$st" != A ] && ! printf '%s\n' "$own" | grep -qxF -- "$f"; then
+			removed=$(git diff -w --numstat "$c^" "$c" -- "$f" | cut -f2)
+			[ "${removed:-0}" = 0 ] || printf 'locked: %s changed by "%s"\n' "$f" "$subject"
+		fi
+	done >>"$out"
+	is_author "$c" || own="$own
+$(git diff-tree --no-commit-id -r --no-renames --name-only --diff-filter=A "$c")"
+done
+
+[ -s "$out" ] || exit 0
+cat "$out"
+exit 1

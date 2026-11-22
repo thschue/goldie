@@ -21,3 +21,4 @@ Consequences.
 - [0015. Article identity is its path; frontmatter name is the title](0015-article-identity-is-its-path.md)
 - [0016. Nested article ids travel as one percent-encoded path segment](0016-nested-article-ids-are-one-encoded-path-segment.md)
 - [0017. Observability through OpenTelemetry, configured by the standard OTEL_* variables](0017-observability-through-opentelemetry.md)
+- [0018. A product session and delivery streams replace the three cooperating loops](0018-product-and-delivery-sessions.md)

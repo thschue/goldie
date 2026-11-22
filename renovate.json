@@ -1,0 +1,52 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates for goldie (ADR 0018). Nothing merges itself: the delivery loop reviews every Renovate PR and queues it through scripts/merge-pr, and scripts/agent-gate holds CI and new-dependency changes for the maintainer.",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigestsToSemver",
+    ":semanticPrefixFixDepsChoreOthers"
+  ],
+  "semanticCommits": "enabled",
+  "enabledManagers": ["gomod", "github-actions", "custom.regex"],
+  "automerge": false,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "prConcurrentLimit": 3,
+  "schedule": ["before 6am on monday"],
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "minimumReleaseAge": null
+  },
+  "customManagers": [
+    {
+      "description": "Pinned tools in ./run, marked with a '# renovate: datasource=<ds> depName=<module>' comment on the line above",
+      "customType": "regex",
+      "managerFilePatterns": ["/^run$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)\\n[A-Z_]+=[^@\\s]+@(?<currentValue>v[^\\s]+)"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": ["gomod"],
+      "groupName": "go modules"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "groupName": "pinned tools"
+    },
+    {
+      "description": "The Go directive and toolchain move only by a deliberate PR",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["golang", "toolchain"],
+      "enabled": false
+    }
+  ]
+}

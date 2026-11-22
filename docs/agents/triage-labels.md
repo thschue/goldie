@@ -18,6 +18,9 @@ Supporting labels:
 - `priority`: at most 2 open at a time
 - `bug`, `security`: ranking hints
 
-The agent loops add four flow labels on top of these: `in-progress`, `in-review`,
-`changes-requested` and `needs-maintainer`. The [label contract](./label-contract.md) defines every
-label, who may set or remove it, and who may set the first `ready-for-agent`.
+- `area:engine`, `area:api`, `area:cli`, `area:mcp`, `area:platform`, `area:ui`, `area:contract`:
+  the lane, set by the product session
+- `harness`: about the loops themselves; only the maintainer works it
+
+The loops add two flow labels, `in-progress` and `needs-maintainer`, defined in the
+[shared rules](./README.md#labels) with the `needs-info` reasons.

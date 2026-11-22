@@ -2,6 +2,8 @@ name: ci
 
 on:
   pull_request:
+  # The merge queue (ADR 0018) runs the required check on the merge group.
+  merge_group:
   push:
     branches: [main]
 
@@ -94,7 +96,7 @@ jobs:
           echo "check: $CHECK, govulncheck: $VULN"
           [ "$CHECK" = success ] && [ "$VULN" = success ]
 
-  # Informational: whether the PR needs the maintainer (docs/agents/label-contract.md#gates).
+  # Informational: whether the PR needs the maintainer (docs/agents/README.md#gates).
   # It runs main's copy of the gate, so a PR can't loosen the gate that judges it.
   agent-gate:
     name: agent-gate

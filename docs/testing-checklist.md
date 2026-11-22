@@ -10,10 +10,11 @@ exit 0 with zero warnings. Reviewers use the same list.
       on internals. The exception is pure table tests for search scoring and Resolution rules.
 - [ ] Each new test fails without the change (red first) and passes with it: `./run red-check`
       fails the tests on `origin/main`, or the PR says why a test pins existing behaviour.
-- [ ] Existing test expectations were not changed to make the suite pass.
+- [ ] Existing test expectations were not changed to make the suite pass (in the loops,
+      `scripts/test-lock` enforces this).
 - [ ] No test depends on the network, the wall clock without a fake, or another test's state.
 - [ ] No new dependency or pinned tool unless the issue asks for one, each with a
-      [dependency brief](agents/label-contract.md#dependency-brief); `go.sum` and lockfiles are
+      [dependency brief](agents/README.md#dependency-brief); `go.sum` and lockfiles are
       untouched by hand. `./run vuln` is clean.
 - [ ] `./run gate origin/main HEAD` was run, and its reasons are in the PR body.
 - [ ] Docs changed in the same PR where behaviour, config, vocabulary or a decision changed.
