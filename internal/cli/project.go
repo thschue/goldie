@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // How a Project was found, in the order of precedence. These are the words
@@ -77,34 +79,17 @@ func normaliseConfigured(v string) (string, error) {
 	}
 	// A plain host/org/repo gets the same shape as a detected one.
 	id := strings.ToLower(strings.TrimSuffix(strings.Trim(v, "/"), ".git"))
-	if !validProjectID(id) {
+	if !contract.ValidProjectID(id) {
 		return "", errors.New("the Project is not host/org/repo: a lower-case host, then an org and a repo of letters, digits, '.', '_' and '-'")
 	}
 	return id, nil
 }
 
-// validProjectID reports whether id is exactly host/org/repo under the rules
-// it mirrors from validProjectSegment in internal/engine/source.go (the cli
-// cannot import the engine): a lower-case DNS host, then an org and a repo of
-// letters, digits, '.', '_' and '-' that do not start with '.'. It keeps
-// nested groups, '..', percent escapes, query and fragment characters and
-// other path syntax from a hostile remote out of the Project.
-func validProjectID(id string) bool {
-	segs := strings.Split(id, "/")
-	if len(segs) != 3 {
-		return false
-	}
-	for i, s := range segs {
-		allowed := "abcdefghijklmnopqrstuvwxyz0123456789._-"
-		if i == 0 {
-			allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
-		}
-		if s == "" || s[0] == '.' || strings.Trim(s, allowed) != "" {
-			return false
-		}
-	}
-	return true
-}
+// Every Project the CLI sends passes contract.ValidProjectID, the ProjectId
+// schema of the spec (ADR 0018), after lower-casing. It keeps nested groups,
+// '..', percent escapes, query and fragment characters and other path syntax
+// from a hostile remote out of the Project, and the server accepts what it
+// passes.
 
 // projectFromConfigFile reads `project:` from the nearest .goldie/config.yaml
 // from dir up to root, the repository root. It never looks above root: a
@@ -359,7 +344,7 @@ func normaliseRemote(raw string) (id string, ok bool) {
 		return "", false
 	}
 	id = strings.ToLower(host + "/" + path)
-	if !validProjectID(id) { // its ASCII-only rule also keeps out control and bidi runes
+	if !contract.ValidProjectID(id) { // its ASCII-only rule also keeps out control and bidi runes
 		return "", false
 	}
 	return id, true

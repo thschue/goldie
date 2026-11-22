@@ -1,8 +1,10 @@
 # Project ids in their canonical, lower-case form: "ok <id>" or "bad <id>".
-# validProjectID in internal/cli mirrors validProjectSegment in
-# internal/engine/source.go; both must agree on every line. Only lower-case ids
-# belong here: the engine also accepts upper case in org and repo, the CLI
-# lower-cases first. The id is everything after the first space.
+# The ProjectId schema in openapi.yaml is the definition (ADR 0018):
+# contract.ValidProjectID, which the API and the CLI call, and the engine's
+# layout guard validProjectSegment must agree with it on every line. Only
+# lower-case ids belong here: the schema and the engine also accept upper case
+# in org and repo, the CLI lower-cases first. The id is everything after the
+# first space.
 ok github.com/acme/widgets
 ok gitlab.example.com/org_1/re-po.v2
 ok h/a/b
@@ -15,6 +17,7 @@ bad github.com/.acme/widgets
 bad github.com/acme/.widgets
 bad github.com/../widgets
 bad gh_x.example/acme/widgets
+bad -x.com/acme/widgets
 bad github.com/acme/wid%2fgets
 bad github.com/acme/wid?gets
 bad github.com/acme/wid#gets

@@ -151,7 +151,7 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 // DNS name), 1 the org and 2 the repo.
 func validProjectSegment(depth int, name string) error {
 	if depth == 0 {
-		if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789.-") != "" || strings.HasPrefix(name, ".") {
+		if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789.-") != "" || name[0] == '.' || name[0] == '-' {
 			return errors.New("invalid Project host: use a lower-case host name such as github.com")
 		}
 		return nil
