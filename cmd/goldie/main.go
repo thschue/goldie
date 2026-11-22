@@ -46,6 +46,15 @@ func run(args []string, out io.Writer) error {
 			return runDev(args[2:], out)
 		}
 		return usageError()
+	case "validate":
+		if len(args) > 2 {
+			return usageError()
+		}
+		dir, _ := os.LookupEnv(platform.EnvContentDir)
+		if len(args) == 2 {
+			dir = args[1]
+		}
+		return app.ValidateDir(context.Background(), dir)
 	case "health":
 		return runHealth(args[1:])
 	case "mcp":
@@ -55,7 +64,7 @@ func run(args []string, out io.Writer) error {
 }
 
 func usageError() error {
-	return errors.New("usage: goldie server [-dev [dir]] | health [--ready] | " + app.MCPUsage + " | " + cli.Usage + "\n" +
+	return errors.New("usage: goldie server [-dev [dir]] | validate [dir] | health [--ready] | " + app.MCPUsage + " | " + cli.Usage + "\n" +
 		cli.TokenNote + "\n" + devNote)
 }
 
