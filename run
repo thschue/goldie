@@ -38,14 +38,19 @@ die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 
 # tool <package>@<version>: print the path of the pinned tool's binary,
 # installing it first. Each version gets its own directory under .tools/
-# (or $GOLDIE_TOOLS), so a bump never runs a stale binary and CI can cache
-# the directory by the hash of this file.
+# (or $GOLDIE_TOOLS), so a bump never runs a stale binary. The tools' module
+# downloads go to .tools/mod rather than the shared module cache, so one CI
+# cache of .tools holds the binaries and every module they are built from;
+# after a bump only the changed modules are downloaded. -modcacherw keeps
+# that directory removable with rm -rf.
 tool() {
 	pkg=${1%@*}
 	ver=${1##*@}
-	dir="${GOLDIE_TOOLS:-$ROOT/.tools}/${pkg##*/}-$ver"
+	tools="${GOLDIE_TOOLS:-$ROOT/.tools}"
+	dir="$tools/${pkg##*/}-$ver"
 	if [ ! -x "$dir/${pkg##*/}" ]; then
-		GOBIN="$dir" go install "$1" >&2 || die "cannot install $1"
+		GOBIN="$dir" GOMODCACHE="$tools/mod" GOFLAGS="${GOFLAGS:+$GOFLAGS }-modcacherw" \
+			go install "$1" >&2 || die "cannot install $1"
 	fi
 	printf '%s\n' "$dir/${pkg##*/}"
 }
