@@ -35,7 +35,7 @@ func closedByServer(conn net.Conn, within time.Duration) bool {
 		return true // EOF
 	}
 	var ne net.Error
-	return !(errors.As(err, &ne) && ne.Timeout()) && !errors.Is(err, os.ErrDeadlineExceeded)
+	return (!errors.As(err, &ne) || !ne.Timeout()) &&!errors.Is(err, os.ErrDeadlineExceeded)
 }
 
 func TestPublicListenerCutsOffSlowHeaders(t *testing.T) {
