@@ -17,16 +17,18 @@ type RateLimit struct {
 
 // errRateLimit does not echo the value: it may have been read from a _FILE
 // (PC-05).
-var errRateLimit = errors.New("must be <n>/s or <n>/m, optionally followed by ,burst=<b>, with n and b positive integers")
+var errRateLimit = errors.New("must be <n>/s or <n>/m, optionally followed by ,burst=<b>, with n and b positive integers and a rate of at most 1e9 per second")
+
+// maxPerSecond is the highest rate accepted: above it the interval between
+// requests rounds to 0 ns and the limiter would let everything through.
+const maxPerSecond = 1_000_000_000
 
 // ParseRateLimit reads "<n>/s" or "<n>/m", optionally followed by
-// ",burst=<b>"; b defaults to n, and "" is the registered default. n and b
-// are positive ASCII decimal integers without sign or spaces, and the unit is
-// lower case. Nothing else is accepted, and errors never contain the value.
+// ",burst=<b>"; b defaults to n. n and b are positive ASCII decimal integers
+// without sign or spaces, the unit is lower case, and n is at most 1e9 per
+// second (6e10 per minute). Nothing else is accepted, "" included (LoadConfig
+// applies the default), and errors never contain the value.
 func ParseRateLimit(s string) (RateLimit, error) {
-	if s == "" {
-		s = def(EnvRateLimit)
-	}
 	rate, opt, hasOpt := strings.Cut(s, ",")
 	num, unit, _ := strings.Cut(rate, "/")
 	n, ok := positive(num)
@@ -42,6 +44,9 @@ func ParseRateLimit(s string) (RateLimit, error) {
 	default:
 		return RateLimit{}, errRateLimit
 	}
+	if int64(n) > maxPerSecond*int64(l.Per/time.Second) {
+		return RateLimit{}, errRateLimit
+	}
 	if hasOpt {
 		b, found := strings.CutPrefix(opt, "burst=")
 		if l.Burst, ok = positive(b); !found || !ok {
@@ -49,6 +54,13 @@ func ParseRateLimit(s string) (RateLimit, error) {
 		}
 	}
 	return l, nil
+}
+
+// DefaultRateLimit is the registered default of GOLDIE_RATE_LIMIT, parsed:
+// the limit LoadConfig applies when the variable is unset or empty.
+func DefaultRateLimit() RateLimit {
+	l, _ := ParseRateLimit(def(EnvRateLimit)) // the registry's default is valid (TestRateLimitIsParsedOnceIntoATypedValueWithTheDefault)
+	return l
 }
 
 // positive parses a positive ASCII decimal integer: digits only, no sign.

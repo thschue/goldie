@@ -146,9 +146,13 @@ func (c *commander) status(ctx context.Context) error {
 		return apiError(doc.HTTPResponse, doc.Body)
 	}
 	title, apiVersion := specInfo(*doc.JSON200)
-	project, err := c.project()
-	if err != nil {
-		return err
+	// A Project problem is reported on the Project line, not as a failure:
+	// status is how a user finds out what is wrong. Other commands still fail.
+	project, perr := c.project()
+	projectError := ""
+	if perr != nil {
+		projectError = contract.CleanLine(perr.Error())
+		project = detectedProject{}
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
@@ -182,19 +186,34 @@ func (c *commander) status(ctx context.Context) error {
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
+		if projectError != "" {
+			out["projectError"] = projectError
+		}
+		if h := project.hint(); h != "" {
+			out["projectHint"] = h
+		}
 		if hint != nil && *hint != "" {
 			out["hint"] = contract.CleanLine(*hint)
 		}
 		return c.printJSON(out)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		contract.CleanLine(title), contract.CleanLine(apiVersion), auth, project.describe())
+		contract.CleanLine(title), contract.CleanLine(apiVersion), auth, describeProject(project, projectError))
 	if err == nil {
 		var b strings.Builder
 		writeHint(&b, hint)
 		_, err = fmt.Fprint(c.out, b.String())
 	}
 	return err
+}
+
+// describeProject is the text of the Project line: the problem when there is
+// one, else the Project or what was found.
+func describeProject(p detectedProject, problem string) string {
+	if problem != "" {
+		return "problem: " + problem
+	}
+	return p.describe()
 }
 
 // project resolves the Project for the working directory.

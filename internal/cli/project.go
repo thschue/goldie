@@ -35,6 +35,11 @@ const maxWalkUp = 64
 type detectedProject struct {
 	ID     string // host/org/repo, or the value given by the user
 	Source string // one of the source constants
+
+	// Rejected names the remote (upstream or origin) that exists but is not
+	// in the host/org/repo form, when nothing else gave a Project. It is the
+	// name only, never the URL, which may hold a credential or a private path.
+	Rejected string
 }
 
 // resolveProject applies the override order: --project, GOLDIE_PROJECT,
@@ -136,6 +141,7 @@ func projectFromConfigFile(dir, root string) (string, error) {
 // `origin`, of a git config's text.
 func projectFromRemotes(cfg string) detectedProject {
 	urls := remoteURLs(cfg)
+	rejected := ""
 	for _, r := range []struct{ name, source string }{
 		{"upstream", sourceUpstream},
 		{"origin", sourceOrigin},
@@ -143,8 +149,11 @@ func projectFromRemotes(cfg string) detectedProject {
 		if id, ok := normaliseRemote(urls[r.name]); ok {
 			return detectedProject{ID: id, Source: r.source}
 		}
+		if rejected == "" && strings.TrimSpace(urls[r.name]) != "" {
+			rejected = r.name
+		}
 	}
-	return detectedProject{}
+	return detectedProject{Rejected: rejected}
 }
 
 // ancestors lists dir and its parents, nearest first.
@@ -352,10 +361,26 @@ func normaliseRemote(raw string) (id string, ok bool) {
 
 // describe is the status line for a Project.
 func (p detectedProject) describe() string {
+	if p.ID == "" && p.Rejected != "" {
+		return p.remoteHint()
+	}
 	if p.ID == "" {
 		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"
 	}
 	return fmt.Sprintf("%s (from %s)", contract.CleanLine(p.ID), p.Source)
+}
+
+// hint is the text of the rejected-remote hint, or "" when no remote was
+// rejected.
+func (p detectedProject) hint() string {
+	if p.ID != "" || p.Rejected == "" {
+		return ""
+	}
+	return p.remoteHint()
+}
+
+func (p detectedProject) remoteHint() string {
+	return "found a git remote " + contract.CleanLine(p.Rejected) + ", but its URL is not in the accepted host/org/repo form (set --project, " + EnvProject + " or .goldie/config.yaml)"
 }
 
 // param is the project= query value: the Project, or nil when none was found.
