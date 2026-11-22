@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"strings"
@@ -20,7 +21,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
-	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // GitOptions configures a git Source. Credentials are passed in as values: the
@@ -37,6 +37,39 @@ type GitOptions struct {
 	Token string
 }
 
+// String describes o without the token or URL user info, so logging
+// GitOptions with %v or %+v never prints a credential.
+func (o GitOptions) String() string {
+	return fmt.Sprintf("{URL:%s Ref:%q Token:%s}", redactURL(o.URL), o.Ref, redactToken(o.Token))
+}
+
+// GoString is String, for %#v.
+func (o GitOptions) GoString() string { return "engine.GitOptions" + o.String() }
+
+// LogValue implements slog.LogValuer with the same redaction as String.
+func (o GitOptions) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("url", redactURL(o.URL)), slog.String("ref", o.Ref),
+		slog.String("token", redactToken(o.Token)))
+}
+
+func redactToken(t string) string {
+	if t == "" {
+		return ""
+	}
+	return "[redacted]"
+}
+
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "[invalid URL]"
+	}
+	if u.User != nil {
+		u.User = url.User("[redacted]")
+	}
+	return u.String()
+}
+
 // gitLoadTimeout bounds one Load, so a stalled server cannot hold the Syncer.
 const gitLoadTimeout = 2 * time.Minute
 
@@ -44,10 +77,17 @@ const gitLoadTimeout = 2 * time.Minute
 // accept any non-empty name with an access token.
 const tokenUser = "x-access-token"
 
-func init() {
-	// PC-11: no git binary. go-git's file transport would exec
-	// git-upload-pack, so serve file:// with its in-process server instead.
-	client.InstallProtocol("file", server.NewClient(server.DefaultLoader))
+var installGitTransports sync.Once
+
+// useGitTransports installs, once per process, the go-git transports a
+// GitSource needs. PC-11: no git binary, so file:// is served by go-git's
+// in-process server rather than an exec'd git-upload-pack. https goes through
+// a client that charges each Load's reads to its budget.
+func useGitTransports() {
+	installGitTransports.Do(func() {
+		client.InstallProtocol("file", server.NewClient(server.DefaultLoader))
+		client.InstallProtocol("https", newGitHTTPClient())
+	})
 }
 
 // GitSource is a Source backed by a git repository. Each Load lists the remote
@@ -62,6 +102,8 @@ type GitSource struct {
 	caBundle []byte
 	// timeout bounds one Load; tests shorten it.
 	timeout time.Duration
+	// maxWire and maxMem are one Load's budget; tests lower them.
+	maxWire, maxMem int64
 
 	load    sync.Mutex    // serialises Load
 	mu      sync.Mutex    // guards the fields below
@@ -87,7 +129,7 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if scheme != "https" && opts.Token != "" {
 		return nil, errors.New("git source: Token needs an HTTPS URL")
 	}
-	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout}
+	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
 	switch {
 	case scheme == "https" && u.Host != "" && u.Opaque == "":
 		s.shallow = true
@@ -105,6 +147,7 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if opts.Ref != "" && plumbing.ReferenceName(fullRef(opts.Ref)).Validate() != nil {
 		return nil, fmt.Errorf("git source: ref %q is not a valid ref name", opts.Ref)
 	}
+	useGitTransports()
 	return s, nil
 }
 
@@ -122,13 +165,14 @@ func (s *GitSource) Revision() string {
 func (s *GitSource) Load() (*Snapshot, error) {
 	s.load.Lock()
 	defer s.load.Unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	budget := &gitBudget{wire: s.maxWire, mem: s.maxMem}
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), gitBudgetKey{}, budget), s.timeout)
 	defer cancel()
 
-	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
+	remote := git.NewRemote(newBudgetStorage(budget), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: s.auth, CABundle: s.caBundle})
 	if err != nil {
-		return nil, s.fetchError(err)
+		return nil, s.fetchError(err, budget)
 	}
 	name, hash, err := s.pickRef(refs)
 	if err != nil {
@@ -151,9 +195,9 @@ func (s *GitSource) Load() (*Snapshot, error) {
 	if s.shallow {
 		clone.Depth = 1
 	}
-	repo, err := git.CloneContext(ctx, memory.NewStorage(), nil, clone)
+	repo, err := git.CloneContext(ctx, newBudgetStorage(budget), nil, clone)
 	if err != nil {
-		return nil, s.fetchError(err)
+		return nil, s.fetchError(err, budget)
 	}
 	commit, err := headCommit(repo)
 	if err != nil {
@@ -233,8 +277,8 @@ func headCommit(repo *git.Repository) (*object.Commit, error) {
 
 // fetchError maps a transport error to a fixed message. The library's own
 // text can carry the URL, user info, addresses or paths, so it is never
-// passed on.
-func (s *GitSource) fetchError(err error) error {
+// passed on. A Load stopped by its budget says so, whatever go-git wrapped.
+func (s *GitSource) fetchError(err error, budget *gitBudget) error {
 	var (
 		certErr  *tls.CertificateVerificationError
 		unknown  x509.UnknownAuthorityError
@@ -244,6 +288,8 @@ func (s *GitSource) fetchError(err error) error {
 	)
 	msg := "fetch failed"
 	switch {
+	case budget.exceeded():
+		msg = "the repository " + errLoadLimit.Error()
 	case errors.Is(err, transport.ErrAuthenticationRequired), errors.Is(err, transport.ErrAuthorizationFailed):
 		msg = "authentication failed; check the token"
 	case errors.Is(err, transport.ErrRepositoryNotFound):

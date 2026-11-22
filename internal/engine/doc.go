@@ -17,7 +17,13 @@
 // fs.FS. It uses go-git in process (no git binary) and clones into memory (no
 // disk), depth 1 over https. Each Load lists the remote refs first and clones
 // only when the ref moved; otherwise it returns the cached Snapshot. Its
-// revision is the commit SHA, and one Load is bounded by two minutes. A token
+// revision is the commit SHA, and one Load is bounded by two minutes. A remote
+// is untrusted, so each Load also has a byte budget: what it reads from an
+// https server, ref listing included, and the pack plus its objects once
+// unpacked, charged from the object headers before anything is unpacked. A
+// load over either stops there with a fixed error. NewGitSource installs, once
+// per process, go-git's in-process file:// server and an https client that
+// charges the budget. A token
 // is a value, accepted only with https and sent as the basic-auth password;
 // credentials in the URL, http:// and git:// are rejected. Its errors are
 // fixed messages that never carry the URL, the token or a host path.
