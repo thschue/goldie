@@ -3,6 +3,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -35,20 +36,11 @@ type publicMux struct {
 	routes  []route
 }
 
-// newPublicMux returns the router with the spec's operations over snap
-// registered, and nothing else, guarded by token as the GOLDIE_API_TOKEN
-// shorthand and the default rate limit. A token that fails api.CheckToken
-// rejects every request.
-func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
-	tokens, err := api.OperatorToken(token)
-	if err != nil {
-		tokens = &api.Tokens{}
-	}
-	return newPublicMuxWith(snap, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
-}
-
-// newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
-// version (nil for none) and a rate limiter.
+// newPublicMuxWith returns the router with the spec's operations over snap
+// registered, and nothing else, guarded by a parsed token set, a minimum
+// client version (nil for none) and a rate limiter. PublicHandler builds the
+// public listener with it, and the tests build the bare router with it, so the
+// route table they check is the one the server serves.
 func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(snap)
 	if err != nil {
@@ -57,17 +49,6 @@ func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.Ra
 	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
 	srv.Register(m)
 	return m, nil
-}
-
-// publicRoutes is the table of public endpoints as the generated router
-// registers them. The route-coverage test compares it with the spec, so there
-// is no second list to drift.
-func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
-	m, err := newPublicMux(snap, token)
-	if err != nil {
-		return nil, err
-	}
-	return m.routes, nil
 }
 
 // HandleFunc registers one generated operation; its pattern is "METHOD path".
@@ -149,65 +130,68 @@ func (m *publicMux) methods(path string) []string {
 
 func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.ServeHTTP(w, r) }
 
-// Options are the settings PublicHandler needs, read from the platform
-// configuration by the caller so this package stays the only place that knows
-// both modules.
-type Options struct {
-	SwaggerUI  bool               // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
-	ContentDir string             // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
-	APIToken   string             // one operator token, the shorthand (GOLDIE_API_TOKEN)
-	APITokens  string             // name:role:token lines (GOLDIE_API_TOKENS)
-	RateLimit  platform.RateLimit // per-token limit as LoadConfig parsed it (GOLDIE_RATE_LIMIT)
-	Logger     *slog.Logger       // the server's component logger; nil discards
-
-	MinClientVersion string // oldest goldie client served, "" for no gate (GOLDIE_MIN_CLIENT_VERSION)
-}
-
 // rateLimiter builds the per-token limiter from the RateLimit LoadConfig
-// parsed, as is.
-func rateLimiter(l platform.RateLimit) *api.RateLimiter {
-	return api.NewRateLimiter(l.Requests, l.Per, l.Burst)
+// parsed, as is. A RateLimit that limits nothing, zero requests or no period
+// (the zero value a caller gets by leaving the field out), fails closed: it is
+// an error naming GOLDIE_RATE_LIMIT, not a server without a limit.
+func rateLimiter(l platform.RateLimit) (*api.RateLimiter, error) {
+	if l.Requests <= 0 || l.Per <= 0 {
+		return nil, fmt.Errorf("%s: no limit was given; the server does not run without one", platform.EnvRateLimit)
+	}
+	return api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil
 }
 
-// clientVersionGate builds the minimum client version gate from
-// GOLDIE_MIN_CLIENT_VERSION; "" is no gate (nil). Errors name the variable and
-// never contain the value.
-func clientVersionGate(minimum string) (*api.ClientVersionGate, error) {
-	if minimum == "" {
-		return nil, nil
+// clientVersionGate builds the minimum client version gate from the Semver
+// LoadConfig parsed; the zero Semver is no gate (nil).
+func clientVersionGate(minimum platform.Semver) *api.ClientVersionGate {
+	if minimum.IsZero() {
+		return nil
 	}
-	v, err := platform.ParseSemver(minimum)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", platform.EnvMinClientVersion, err)
-	}
-	return api.NewClientVersionGate(v), nil
+	return api.NewClientVersionGate(minimum)
 }
 
-// apiTokens builds the token set from exactly one of GOLDIE_API_TOKEN and
-// GOLDIE_API_TOKENS. Errors name the variable and never contain a token, a
-// digest or a token's length.
-func apiTokens(opts Options) (*api.Tokens, error) {
+// apiTokens builds the token set from GOLDIE_API_TOKEN or GOLDIE_API_TOKENS.
+// LoadConfig refuses both together; a Config built another way that sets both
+// fails the same check here rather than having one ignored. Neither set is
+// this role's check: goldie health loads the same Config and needs no token.
+// Errors name the variable and never contain a token, a digest or a token's
+// length.
+func apiTokens(cfg platform.Config) (*api.Tokens, error) {
+	if err := platform.CheckAPITokenPairing(cfg.APIToken, cfg.APITokens); err != nil {
+		return nil, err
+	}
 	switch {
-	case opts.APIToken != "" && opts.APITokens != "":
-		return nil, fmt.Errorf("%s and %s are both set: set exactly one", platform.EnvAPIToken, platform.EnvAPITokens)
-	case opts.APIToken == "" && opts.APITokens == "":
+	case cfg.APIToken == "" && cfg.APITokens == "":
 		return nil, fmt.Errorf("%s or %s is not set: the API needs a token", platform.EnvAPITokens, platform.EnvAPIToken)
-	case opts.APITokens != "":
-		tokens, err := api.ParseTokens(opts.APITokens)
+	case cfg.APITokens != "":
+		tokens, err := api.ParseTokens(cfg.APITokens)
 		if err != nil {
 			return nil, fmt.Errorf("%s %w", platform.EnvAPITokens, err)
 		}
 		return tokens, nil
 	}
-	tokens, err := api.OperatorToken(opts.APIToken)
+	tokens, err := api.OperatorToken(cfg.APIToken)
 	if err != nil {
 		return nil, fmt.Errorf("%s %w", platform.EnvAPIToken, err)
 	}
 	return tokens, nil
 }
 
+// content loads the dir Source at GOLDIE_CONTENT_DIR. Errors name the variable
+// and never the path.
+func content(dir string) (*engine.Snapshot, error) {
+	if dir == "" {
+		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
+	}
+	snap, err := engine.NewDirSource(dir).Load()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
+	}
+	return snap, nil
+}
+
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
-// they are not in the spec and not in publicRoutes, but they are registered on
+// they are not in the spec and not in the route table, but they are registered on
 // the same router as the API routes, so the tokens guard them too (#101).
 func addSwaggerUI(m *publicMux) error {
 	assets, err := contract.SwaggerUIAssets()
@@ -243,50 +227,54 @@ func withCSP(h http.Handler) http.Handler {
 }
 
 // ConfigError is a PublicHandler failure the operator fixes through a setting:
-// a missing or malformed token, or content that is missing or does not load.
-// Any other PublicHandler error is internal.
+// a missing or malformed token, a rate limit that limits nothing, or content
+// that is missing or does not load. It holds every such problem PublicHandler
+// found, joined with errors.Join, one per line. Any other PublicHandler error
+// is internal.
 type ConfigError struct{ err error }
 
 func (e *ConfigError) Error() string { return e.err.Error() }
 
 func (e *ConfigError) Unwrap() error { return e.err }
 
-// PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
-// loads the dir Source and serves the API under /api/, every path of which
-// requires a configured token; the OpenAPI document at /openapi.yaml and
-// /openapi.json and, unless switched off, Swagger UI at /swagger-ui, which
-// take the same token; and MCP over streamable HTTP at /mcp, which needs a
-// token too. Anything else is the not-found envelope. A missing token, a bad
-// token line or unloadable content is an error naming the variable, so the
-// server fails at startup (PC-04).
+// PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
+// the Config LoadConfig returned, used as is, and the server's component
+// logger (nil discards). It loads the dir Source and serves the API under
+// /api/, every path of which requires a configured token; the OpenAPI document
+// at /openapi.yaml and /openapi.json and, unless switched off, Swagger UI at
+// /swagger-ui, which take the same token; and MCP over streamable HTTP at
+// /mcp, which needs a token too. Anything else is the not-found envelope. A
+// missing or bad token, a rate limit that limits nothing and unloadable
+// content are reported together in one *ConfigError, each naming its variable
+// and none its value, so the server fails at startup (PC-04) and the operator
+// fixes them all in one restart.
 // Platform stays unaware of the contract: this is where the two meet.
-func PublicHandler(opts Options) (http.Handler, error) {
-	tokens, err := apiTokens(opts)
+func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, error) {
+	var errs []error
+	tokens, err := apiTokens(cfg)
 	if err != nil {
-		return nil, &ConfigError{err}
+		errs = append(errs, err)
 	}
-	limiter := rateLimiter(opts.RateLimit)
-	gate, err := clientVersionGate(opts.MinClientVersion)
+	limiter, err := rateLimiter(cfg.RateLimit)
 	if err != nil {
-		return nil, &ConfigError{err}
+		errs = append(errs, err)
 	}
-	if opts.ContentDir == "" {
-		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
-	}
-	snap, err := engine.NewDirSource(opts.ContentDir).Load()
+	snap, err := content(cfg.ContentDir)
 	if err != nil {
-		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
+		errs = append(errs, err)
 	}
-	m, err := newPublicMuxWith(snap, tokens, limiter, gate)
+	if len(errs) > 0 {
+		return nil, &ConfigError{errors.Join(errs...)}
+	}
+	m, err := newPublicMuxWith(snap, tokens, limiter, clientVersionGate(cfg.MinClientVersion))
 	if err != nil {
 		return nil, err
 	}
-	if opts.SwaggerUI {
+	if cfg.SwaggerUIEnabled {
 		if err := addSwaggerUI(m); err != nil {
 			return nil, err
 		}
 	}
-	logger := opts.Logger
 	if logger == nil {
 		logger = discardLogger
 	}
