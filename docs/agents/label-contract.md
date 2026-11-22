@@ -69,9 +69,16 @@ review outcome carries the reviewed SHA:
 
 ## Gates
 
-[`scripts/agent-gate`](../../scripts/agent-gate) decides whether a PR needs the maintainer. It prints
-one `gate:` line per reason and exits 1 when there is any; exit 2 (it couldn't decide) counts as a
-gate too. Human gates exist for **security and product direction** only:
+[`scripts/agent-gate`](../../scripts/agent-gate) decides whether a PR needs the maintainer. Human
+gates exist for **security and product direction** only, and the maintainer reviews only what is
+significant. The script prints two kinds of reason:
+
+- **`gate:`** (hard): the maintainer decides. The script exits 1; exit 2 (it couldn't decide) counts
+  as a hard reason too.
+- **`review:`** (judgement): the reviewer decides whether the change is
+  [significant](#significance). These don't change the exit code.
+
+Hard reasons:
 
 - agent guardrails and instructions anywhere in the tree (`docs/agents/**`, `.claude/**`,
   `CLAUDE.md`, `AGENTS.md`, `.mcp.json`, `SECURITY.md`) and the knowledge goldie serves to agents
@@ -79,17 +86,35 @@ gate too. Human gates exist for **security and product direction** only:
 - the decision record (`CONTEXT.md`, `docs/adr/**`, `docs/design/**`, `LICENSE`, `NOTICE`);
 - CI, release and architecture enforcement (`.github/**`, release config, `.golangci.*`,
   `testdata/depguard/**`) and deployment;
-- the check and loop tooling (`run`, `scripts/**` and their fixtures), because the PR's own `run`
-  defines what green CI means;
+- the loop tooling (`scripts/**`: the gate, the hook, the poll) and its fixtures;
 - `.gitattributes`, `go.work` and `vendor/`, and file names git has to quote;
 - a **new** direct Go dependency, web dependency or pinned tool (after its
   [dependency brief](#dependency-brief) passed review), a `replace`, `exclude`, `retract`,
   `godebug`, `tool` or `ignore` change in `go.mod`, and a Go or toolchain downgrade;
 - a breaking change to the API contract (ADR 0011).
 
+Review reasons: a change to `run`, the task runner CI calls. The PR's own `run` defines what green
+CI means, so the reviewer checks it isn't weakened; a new task or step is not significant.
+
 Version bumps, new indirect requirements (`./run check` keeps `go.mod` tidy), `go.sum`, Go code,
 tests, test fixtures and the testing checklist are not gated. Never re-derive the gate from this
 list: run the script.
+
+### Significance
+
+A change behind a `review:` reason is **significant**, and goes to the maintainer, when any of these
+hold:
+- an existing check step is removed, skipped, made conditional, or can no longer fail (for example
+  `|| true`, an early `return 0`, a narrowed path or `-run` filter);
+- a check gets less strict: a severity threshold, a rule set, a fixture's expectation, or a tool
+  flag that hides findings;
+- it adds network access or runs downloaded code beyond the module proxy and the pinned tools;
+- the reviewer can't tell after reading the diff.
+
+Anything else is not significant: a new task, a new or stricter step, a refactor that keeps every
+step's behaviour, or an updated comment or help text. The reviewer says in its marker which reason
+it judged and why, and the maintainer inbox lists PRs merged on judgement for an asynchronous
+veto.
 
 **Run `main`'s copy.** A PR can change the gate it is judged by, so the review loop never runs the
 PR's copy:

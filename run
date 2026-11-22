@@ -179,7 +179,8 @@ cmd_gate() {
 
 # Each case in testdata/agent-gate/ has a base/ and a head/ tree and the
 # expected output. The case is committed into a throwaway repository and the
-# gate must print exactly the expected reasons, with exit 1 when there are any.
+# gate must print exactly the expected reasons, with exit 1 when any of them
+# is a hard ("gate:") reason.
 cmd_gate_fixture() {
 	say "agent-gate fixture (each case gives its expected reasons)"
 	for case in testdata/agent-gate/*/; do
@@ -203,7 +204,7 @@ cmd_gate_fixture() {
 		rm -rf "$repo"
 		want=$(cat "${case}expected")
 		wstatus=0
-		[ -z "$want" ] || wstatus=1
+		if grep -q '^gate: ' "${case}expected"; then wstatus=1; fi
 		if [ "$out" != "$want" ] || [ "$status" != "$wstatus" ]; then
 			printf 'want (exit %s):\n%s\ngot (exit %s):\n%s\n' "$wstatus" "$want" "$status" "$out" >&2
 			die "agent-gate case $name failed"

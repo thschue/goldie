@@ -72,10 +72,11 @@ internal/platform config, logging, admin port, readiness, drain, telemetry
    the change, `docs/testing-checklist.md` is worked through, and the built-in `/security-review`
    has run on the diff.
 5. `./run gate origin/main HEAD` says whether a PR needs the maintainer: agent guardrails and
-   instruction files, the decision record, CI and release, architecture enforcement, the check
-   tooling (`run`, `scripts/`), new dependencies or `go.mod` directives, or a breaking contract
-   change ([gates](docs/agents/label-contract.md#gates), ADR 0012). Everything else that review finds
-   clean auto-merges.
+   instruction files, the decision record, CI and release, architecture enforcement, the loop
+   tooling (`scripts/`), new dependencies or `go.mod` directives, or a breaking contract change
+   ([gates](docs/agents/label-contract.md#gates), ADR 0012). A change to `run` is judged by the
+   reviewer and goes to the maintainer only when it weakens a check (ADR 0013). Everything else
+   that review finds clean auto-merges.
 
 ## Issue tracker and labels
 

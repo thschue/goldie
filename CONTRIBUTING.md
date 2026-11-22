@@ -10,8 +10,8 @@ Thanks for helping. Agents follow the same rules; the agent-specific mechanics a
 3. Build with Go 1.27. Run `./run check`; it is what CI runs and must pass with zero warnings.
 4. Work through [docs/testing-checklist.md](docs/testing-checklist.md), then mark the PR ready.
    `./run gate origin/main HEAD` tells you whether the PR needs the maintainer's approval (agent
-   guardrails, the decision record, CI and release, the check tooling, new dependencies, a breaking
-   contract change);
+   guardrails, the decision record, CI and release, the gate tooling, new dependencies, a breaking
+   contract change; a change to `run` only when it weakens a check);
    everything else merges after review and green CI.
 5. The PR title is a Conventional Commit (`feat:`, `fix:`, `docs:`, ...). PRs are squash-merged, so the
    title becomes the commit message and drives release notes.

@@ -3,17 +3,21 @@
 #
 #   scripts/agent-gate <base> <head>
 #
-# Prints one "gate: <reason>: <details>" line per reason and exits 1 when
-# there is any, 0 when the change may auto-merge after a clean review, and 2
-# on a usage, git or tool error (a caller treats 2 as "needs the maintainer").
+# Prints one line per reason and exits 1 when there is any hard reason
+# ("gate: …": the maintainer decides), 0 when there is none, and 2 on a
+# usage, git or tool error (a caller treats 2 as a hard reason). Review
+# reasons ("review: …") don't change the exit code: the reviewer judges
+# whether the change is significant (docs/agents/label-contract.md#gates).
 # <base> and <head> are git revisions; the diff is <base>...<head>, without
 # rename detection. Run it from the repository root.
 #
 # Human gates are kept for security and product direction only:
 #   - by path: agent guardrails and instruction files (anywhere in the tree),
 #     the knowledge served to agents, the decision record, CI and release,
-#     architecture enforcement, the check and loop tooling (`run`,
-#     `scripts/`), git attributes, workspaces and vendoring, deployment;
+#     architecture enforcement, the loop tooling (`scripts/`), git
+#     attributes, workspaces and vendoring, deployment;
+#   - review only: a change to `run`, the task runner CI calls, which a
+#     reviewer can tell apart (a new task) from a weakened check;
 #   - a new direct Go dependency, a go.mod replace, exclude, retract,
 #     godebug, tool or ignore change, a Go or toolchain downgrade;
 #   - a new web dependency, or a new pinned tool (`<module>@<version>`);
@@ -38,8 +42,11 @@ mb=$(git merge-base "$base" "$head") || die "no merge base between $base and $he
 tmp=$(mktemp -d) || die "cannot create a temporary directory"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 reasons="$tmp/reasons"
+reviews="$tmp/reviews"
 : >"$reasons"
+: >"$reviews"
 gate() { printf 'gate: %s\n' "$*" >>"$reasons"; }
+review() { printf 'review: %s\n' "$*" >>"$reviews"; }
 
 # exists <rev> <path>; show <rev> <path>: the file at that revision. A file
 # that is absent reads as empty; any other git failure stops the gate.
@@ -69,8 +76,10 @@ while IFS= read -r f; do
 		gate "CI or release configuration changed: $f" ;;
 	.golangci.* | testdata/depguard/*)
 		gate "architecture enforcement changed: $f" ;;
-	run | scripts/* | testdata/agent-gate/* | testdata/loop-guard/*)
-		gate "check or loop tooling changed: $f" ;;
+	run)
+		review "check tooling changed: $f" ;;
+	scripts/* | testdata/agent-gate/* | testdata/loop-guard/*)
+		gate "loop tooling changed: $f" ;;
 	.gitattributes | */.gitattributes | go.work | go.work.sum | vendor/*)
 		gate "build or diff configuration changed: $f" ;;
 	package.json | */package.json)
@@ -158,17 +167,19 @@ fi
 
 # Print one line per reason with up to three details, so a large change still
 # reads as a short list: "gate: <reason>: a, b, c and 49 more".
-if [ -s "$reasons" ]; then
-	sort -u "$reasons" | awk '
+summarise() {
+	sort -u "$1" | awk '
 		{ i = index($0, ": "); rest = substr($0, i + 2); j = 0
 		  for (k = length(rest); k > 0; k--) if (substr(rest, k, 2) == ": ") { j = k; break }
-		  if (j == 0) { key = $0; detail = "" } else { key = "gate: " substr(rest, 1, j - 1); detail = substr(rest, j + 2) }
+		  if (j == 0) { key = $0; detail = "" } else { key = substr($0, 1, i + 1) substr(rest, 1, j - 1); detail = substr(rest, j + 2) }
 		  if (!(key in n)) order[++keys] = key
 		  n[key]++; if (n[key] <= 3 && detail != "") list[key] = list[key] (n[key] > 1 ? ", " : "") detail }
 		END { for (o = 1; o <= keys; o++) { key = order[o]
 		        line = key (list[key] != "" ? ": " list[key] : "")
 		        if (n[key] > 3) line = line " and " (n[key] - 3) " more"
 		        print line } }'
-	exit 1
-fi
+}
+[ ! -s "$reasons" ] || summarise "$reasons"
+[ ! -s "$reviews" ] || summarise "$reviews"
+[ ! -s "$reasons" ] || exit 1
 exit 0

@@ -1,2 +1,2 @@
-gate: check or loop tooling changed: run
 gate: new pinned tool: github.com/example/compat
+review: check tooling changed: run
