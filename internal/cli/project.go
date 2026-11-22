@@ -67,7 +67,13 @@ func resolveProject(dir, flagValue, envValue string) (detectedProject, error) {
 }
 
 // normaliseConfigured normalises a Project the user typed: a remote URL
-// becomes host/org/repo, anything else is kept as written.
+// becomes host/org/repo, anything else is lower-cased.
+//
+// Every Project the CLI sends passes contract.ValidProjectID, the ProjectId
+// schema of the spec (ADR 0020), after lower-casing. It keeps nested groups,
+// '..', percent escapes, query and fragment characters and other path syntax
+// from a hostile remote out of the Project, and the server accepts what it
+// passes.
 func normaliseConfigured(v string) (string, error) {
 	if id, ok := normaliseRemote(v); ok {
 		return id, nil
@@ -84,12 +90,6 @@ func normaliseConfigured(v string) (string, error) {
 	}
 	return id, nil
 }
-
-// Every Project the CLI sends passes contract.ValidProjectID, the ProjectId
-// schema of the spec (ADR 0020), after lower-casing. It keeps nested groups,
-// '..', percent escapes, query and fragment characters and other path syntax
-// from a hostile remote out of the Project, and the server accepts what it
-// passes.
 
 // projectFromConfigFile reads `project:` from the nearest .goldie/config.yaml
 // from dir up to root, the repository root. It never looks above root: a

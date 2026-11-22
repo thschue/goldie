@@ -20,6 +20,11 @@ const articlesDir = "global/articles"
 // projectsDir holds Project scope: projects/<host>/<org>/<repo>/articles/**.
 const projectsDir = "projects"
 
+// maxProjectIDLen is the maxLength of the ProjectId schema in the spec. The
+// engine cannot import the contract, so loading holds a Source to it here; a
+// longer id would be listed but could never be selected with project=.
+const maxProjectIDLen = 512
+
 // maxArticleBytes caps one article file, so a Source cannot make Load read
 // without bound.
 const maxArticleBytes = 1 << 20
@@ -143,6 +148,9 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 				continue
 			}
 			scope := strings.TrimPrefix(p, projectsDir+"/")
+			if len(scope) > maxProjectIDLen {
+				return fmt.Errorf("%s: the Project id is longer than %d bytes", p, maxProjectIDLen)
+			}
 			if other, dup := seen[strings.ToLower(scope)]; dup {
 				return fmt.Errorf("%s and %s: Projects differ only in case", other, p)
 			}
@@ -318,11 +326,17 @@ func (s *Snapshot) Projects() []string {
 // matched case-insensitively, and returns it in its registered spelling. It is
 // the one decision of what counts as registered; resolution uses it too.
 func (s *Snapshot) Project(id string) (scope string, ok bool) {
+	p, ok := s.lookupProject(id)
+	return p.scope, ok
+}
+
+// lookupProject finds a registered Project by id, case-insensitively.
+func (s *Snapshot) lookupProject(id string) (project, bool) {
 	if id == "" {
-		return "", false
+		return project{}, false
 	}
 	p, ok := s.projects[strings.ToLower(id)]
-	return p.scope, ok
+	return p, ok
 }
 
 // Articles returns every global article, sorted by ID.
@@ -356,8 +370,8 @@ func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
 
 // resolutionOrder returns the article lists to consult, Project before global.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
-	if scope, ok := s.Project(proj); ok {
-		return [][]Article{s.projects[strings.ToLower(scope)].articles, s.articles}
+	if p, ok := s.lookupProject(proj); ok {
+		return [][]Article{p.articles, s.articles}
 	}
 	return [][]Article{s.articles}
 }
