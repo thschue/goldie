@@ -1,4 +1,4 @@
-package cli
+package project
 
 import (
 	"path/filepath"
@@ -46,7 +46,7 @@ func FuzzProjectFiles(f *testing.F) {
 		}
 		dir := t.TempDir()
 		write(t, filepath.Join(dir, ".goldie", "config.yaml"), in)
-		if p, err := resolveProject(dir, "", ""); err == nil && p.ID != "" && !contract.ValidProjectID(p.ID) {
+		if p, err := Resolve(dir, "", ""); err == nil && p.ID != "" && !contract.ValidProjectID(p.ID) {
 			t.Errorf("config.yaml %q gave %q", in, p.ID)
 		}
 	})
