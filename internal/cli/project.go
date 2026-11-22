@@ -72,7 +72,33 @@ func normaliseConfigured(v string) (string, error) {
 		return "", errors.New("the Project is not a host/org/repo name or a git remote URL")
 	}
 	// A plain host/org/repo gets the same shape as a detected one.
-	return strings.ToLower(strings.TrimSuffix(strings.Trim(v, "/"), ".git")), nil
+	id := strings.ToLower(strings.TrimSuffix(strings.Trim(v, "/"), ".git"))
+	if !validProjectID(id) {
+		return "", errors.New("the Project is not a host/org/repo name: use a lower-case host, then letters, digits, '.', '_' and '-' per segment")
+	}
+	return id, nil
+}
+
+// validProjectID reports whether id is host/org/repo (or deeper, for nested
+// groups) under the segment rules the engine applies to projects/: a
+// lower-case DNS host, then segments of letters, digits, '.', '_' and '-' that
+// do not start with '.'. It keeps '..', percent escapes, query and fragment
+// characters and other path syntax from a hostile remote out of the Project.
+func validProjectID(id string) bool {
+	segs := strings.Split(id, "/")
+	if len(segs) < 3 {
+		return false
+	}
+	for i, s := range segs {
+		allowed := "abcdefghijklmnopqrstuvwxyz0123456789._-"
+		if i == 0 {
+			allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
+		}
+		if s == "" || s[0] == '.' || strings.Trim(s, allowed) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // projectFromConfigFile reads `project:` from the nearest .goldie/config.yaml
@@ -289,7 +315,7 @@ func NormaliseRemote(raw string) (id string, ok bool) {
 		return "", false
 	}
 	id = strings.ToLower(host + "/" + path)
-	if strings.IndexFunc(id, func(r rune) bool { return unsafe(r) || r == ' ' }) >= 0 {
+	if strings.IndexFunc(id, func(r rune) bool { return unsafe(r) || r == ' ' }) >= 0 || !validProjectID(id) {
 		return "", false
 	}
 	return id, true

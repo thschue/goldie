@@ -16,7 +16,7 @@ func FuzzNormaliseRemote(f *testing.F) {
 		if !ok {
 			return
 		}
-		if strings.ContainsAny(id, "@ \t\n") || !strings.Contains(id, "/") || id != strings.ToLower(id) {
+		if strings.ContainsAny(id, "@ \t\n") || !validProjectID(id) || id != strings.ToLower(id) {
 			t.Errorf("NormaliseRemote(%q) = %q", in, id)
 		}
 	})

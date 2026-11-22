@@ -40,6 +40,32 @@ func TestNormaliseRemote(t *testing.T) {
 	}
 }
 
+// TestProjectSegmentRules checks that a remote or a typed value only becomes a
+// Project when every segment passes the engine's projects/ rules, so path
+// syntax from a hostile remote ('..', escapes, '?', '#', ':') never does.
+func TestProjectSegmentRules(t *testing.T) {
+	for _, bad := range []string{
+		"https://h.example/%2e%2e/%2e%2e/x", "https://h.example/org/re%3Fpo", "https://h.example/org/re%23po",
+		"https://h.example/org/re%25po", "host.example:org\\..\\x", "https://h.example/.hidden/x",
+		"https://h_x.example/org/repo", "https://h.example/org/repo%C3%A9", "https://h.example/org/repo:tok",
+		"git@h.example:org/repo.git?x=1", "https://[::1]/a/b", "x:y",
+	} {
+		if got, ok := NormaliseRemote(bad); ok {
+			t.Errorf("NormaliseRemote(%q) = %q, want it rejected", bad, got)
+		}
+	}
+	for _, bad := range []string{"../../etc", "foo", "a b/c/d", "%2e%2e/x/y", "ex.com/a/b?q", "ex.com/äö/c", "ex.com/a/../b"} {
+		if got, err := normaliseConfigured(bad); err == nil {
+			t.Errorf("normaliseConfigured(%q) = %q, want an error", bad, got)
+		}
+	}
+	for in, want := range map[string]string{"Ex.com/Org_1/re-po.v2": "ex.com/org_1/re-po.v2", "gitlab.com/group/sub/app": "gitlab.com/group/sub/app"} {
+		if got, err := normaliseConfigured(in); err != nil || got != want {
+			t.Errorf("normaliseConfigured(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+}
+
 func write(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
