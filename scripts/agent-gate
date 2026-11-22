@@ -85,7 +85,8 @@ while IFS= read -r f; do
 		gate "architecture enforcement changed: $f" ;;
 	run)
 		review "check tooling changed: $f" ;;
-	scripts/* | testdata/agent-gate/* | testdata/loop-guard/* | testdata/test-lock/* | testdata/claim/* | testdata/frontier/*)
+	scripts/* | testdata/agent-gate/* | testdata/loop-guard/* | testdata/test-lock/* | testdata/claim/* | testdata/frontier/* | \
+		testdata/stream-state/*)
 		gate "loop tooling changed: $f" ;;
 	.gitattributes | */.gitattributes | go.work | go.work.sum | vendor/*)
 		gate "build or diff configuration changed: $f" ;;

@@ -14,7 +14,7 @@ string is the same as its name:
 Supporting labels:
 - `epic`: tracks sub-issues and is never claimed directly
 - `grilling-needed`: an open design question; run `/grilling` before it can be ready
-- `question`: a decision the maintainer has to make
+- `question`: a maintainer decision (issues); a product question awaiting its answer (PRs)
 - `priority`: at most 2 open at a time
 - `bug`: ranks first; `security`: a tag (MEDIUM+ goes to a private advisory)
 
