@@ -16,7 +16,7 @@ import (
 )
 
 // MCPUsage is the one-line usage of the mcp role, without the program name.
-const MCPUsage = "mcp --transport stdio [--addr URL] [--token TOKEN]"
+const MCPUsage = "mcp --transport stdio [--addr URL | --dir PATH] [--token TOKEN]"
 
 // mcpTokenNote recommends the token variables over --token: its value shows in
 // the process list (ps), and an MCP client saves it in its config.
@@ -47,10 +47,11 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	if *transport != "stdio" {
 		return errTransport
 	}
-	addr, token, err := settings.Resolve(env)
+	addr, token, stop, err := settings.Open(ctx, env)
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)
 	}
+	defer stop()
 	client, err := contract.NewAPIClient(addr, token, platform.Version, env.Client)
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)

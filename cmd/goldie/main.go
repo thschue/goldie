@@ -35,7 +35,7 @@ func run(args []string, out io.Writer) error {
 	if cli.IsCommand(args[0]) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		return cli.Run(ctx, args, cli.DefaultEnv(out))
+		return cli.Run(ctx, args, clientEnv(out))
 	}
 	switch args[0] {
 	case "server":
@@ -63,6 +63,15 @@ func run(args []string, out io.Writer) error {
 	return usageError()
 }
 
+// clientEnv is the process environment for the client commands, with the
+// embedded server of --dir and GOLDIE_DIR wired in from app, so cli imports
+// neither engine nor app.
+func clientEnv(out io.Writer) cli.Env {
+	env := cli.DefaultEnv(out)
+	env.StartLocal = app.StartLocal
+	return env
+}
+
 func usageError() error {
 	return errors.New("usage: goldie server [-dev [dir]] | validate [dir] | health [--ready] | " + app.MCPUsage + " | " + cli.Usage + "\n" +
 		cli.TokenNote + "\n" + devNote)
@@ -79,7 +88,7 @@ const devNote = "server -dev serves dir (else GOLDIE_CONTENT_DIR, else the worki
 func runMCP(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return app.RunMCP(ctx, args, cli.DefaultEnv(io.Discard), os.Stdin, os.Stdout)
+	return app.RunMCP(ctx, args, clientEnv(io.Discard), os.Stdin, os.Stdout)
 }
 
 // runServer starts the server and blocks until it stops. The first SIGTERM or
