@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,6 +41,9 @@ func TestBinaryRateLimitsEachTokenFromTheSetting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Drain the body so the client reuses the connection instead of
+			// dialling a spare one that Shutdown only treats as idle after 5 s.
+			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "30" {
 				t.Errorf("reader over its limit: status %d Retry-After %q, want 429 and 30", resp.StatusCode, resp.Header.Get("Retry-After"))
