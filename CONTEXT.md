@@ -71,7 +71,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 
 | Module | Package | Responsibility |
 |---|---|---|
-| Engine | `internal/engine` | Items, Kinds, validation, digests, keyword search, Resolution, Sources, Snapshots. Pure, no HTTP. |
+| Engine | `internal/engine` | Items, Kinds, validation, digests, keyword search, Resolution, Sources, Snapshots. Pure: it serves no HTTP and owns no inbound transport (that is the API's job). A Source may still be a client of a remote, for example by cloning a git repository. |
 | API | `internal/api` | HTTP transport over the Engine: handlers, auth, sessions, activity |
 | UI | `internal/ui` | Vue SPA, embedded, talking only to the API |
 | MCP | `internal/mcp` | Talks to the API only through the client |
