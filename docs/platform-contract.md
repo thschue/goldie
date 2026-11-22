@@ -62,11 +62,11 @@ and running `./run regen`.
 - `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and
   `GOLDIE_API_TOKEN`, best set as `GOLDIE_API_TOKEN_FILE`; without either, or with a token shorter
   than 32 bytes (`openssl rand -hex 32` makes one), it exits non-zero naming the variable and never
-  echoing the token or its length. Every path under `/api/` requires
-  `Authorization: Bearer <token>`, compared in constant time, and answers 401 in the error envelope
-  otherwise. The startup report shows the token as `(redacted)`. Until #11, the token does not cover `/openapi.*` or `/swagger-ui`. This single token
-  stands in for ADR 0008's named tokens with Roles, which #11 brings; like every config variable,
-  `GOLDIE_API_TOKEN` may change in a `0.x` minor release (ADR 0011).
+  echoing the token or its length. Every path under `/api/` requires `Authorization: Bearer <token>`,
+  compared in constant time, and answers 401 in the error envelope otherwise. The startup report
+  shows the token as `(redacted)`. Until #11, the token does not cover `/openapi.*` or `/swagger-ui`.
+  This single token stands in for ADR 0008's named tokens with Roles, which #11 brings; like every
+  config variable, `GOLDIE_API_TOKEN` may change in a `0.x` minor release (ADR 0011).
 - Nested article ids are one `%2F`-encoded path segment (ADR 0016). A reverse proxy in front of the
   public listener must pass `%2F` through unchanged: Apache needs `AllowEncodedSlashes NoDecode`, and
   nginx must not carry a URI in `proxy_pass`.
