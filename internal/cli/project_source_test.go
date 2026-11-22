@@ -26,7 +26,7 @@ func TestSourceErrorPrefixes(t *testing.T) {
 		{"env", "", "u:s3cret@x", t.TempDir(), "GOLDIE_PROJECT: "},
 		{"config", "", "", dir, ".goldie/config.yaml: "},
 	} {
-		_, err := resolveProject(c.dir, c.flag, c.env)
+		_, err := detectProject(c.dir, c.flag, c.env)
 		if err == nil || !strings.HasPrefix(err.Error(), c.prefix) || strings.Contains(err.Error(), "s3cret") {
 			t.Errorf("%s: error = %v, want prefix %q and no value", c.name, err, c.prefix)
 		}
