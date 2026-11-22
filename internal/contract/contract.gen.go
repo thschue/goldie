@@ -22,10 +22,7 @@ type Error struct {
 	// Examples: not_found
 	Code string `json:"code"`
 
-	// Details Next-step hints for the caller, and nothing else. It never echoes the
-	// request and never contains addresses, ports, hostnames, paths or stack
-	// traces. It is required, so a client can always read it, and always
-	// carries a hint.
+	// Details Next-step hints for the caller.
 	Details ErrorDetails `json:"details"`
 
 	// Message A short, human-readable explanation.

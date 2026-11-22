@@ -88,6 +88,7 @@ components:
           examples:
             - no such endpoint
         details:
+          description: Next-step hints for the caller.
           $ref: "#/components/schemas/ErrorDetails"
     ErrorDetails:
       type: object

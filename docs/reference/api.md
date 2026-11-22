@@ -50,7 +50,7 @@ One error. It never contains addresses, paths or stack traces.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `code` | `string` | yes | A stable, machine-readable error code. |
-| `details` | `ErrorDetails` | yes |  |
+| `details` | `ErrorDetails` | yes | Next-step hints for the caller. |
 | `message` | `string` | yes | A short, human-readable explanation. |
 
 ### `ErrorDetails`
