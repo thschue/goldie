@@ -147,6 +147,9 @@ func checkRateLimit(l platform.RateLimit) error {
 	if l.Requests <= 0 || l.Per <= 0 {
 		return fmt.Errorf("%s: no limit was given; the server does not run without one", platform.EnvRateLimit)
 	}
+	if l.Per/time.Duration(l.Requests) <= 0 {
+		return fmt.Errorf("%s: the interval per request rounds to zero; the server does not run without a limit", platform.EnvRateLimit)
+	}
 	return nil
 }
 
@@ -254,18 +257,22 @@ const sourceDirCheck = "source:dir"
 const dirPollInterval = 30 * time.Second
 
 // Public is the handler of the public listener and the owner of its Source's
-// Syncer. It embeds the router, so it is an http.Handler and counts rate limit rejections. Until Start runs, it serves the content PublicHandler loaded.
+// Syncer.
+// It embeds the router, so it is an http.Handler and counts rate limit rejections.
+// Until Start runs, it serves the content PublicHandler loaded.
 type Public struct {
 	*publicMux
-	syncer *engine.Syncer
-	once   sync.Once
+	syncer  *engine.Syncer
+	mu      sync.Mutex
+	started bool
 }
 
 // Start runs the dir Source's poll loop until ctx ends and registers its
 // readiness check, "source:dir", with reg. It does not block. The check is
 // ready while the Syncer holds a Snapshot, so a stale Source stays ready and
-// no error reaches /readyz (PC-02). Only the first call starts a loop; every
-// call registers the check, which replaces itself.
+// no error reaches /readyz (PC-02). Only the first call with a live context
+// starts a loop; a call with a cancelled context does not use up the start.
+// Every call registers the check, which replaces itself.
 func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 	reg.Add(sourceDirCheck, func(context.Context) error {
 		if p.syncer.Current() == nil {
@@ -273,12 +280,13 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		}
 		return nil
 	})
-	p.once.Do(func() {
-		if ctx.Err() != nil {
-			return
-		}
-		go p.syncer.Run(ctx, dirPollInterval, nil)
-	})
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.started || ctx.Err() != nil {
+		return
+	}
+	p.started = true
+	go p.syncer.Run(ctx, dirPollInterval, nil)
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
