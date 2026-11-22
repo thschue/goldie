@@ -30,7 +30,7 @@ func mcpStatus(t *testing.T, url, token string) int {
 // the 429 envelope with Retry-After on /mcp too, counted under its name, while
 // another token still connects.
 func TestMCPOverHTTPIsRateLimitedPerToken(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), RateLimit: "1/m"})
+	srv := tokenServer(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
 	h := srv.Config.Handler
 	if got := mcpStatus(t, srv.URL, readerToken); got != http.StatusOK {
 		t.Fatalf("first /mcp request: status %d, want 200", got)
