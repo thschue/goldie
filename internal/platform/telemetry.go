@@ -39,19 +39,33 @@ type Telemetry struct {
 	err  error
 }
 
-// telemetryResource returns the the resource attributes every signal carries.
+// telemetryResource returns the resource attributes every signal carries.
+// extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and serviceName the
+// OTEL_SERVICE_NAME value (empty when unset). goldie owns service.version and
+// goldie.mode, so extra cannot override them; service.name may be overridden.
 // goldie.mode is "all" until server roles are split (#24).
-func telemetryResource() *resource.Resource {
-	base := resource.NewSchemaless(
-		attribute.String("service.name", "goldie"),
+func telemetryResource(serviceName string, extra map[string]string) *resource.Resource {
+	name := "goldie"
+	if v := extra["service.name"]; v != "" {
+		name = v
+	}
+	if serviceName != "" {
+		name = serviceName
+	}
+	attrs := make([]attribute.KeyValue, 0, len(extra)+3)
+	for k, v := range extra {
+		switch k {
+		case "service.name", "service.version", "goldie.mode":
+		default:
+			attrs = append(attrs, attribute.String(k, v))
+		}
+	}
+	attrs = append(attrs,
+		attribute.String("service.name", name),
 		attribute.String("service.version", CurrentVersion().Version),
 		attribute.String("goldie.mode", "all"),
 	)
-	// OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES may override the defaults.
-	if merged, err := resource.Merge(base, resource.Environment()); err == nil {
-		return merged
-	}
-	return base
+	return resource.NewSchemaless(attrs...)
 }
 
 // defaultSpanAttributeValueLimit caps each span attribute value when
@@ -85,6 +99,8 @@ const (
 	envOTLPEndpoint = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	envOTLPProtocol = "OTEL_EXPORTER_OTLP_PROTOCOL"
 	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
+	envOTelService  = "OTEL_SERVICE_NAME"
+	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
 )
 
 // SetupTelemetry reads the OTEL_* variables and builds the exporters. It
@@ -104,6 +120,11 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	} else if v == "true" {
 		return &Telemetry{}, errors.Join(errs...)
 	}
+	resAttrs, err := parseResourceAttributes(get(envOTelResAttrs))
+	if err != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", envOTelResAttrs, err))
+	}
+	serviceName := get(envOTelService)
 	type signal struct{ name, exporter, prefix string }
 	signals := []signal{
 		{"traces", "OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_"},
@@ -152,7 +173,6 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	var (
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
-		err   error
 	)
 	if on["traces"] {
 		opts := []otlptracehttp.Option{}
@@ -172,7 +192,7 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	return newTelemetry(telemetryResource(), spans, logs), nil
+	return newTelemetry(telemetryResource(serviceName, resAttrs), spans, logs), nil
 }
 
 // parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the
@@ -180,6 +200,29 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 // A malformed escape is an error here: left to the SDK's own env parser, it
 // would print the raw value to stderr.
 func parseOTLPHeaders(s string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, pair := range strings.Split(s, ",") {
+		k, v, ok := strings.Cut(pair, "=")
+		k = strings.TrimSpace(k)
+		if !ok || k == "" {
+			return nil, errors.New("must be comma-separated key=value pairs")
+		}
+		dv, err := url.PathUnescape(v)
+		if err != nil {
+			return nil, errors.New("values must be percent-encoded")
+		}
+		out[k] = strings.TrimSpace(dv)
+	}
+	return out, nil
+}
+
+// parseResourceAttributes parses OTEL_RESOURCE_ATTRIBUTES, "k=v,k2=v2" with
+// percent-encoded values. The SDK silently drops a malformed value, so goldie
+// parses it first and fails startup. The error never contains the text.
+func parseResourceAttributes(s string) (map[string]string, error) {
+	if s == "" {
+		return nil, nil
+	}
 	out := map[string]string{}
 	for _, pair := range strings.Split(s, ",") {
 		k, v, ok := strings.Cut(pair, "=")

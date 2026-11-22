@@ -125,7 +125,7 @@ func startTraced(t *testing.T, tel *Telemetry, logs *syncBuffer) (app, admin str
 
 func TestTelemetryOneServerSpanOnPublicListener(t *testing.T) {
 	spans := newSpanSink()
-	tel := newTelemetry(telemetryResource(), spans, &logSink{})
+	tel := newTelemetry(telemetryResource("", nil), spans, &logSink{})
 	app, admin, stop := startTraced(t, tel, &syncBuffer{})
 
 	req, _ := http.NewRequest("GET", "http://"+app+"/api/v1/items?token=s3cret&q=hunter2", nil)
@@ -181,7 +181,7 @@ func TestTelemetryOneServerSpanOnPublicListener(t *testing.T) {
 
 func TestTelemetryLogsFlowThroughBridgeAndKeepPC07Shape(t *testing.T) {
 	logs := &logSink{}
-	tel := newTelemetry(telemetryResource(), newSpanSink(), logs)
+	tel := newTelemetry(telemetryResource("", nil), newSpanSink(), logs)
 	out := &syncBuffer{}
 	_, _, stop := startTraced(t, tel, out)
 	stop()
@@ -360,7 +360,7 @@ func TestTelemetryHeaderValuesArePercentDecoded(t *testing.T) {
 // up to the 1 MiB header limit until the collector takes it.
 func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 	spans := newSpanSink()
-	tel := newTelemetry(telemetryResource(), spans, nil)
+	tel := newTelemetry(telemetryResource("", nil), spans, nil)
 	app, _, stop := startTraced(t, tel, &syncBuffer{})
 	req, _ := http.NewRequest("GET", "http://"+app+"/"+strings.Repeat("p", 4000), nil)
 	req.Header.Set("User-Agent", strings.Repeat("A", 100_000))
@@ -387,7 +387,7 @@ func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 func TestTelemetryReportErrorsToRedactsAndRateLimits(t *testing.T) {
 	prev := otel.GetErrorHandler()
 	t.Cleanup(func() { otel.SetErrorHandler(prev) })
-	tel := newTelemetry(telemetryResource(), newSpanSink(), nil)
+	tel := newTelemetry(telemetryResource("", nil), newSpanSink(), nil)
 	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
 	out := &syncBuffer{}
 	tel.ReportErrorsTo(NewLogger(out, 0, "server"))
@@ -415,5 +415,46 @@ func TestTelemetryHeaderBadEscapeFailsWithoutEcho(t *testing.T) {
 	}))
 	if err == nil || !strings.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS") || strings.Contains(err.Error(), "hunter2") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A malformed OTEL_RESOURCE_ATTRIBUTES fails startup naming the variable and
+// never echoing it; the SDK alone would drop it silently.
+func TestTelemetryResourceAttributesMalformedFailsFast(t *testing.T) {
+	for _, val := range []string{"hunter2", "k=v%zz-hunter2", "=hunter2", "a=b,hunter2"} {
+		_, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
+			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+			"OTEL_RESOURCE_ATTRIBUTES":    val,
+		}))
+		if err == nil || !strings.Contains(err.Error(), "OTEL_RESOURCE_ATTRIBUTES") || strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("value %q: err = %v", val, err)
+		}
+	}
+}
+
+// OTEL_RESOURCE_ATTRIBUTES adds attributes and may rename the service, but
+// cannot override what goldie owns; OTEL_SERVICE_NAME wins over it.
+func TestTelemetryResourceReservedAttributesWin(t *testing.T) {
+	attrs, err := parseResourceAttributes("deployment.environment=prod%20eu,service.version=9.9.9,goldie.mode=server,service.name=a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, kv := range telemetryResource("", attrs).Attributes() {
+		got[string(kv.Key)] = kv.Value.String()
+	}
+	want := map[string]string{
+		"deployment.environment": "prod eu", "service.name": "a",
+		"service.version": CurrentVersion().Version, "goldie.mode": "all",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
+	}
+	for _, kv := range telemetryResource("b", attrs).Attributes() {
+		if kv.Key == "service.name" && kv.Value.String() != "b" {
+			t.Errorf("OTEL_SERVICE_NAME did not win: %v", kv.Value)
+		}
 	}
 }
