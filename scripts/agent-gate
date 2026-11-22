@@ -135,14 +135,25 @@ if printf '%s\n' "$files" | grep -qx "$spec" && git cat-file -e "$mb:$spec" 2>/d
 		rm -f "$reasons.old.yaml" "$reasons.new.yaml"
 		case "$status" in
 		0) ;;
-		1) gate "breaking API contract change (ADR 0011; details: ./run contract-compat)" ;;
+		1) gate "breaking API contract change (ADR 0011, see ./run contract-compat)" ;;
 		*) gate "API contract compatibility could not be checked (exit $status)" ;;
 		esac
 	fi
 fi
 
+# Print one line per reason with up to three details, so a large PR still
+# reads as a short list: "gate: <reason>: a, b, c and 49 more".
 if [ -s "$reasons" ]; then
-	sort -u "$reasons"
+	sort -u "$reasons" | awk '
+		{ i = index($0, ": "); rest = substr($0, i + 2); j = 0
+		  for (k = length(rest); k > 0; k--) if (substr(rest, k, 2) == ": ") { j = k; break }
+		  if (j == 0) { key = $0; detail = "" } else { key = "gate: " substr(rest, 1, j - 1); detail = substr(rest, j + 2) }
+		  if (!(key in n)) order[++keys] = key
+		  n[key]++; if (n[key] <= 3 && detail != "") list[key] = list[key] (n[key] > 1 ? ", " : "") detail }
+		END { for (o = 1; o <= keys; o++) { key = order[o]
+		        line = key (list[key] != "" ? ": " list[key] : "")
+		        if (n[key] > 3) line = line " and " (n[key] - 3) " more"
+		        print line } }'
 	exit 1
 fi
 exit 0

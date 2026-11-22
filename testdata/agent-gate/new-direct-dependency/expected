@@ -1,2 +1,1 @@
-gate: new direct Go dependency: github.com/added/direct
-gate: new direct Go dependency: github.com/added/single
+gate: new direct Go dependency: github.com/added/direct, github.com/added/single

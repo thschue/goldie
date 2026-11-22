@@ -1,7 +1,5 @@
 gate: CI or release configuration changed: .github/workflows/ci.yml
 gate: agent gate changed: scripts/agent-gate
-gate: agent guardrail changed: .claude/commands/loop.md
-gate: agent guardrail changed: CLAUDE.md
-gate: agent guardrail changed: docs/agents/loop.md
+gate: agent guardrail changed: .claude/commands/loop.md, CLAUDE.md, SECURITY.md and 1 more
 gate: architecture enforcement changed: testdata/depguard/README
 gate: decision record changed: docs/adr/0099-x.md
