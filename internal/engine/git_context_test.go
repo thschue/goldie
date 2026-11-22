@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
@@ -130,6 +132,7 @@ func TestGitSourceCancelStopsAnInFlightFetch(t *testing.T) {
 					t.Fatal("a cancelled Load succeeded")
 				}
 				assertFixedGitError(t, err)
+				assertCancelledGitError(t, err)
 				assertNoSecret(t, err.Error(), token, srv.URL, srv.Listener.Addr().String())
 			case <-time.After(10 * time.Second):
 				t.Fatal("cancelling the context did not stop the fetch in flight")
@@ -147,6 +150,7 @@ func TestGitSourceCancelStopsAnInFlightFetch(t *testing.T) {
 				if err == nil {
 					t.Fatal("a Load with a cancelled context succeeded")
 				}
+				assertCancelledGitError(t, err)
 			case <-time.After(10 * time.Second):
 				t.Fatal("the Load after a cancel never ran: the load lock was not released")
 			}
@@ -205,6 +209,7 @@ func TestGitSourceCancelStopsAnSSHHandshake(t *testing.T) {
 			t.Fatal("a cancelled Load succeeded")
 		}
 		assertFixedGitError(t, err)
+		assertCancelledGitError(t, err)
 		assertNoSecret(t, err.Error(), ln.Addr().String())
 	case <-time.After(10 * time.Second):
 		t.Fatal("cancelling the context did not stop the SSH handshake")
@@ -225,6 +230,7 @@ func TestGitSourceLoadWithCancelledContextFetchesNothing(t *testing.T) {
 			t.Fatal("a Load with a cancelled context succeeded")
 		}
 		assertFixedGitError(t, err)
+		assertCancelledGitError(t, err)
 		assertNoSecret(t, err.Error(), srv.URL, srv.Listener.Addr().String())
 	case <-time.After(10 * time.Second):
 		t.Fatal("a Load with a cancelled context went on to fetch")
@@ -241,6 +247,7 @@ func TestGitSourceLoadWithCancelledContextFetchesNothing(t *testing.T) {
 		t.Fatalf("file:// Load with a cancelled context = %v, %v; want an error and no Snapshot", snap, err)
 	}
 	assertFixedGitError(t, err)
+	assertCancelledGitError(t, err)
 	assertNoSecret(t, err.Error(), repo.url, repo.dir)
 	if file.Revision() != "" {
 		t.Fatal("a Load with a cancelled context set a revision")
@@ -308,8 +315,103 @@ func TestSyncerRunOverGitSourceStopsOnCancel(t *testing.T) {
 	defer mu.Unlock()
 	for _, st := range reports {
 		assertNoSecret(t, st.LastError, token, srv.URL, srv.Listener.Addr().String())
+		if st.LastError != "" && st.LastError != cancelledGitError {
+			t.Fatalf("reported LastError = %q, want empty or %q", st.LastError, cancelledGitError)
+		}
 	}
 	assertNoSecret(t, syncer.Status().LastError, token, srv.URL, srv.Listener.Addr().String())
+	if got := syncer.Status().LastError; got != "" && got != cancelledGitError {
+		t.Fatalf("Status().LastError = %q, want empty or %q", got, cancelledGitError)
+	}
+}
+
+// cancelledGitError is the whole text of the error a git Source returns when
+// its Load's context ended, however the Load noticed.
+const cancelledGitError = "git source: the load was cancelled"
+
+// assertCancelledGitError checks the exact text, as the timeout tests do.
+func assertCancelledGitError(t *testing.T, err error) {
+	t.Helper()
+	if err == nil || err.Error() != cancelledGitError {
+		t.Fatalf("err = %v, want exactly %q", err, cancelledGitError)
+	}
+}
+
+// TestGitSourcePollOfACancelledContextRecordsTheFixedError: a Syncer polling a
+// git Source with a context that is already over fails that poll with the
+// fixed text, which is what Status shows, and serves no Snapshot.
+func TestGitSourcePollOfACancelledContextRecordsTheFixedError(t *testing.T) {
+	srv, _, requests := stallServer(t, true)
+	src := newGit(t, engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: "poll-hunter2", CABundle: string(certPEM(srv))})
+	syncer := engine.NewSyncer(src)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	assertCancelledGitError(t, syncer.Poll(ctx))
+	if got := syncer.Status().LastError; got != cancelledGitError {
+		t.Fatalf("Status().LastError = %q, want %q", got, cancelledGitError)
+	}
+	if syncer.Current() != nil {
+		t.Fatal("a cancelled poll served a Snapshot")
+	}
+	if n := requests.Load(); n != 0 {
+		t.Fatalf("a cancelled poll sent %d requests", n)
+	}
+}
+
+// TestGitSourceCancelledErrorIsTheSameWhereverItIsBuilt is the drift guard. A
+// Load cancelled before it starts and one cancelled while it fetches reach the
+// error by different paths; both must return the same text and the same
+// error type, wrap nothing, and show no URL, address or path.
+func TestGitSourceCancelledErrorIsTheSameWhereverItIsBuilt(t *testing.T) {
+	const token = "drift-hunter2-token"
+	srv, reached, _ := stallServer(t, true)
+	src := newGit(t, engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: token, CABundle: string(certPEM(srv))})
+	repo := newGitRepo(t)
+	repo.commit("main", map[string]string{"global/articles/a.md": article("Ay")})
+	file := newGit(t, engine.GitOptions{URL: repo.url})
+
+	over, stop := context.WithCancel(context.Background())
+	stop()
+	_, early := src.Load(over)
+	_, earlyFile := file.Load(over)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := loadAsync(ctx, src)
+	select {
+	case <-reached:
+	case err := <-done:
+		t.Fatalf("Load ended before the server stalled it: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("fixture: the Load never reached the stalling request")
+	}
+	cancel()
+	var mid error
+	select {
+	case mid = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("cancelling the context did not stop the fetch in flight")
+	}
+
+	for name, err := range map[string]error{"early return": early, "early return, file://": earlyFile, "during the fetch": mid} {
+		if err == nil {
+			t.Fatalf("%s: a cancelled Load succeeded", name)
+		}
+		assertCancelledGitError(t, err)
+		assertNoSecret(t, err.Error(), token, srv.URL, srv.Listener.Addr().String(), repo.url, repo.dir)
+		if u := errors.Unwrap(err); u != nil {
+			t.Fatalf("%s: the error wraps %v; it must carry only the fixed text", name, u)
+		}
+		if errors.Is(err, context.Canceled) {
+			t.Fatalf("%s: the error wraps context.Canceled; it must carry only the fixed text", name)
+		}
+	}
+	if early.Error() != mid.Error() || fmt.Sprintf("%T", early) != fmt.Sprintf("%T", mid) {
+		t.Fatalf("the two paths drifted: %T %q vs %T %q", early, early, mid, mid)
+	}
+	if early.Error() != earlyFile.Error() || fmt.Sprintf("%T", early) != fmt.Sprintf("%T", earlyFile) {
+		t.Fatalf("the same path drifted between Sources: %T %q vs %T %q", early, early, earlyFile, earlyFile)
+	}
 }
 
 // otherCAPEM is a self-signed CA certificate that signed none of the test
