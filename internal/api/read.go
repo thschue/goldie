@@ -34,14 +34,14 @@ func unregisteredHint(id string) string {
 // scopeHint validates the optional project parameter. It returns the Project
 // to resolve for, the hint when it is not registered, and false when the
 // parameter is not a ProjectId.
-func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *string, ok bool) {
+func scopeHint(snap *engine.Snapshot, project *contract.ProjectId) (proj string, hint *string, ok bool) {
 	if project == nil {
 		return "", nil, true
 	}
 	if !contract.ValidProjectID(*project) {
 		return "", nil, false
 	}
-	if scope, registered := s.snap.Project(*project); registered {
+	if scope, registered := snap.Project(*project); registered {
 		return scope, nil, true
 	}
 	h := unregisteredHint(*project)
@@ -52,23 +52,31 @@ func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *stri
 // operation under; the mux reports it as the request's Pattern.
 const searchPattern = http.MethodGet + " /api/v1/search"
 
-// Server implements contract.StrictServerInterface over one Snapshot. The
-// generated router decodes the parameters; these methods return the spec's
-// response types. It carries no auth: the caller wraps /api/ in RequireToken.
+// notReady is the 503 envelope for a read before the first successful load.
+// Answering it keeps a direct caller from reading an empty result as "no
+// matches" (ADR 0014).
+var notReady = envelope("not_ready", "content is still loading",
+	"The server has not loaded its content yet. Wait a few seconds and retry.")
+
+// Server implements contract.StrictServerInterface over the current Snapshot,
+// read through the provider once per request. The generated router decodes the
+// parameters; these methods return the spec's response types. It carries no
+// auth: the caller wraps /api/ in RequireToken.
 type Server struct {
-	snap     *engine.Snapshot
+	provider func() *engine.Snapshot
 	specJSON []byte
 }
 
 var _ contract.StrictServerInterface = (*Server)(nil)
 
-// NewServer returns the Server for snap.
-func NewServer(snap *engine.Snapshot) (*Server, error) {
+// NewServer returns the Server that reads provider() on every request. A nil
+// result means no load has succeeded yet, and the read answers 503 not_ready.
+func NewServer(provider func() *engine.Snapshot) (*Server, error) {
 	specJSON, err := contract.SpecJSON()
 	if err != nil {
 		return nil, err
 	}
-	return &Server{snap: snap, specJSON: specJSON}, nil
+	return &Server{provider: provider, specJSON: specJSON}, nil
 }
 
 // Register registers the spec's operations on m through the generated router,
@@ -89,16 +97,20 @@ func (s *Server) Register(m contract.ServeMux) {
 
 // SearchArticles answers GET /api/v1/search.
 func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
+	snap := s.provider()
+	if snap == nil {
+		return contract.SearchArticles503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
 	q := req.Params.Q
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
 	}
-	proj, hint, ok := s.scopeHint(req.Params.Project)
+	proj, hint, ok := scopeHint(snap, req.Params.Project)
 	if !ok {
 		return contract.SearchArticles400JSONResponse(badProject), nil
 	}
 	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
-	for _, h := range s.snap.SearchIn(proj, q) {
+	for _, h := range snap.SearchIn(proj, q) {
 		res.Results = append(res.Results, contract.SearchHit{
 			Id:       h.ID,
 			Name:     h.Name,
@@ -116,11 +128,15 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 // decoded, so a nested id sent as one %2F-encoded segment keeps its "/"
 // (ADR 0016).
 func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObject) (contract.GetArticleResponseObject, error) {
-	proj, hint, valid := s.scopeHint(req.Params.Project)
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetArticle503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, hint, valid := scopeHint(snap, req.Params.Project)
 	if !valid {
 		return contract.GetArticle400JSONResponse(badProject), nil
 	}
-	a, ok := s.snap.ArticleIn(proj, req.Id)
+	a, ok := snap.ArticleIn(proj, req.Id)
 	if !ok {
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			"Search for the article with the search operation, then use an id from its results.")), nil
@@ -136,7 +152,11 @@ func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObj
 
 // ListProjects answers GET /api/v1/projects.
 func (s *Server) ListProjects(context.Context, contract.ListProjectsRequestObject) (contract.ListProjectsResponseObject, error) {
-	return contract.ListProjects200JSONResponse{Projects: list(s.snap.Projects())}, nil
+	snap := s.provider()
+	if snap == nil {
+		return contract.ListProjects503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	return contract.ListProjects200JSONResponse{Projects: list(snap.Projects())}, nil
 }
 
 // GetOpenAPIYAML answers GET /openapi.yaml with the embedded document.
