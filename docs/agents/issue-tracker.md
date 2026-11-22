@@ -9,14 +9,11 @@ operation; inside a clone it infers the repository from the remote.
   Issue-specific context goes in the issue body and comments. Blocking relationships are native
   issue dependencies, and an epic's parts are native sub-issues.
 - **One PR closes exactly one issue** (`Closes #<n>` in the body). The exception is a
-  [found-fix PR](./label-contract.md#fix-it-now), which fixes one bug found while working and closes
-  no issue. Open it as a **draft before the
-  first line of code**, title it with a Conventional Commit type (`feat:`, `fix:`, `docs:`,
-  `refactor:`, `test:`, `build:`, `ci:`, `chore:`, `perf:`, `style:`, `revert:`), and
-  **squash-merge** it. The review loop checks the title.
-- Before a PR leaves draft, work through `docs/testing-checklist.md`
-  and run the built-in `/security-review` on your diff (not `/review-loop`, which is the review
-  loop). Run `./run gate origin/main HEAD` and put its reasons in the PR body.
+  [found-fix PR](./README.md#fix-it-now), which fixes one bug found while working and closes no
+  issue. Open it as a **draft before the first line of code** (`scripts/claim` does this for the
+  loops), title it with a Conventional Commit type, and **squash-merge** it.
+- Before a PR leaves draft, work through `docs/testing-checklist.md`, run the built-in
+  `/security-review` on your diff, and put the reasons of `./run gate origin/main HEAD` in the body.
 
 ## Recipes
 
@@ -48,12 +45,10 @@ The **frontier** is the set of issues an agent may start now. An issue is on the
 2. it is not an `epic`;
 3. it has no `in-progress` label and no assignee;
 4. every native `blocked_by` dependency is closed;
-5. if `LOOP_MILESTONE` is set, it is in that milestone.
+5. no remote branch `*/issue-<n>-*` exists (`scripts/claim` checks this).
 
-Rank the frontier by the [order of work](./label-contract.md#order-of-work): `bug`, `security` and
-`priority` first (pm-audit puts `priority` on the [critical path](./pm-audit-loop.md#4-planning)),
-oldest `createdAt` first among them; then everything else, oldest `createdAt` first. Handed-back PRs aren't on the frontier: the worker reworks them from its own
-queue, before it claims anything ([issue-worker loop](./issue-worker-loop.md)).
+Rank it by the [order of work](./README.md#order-of-work); a delivery session takes its own
+`area:` lane first.
 
 ```sh
 # open issues this one blocks (critical-path count, first level)
@@ -73,6 +68,24 @@ gh api repos/thschue/goldie/issues/<n>/dependencies/blocking --jq '[.[] | select
   treating the PR as clean.
 - Old job logs: `gh run view --log-failed` can come back empty. Use
   `gh api repos/thschue/goldie/actions/jobs/<id>/logs` instead.
+
+## Issue template
+
+The product session writes every `ready-for-agent` issue in this shape; the `test-author` turns
+`Acceptance` into tests and the `implementer` follows `Pattern to follow`.
+
+```markdown
+## Problem
+<who is affected and what they can't do today>
+## Acceptance
+- [ ] <observable behaviour at a named seam: HTTP, CLI, MCP or UI>
+## Pattern to follow
+<existing file(s) whose approach this copies, and the module/seam>
+## Notes
+<edge cases, security cases, UI criteria, out of scope>
+```
+
+The lane is the `area:` label; blockers are native `blocked_by` edges.
 
 ## When a skill says "publish to the issue tracker"
 

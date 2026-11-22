@@ -1,6 +1,6 @@
 # 12. Agent loops: mechanical gates, a PR-centric handoff and review lenses
 
-Status: accepted
+Status: accepted; the session topology and handoff are superseded by ADR 0018
 
 ## Context
 
