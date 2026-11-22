@@ -3,7 +3,6 @@ package contract
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -74,7 +73,9 @@ func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWi
 // Any other answer is read by DecodeAPIError alone and returned as an
 // APIError: the generated parser fails on a 429 whose Retry-After is not an
 // integer, which would turn the 429 into a transport failure. A body that
-// cannot be read, or a 200 the parser fails on, is an error.
+// cannot be read, or a 200 the parser fails on, is an error. raw must come
+// from a client NewAPIClient built: ParseOK reads the whole body, and only
+// that client's transport caps it at MaxResponseBytes.
 func ParseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, *APIError, error) {
 	var zero T
 	if raw.StatusCode != http.StatusOK {
@@ -91,18 +92,6 @@ func ParseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (
 		return zero, nil, err
 	}
 	return resp, nil, nil
-}
-
-// Wait words the wait of e in whole seconds, such as "30 seconds", or is
-// empty when the server gave no wait a client should pass on.
-func (e APIError) Wait() string {
-	switch e.RetryAfter {
-	case 0:
-		return ""
-	case 1:
-		return "1 second"
-	}
-	return fmt.Sprintf("%d seconds", e.RetryAfter)
 }
 
 // limitTransport refuses every 3xx answer and caps every response body at

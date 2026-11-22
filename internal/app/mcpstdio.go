@@ -28,10 +28,10 @@ var errTransport = errors.New("--transport must be stdio, the only transport so 
 
 // RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
 // the API through contract's hardened client, with the CLI's client settings
-// from args and env. It
-// returns nil when the client ends the session by closing in, and when ctx is
-// cancelled. Settings are checked before the first message, so a bad one
-// fails at startup. Nothing but MCP messages is ever written to out.
+// from args and env. It returns nil when the client ends the session by
+// closing in, and when ctx is cancelled. Settings are checked before the first
+// message, so a bad one fails at startup. Nothing but MCP messages is ever
+// written to out.
 func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

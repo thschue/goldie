@@ -378,3 +378,43 @@ func TestParseOKParserFailureIsAnError(t *testing.T) {
 		t.Errorf("ParseOK on a broken 200 = apiErr %+v, err %v, want an error and no APIError", apiErr, err)
 	}
 }
+
+// #163 (from #223): the client is built only for an http:// or https:// URL
+// with a host. Any other address is ErrBaseURL, whose message names nothing
+// of the address: it may carry credentials or control characters. NewAPIClient
+// is the seam, so the test holds whether the address check stays exported or
+// not.
+func TestAPIClientRefusesAnAddressThatIsNotAnHTTPURLWithAHost(t *testing.T) {
+	for name, addr := range map[string]string{
+		"empty":                   "",
+		"no scheme":               "goldie.example:8080",
+		"no scheme and no port":   "goldie.example",
+		"ftp":                     "ftp://goldie.example/",
+		"no host":                 "http://",
+		"no host but a path":      "https:///api/v1",
+		"file":                    "file:///etc/passwd",
+		"javascript":              "javascript:alert(1)",
+		"a control character":     "http://goldie.example\x1b[2J/",
+		"credentials and no host": "http://user:secret@",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, err := contract.NewAPIClient(addr, clientToken, "test", nil)
+			if !errors.Is(err, contract.ErrBaseURL) || c != nil {
+				t.Fatalf("NewAPIClient(%q) = %v, %v; want no client and ErrBaseURL", addr, c, err)
+			}
+			for _, leak := range []string{"secret", "goldie.example", "/etc/passwd", "alert", "\x1b"} {
+				if strings.Contains(err.Error(), leak) {
+					t.Errorf("NewAPIClient(%q): error %q leaks %q", addr, err, leak)
+				}
+			}
+		})
+	}
+}
+
+func TestAPIClientAcceptsAnHTTPOrHTTPSURLWithAHost(t *testing.T) {
+	for _, addr := range []string{"http://127.0.0.1:8080", "https://goldie.example", "https://goldie.example/", "http://[::1]:8080/"} {
+		if c, err := contract.NewAPIClient(addr, clientToken, "test", nil); err != nil || c == nil {
+			t.Errorf("NewAPIClient(%q) = %v, %v; want a client", addr, c, err)
+		}
+	}
+}
