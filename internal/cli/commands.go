@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -49,9 +50,13 @@ func (c *commander) search(ctx context.Context, q string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
+	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
 	if err != nil {
 		return transportError(err)
+	}
+	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
+	if err != nil {
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -91,9 +96,13 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := cl.GetArticleWithResponse(ctx, id, &contract.GetArticleParams{Project: project.param()})
+	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: project.param()})
 	if err != nil {
 		return transportError(err)
+	}
+	resp, err := parseOK(raw, contract.ParseGetArticleResponse)
+	if err != nil {
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -149,16 +158,22 @@ func (c *commander) status(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project.param()})
-		switch {
-		case err != nil:
+		raw, err := authed.SearchArticles(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project.param()})
+		if err != nil {
 			return transportError(err)
-		case resp.JSON200 != nil:
-			auth, accepted, hint = "token accepted", true, resp.JSON200.Hint
-		case resp.StatusCode() == http.StatusUnauthorized:
+		}
+		if raw.StatusCode == http.StatusUnauthorized {
+			_ = raw.Body.Close()
 			auth = "token rejected"
-		default:
-			return apiError(resp.HTTPResponse, resp.Body)
+		} else {
+			resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
+			switch {
+			case err != nil:
+				return err
+			case resp.JSON200 == nil:
+				return apiError(resp.HTTPResponse, resp.Body)
+			}
+			auth, accepted, hint = "token accepted", true, resp.JSON200.Hint
 		}
 	}
 	if c.s.json {
@@ -233,19 +248,60 @@ func transportError(err error) error {
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
 
-// apiError words an error response. contract.DecodeAPIError passes on only
-// the status and the cleaned message and hint of the server's envelope.
-func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, body)
-	status := http.StatusText(e.Status)
-	if e.Message == "" {
-		return fmt.Errorf("the server answered %d %s", e.Status, status)
+// parseOK hands raw to the generated parse only when the server answered 200.
+// Any other answer is read by apiError alone: the generated parser fails on a
+// 429 whose Retry-After is not an integer, which would turn the 429 into a
+// transport failure.
+func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, error) {
+	var zero T
+	if raw.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(raw.Body)
+		_ = raw.Body.Close()
+		if err != nil {
+			return zero, transportError(err)
+		}
+		return zero, apiError(raw, body)
 	}
+	resp, err := parse(raw)
+	if err != nil {
+		return zero, transportError(err)
+	}
+	return resp, nil
+}
+
+// apiError words an error response. contract.DecodeAPIError passes on only
+// the status, the cleaned message and hint of the server's envelope, and the
+// wait of a valid Retry-After.
+//
+// A wait or a 429 gets its own hint instead of the server's, which points at
+// a header the user does not see. Without a valid wait it says none, rather
+// than "0 seconds" or the server's raw value.
+func apiError(resp *http.Response, body []byte) error {
+	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
+	status := http.StatusText(e.Status)
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Hint != "" {
-		msg += "\nHint: " + e.Hint
+	if e.Message == "" {
+		msg = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	}
+	hint := e.Hint
+	switch {
+	case e.RetryAfter > 0:
+		hint = fmt.Sprintf("Wait %s, then retry.", seconds(e.RetryAfter))
+	case e.Status == http.StatusTooManyRequests:
+		hint = "Wait a little, then retry."
+	}
+	if hint != "" {
+		msg += "\nHint: " + hint
 	}
 	return errors.New(msg)
+}
+
+// seconds words a wait of n whole seconds.
+func seconds(n int) string {
+	if n == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", n)
 }
 
 func cleanList(l []string) string {

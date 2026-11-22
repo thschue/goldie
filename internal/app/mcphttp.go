@@ -68,8 +68,8 @@ func withDeadline(d time.Duration, h http.Handler) http.Handler {
 
 // inProcessClient is a contract client that hands each request to api and
 // sends authorization as its Authorization header.
-func inProcessClient(api http.Handler, authorization string) contract.ClientWithResponsesInterface {
-	c, err := contract.NewClientWithResponses(inProcessBase,
+func inProcessClient(api http.Handler, authorization string) contract.ClientInterface {
+	c, err := contract.NewClient(inProcessBase,
 		contract.WithHTTPClient(&http.Client{Transport: handlerTransport{api}}),
 		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set("Authorization", authorization)
