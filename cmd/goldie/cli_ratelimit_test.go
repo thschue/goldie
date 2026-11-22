@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Acceptance tests for #174: the CLI's 429 message uses the same decoded
@@ -41,7 +42,11 @@ func limitedServer(t *testing.T, retryAfter ...string) string {
 // whose message says to wait the 60 seconds of Retry-After, and leaks neither
 // the token nor the address.
 func TestCLIRateLimitedSaysHowLongToWait(t *testing.T) {
-	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: "1/m"})
+	limit, err := platform.ParseRateLimit("1/m")
+	if err != nil {
+		t.Fatalf("ParseRateLimit: %v", err)
+	}
+	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: limit})
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
