@@ -64,6 +64,11 @@ func (v Semver) String() string {
 	return s
 }
 
+// IsZero reports whether v is the zero Semver, the one an unset
+// GOLDIE_MIN_CLIENT_VERSION leaves in Config: no gate. 0.0.0 parses to it too,
+// and as a minimum it would refuse only 0.0.0 prereleases.
+func (v Semver) IsZero() bool { return v.core == [3]uint64{} && len(v.pre) == 0 }
+
 // Less reports whether v has lower precedence than o (semver 2.0.0, section
 // 11): the core numerically, then a prerelease below its release, then the
 // prerelease identifiers in order.

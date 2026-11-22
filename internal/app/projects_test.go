@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // projectBody is the slice of a search or lookup response the project tests read.
@@ -224,7 +225,7 @@ func TestProjectsIsAnEmptyListWithoutProjects(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "global", "articles"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	srv := newServerWith(t, Options{ContentDir: dir})
+	srv := newServerWith(t, platform.Config{ContentDir: dir})
 	resp, body := apiGet(t, srv.URL+"/api/v1/projects")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d: %s", resp.StatusCode, body)

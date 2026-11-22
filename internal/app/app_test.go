@@ -16,18 +16,20 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract/contracttest"
 	"github.com/thschue/goldie/internal/engine"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	return newServerWith(t, Options{SwaggerUI: true})
+	return newServerWith(t, platform.Config{SwaggerUIEnabled: true})
 }
 
 // newServerWith starts the public handler; an unset content dir or token is
-// the test one.
-func newServerWith(t *testing.T, opts Options) *httptest.Server {
+// the test one, and an unset rate limit the default LoadConfig applies.
+func newServerWith(t *testing.T, opts platform.Config) *httptest.Server {
 	t.Helper()
 	if opts.ContentDir == "" {
 		opts.ContentDir = testContent
@@ -35,13 +37,45 @@ func newServerWith(t *testing.T, opts Options) *httptest.Server {
 	if opts.APIToken == "" {
 		opts.APIToken = testToken
 	}
-	h, err := PublicHandler(opts)
+	opts.RateLimit = withDefaultRateLimit(opts.RateLimit)
+	h, err := PublicHandler(opts, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// withDefaultRateLimit is l, or, when l is the zero value PublicHandler
+// refuses, the default LoadConfig applies for an unset GOLDIE_RATE_LIMIT.
+func withDefaultRateLimit(l platform.RateLimit) platform.RateLimit {
+	if l == (platform.RateLimit{}) {
+		return platform.DefaultRateLimit()
+	}
+	return l
+}
+
+// testPublicMux is the router over the test content with the spec's
+// operations registered and nothing else, behind testToken as the
+// GOLDIE_API_TOKEN shorthand and the default rate limit, built by the builder
+// PublicHandler uses, from a parsed token set and limiter.
+func testPublicMux(t *testing.T) *publicMux {
+	t.Helper()
+	snap, err := engine.NewDirSource(testContent).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, err := api.OperatorToken(testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := platform.DefaultRateLimit()
+	m, err := newPublicMuxWith(staticSnapshot(snap), tokens, api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
 }
 
 func get(t *testing.T, url string) (*http.Response, []byte) {
@@ -263,14 +297,7 @@ func TestConcretePathSubstitutesExamples(t *testing.T) {
 }
 
 func TestRoutesAndSpecAgree(t *testing.T) {
-	snap, err := engine.NewDirSource(testContent).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	routes, err := publicRoutes(staticSnapshot(snap), testToken)
-	if err != nil {
-		t.Fatal(err)
-	}
+	routes := testPublicMux(t).routes
 	var registered []string
 	for _, r := range routes {
 		for _, m := range r.methods {
@@ -318,14 +345,7 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 // is the 405 envelope whose Allow lists exactly the registered methods, with
 // HEAD wherever GET is, and HEAD is served where GET is.
 func TestRouterHonoursRegisteredMethods(t *testing.T) {
-	snap, err := engine.NewDirSource(testContent).Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	routes, err := publicRoutes(staticSnapshot(snap), testToken)
-	if err != nil {
-		t.Fatal(err)
-	}
+	routes := testPublicMux(t).routes
 	doc := specDoc(t)
 	byPath := map[string][]string{}
 	for _, r := range routes {
@@ -340,6 +360,7 @@ func TestRouterHonoursRegisteredMethods(t *testing.T) {
 		sort.Strings(want)
 		concrete := path
 		if strings.Contains(path, "{") {
+			var err error
 			if concrete, err = concretePath(doc, methods[0], path); err != nil {
 				t.Error(err)
 				continue

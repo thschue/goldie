@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Acceptance tests for #174: a tools/call over the rate limit is a tool error
@@ -41,7 +43,7 @@ func assertNoHeaderPointer(t *testing.T, tool, text string) {
 // token's only request, and each call after it, within the second, is a tool
 // error that says to wait 1 second. It leaks neither a token nor an address.
 func TestRateLimitedToolCallTellsTheAgentHowLongToWait(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/s")})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/s")})
 	cs := session(t, srv.URL, readerToken)
 	if text, isErr := call(t, cs, "search_knowledge", map[string]any{"query": "agents loops"}); isErr {
 		t.Fatalf("first tool call within the limit: tool error %s", text)

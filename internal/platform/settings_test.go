@@ -22,8 +22,8 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		t.Error("Swagger UI must be enabled by default")
 	}
 	got[EnvSwaggerUIEnabled] = "true"
-	got[EnvTelemetryClientInfo] = "false" // read by SetupTelemetry, not part of Config
-	got[EnvMinClientVersion] = cfg.MinClientVersion
+	got[EnvTelemetryClientInfo] = "false"                            // read by SetupTelemetry, not part of Config
+	got[EnvMinClientVersion] = reported(t, cfg, EnvMinClientVersion) // Config holds the parsed Semver (#186)
 	if int(cfg.DrainTimeout.Seconds()) != 25 {
 		t.Errorf("drain default = %v", cfg.DrainTimeout)
 	}

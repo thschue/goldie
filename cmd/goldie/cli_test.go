@@ -30,7 +30,7 @@ const cliToken = "cli-test-token-0123456789abcdef0123456789"
 // cliServer is a real in-process server over the example content.
 func cliServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken})
+	h, err := app.PublicHandler(platform.Config{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: platform.DefaultRateLimit()}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
