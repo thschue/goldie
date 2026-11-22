@@ -72,7 +72,11 @@ func restoreRequest(h http.Handler) http.Handler {
 			// A form the handler parses lands on the copy; net/http removes
 			// its temp files only through the original, so copy it back (as
 			// otelhttp does).
-			defer func() { orig.MultipartForm = restored.MultipartForm }()
+			defer func() {
+				if restored.MultipartForm != nil {
+					orig.MultipartForm = restored.MultipartForm
+				}
+			}()
 		}
 		h.ServeHTTP(w, view)
 	})
