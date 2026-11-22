@@ -1,8 +1,15 @@
 // Package contracttest checks HTTP responses against the OpenAPI document in
-// internal/contract. API tests call Conforms on every response they make, so
-// the server cannot drift from the spec unnoticed. ExamplePath builds a
-// request path for an operation from the examples the spec declares. It is for
-// tests only.
+// internal/contract. It is for tests only.
+//
+// Conforms fails the test unless a response is one the spec describes for the
+// request that produced it. API tests call it on every response they make, so
+// the server cannot drift from the spec unnoticed.
+//
+// ExamplePath builds a request path for an operation from the examples the
+// spec declares, each encoded as one path segment, and fails naming a path
+// parameter whose example is missing or empty.
+//
+// ResolveRef follows a local JSON $ref ("#/a/b") in the document.
 package contracttest
 
 import (
@@ -197,10 +204,10 @@ func examplePath(doc map[string]any, method, template string) (string, error) {
 // unquoteMeta matches one backslash-quoted character of regexp.QuoteMeta output.
 var unquoteMeta = regexp.MustCompile(`\\(.)`)
 
-// Resolve follows a local $ref ("#/a/b") in doc if node is one. It returns the
+// ResolveRef follows a local $ref ("#/a/b") in doc if node is one. It returns the
 // referenced node, node itself when it has no $ref, and nil when node is not an
 // object or the reference dangles.
-func Resolve(doc map[string]any, node any) map[string]any {
+func ResolveRef(doc map[string]any, node any) map[string]any {
 	m, _ := node.(map[string]any)
 	out, _ := resolve(doc, m, "")
 	return out
