@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/thschue/goldie/internal/contract"
+	projectpkg "github.com/thschue/goldie/internal/contract/project"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -49,7 +50,7 @@ func (c *commander) search(ctx context.Context, q string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
+	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: projectParam(project)})
 	if err != nil {
 		return transportError(err)
 	}
@@ -98,7 +99,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: project.param()})
+	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: projectParam(project)})
 	if err != nil {
 		return transportError(err)
 	}
@@ -156,7 +157,7 @@ func (c *commander) status(ctx context.Context) error {
 	projectError := ""
 	if perr != nil {
 		projectError = contract.CleanLine(perr.Error())
-		project = detectedProject{}
+		project = projectpkg.Detected{}
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
@@ -166,7 +167,7 @@ func (c *commander) status(ctx context.Context) error {
 	case doc.JSON200 != nil:
 		title, apiVersion = specInfo(*doc.JSON200)
 		if given {
-			if auth, accepted, hint, err = probeToken(ctx, cl, project.param()); err != nil {
+			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(project)); err != nil {
 				return err
 			}
 		}
@@ -180,12 +181,12 @@ func (c *commander) status(ctx context.Context) error {
 			out["api"], out["apiVersion"] = title, apiVersion
 		}
 		if project.ID != "" {
-			out["project"], out["projectSource"] = project.ID, project.Source
+			out["project"], out["projectSource"] = project.ID, sourceWords[project.Source]
 		}
 		if projectError != "" {
 			out["projectError"] = projectError
 		}
-		if h := project.hint(); h != "" {
+		if h := projectHint(project); h != "" {
 			out["projectHint"] = h
 		}
 		if hint != nil && *hint != "" {
@@ -232,18 +233,18 @@ func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *
 
 // describeProject is the text of the Project line: the problem when there is
 // one, else the Project or what was found.
-func describeProject(p detectedProject, problem string) string {
+func describeProject(p projectpkg.Detected, problem string) string {
 	if problem != "" {
 		return "problem: " + problem
 	}
-	return p.describe()
+	return describe(p)
 }
 
 // project resolves the Project for the working directory.
-func (c *commander) project() (detectedProject, error) {
+func (c *commander) project() (projectpkg.Detected, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return detectedProject{}, errors.New("cannot read the working directory")
+		return projectpkg.Detected{}, errors.New("cannot read the working directory")
 	}
 	envValue, _ := c.env.Lookup(EnvProject)
 	return resolveProject(dir, c.s.project, envValue)
