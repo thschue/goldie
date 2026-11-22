@@ -12,6 +12,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/oapi-codegen/runtime"
 )
@@ -134,6 +138,852 @@ type ErrorResponse = ErrorEnvelope
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
 	Q string `form:"q" json:"q"`
+}
+
+// RequestEditorFn is the function signature for the RequestEditor callback function
+type RequestEditorFn func(ctx context.Context, req *http.Request) error
+
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
+type HttpRequestDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// Client which conforms to the OpenAPI3 specification for this service.
+type Client struct {
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
+
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
+	RequestEditors []RequestEditorFn
+}
+
+// ClientOption allows setting custom parameters during construction
+type ClientOption func(*Client) error
+
+// Creates a new Client, with reasonable defaults
+func NewClient(server string, opts ...ClientOption) (*Client, error) {
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
+	for _, o := range opts {
+		if err := o(&client); err != nil {
+			return nil, err
+		}
+	}
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
+	}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
+	}
+	return &client, nil
+}
+
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
+func WithHTTPClient(doer HttpRequestDoer) ClientOption {
+	return func(c *Client) error {
+		c.Client = doer
+		return nil
+	}
+}
+
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
+func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
+	return func(c *Client) error {
+		c.RequestEditors = append(c.RequestEditors, fn)
+		return nil
+	}
+}
+
+// The interface specification for the client above.
+type ClientInterface interface {
+
+	// GetArticle Look up one article
+	//
+	// Returns one article by its id. Ids compare ignoring case. A miss is a
+	// 404 whose hint points to search.
+	//
+	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
+	GetArticle(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchArticles Search articles by keyword
+	//
+	// Returns the articles that match the search words, best first. An exact
+	// keyword match scores 4, a keyword containing the word 1, and a name
+	// containing the word 2. Ties are ordered by id. No match is an empty
+	// list, not an error.
+	//
+	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
+	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOpenAPIJSON Get the OpenAPI document as JSON
+	//
+	// Returns this document in JSON form. It is equivalent to the YAML form.
+	//
+	// Corresponds with GET /openapi.json (the `GetOpenAPIJSON` operationId).
+	GetOpenAPIJSON(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOpenAPIYAML Get the OpenAPI document as YAML
+	//
+	// Returns this document in YAML form.
+	//
+	// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
+	GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// GetArticle Look up one article
+//
+// Returns one article by its id. Ids compare ignoring case. A miss is a
+// 404 whose hint points to search.
+//
+// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
+func (c *Client) GetArticle(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArticleRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SearchArticles Search articles by keyword
+//
+// Returns the articles that match the search words, best first. An exact
+// keyword match scores 4, a keyword containing the word 1, and a name
+// containing the word 2. Ties are ordered by id. No match is an empty
+// list, not an error.
+//
+// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
+func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchArticlesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOpenAPIJSON Get the OpenAPI document as JSON
+//
+// Returns this document in JSON form. It is equivalent to the YAML form.
+//
+// Corresponds with GET /openapi.json (the `GetOpenAPIJSON` operationId).
+func (c *Client) GetOpenAPIJSON(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOpenAPIJSONRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOpenAPIYAML Get the OpenAPI document as YAML
+//
+// Returns this document in YAML form.
+//
+// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
+func (c *Client) GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOpenAPIYAMLRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewGetArticleRequest constructs an http.Request for the GetArticle method
+func NewGetArticleRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/articles/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSearchArticlesRequest constructs an http.Request for the SearchArticles method
+func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/search"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetOpenAPIJSONRequest constructs an http.Request for the GetOpenAPIJSON method
+func NewGetOpenAPIJSONRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/openapi.json"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetOpenAPIYAMLRequest constructs an http.Request for the GetOpenAPIYAML method
+func NewGetOpenAPIYAMLRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/openapi.yaml"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
+	for _, r := range c.RequestEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	for _, r := range additionalEditors {
+		if err := r(ctx, req); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClientWithResponses builds on ClientInterface to offer response payloads
+type ClientWithResponses struct {
+	ClientInterface
+}
+
+// NewClientWithResponses creates a new ClientWithResponses, which wraps
+// Client with return type handling
+func NewClientWithResponses(server string, opts ...ClientOption) (*ClientWithResponses, error) {
+	client, err := NewClient(server, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientWithResponses{client}, nil
+}
+
+// WithBaseURL overrides the baseURL.
+func WithBaseURL(baseURL string) ClientOption {
+	return func(c *Client) error {
+		newBaseURL, err := url.Parse(baseURL)
+		if err != nil {
+			return err
+		}
+		c.Server = newBaseURL.String()
+		return nil
+	}
+}
+
+// ClientWithResponsesInterface is the interface specification for the client with responses above.
+type ClientWithResponsesInterface interface {
+
+	// GetArticleWithResponse Look up one article
+	//
+	// Returns one article by its id. Ids compare ignoring case. A miss is a
+	// 404 whose hint points to search.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
+	GetArticleWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
+
+	// SearchArticlesWithResponse Search articles by keyword
+	//
+	// Returns the articles that match the search words, best first. An exact
+	// keyword match scores 4, a keyword containing the word 1, and a name
+	// containing the word 2. Ties are ordered by id. No match is an empty
+	// list, not an error.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
+	SearchArticlesWithResponse(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*SearchArticlesResponse, error)
+
+	// GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
+	//
+	// Returns this document in JSON form. It is equivalent to the YAML form.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /openapi.json (the `GetOpenAPIJSON` operationId).
+	GetOpenAPIJSONWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIJSONResponse, error)
+
+	// GetOpenAPIYAMLWithResponse Get the OpenAPI document as YAML
+	//
+	// Returns this document in YAML form.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
+	GetOpenAPIYAMLWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIYAMLResponse, error)
+}
+
+type GetArticleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Article
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetArticleResponse) GetJSON200() *Article {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetArticleResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetArticleResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetArticleResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetArticleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArticleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArticleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetArticleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SearchArticlesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SearchResults
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SearchArticlesResponse) GetJSON200() *SearchResults {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SearchArticlesResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r SearchArticlesResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SearchArticlesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SearchArticlesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchArticlesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchArticlesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SearchArticlesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetOpenAPIJSONResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *map[string]any
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOpenAPIJSONResponse) GetJSON200() *map[string]any {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOpenAPIJSONResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOpenAPIJSONResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOpenAPIJSONResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOpenAPIJSONResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOpenAPIJSONResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetOpenAPIYAMLResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// YAML200 the response for an HTTP 200 `application/yaml` response
+	YAML200 *string
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetYAML200 returns the response for an HTTP 200 `application/yaml` response
+func (r GetOpenAPIYAMLResponse) GetYAML200() *string {
+	return r.YAML200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOpenAPIYAMLResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOpenAPIYAMLResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOpenAPIYAMLResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOpenAPIYAMLResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOpenAPIYAMLResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetArticleWithResponse Look up one article
+//
+// Returns one article by its id. Ids compare ignoring case. A miss is a
+// 404 whose hint points to search.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
+func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetArticleResponse, error) {
+	rsp, err := c.GetArticle(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArticleResponse(rsp)
+}
+
+// SearchArticlesWithResponse Search articles by keyword
+//
+// Returns the articles that match the search words, best first. An exact
+// keyword match scores 4, a keyword containing the word 1, and a name
+// containing the word 2. Ties are ordered by id. No match is an empty
+// list, not an error.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
+func (c *ClientWithResponses) SearchArticlesWithResponse(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*SearchArticlesResponse, error) {
+	rsp, err := c.SearchArticles(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchArticlesResponse(rsp)
+}
+
+// GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
+//
+// Returns this document in JSON form. It is equivalent to the YAML form.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /openapi.json (the `GetOpenAPIJSON` operationId).
+func (c *ClientWithResponses) GetOpenAPIJSONWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIJSONResponse, error) {
+	rsp, err := c.GetOpenAPIJSON(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOpenAPIJSONResponse(rsp)
+}
+
+// GetOpenAPIYAMLWithResponse Get the OpenAPI document as YAML
+//
+// Returns this document in YAML form.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
+func (c *ClientWithResponses) GetOpenAPIYAMLWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIYAMLResponse, error) {
+	rsp, err := c.GetOpenAPIYAML(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOpenAPIYAMLResponse(rsp)
+}
+
+// ParseGetArticleResponse parses an HTTP response from a GetArticleWithResponse call
+func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArticleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Article
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchArticlesResponse parses an HTTP response from a SearchArticlesWithResponse call
+func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchArticlesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SearchResults
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetOpenAPIJSONResponse parses an HTTP response from a GetOpenAPIJSONWithResponse call
+func ParseGetOpenAPIJSONResponse(rsp *http.Response) (*GetOpenAPIJSONResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOpenAPIJSONResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest map[string]any
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetOpenAPIYAMLResponse parses an HTTP response from a GetOpenAPIYAMLWithResponse call
+func ParseGetOpenAPIYAMLResponse(rsp *http.Response) (*GetOpenAPIYAMLResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOpenAPIYAMLResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "yaml") && rsp.StatusCode == 200:
+		var dest string
+		if err := yaml.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.YAML200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
 }
 
 // ServerInterface represents all server handlers.

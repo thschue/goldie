@@ -1,0 +1,22 @@
+{
+  "query": "agent loops",
+  "results": [
+    {
+      "id": "agent-loops",
+      "keywords": [
+        "agents",
+        "loops",
+        "automation"
+      ],
+      "kind": "article",
+      "matched": [
+        "agents",
+        "name",
+        "loops"
+      ],
+      "name": "Autonomous agent loops",
+      "scope": "global",
+      "score": 9
+    }
+  ]
+}

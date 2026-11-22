@@ -14,6 +14,19 @@ Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUD
 The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
 `/openapi.json`. The source is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
 
+## CLI
+
+`goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
+running server through the generated client. Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
+`GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. `status` reports
+whether the server answers and accepts the token; the sync state arrives with the sync work (#6).
+
+```sh
+export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
+goldie search kubernetes
+goldie lookup platform/deploy
+```
+
 ## Origins & credits
 
 Goldie is based on Jessica Andersson's talk at Cloud Native Denmark 2026 and on the

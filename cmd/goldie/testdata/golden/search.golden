@@ -1,0 +1,11 @@
+2 articles for "kubernetes", best first:
+
+  platform/deploy  Deploying to Kubernetes
+    score 6, matched: kubernetes, name
+    keywords: kubernetes, deploy, helm
+  platform/notes  Platform notes on kubernetes
+    score 2, matched: name
+    keywords: (none)
+
+Read one with: goldie lookup <id>
+Try other words: goldie search <words>

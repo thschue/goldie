@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/cli"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -30,13 +31,12 @@ func run(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return usageError()
 	}
+	if cli.IsCommand(args[0]) {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		return cli.Run(ctx, args, cli.DefaultEnv(out))
+	}
 	switch args[0] {
-	case "version":
-		if len(args) != 1 {
-			return usageError()
-		}
-		_, err := fmt.Fprintln(out, platform.Version)
-		return err
 	case "server":
 		if len(args) != 1 {
 			return usageError()
@@ -49,7 +49,7 @@ func run(args []string, out io.Writer) error {
 }
 
 func usageError() error {
-	return errors.New("usage: goldie server | health [--ready] | version")
+	return errors.New("usage: goldie server | health [--ready] | " + cli.Usage)
 }
 
 // runServer starts the server and blocks until it stops. The first SIGTERM or

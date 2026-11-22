@@ -1,0 +1,7 @@
+Deploying to Kubernetes
+id: platform/deploy
+keywords: kubernetes, deploy, helm
+
+Use the platform chart. <script>alert(1)</script>
+
+Find more with: goldie search <words>
