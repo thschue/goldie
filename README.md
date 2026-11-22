@@ -12,7 +12,11 @@ Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUD
 ```
 
 The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
-`/openapi.json`. The source is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
+`/openapi.json`, behind the same Bearer token as the API (at least the `reader` Role). The source
+is `internal/contract/openapi.yaml`; `./run lint-spec` lints it. Swagger UI at `/swagger-ui`
+(`GOLDIE_SWAGGER_UI_ENABLED=false` turns it off) takes the same token. A browser does not send it by
+itself: put a reverse proxy or a browser extension in front that adds `Authorization: Bearer <token>`
+to every request, the page's fetch of `/openapi.json` included.
 
 ## CLI
 
@@ -22,7 +26,8 @@ running server through the generated client. Each takes `--addr` (or `GOLDIE_ADD
 process list (`ps`) of the machine. The CLI follows no redirects, so a server cannot send the token
 elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`. `status` reports
 whether the server answers and accepts the token (`--json` adds `tokenGiven`) and which Project the
-CLI works for. `search`, `lookup` and `status` take `--project`, and `search` and `lookup` send the resolved Project
+CLI works for; without an accepted token it cannot read the API document, so it reports the API as
+unknown, and `version` leaves out the server's API version. `search`, `lookup` and `status` take `--project`, and `search` and `lookup` send the resolved Project
 to the server as `project=`. If the server does not have that Project registered, it answers with
 the global results plus a hint, which the CLI prints (and carries in `--json`, for `status` too). An
 unusable Project (a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error

@@ -222,12 +222,9 @@ const (
 	envOTelSamplerArg = "OTEL_TRACES_SAMPLER_ARG"
 )
 
-// secretOTelNames are the variables with a _FILE form (PC-05).
-var secretOTelNames = map[string]bool{
-	envOTLPHeaders:                      true,
-	"OTEL_EXPORTER_OTLP_TRACES_HEADERS": true,
-	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":   true,
-}
+// secretOTelNames are the variables with a _FILE form (PC-05): the
+// TelemetrySettings rows marked Secret.
+var secretOTelNames = secretSet(TelemetrySettings)
 
 // SetupTelemetry reads the OTEL_* variables and builds the exporters. It
 // returns a disabled Telemetry when nothing selects one, and an error naming

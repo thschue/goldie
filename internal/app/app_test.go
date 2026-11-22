@@ -89,7 +89,7 @@ func TestSpecContentTypes(t *testing.T) {
 		"/openapi.yaml": "application/yaml",
 		"/openapi.json": "application/json",
 	} {
-		resp, body := get(t, srv.URL+path)
+		resp, body := apiGet(t, srv.URL+path)
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("%s: status %d, want 200", path, resp.StatusCode)
 		}
@@ -107,8 +107,8 @@ func TestSpecContentTypes(t *testing.T) {
 
 func TestSpecDocumentsAreEquivalent(t *testing.T) {
 	srv := newServer(t)
-	_, yamlBody := get(t, srv.URL+"/openapi.yaml")
-	_, jsonBody := get(t, srv.URL+"/openapi.json")
+	_, yamlBody := apiGet(t, srv.URL+"/openapi.yaml")
+	_, jsonBody := apiGet(t, srv.URL+"/openapi.json")
 
 	var fromYAML, fromJSON any
 	if err := yaml.Unmarshal(yamlBody, &fromYAML); err != nil {
@@ -151,7 +151,7 @@ func TestSpecDocumentsAreEquivalent(t *testing.T) {
 
 func TestSpecEndpointsOnlyAnswerGet(t *testing.T) {
 	srv := newServer(t)
-	resp, body := do(t, http.MethodPost, srv.URL+"/openapi.json", nil)
+	resp, body := do(t, http.MethodPost, srv.URL+"/openapi.json", bearer(testToken))
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status %d, want 405", resp.StatusCode)
 	}
@@ -396,8 +396,8 @@ func TestErrorEnvelopesDoNotLeak(t *testing.T) {
 		{http.MethodGet, "/C:/Windows/System32", nil},
 		{http.MethodGet, "/10.0.0.1:8080/x.go", nil},
 		{http.MethodGet, "/nope", hostile},
-		{http.MethodPost, "/openapi.yaml", nil},
-		{http.MethodDelete, "/openapi.json", hostile},
+		{http.MethodPost, "/openapi.yaml", bearer(testToken)},
+		{http.MethodDelete, "/openapi.json", func(r *http.Request) { hostile(r); bearer(testToken)(r) }},
 	}
 	for _, a := range attempts {
 		resp, body := do(t, a.method, srv.URL+a.path, a.mutate)
@@ -428,7 +428,7 @@ func TestEveryErrorCarriesAHint(t *testing.T) {
 		{http.MethodGet, "/nope", "not_found"},
 		{http.MethodPost, "/openapi.json", "method_not_allowed"},
 	} {
-		_, body := do(t, c.method, srv.URL+c.path, nil)
+		_, body := do(t, c.method, srv.URL+c.path, bearer(testToken))
 		assertEnvelope(t, body, c.code)
 	}
 }

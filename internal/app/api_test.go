@@ -102,17 +102,6 @@ func TestAPIAcceptsTheTokenWithAnyCaseScheme(t *testing.T) {
 	}
 }
 
-func TestSpecAndSwaggerUIStayOpenUntilSignIn(t *testing.T) {
-	// #48's decision puts /openapi.* and /swagger-ui under the auth of #11,
-	// not under this token, which protects /api/ only.
-	srv := newServer(t)
-	for _, p := range append([]string{"/openapi.json", "/openapi.yaml"}, swaggerPaths...) {
-		if resp, _ := rawGet(t, srv.URL+p); resp.StatusCode != http.StatusOK {
-			t.Errorf("%s without a token: status %d, want 200", p, resp.StatusCode)
-		}
-	}
-}
-
 type searchResults struct {
 	Query   string `json:"query"`
 	Results []struct {

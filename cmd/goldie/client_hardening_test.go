@@ -108,8 +108,9 @@ func TestCLISendsGoldieClientOnEveryRequest(t *testing.T) {
 	}
 }
 
-// The header names the client, never the token, and adding it does not put
-// the token on the public API document.
+// The header names the client, never the token. (The API document takes the
+// same credentials as the API since #101; TestCLISendsTheTokenToTheAPIDocument
+// covers its Authorization.)
 func TestCLIGoldieClientCarriesNoToken(t *testing.T) {
 	setVersion(t, "1.2.3-acceptance")
 	srv, rec := recordingServer(t)
@@ -123,9 +124,6 @@ func TestCLIGoldieClientCarriesNoToken(t *testing.T) {
 			if strings.Contains(v, cliToken) {
 				t.Errorf("X-Goldie-Client on %s carries the token: %q", r.path, v)
 			}
-		}
-		if r.path == "/openapi.json" && r.auth != "" {
-			t.Errorf("/openapi.json got Authorization %q, want none", r.auth)
 		}
 	}
 }

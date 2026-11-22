@@ -38,8 +38,8 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 
 func TestConfigReferenceEscapesAndIsDeterministic(t *testing.T) {
 	in := []SettingSpec{
-		{"GOLDIE_B", "", "a | b <script>alert(1)</script>\nsecond `line`"},
-		{"GOLDIE_A", "x|y", "plain"},
+		{Name: "GOLDIE_B", Meaning: "a | b <script>alert(1)</script>\nsecond `line`"},
+		{Name: "GOLDIE_A", Default: "x|y", Meaning: "plain"},
 	}
 	a := string(ConfigReference(in))
 	if a != string(ConfigReference(in)) {
@@ -69,7 +69,7 @@ func TestCommittedConfigReferenceIsFresh(t *testing.T) {
 	if string(committed) != string(ConfigReference(Settings)) {
 		t.Error("docs/reference/configuration.md is out of date (run: ./run regen)")
 	}
-	added := append([]SettingSpec{{"GOLDIE_NEW", "", "new"}}, Settings...)
+	added := append([]SettingSpec{{Name: "GOLDIE_NEW", Meaning: "new"}}, Settings...)
 	if string(committed) == string(ConfigReference(added)) {
 		t.Error("drift not detected when a setting is added")
 	}
@@ -91,7 +91,9 @@ func TestSwaggerUIEnabledSetting(t *testing.T) {
 	}
 }
 
-func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
+// Redaction in the startup report is covered for every Secret row by
+// TestStartupReportRedactsEverySecretSetting (#185).
+func TestAPITokenIsReadFromFile(t *testing.T) {
 	const token = "file-token-0123456789abcdef0123456789"
 	path := t.TempDir() + "/token"
 	if err := os.WriteFile(path, []byte(token+"\r\n"), 0o600); err != nil {
@@ -104,16 +106,6 @@ func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
 	}
 	if cfg.APIToken != token || cfg.ContentDir != "/srv/content" {
 		t.Fatalf("token %q, content dir %q: want the file's token without its newline", cfg.APIToken, cfg.ContentDir)
-	}
-	var buf syncBuffer
-	cfg.Report(NewLogger(&buf, 0, "server"))
-	if strings.Contains(buf.String(), token) || !strings.Contains(buf.String(), `"GOLDIE_API_TOKEN":"(redacted)"`) {
-		t.Errorf("startup report must redact the token: %s", buf.String())
-	}
-	var unset syncBuffer
-	Config{}.Report(NewLogger(&unset, 0, "server"))
-	if !strings.Contains(unset.String(), `"GOLDIE_API_TOKEN":"(unset)"`) {
-		t.Errorf("startup report must say the token is unset: %s", unset.String())
 	}
 }
 
@@ -134,8 +126,9 @@ func TestConfigReferenceListsClientSettings(t *testing.T) {
 }
 
 // GOLDIE_API_TOKENS is read from its _FILE form with every line kept and only
-// the trailing newline dropped, and the startup report redacts it.
-func TestAPITokensAreReadFromFileAndRedacted(t *testing.T) {
+// the trailing newline dropped. Its redaction is covered by
+// TestStartupReportRedactsEverySecretSetting (#185).
+func TestAPITokensAreReadFromFile(t *testing.T) {
 	const lines = "ci-reader:reader:reader-token-0123456789abcdef0123456789\n" +
 		"ci-hashed:operator:sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	path := t.TempDir() + "/tokens"
@@ -149,20 +142,5 @@ func TestAPITokensAreReadFromFileAndRedacted(t *testing.T) {
 	}
 	if cfg.APITokens != lines {
 		t.Fatalf("APITokens = %q, want the file's lines without the trailing newline", cfg.APITokens)
-	}
-	var buf syncBuffer
-	cfg.Report(NewLogger(&buf, 0, "server"))
-	for _, secret := range []string{"reader-token-0123456789abcdef0123456789", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"} {
-		if strings.Contains(buf.String(), secret) {
-			t.Errorf("startup report contains a token or digest: %s", buf.String())
-		}
-	}
-	if !strings.Contains(buf.String(), `"GOLDIE_API_TOKENS":"(redacted)"`) {
-		t.Errorf("startup report must redact GOLDIE_API_TOKENS: %s", buf.String())
-	}
-	var unset syncBuffer
-	Config{}.Report(NewLogger(&unset, 0, "server"))
-	if !strings.Contains(unset.String(), `"GOLDIE_API_TOKENS":"(unset)"`) {
-		t.Errorf("startup report must say GOLDIE_API_TOKENS is unset: %s", unset.String())
 	}
 }
