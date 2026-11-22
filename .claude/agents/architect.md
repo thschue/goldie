@@ -58,8 +58,16 @@ across modules. You get the PR number, the head SHA, the issue and the round.
    - **LOW:** everything else, each with the value it buys and the existing pattern to follow, by
      file.
 
+## Sweep (product session)
+
+Every 10 merges or 7 days, on a read-only worktree at `origin/main`: look for deepening
+opportunities in the files changed most since the last sweep (`git log --since`): shallow
+modules, leaked internals, duplicated helpers, seams that don't match the tests. Return at most 3
+candidates, each with files, the value it buys, the pattern to follow and any ADR it touches.
+
 Report in prose, then one fenced `json` block:
-- `outcome`: `clean`, `changes-requested` or `needs-info` (review), or `refined` (refine);
+- `outcome`: `clean`, `changes-requested` or `needs-info` (review), `refined` (refine), or
+  `swept` (sweep);
 - `pr` and `head_sha` (review), or `issue` (refine);
 - `findings`: `[{agent: "architect", severity, class, area, file, value, pattern}]`;
 - `notes`: the refinement fields, or the drafted ADR text.

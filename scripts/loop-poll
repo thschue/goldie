@@ -9,7 +9,7 @@
 # main is the `ci` workflow on the head of main (green, red, pending, unknown;
 # red stops the line); red lists other failed workflows there. For deliver,
 # streams counts this session's open PRs ($GOLDIE_SESSION, default: the short
-# host name) without a final review marker for their head, renovate the
+# node name) without a final review marker for their head, renovate the
 # unreviewed Renovate PRs, and work what the tick can act on (0 ends it).
 # For product, decisions counts PRs waiting on a PM decision, buffer the
 # claimable issues, and wip the issues in progress. Read-only.
@@ -19,7 +19,7 @@ die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
 [ $# -eq 1 ] || die "usage: scripts/loop-poll <deliver|product>"
 loop=$1
 lib="$(cd "$(dirname "$0")" && pwd)/lib"
-session=${GOLDIE_SESSION:-$(hostname -s)}
+session=${GOLDIE_SESSION:-$(uname -n | cut -d. -f1)}
 
 me=$(gh api user --jq .login) || die "cannot resolve the gh user"
 main_sha=$(gh api 'repos/{owner}/{repo}/commits/main' --jq .sha) || die "cannot read main"

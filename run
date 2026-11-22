@@ -273,8 +273,10 @@ cmd_frontier_fixture() {
 }
 
 # Two delivery sessions claim the same issue at once against a local origin,
-# with a fake gh (testdata/claim/bin): exactly one must win, and a later claim
-# and an unclaimable issue must be refused with exit 3.
+# with a fake gh (testdata/claim/bin): exactly one must win, with an area
+# prefix ("mcp: …") turned into the PR title's scope; a later claim and an
+# unclaimable issue must be refused with exit 3, and an unreachable origin
+# with exit 2, never as a lost race.
 cmd_claim_fixture() {
 	say "claim fixture (the first branch push wins)"
 	work=$(mktemp -d) || die "cannot create a temporary directory"
@@ -287,7 +289,8 @@ cmd_claim_fixture() {
 		git init -q -b main seed && cd seed && echo x >x &&
 			git add x && git -c user.name=f -c user.email=f@invalid commit -qm base &&
 			git remote add origin ../origin.git && git push -q origin main && cd ..
-		git clone -q origin.git a && git clone -q origin.git b
+		git clone -q origin.git a && git clone -q origin.git b && git clone -q origin.git c &&
+			git -C c remote set-url origin "$work/missing.git"
 		cp "$ROOT/testdata/claim/ready.json" issue.json
 		claim() { (cd "$1" && GOLDIE_SESSION=$1 GIT_AUTHOR_NAME=f GIT_AUTHOR_EMAIL=f@invalid \
 			GIT_COMMITTER_NAME=f GIT_COMMITTER_EMAIL=f@invalid "$ROOT/scripts/claim" 42 feat >/dev/null 2>&1); }
@@ -298,9 +301,12 @@ cmd_claim_fixture() {
 		wait "$pb" || sb=$?
 		[ "$sa$sb" = 03 ] || [ "$sa$sb" = 30 ] || die "two concurrent claims: want one 0 and one 3, got $sa and $sb"
 		[ "$(git --git-dir=origin.git for-each-ref --format=%\(refname\) refs/heads/feat/)" = \
-			refs/heads/feat/issue-42-project-aware-search-mcp ] || die "claim pushed an unexpected branch: $(git --git-dir=origin.git for-each-ref --format="%(refname)" refs/heads/)"
+			refs/heads/feat/issue-42-project-aware-search ] || die "claim pushed an unexpected branch: $(git --git-dir=origin.git for-each-ref --format="%(refname)" refs/heads/)"
+		grep -q -- '--title feat(mcp): project-aware search' gh.log || die "claim did not turn the area prefix into the PR title's scope"
 		s=0; claim a || s=$?
 		[ "$s" = 3 ] || die "a claim of an already claimed issue: want exit 3, got $s"
+		s=0; claim c || s=$?
+		[ "$s" = 2 ] || die "a claim against an unreachable origin: want exit 2, got $s"
 		cp "$ROOT/testdata/claim/in-progress.json" issue.json
 		s=0; claim b || s=$?
 		[ "$s" = 3 ] || die "a claim of an in-progress issue: want exit 3, got $s"
