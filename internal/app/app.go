@@ -194,7 +194,7 @@ func content(dir string) (*engine.Syncer, error) {
 		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
 	}
 	syncer := engine.NewSyncer(engine.NewDirSource(dir))
-	if err := syncer.Poll(); err != nil {
+	if err := syncer.Poll(context.Background()); err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
 	}
 	return syncer, nil
@@ -277,7 +277,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		if ctx.Err() != nil {
 			return
 		}
-		go p.syncer.Run(ctx, dirPollInterval)
+		go p.syncer.Run(ctx, dirPollInterval, nil)
 	})
 }
 

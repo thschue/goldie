@@ -17,8 +17,10 @@
 // tree fs.FS. It uses go-git in process (no git binary) and clones into memory
 // (no disk), depth 1 over https and ssh. Each Load lists the remote refs first
 // and clones only when the ref moved; otherwise it returns the cached
-// Snapshot. Its revision is the commit SHA, and one Load is bounded by two
-// minutes, unpacking included. A remote is untrusted, so each Load also has a
+// Snapshot. Its revision is the commit SHA. Load takes a context: cancelling
+// it stops a fetch in flight, an SSH handshake included, and a Load whose
+// context has already ended fetches nothing. Inside that context one Load is
+// still bounded by two minutes, unpacking included. A remote is untrusted, so each Load also has a
 // byte budget: what it reads from an https or ssh server, ref listing
 // included, and the pack plus its objects once unpacked, charged from the
 // object headers before anything is unpacked. Each object is charged 1024
@@ -28,10 +30,12 @@
 // either budget stops there with a fixed error.
 // NewGitSource installs, once per process, go-git's in-process file:// server,
 // an https client that charges the budget, and an ssh dialer that charges it
-// and ends each connection at the Load's bound.
+// and ends each connection at the Load's bound or when its context ends.
 //
 // Credentials are values. A token is accepted only with https and sent as the
-// basic-auth password. An ssh URL needs an unencrypted PEM private key and
+// basic-auth password. A CA bundle, PEM certificates trusted on top of the
+// system's for a server behind an internal CA, is accepted only with https
+// and only when it holds nothing but certificates. An ssh URL needs an unencrypted PEM private key and
 // known_hosts content; its user, git by default, is the login. The host key
 // is always verified from that content in memory: plain and hashed hosts,
 // [host]:port, negation and @revoked, while wildcards, @cert-authority and
@@ -39,7 +43,7 @@
 // any other URL user, a query string or a fragment, http:// and git:// are
 // rejected. Errors are fixed
 // messages that never carry the URL, a credential, a key fingerprint,
-// known_hosts content or a host path.
+// known_hosts content, CA bundle content or a host path.
 //
 // Search and Article see global articles only; SearchIn and ArticleIn take a
 // Project and resolve its articles before global ones, ranking with the keyword
@@ -49,5 +53,8 @@
 // load swaps the Snapshot atomically for concurrent readers; a failed or
 // panicking load keeps the previous one. Status reports the Source's opaque
 // revision, the poll times and the last error, redacted of paths, URLs,
-// addresses and credentials.
+// addresses and credentials. Run polls on an interval until its context ends:
+// it hands that context to every Load, checks it before each poll, and calls
+// an optional func with the Status after each poll, so the caller logs and the
+// engine does not.
 package engine

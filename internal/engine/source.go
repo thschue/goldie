@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ const maxArticleBytes = 1 << 20
 // limits on work or content read, for example a treeFS out of budget.
 var errLoadLimit = errors.New("content exceeds the load limits")
 
+// errLoadCancelled is what a Load returns when its context ended before or
+// while it ran.
+var errLoadCancelled = errors.New("the load was cancelled")
+
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
 	// ID is the article's identity: its path under <scope>/articles/ without
@@ -49,9 +54,10 @@ type Article struct {
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
-// Source may also implement Revisioner.
+// Source may also implement Revisioner. Load stops, with an error, once ctx
+// ends; a Load whose ctx has already ended loads nothing.
 type Source interface {
-	Load() (*Snapshot, error)
+	Load(ctx context.Context) (*Snapshot, error)
 }
 
 // Revisioner is implemented by a Source that can name the revision its last
@@ -76,8 +82,12 @@ func NewDirSource(root string) DirSource { return DirSource{root: root} }
 // under the root into a Snapshot. It fails on the first invalid file or Project
 // path, and the error names it relative to the root. A root without either
 // yields an empty Snapshot. Any projects/<host>/<org>/<repo>/ directory
-// registers that Project, with or without articles.
-func (s DirSource) Load() (*Snapshot, error) {
+// registers that Project, with or without articles. A local read is short, so
+// ctx is checked only before it starts.
+func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
+	if ctx.Err() != nil {
+		return nil, errLoadCancelled
+	}
 	// os.Root confines every Stat, ReadDir and Open to the root, so a symlinked
 	// directory cannot lead the walk out of it.
 	root, err := os.OpenRoot(s.root)

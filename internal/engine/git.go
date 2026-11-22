@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -46,13 +48,18 @@ type GitOptions struct {
 	// KnownHosts is known_hosts content, which an ssh URL needs: the server's
 	// host key is always checked against it, and nothing skips that check.
 	KnownHosts string
+	// CABundle is PEM certificates to trust, in addition to the system's, for
+	// an https server behind an internal CA. It is only accepted with an https
+	// URL.
+	CABundle string
 }
 
-// String describes o without the token, the SSH key, the known hosts or URL
-// user info, so logging GitOptions with %v or %+v never prints a credential.
+// String describes o without the token, the SSH key, the known hosts, the CA
+// bundle or URL user info, so logging GitOptions with %v or %+v never prints a
+// credential.
 func (o GitOptions) String() string {
-	return fmt.Sprintf("{URL:%s Ref:%q Token:%s SSHKey:%s KnownHosts:%s}", redactURL(o.URL), o.Ref,
-		redactToken(o.Token), redactToken(o.SSHKey), redactToken(o.KnownHosts))
+	return fmt.Sprintf("{URL:%s Ref:%q Token:%s SSHKey:%s KnownHosts:%s CABundle:%s}", redactURL(o.URL), o.Ref,
+		redactToken(o.Token), redactToken(o.SSHKey), redactToken(o.KnownHosts), redactToken(o.CABundle))
 }
 
 // GoString is String, for %#v.
@@ -62,7 +69,7 @@ func (o GitOptions) GoString() string { return "engine.GitOptions" + o.String() 
 func (o GitOptions) LogValue() slog.Value {
 	return slog.GroupValue(slog.String("url", redactURL(o.URL)), slog.String("ref", o.Ref),
 		slog.String("token", redactToken(o.Token)), slog.String("ssh_key", redactToken(o.SSHKey)),
-		slog.String("known_hosts", redactToken(o.KnownHosts)))
+		slog.String("known_hosts", redactToken(o.KnownHosts)), slog.String("ca_bundle", redactToken(o.CABundle)))
 }
 
 func redactToken(t string) string {
@@ -85,7 +92,8 @@ func redactURL(raw string) string {
 	return u.String()
 }
 
-// gitLoadTimeout bounds one Load, so a stalled server cannot hold the Syncer.
+// gitLoadTimeout bounds one Load inside its context, so a stalled server cannot
+// hold the Syncer even when the context has no deadline.
 const gitLoadTimeout = 2 * time.Minute
 
 // sshUser is the login name for an ssh URL without a user.
@@ -120,7 +128,7 @@ type GitSource struct {
 	ref     string
 	auth    transport.AuthMethod
 	shallow bool
-	// caBundle is an extra trusted CA in PEM, set only by tests.
+	// caBundle is GitOptions.CABundle, checked to hold only certificates.
 	caBundle []byte
 	// timeout bounds one Load; tests shorten it.
 	timeout time.Duration
@@ -159,7 +167,16 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if scheme != "ssh" && (opts.SSHKey != "" || opts.KnownHosts != "") {
 		return nil, errors.New("git source: SSHKey and KnownHosts need an ssh URL")
 	}
+	if scheme != "https" && opts.CABundle != "" {
+		return nil, errors.New("git source: CABundle needs an HTTPS URL")
+	}
+	if opts.CABundle != "" && !isCertBundle(opts.CABundle) {
+		return nil, errors.New("git source: CABundle is not a PEM certificate bundle")
+	}
 	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
+	if opts.CABundle != "" {
+		s.caBundle = []byte(opts.CABundle)
+	}
 	switch {
 	case scheme == "https" && u.Host != "" && u.Opaque == "":
 		s.shallow = true
@@ -184,6 +201,30 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	}
 	useGitTransports()
 	return s, nil
+}
+
+// isCertBundle reports whether bundle is one or more PEM certificates that
+// parse, and nothing else that PEM could carry: no key, no request, no block
+// cut off. Text between and around the blocks, as in a CA bundle with
+// comments, is allowed.
+func isCertBundle(bundle string) bool {
+	rest := []byte(bundle)
+	n := 0
+	for {
+		block, r := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = r
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return false
+		}
+		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+			return false
+		}
+		n++
+	}
+	return n > 0 && !bytes.Contains(rest, []byte("-----BEGIN"))
 }
 
 // newSSHAuth checks the SSH key and known hosts of an ssh URL u. The host key
@@ -245,25 +286,30 @@ func (s *GitSource) Revision() string {
 
 // Load returns the Snapshot of the ref's current commit, or the cached one
 // when the ref has not moved. An invalid file fails the load, named relative
-// to the repository root.
-func (s *GitSource) Load() (*Snapshot, error) {
+// to the repository root. Cancelling parent stops a fetch in flight, and a
+// Load whose parent has already ended fetches nothing; the Source's own bound
+// applies inside parent either way.
+func (s *GitSource) Load(parent context.Context) (*Snapshot, error) {
 	s.load.Lock()
 	defer s.load.Unlock()
+	if parent.Err() != nil {
+		return nil, errors.New("git source: " + errLoadCancelled.Error())
+	}
 	budget := &gitBudget{wire: s.maxWire, mem: s.maxMem}
-	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), gitBudgetKey{}, budget), s.timeout)
+	ctx, cancel := context.WithTimeout(context.WithValue(parent, gitBudgetKey{}, budget), s.timeout)
 	defer cancel()
 	var dial transport.ProxyOptions
 	if _, ok := s.auth.(*sshAuth); ok {
 		deadline, _ := ctx.Deadline()
 		var forget func()
-		dial, forget = sshProxy(budget, deadline)
+		dial, forget = routeSSH(&sshDialer{budget: budget, deadline: deadline, load: ctx})
 		defer forget()
 	}
 
 	remote := git.NewRemote(newLoadStorage(ctx, budget), &config.RemoteConfig{Name: "origin", URLs: []string{s.url}})
 	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: s.auth, CABundle: s.caBundle, ProxyOptions: dial})
 	if err != nil {
-		return nil, s.fetchError(err, budget)
+		return nil, s.fetchError(parent, err, budget)
 	}
 	name, hash, err := s.pickRef(refs)
 	if err != nil {
@@ -288,7 +334,7 @@ func (s *GitSource) Load() (*Snapshot, error) {
 	}
 	repo, err := git.CloneContext(ctx, newLoadStorage(ctx, budget), nil, clone)
 	if err != nil {
-		return nil, s.fetchError(err, budget)
+		return nil, s.fetchError(parent, err, budget)
 	}
 	commit, err := headCommit(repo)
 	if err != nil {
@@ -368,8 +414,9 @@ func headCommit(repo *git.Repository) (*object.Commit, error) {
 
 // fetchError maps a transport error to a fixed message. The library's own
 // text can carry the URL, user info, addresses or paths, so it is never
-// passed on. A Load stopped by its budget says so, whatever go-git wrapped.
-func (s *GitSource) fetchError(err error, budget *gitBudget) error {
+// passed on. A Load stopped by its budget, or by the end of parent, says so,
+// whatever go-git wrapped.
+func (s *GitSource) fetchError(parent context.Context, err error, budget *gitBudget) error {
 	var (
 		certErr  *tls.CertificateVerificationError
 		unknown  x509.UnknownAuthorityError
@@ -381,6 +428,8 @@ func (s *GitSource) fetchError(err error, budget *gitBudget) error {
 	switch {
 	case budget.exceeded():
 		msg = "the repository " + errLoadLimit.Error()
+	case parent.Err() != nil:
+		msg = errLoadCancelled.Error()
 	case errors.Is(err, errHostKeyNotTrusted),
 		// The server has no key of a type KnownHosts lists for it; x/crypto
 		// has no error type for that, only this text.
