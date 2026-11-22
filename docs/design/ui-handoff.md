@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | thschue/goldie#20 (UI design handoff) — unblocks #21, #22, #23 |
-| Status | **Draft for approval**, v0.2 (2026-11-21): v0.2 completes the token set, adds the missing contrast pairs, and fixes the copy and artboard-count inconsistencies found in implementer review |
+| Status | **Approved** 2026-11-22 (#161), v0.2 (2026-11-21): v0.2 completes the token set, adds the missing contrast pairs, and fixes the copy and artboard-count inconsistencies found in implementer review |
 | Screenshots | `docs/design/screenshots/` — gallery in §2.4 |
 | Prototype | Design canvas "Goldie Design Proposal": https://claude.ai/artifact/2qDw2RVLRTPwKkEwmmEChw (private until shared) |
 | Related | #12 + #22 (federated activity), #23 (assets + Decisions page), #31 (Grafana), #32 (usage figures), #33 (Secret-based Sources), #34 (Decisions as a Kind) |
@@ -561,6 +561,9 @@ Greeting: "Good morning / afternoon / evening, `<first name>`", taken from the G
 3. Blue focus ring instead of the shared orange (§6.4).
 4. Project selector in the top bar, global to all pages.
 5. Decisions as a top-level nav entry next to Home, not under Agent assets (§2.1).
+
+**Accepted as proposed on 2026-11-22 (#161).**
+
 Settled since v0.1: activity across replicas (#12 Q48–Q54, #22); usage figures in the UI (#32); #22 aligned with the stat tiles and the Project column (§14.2).
 
 ---
@@ -575,7 +578,7 @@ Add to the project testing checklist:
 
 ## 13. Approval
 
-- [ ] Handoff approved by the issue owner — date: ______
+- [x] Handoff approved by the issue owner — date: 2026-11-22 (#161). The §11 decisions are accepted as proposed.
 
 ---
 
