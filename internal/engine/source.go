@@ -311,6 +311,7 @@ func parseArticle(id string, raw []byte) (Article, error) {
 // copies, so callers cannot change it.
 type Snapshot struct {
 	articles []Article // global, sorted by ID
+	index    keyIndex  // global articles by itemKey
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
 }
@@ -318,11 +319,24 @@ type Snapshot struct {
 type project struct {
 	scope    string
 	articles []Article // sorted by ID
+	index    keyIndex
+}
+
+// keyIndex maps an itemKey to its Article within one Scope. Keys are unique
+// per Scope because loadArticles rejects IDs that differ only in case.
+type keyIndex map[itemKey]*Article
+
+func indexArticles(articles []Article) keyIndex {
+	idx := make(keyIndex, len(articles))
+	for i := range articles {
+		idx[articles[i].key()] = &articles[i]
+	}
+	return idx
 }
 
 func newSnapshot(articles []Article) *Snapshot {
 	sortArticles(articles)
-	return &Snapshot{articles: articles, projects: map[string]project{}}
+	return &Snapshot{articles: articles, index: indexArticles(articles), projects: map[string]project{}}
 }
 
 func sortArticles(a []Article) {
@@ -332,7 +346,7 @@ func sortArticles(a []Article) {
 // addProject registers a Project. It is called only while loading.
 func (s *Snapshot) addProject(scope string, articles []Article) {
 	sortArticles(articles)
-	s.projects[strings.ToLower(scope)] = project{scope: scope, articles: articles}
+	s.projects[strings.ToLower(scope)] = project{scope: scope, articles: articles, index: indexArticles(articles)}
 }
 
 // Projects lists the registered Projects as "host/org/repo", sorted. A Project
@@ -389,17 +403,16 @@ func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
 	return Article{}, false
 }
 
-// resolve returns the Item that wins for key in proj's view, or nil. The
-// pointer is into the Snapshot, so callers must not change or return it.
+// resolve returns the Item that wins for key in proj's view, Project before
+// global, or nil. The pointer is into the Snapshot, so callers must not change
+// or return it.
 func (s *Snapshot) resolve(proj string, key itemKey) *Article {
-	for _, list := range s.resolutionOrder(proj) {
-		for i := range list {
-			if list[i].key() == key {
-				return &list[i]
-			}
+	if p, ok := s.lookupProject(proj); ok {
+		if a := p.index[key]; a != nil {
+			return a
 		}
 	}
-	return nil
+	return s.index[key]
 }
 
 // resolutionOrder returns the article lists to consult, Project before global.
