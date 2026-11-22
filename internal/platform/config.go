@@ -16,6 +16,8 @@ const (
 	EnvAdminAddr    = "GOLDIE_ADMIN_ADDR"
 	EnvLogLevel     = "GOLDIE_LOG_LEVEL"
 	EnvDrainSeconds = "GOLDIE_DRAIN_SECONDS"
+
+	EnvSwaggerUIEnabled = "GOLDIE_SWAGGER_UI_ENABLED"
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -25,6 +27,8 @@ type Config struct {
 	AdminAddr    string        // admin listener: probes and version
 	LogLevel     string        // debug | info | warn | error
 	DrainTimeout time.Duration // time between failing readiness and shutdown
+
+	SwaggerUIEnabled bool // serve Swagger UI on the public listener
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -65,6 +69,14 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		}
 	}
 	cfg.DrainTimeout = time.Duration(secs) * time.Second
+	cfg.SwaggerUIEnabled = true
+	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
+	case "true":
+	case "false":
+		cfg.SwaggerUIEnabled = false
+	default:
+		errs = append(errs, fmt.Errorf("%s: must be true or false", EnvSwaggerUIEnabled))
+	}
 	if !strings.Contains(cfg.Addr, ":") {
 		errs = append(errs, fmt.Errorf("%s: must be a host:port address", EnvAddr))
 	}
@@ -107,5 +119,6 @@ func (c Config) Report(l *slog.Logger) {
 		EnvAdminAddr, c.AdminAddr,
 		EnvLogLevel, c.LogLevel,
 		EnvDrainSeconds, int(c.DrainTimeout/time.Second),
+		EnvSwaggerUIEnabled, c.SwaggerUIEnabled,
 	)
 }

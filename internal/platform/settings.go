@@ -23,6 +23,7 @@ var Settings = []SettingSpec{
 	{EnvAdminAddr, ":8081", "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
 	{EnvLogLevel, "info", "Log level: debug, info, warn or error."},
 	{EnvDrainSeconds, "25", "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
+	{EnvSwaggerUIEnabled, "true", "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
 }
 
 // def returns the registered default of a variable. A variable missing from

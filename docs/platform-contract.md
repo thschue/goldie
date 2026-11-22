@@ -42,3 +42,6 @@ and running `./run regen`.
 - The public endpoints are documented in the generated [API reference](reference/api.md)
   (`./run regen`; `./run check` fails on drift), as is the configuration reference (PC-10). The image
   of PC-11 has its own issue.
+- Swagger UI is served at `/swagger-ui` on the public listener, from assets embedded in the binary
+  (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
+  off (404). It is registered on the same mux as the API, so the auth of #11 covers it.
