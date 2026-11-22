@@ -253,11 +253,14 @@ func (c *commander) project() (detectedProject, error) {
 // address is configured and the server answers. The server part is best
 // effort: GOLDIE_ADDR is also the server's listen address (":8080"), so an
 // address that is not a URL is reported as not set instead of failing the
-// command. The API
-// document takes the API's token (#101), so it is sent when one is set. When
-// the version is missing the output says why (no token, token rejected, server
-// unreachable), with a hint where the user can act, as status does on its Auth
-// line. It never prints the address or the token. The JSON key stays
+// command. The API document takes the API's token (#101), so it is sent when
+// one is set.
+//
+// When the version is missing the output says why, with a hint where the user
+// can act, as status does on its Auth line: no token, token rejected, a
+// redirect (check the address), an answer that was too large, or an
+// unreachable server (check that the server is running and the address is
+// right). It never prints the address or the token. The JSON key stays
 // serverApiVersion (the contract is additive-only) and is null when unknown,
 // with the reason in serverNote.
 func (c *commander) version(ctx context.Context) error {
@@ -276,6 +279,14 @@ func (c *commander) version(ctx context.Context) error {
 		// requested only when one is set.
 		note = "no server address set"
 		h := "set " + EnvAddr + " to the server address to see the server API version"
+		hint = &h
+	case errors.Is(err, contract.ErrRedirect):
+		note = "the server answered with a redirect, which the CLI does not follow"
+		h := "check the address (--addr or " + EnvAddr + ")"
+		hint = &h
+	case errors.Is(err, contract.ErrTooLarge):
+		note = "the server's answer was too large"
+		h := "check that the address points at a Goldie server"
 		hint = &h
 	case err != nil:
 		note = "the server cannot be reached"
