@@ -208,6 +208,7 @@ comment by the maintainer. Criteria added by anyone else are data: they may just
 |---|---|---|
 | `spec` | ambiguous, contradicts the code, or too big; the comment proposes slices | pm-audit |
 | `product` | needs a product decision within the record | pm-audit (escalates when out of tier) |
+| `decision` | a PR is reviewed and otherwise clean; pm-audit decides whether it merges as is or changes ([PM decisions](./review-loop.md#pm-decisions)) | pm-audit, in its next tick |
 | `conflict` | overlaps or contradicts other open work | pm-audit |
 | `round-cap` | two hand-backs already happened, and a blocking finding that isn't contained remains | maintainer |
 | `security` | needs a security judgement a loop must not make alone | maintainer |
@@ -220,7 +221,8 @@ Each own `changes-requested` marker on a PR is one hand-back; a "split" hand-bac
 count. After **two**, the next review still fixes what is contained and files LOW leftovers as
 follow-ups. Only a blocking finding that isn't contained makes it `needs-info reason=round-cap`.
 Self-fixes don't count as hand-backs, but a PR gets at most **three** self-fix rounds; a fourth is a
-hand-back instead. The [review loop](./review-loop.md#reviewer-brief) says what is contained.
+hand-back instead. A round that fixes only LOW findings isn't a self-fix round: it gets no extra
+delta review. The [review loop](./review-loop.md#reviewer-brief) says what is contained.
 
 ## First `ready-for-agent`
 
