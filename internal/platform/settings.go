@@ -41,6 +41,9 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
 	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
 	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
+	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
+	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
+	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
@@ -83,7 +86,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
-	b.WriteString("headers and query strings are not recorded. Other OTEL_* variables, such as samplers,\n")
+	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
+	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
 	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,17 +77,98 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 // spans stay in memory until the collector accepts them.
 const defaultSpanAttributeValueLimit = 1024
 
+// traceSettings are the trace sampler and span limits, parsed from the
+// injected lookup and handed to the SDK explicitly, so it reads neither from
+// the process environment.
+type traceSettings struct {
+	sampler sdktrace.Sampler
+	limits  sdktrace.SpanLimits
+}
+
+// defaultTraceSettings is what an empty lookup yields.
+func defaultTraceSettings() traceSettings {
+	ts, _ := parseTraceSettings(func(string) string { return "" })
+	return ts
+}
+
+// parseTraceSettings reads OTEL_TRACES_SAMPLER{,_ARG} and the span limit
+// variables through get. Errors name the variable, never the value.
+func parseTraceSettings(get func(string) string) (traceSettings, error) {
+	var errs []error
+	// The SDK's documented defaults, not NewSpanLimits, which reads the
+	// process environment: only lookup decides.
+	ts := traceSettings{limits: sdktrace.SpanLimits{
+		AttributeValueLengthLimit:   defaultSpanAttributeValueLimit,
+		AttributeCountLimit:         128,
+		EventCountLimit:             128,
+		LinkCountLimit:              128,
+		AttributePerEventCountLimit: 128,
+		AttributePerLinkCountLimit:  128,
+	}}
+	limit := func(dst *int, names ...string) {
+		for _, name := range names {
+			v := get(name)
+			if v == "" {
+				continue
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				errs = append(errs, fmt.Errorf("%s: must be a non-negative integer", name))
+			} else {
+				*dst = n
+			}
+			return
+		}
+	}
+	limit(&ts.limits.AttributeValueLengthLimit, "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT")
+	limit(&ts.limits.AttributeCountLimit, "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "OTEL_ATTRIBUTE_COUNT_LIMIT")
+	limit(&ts.limits.EventCountLimit, "OTEL_SPAN_EVENT_COUNT_LIMIT")
+	limit(&ts.limits.LinkCountLimit, "OTEL_SPAN_LINK_COUNT_LIMIT")
+	limit(&ts.limits.AttributePerEventCountLimit, "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT")
+	limit(&ts.limits.AttributePerLinkCountLimit, "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT")
+
+	arg := get(envOTelSamplerArg)
+	ratio := func() (float64, bool) {
+		if arg == "" {
+			return 1, true
+		}
+		f, err := strconv.ParseFloat(arg, 64)
+		if err != nil || f < 0 || f > 1 {
+			errs = append(errs, fmt.Errorf("%s: must be a number from 0 to 1", envOTelSamplerArg))
+			return 0, false
+		}
+		return f, true
+	}
+	switch strings.ToLower(get(envOTelSampler)) {
+	case "", "parentbased_always_on":
+		ts.sampler = sdktrace.ParentBased(sdktrace.AlwaysSample())
+	case "always_on":
+		ts.sampler = sdktrace.AlwaysSample()
+	case "always_off":
+		ts.sampler = sdktrace.NeverSample()
+	case "parentbased_always_off":
+		ts.sampler = sdktrace.ParentBased(sdktrace.NeverSample())
+	case "traceidratio":
+		if f, ok := ratio(); ok {
+			ts.sampler = sdktrace.TraceIDRatioBased(f)
+		}
+	case "parentbased_traceidratio":
+		if f, ok := ratio(); ok {
+			ts.sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(f))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("%s: must be always_on, always_off, traceidratio or a parentbased_ form of them", envOTelSampler))
+	}
+	return ts, errors.Join(errs...)
+}
+
 // newTelemetry wires the providers around the given exporters. Batch
 // processors keep export off the request path; Shutdown flushes them.
-func newTelemetry(res *resource.Resource, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
+func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
 	t := &Telemetry{}
 	if spans != nil {
-		limits := sdktrace.NewSpanLimits() // honours the OTEL_SPAN_* limit variables
-		if limits.AttributeValueLengthLimit < 0 {
-			limits.AttributeValueLengthLimit = defaultSpanAttributeValueLimit
-		}
 		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
-			sdktrace.WithRawSpanLimits(limits))
+			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
 	}
 	if logs != nil {
 		t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
@@ -103,6 +185,9 @@ const (
 	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
 	envOTelService  = "OTEL_SERVICE_NAME"
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
+
+	envOTelSampler    = "OTEL_TRACES_SAMPLER"
+	envOTelSamplerArg = "OTEL_TRACES_SAMPLER_ARG"
 )
 
 // secretOTelNames are the variables with a _FILE form (PC-05).
@@ -145,6 +230,10 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		errs = append(errs, fmt.Errorf("%s: %w", envOTelResAttrs, err))
 	}
 	serviceName := get(envOTelService)
+	traceCfg, err := parseTraceSettings(get)
+	if err != nil {
+		errs = append(errs, err)
+	}
 	type signal struct{ name, exporter, prefix string }
 	signals := []signal{
 		{"traces", "OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_"},
@@ -231,7 +320,7 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	return newTelemetry(telemetryResource(serviceName, resAttrs), spans, logs), nil
+	return newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs), nil
 }
 
 // parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the
