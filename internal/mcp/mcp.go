@@ -38,8 +38,13 @@ type articleInput struct {
 // New returns an MCP server with the tools search_knowledge and get_article.
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
+//
+// The tool set is fixed, so the server advertises tools without listChanged:
+// a client cannot park a request waiting for tool-list changes that never
+// come, and hold up a drain with it.
 func New(client contract.ClientWithResponsesInterface) *sdk.Server {
-	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version}, nil)
+	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
+		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return search(ctx, client, in.Query), nil, nil

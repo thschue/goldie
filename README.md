@@ -53,8 +53,9 @@ messages; errors go to stderr. It exits when the client closes stdin. There is n
 HTTP, for agents that connect remotely. Every request needs an API token (`GOLDIE_API_TOKEN` or one
 of `GOLDIE_API_TOKENS`) as `Authorization: Bearer <token>`; without it the answer is the 401
 envelope. The tools call the API inside the process with the caller's token, so the API checks that
-token and no other. The endpoint is stateless and answers with JSON: there are no sessions and no
-open event streams, so connected agents never hold up shutdown.
+token and no other. The endpoint is stateless and answers with JSON: there are no sessions, no
+standing event stream and no tool-list change notifications (the tool set is fixed), and each
+request must finish within 10 seconds, so connected agents never hold up shutdown.
 
 ```json
 {"mcpServers": {"goldie": {"type": "http", "url": "http://localhost:8080/mcp",
