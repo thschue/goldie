@@ -2,7 +2,7 @@
 // and the MCP stdio role both use it, so that one parser reads the untrusted
 // .git/config and .goldie/config.yaml of a checkout.
 //
-// Resolve applies the override order: the flag value, the environment value,
+// Detect detects the Project, trying in order: the flag value, the environment value,
 // .goldie/config.yaml, then the git remotes upstream and origin. The package
 // owns detection only and words nothing for the user: callers map a Source,
 // and the Source of a SourceError, to their own text. It imports no other
@@ -65,12 +65,12 @@ type Detected struct {
 	Rejected string
 }
 
-// Resolve applies the override order: --project, GOLDIE_PROJECT,
+// Detect detects the Project, trying in order: --project, GOLDIE_PROJECT,
 // .goldie/config.yaml, then the git remotes `upstream` and `origin`. dir is
 // the working directory. It returns the zero Project and no error when
 // nothing names one, for example outside a git repository. A broken
 // .goldie/config.yaml is an error: the user wrote it to be obeyed.
-func Resolve(dir, flagValue, envValue string) (Detected, error) {
+func Detect(dir, flagValue, envValue string) (Detected, error) {
 	for _, c := range []struct {
 		v      string
 		source Source
