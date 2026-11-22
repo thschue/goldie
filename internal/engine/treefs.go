@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,56 +13,48 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// maxLinkBytes caps how much of a symlink target ReadLink reads.
-const maxLinkBytes = 4096
-
 var errBadEntryName = errors.New("tree entry name is not a valid file name")
 
-// treeFS is a read-only fs.FS over one git tree, so the shared loader can read
-// a commit without a working tree. It never follows a symlink: Open and Stat
-// of one fail, Lstat reports it, and a path through one does not exist. A
-// submodule is an irregular entry. A tree entry whose name could traverse
-// ("", ".", "..", or one with '/' or NUL) makes ReadDir fail.
+// treeFS is a read-only fs.FS over one git tree, so the shared loader reads a
+// commit without a working tree. It never follows a symlink: opening one or a
+// path through one fails, and only Lstat reports it. A submodule is an
+// irregular entry. A tree entry whose name could traverse makes ReadDir fail.
 type treeFS struct{ root *object.Tree }
 
 func newTreeFS(root *object.Tree) treeFS { return treeFS{root: root} }
 
 var (
 	_ fs.ReadDirFS  = treeFS{}
-	_ fs.StatFS     = treeFS{}
 	_ fs.ReadLinkFS = treeFS{}
 )
 
-// node is a resolved path: the root, or an entry of its parent tree. dir is
+// node is a resolved path: the root (parent nil) or an entry of parent. dir is
 // set for directories.
 type node struct {
-	name   string
 	entry  object.TreeEntry
 	parent *object.Tree
 	dir    *object.Tree
 }
 
 func (n node) mode() fs.FileMode {
-	if n.parent == nil {
+	switch {
+	case n.parent == nil || n.entry.Mode == filemode.Dir:
 		return fs.ModeDir | 0o555
-	}
-	switch n.entry.Mode {
-	case filemode.Dir:
-		return fs.ModeDir | 0o555
-	case filemode.Regular, filemode.Deprecated:
+	case n.entry.Mode == filemode.Regular || n.entry.Mode == filemode.Deprecated:
 		return 0o444
-	case filemode.Executable:
+	case n.entry.Mode == filemode.Executable:
 		return 0o555
-	case filemode.Symlink:
+	case n.entry.Mode == filemode.Symlink:
 		return fs.ModeSymlink | 0o777
-	default:
-		return fs.ModeIrregular
 	}
+	return fs.ModeIrregular
 }
 
-func (n node) info() fileInfo {
-	fi := fileInfo{name: n.name, mode: n.mode()}
-	if fi.mode.Type() == 0 || fi.mode.Type() == fs.ModeSymlink {
+func (n node) info() fs.FileInfo {
+	fi := fileInfo{name: n.entry.Name, mode: n.mode()}
+	if n.parent == nil {
+		fi.name = "."
+	} else if fi.mode.Type()&^fs.ModeSymlink == 0 {
 		if f, err := n.parent.TreeEntryFile(&n.entry); err == nil {
 			fi.size = f.Size
 		}
@@ -69,47 +62,46 @@ func (n node) info() fileInfo {
 	return fi
 }
 
-func (f treeFS) lookup(op, name string) (node, error) {
-	if !fs.ValidPath(name) {
-		return node{}, &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
+func (n node) reader() (io.ReadCloser, error) {
+	f, err := n.parent.TreeEntryFile(&n.entry)
+	if err != nil {
+		return nil, err
 	}
-	if name == "." {
-		return node{name: ".", dir: f.root}, nil
-	}
-	cur := f.root
-	parts := strings.Split(name, "/")
-	for i, part := range parts {
-		e, ok := findEntry(cur, part)
-		if ok && i < len(parts)-1 && e.Mode == filemode.Symlink {
-			// Not followed, and not reported as missing either, so a
-			// symlinked directory fails the load instead of loading nothing.
-			return node{}, &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
-		}
-		if !ok || (i < len(parts)-1 && e.Mode != filemode.Dir) {
-			return node{}, &fs.PathError{Op: op, Path: name, Err: fs.ErrNotExist}
-		}
-		var sub *object.Tree
-		if e.Mode == filemode.Dir {
-			var err error
-			if sub, err = cur.Tree(part); err != nil {
-				return node{}, &fs.PathError{Op: op, Path: name, Err: err}
-			}
-		}
-		if i == len(parts)-1 {
-			return node{name: part, entry: e, parent: cur, dir: sub}, nil
-		}
-		cur = sub
-	}
-	return node{}, &fs.PathError{Op: op, Path: name, Err: fs.ErrNotExist}
+	return f.Reader()
 }
 
-func findEntry(t *object.Tree, name string) (object.TreeEntry, bool) {
-	for _, e := range t.Entries {
-		if e.Name == name {
-			return e, true
+func (f treeFS) lookup(op, name string) (node, error) {
+	fail := func(err error) (node, error) { return node{}, &fs.PathError{Op: op, Path: name, Err: err} }
+	if !fs.ValidPath(name) {
+		return fail(fs.ErrInvalid)
+	}
+	n := node{dir: f.root}
+	if name == "." {
+		return n, nil
+	}
+	for part := range strings.SplitSeq(name, "/") {
+		if n.dir == nil {
+			if n.entry.Mode == filemode.Symlink {
+				// Not followed, and not reported missing either, so a
+				// symlinked directory fails the load instead of loading nothing.
+				return fail(fs.ErrInvalid)
+			}
+			return fail(fs.ErrNotExist)
+		}
+		i := slices.IndexFunc(n.dir.Entries, func(e object.TreeEntry) bool { return e.Name == part })
+		if i < 0 {
+			return fail(fs.ErrNotExist)
+		}
+		n = node{entry: n.dir.Entries[i], parent: n.dir}
+		if n.entry.Mode == filemode.Dir {
+			sub, err := n.parent.Tree(part)
+			if err != nil {
+				return fail(err)
+			}
+			n.dir = sub
 		}
 	}
-	return object.TreeEntry{}, false
+	return n, nil
 }
 
 func (f treeFS) Open(name string) (fs.File, error) {
@@ -125,30 +117,13 @@ func (f treeFS) Open(name string) (fs.File, error) {
 		}
 		return &treeDir{info: n.info(), entries: entries}, nil
 	case 0:
-		file, err := n.parent.TreeEntryFile(&n.entry)
+		r, err := n.reader()
 		if err != nil {
 			return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 		}
-		r, err := file.Reader()
-		if err != nil {
-			return nil, &fs.PathError{Op: "open", Path: name, Err: err}
-		}
-		return &treeFile{info: n.info(), r: r}, nil
-	default:
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
+		return &treeFile{info: n.info(), ReadCloser: r}, nil
 	}
-}
-
-// Stat does not follow a symlink: it fails on one.
-func (f treeFS) Stat(name string) (fs.FileInfo, error) {
-	n, err := f.lookup("stat", name)
-	if err != nil {
-		return nil, err
-	}
-	if n.mode().Type() == fs.ModeSymlink {
-		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrInvalid}
-	}
-	return n.info(), nil
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 }
 
 func (f treeFS) Lstat(name string) (fs.FileInfo, error) {
@@ -161,42 +136,35 @@ func (f treeFS) Lstat(name string) (fs.FileInfo, error) {
 
 func (f treeFS) ReadLink(name string) (string, error) {
 	n, err := f.lookup("readlink", name)
+	if err == nil && n.mode().Type() != fs.ModeSymlink {
+		err = &fs.PathError{Op: "readlink", Path: name, Err: fs.ErrInvalid}
+	}
 	if err != nil {
 		return "", err
 	}
-	if n.mode().Type() != fs.ModeSymlink {
-		return "", &fs.PathError{Op: "readlink", Path: name, Err: fs.ErrInvalid}
-	}
-	file, err := n.parent.TreeEntryFile(&n.entry)
-	if err != nil {
-		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
-	}
-	r, err := file.Reader()
+	r, err := n.reader()
 	if err != nil {
 		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
 	}
 	defer func() { _ = r.Close() }()
-	target, err := io.ReadAll(io.LimitReader(r, maxLinkBytes))
-	if err != nil {
-		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
-	}
-	return string(target), nil
+	target, err := io.ReadAll(io.LimitReader(r, 4096))
+	return string(target), err
 }
 
 func (f treeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	n, err := f.lookup("readdir", name)
+	if err == nil && n.dir == nil {
+		err = &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
+	}
 	if err != nil {
 		return nil, err
-	}
-	if n.dir == nil {
-		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
 	}
 	out := make([]fs.DirEntry, 0, len(n.dir.Entries))
 	for _, e := range n.dir.Entries {
 		if !validEntryName(e.Name) {
 			return nil, &fs.PathError{Op: "readdir", Path: name, Err: errBadEntryName}
 		}
-		out = append(out, dirEntry{node{name: e.Name, entry: e, parent: n.dir}})
+		out = append(out, fs.FileInfoToDirEntry(node{entry: e, parent: n.dir}.info()))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
 	return out, nil
@@ -207,13 +175,6 @@ func (f treeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 func validEntryName(name string) bool {
 	return fs.ValidPath(name) && name != "." && !strings.ContainsAny(name, "/\x00")
 }
-
-type dirEntry struct{ n node }
-
-func (d dirEntry) Name() string               { return d.n.name }
-func (d dirEntry) IsDir() bool                { return d.n.mode().IsDir() }
-func (d dirEntry) Type() fs.FileMode          { return d.n.mode().Type() }
-func (d dirEntry) Info() (fs.FileInfo, error) { return d.n.info(), nil }
 
 type fileInfo struct {
 	name string
@@ -229,36 +190,31 @@ func (fi fileInfo) IsDir() bool        { return fi.mode.IsDir() }
 func (fi fileInfo) Sys() any           { return nil }
 
 type treeFile struct {
-	info fileInfo
-	r    io.ReadCloser
+	info fs.FileInfo
+	io.ReadCloser
 }
 
 func (f *treeFile) Stat() (fs.FileInfo, error) { return f.info, nil }
-func (f *treeFile) Read(p []byte) (int, error) { return f.r.Read(p) }
-func (f *treeFile) Close() error               { return f.r.Close() }
 
 type treeDir struct {
-	info    fileInfo
+	info    fs.FileInfo
 	entries []fs.DirEntry
-	off     int
 }
 
 func (d *treeDir) Stat() (fs.FileInfo, error) { return d.info, nil }
 func (d *treeDir) Close() error               { return nil }
 func (d *treeDir) Read([]byte) (int, error) {
-	return 0, &fs.PathError{Op: "read", Path: d.info.name, Err: fs.ErrInvalid}
+	return 0, &fs.PathError{Op: "read", Path: d.info.Name(), Err: fs.ErrInvalid}
 }
 
 func (d *treeDir) ReadDir(n int) ([]fs.DirEntry, error) {
-	rest := d.entries[d.off:]
-	if n <= 0 {
-		d.off = len(d.entries)
-		return rest, nil
-	}
-	if len(rest) == 0 {
+	if n > 0 && len(d.entries) == 0 {
 		return nil, io.EOF
 	}
-	n = min(n, len(rest))
-	d.off += n
-	return rest[:n], nil
+	if n <= 0 || n > len(d.entries) {
+		n = len(d.entries)
+	}
+	out := d.entries[:n]
+	d.entries = d.entries[n:]
+	return out, nil
 }

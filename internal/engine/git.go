@@ -146,35 +146,26 @@ func newSSHAuth(ep *transport.Endpoint, opts GitOptions) (*sshAuth, error) {
 	if user == "" {
 		user = gitssh.DefaultUsername
 	}
-	return &sshAuth{
-		user:   user,
-		signer: signer,
-		hosts:  kh,
-		algos:  kh.algorithms(net.JoinHostPort(ep.Host, strconv.Itoa(port))),
-	}, nil
+	return &sshAuth{ssh.ClientConfig{
+		User:              user,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback:   kh.check,
+		HostKeyAlgorithms: kh.algorithms(net.JoinHostPort(ep.Host, strconv.Itoa(port))),
+		Timeout:           30 * time.Second,
+	}}, nil
 }
 
 // sshAuth authenticates with one key and always verifies the host key against
 // the supplied known hosts. go-git falls back to ~/.ssh/known_hosts only when
-// HostKeyCallback is nil, and ClientConfig never returns nil.
-type sshAuth struct {
-	user   string
-	signer ssh.Signer
-	hosts  knownHosts
-	algos  []string
-}
+// HostKeyCallback is nil, and it never is here.
+type sshAuth struct{ cfg ssh.ClientConfig }
 
 func (a *sshAuth) Name() string   { return gitssh.PublicKeysName }
 func (a *sshAuth) String() string { return gitssh.PublicKeysName }
 
 func (a *sshAuth) ClientConfig() (*ssh.ClientConfig, error) {
-	return &ssh.ClientConfig{
-		User:              a.user,
-		Auth:              []ssh.AuthMethod{ssh.PublicKeys(a.signer)},
-		HostKeyCallback:   a.hosts.check,
-		HostKeyAlgorithms: a.algos,
-		Timeout:           30 * time.Second,
-	}, nil
+	cfg := a.cfg
+	return &cfg, nil
 }
 
 // Revision returns the commit SHA the last successful Load read.
@@ -251,13 +242,12 @@ func (s *GitSource) pickRef(refs []*plumbing.Reference) (plumbing.ReferenceName,
 	switch {
 	case s.ref == "":
 		head := byName[plumbing.HEAD]
-		if head == nil {
-			return "", plumbing.ZeroHash, errors.New("git source: the remote has no HEAD; set Ref")
-		}
-		if head.Type() == plumbing.HashReference {
+		if head != nil && head.Type() == plumbing.HashReference {
 			return plumbing.HEAD, head.Hash(), nil
 		}
-		candidates = []plumbing.ReferenceName{head.Target()}
+		if head != nil {
+			candidates = []plumbing.ReferenceName{head.Target()}
+		}
 	case strings.HasPrefix(s.ref, "refs/"):
 		candidates = []plumbing.ReferenceName{plumbing.ReferenceName(s.ref)}
 	default:
@@ -269,7 +259,7 @@ func (s *GitSource) pickRef(refs []*plumbing.Reference) (plumbing.ReferenceName,
 		}
 	}
 	if s.ref == "" {
-		return "", plumbing.ZeroHash, errors.New("git source: the remote HEAD points to no branch; set Ref")
+		return "", plumbing.ZeroHash, errors.New("git source: the remote HEAD names no branch; set Ref")
 	}
 	return "", plumbing.ZeroHash, fmt.Errorf("git source: ref %q not found", s.ref)
 }
