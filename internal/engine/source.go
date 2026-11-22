@@ -323,8 +323,10 @@ func (s *Snapshot) Projects() []string {
 }
 
 // Project reports whether id ("host/org/repo") is a registered Project,
-// matched case-insensitively, and returns it in its registered spelling. It is
-// the one decision of what counts as registered; resolution uses it too.
+// matched case-insensitively, and returns it in its registered spelling.
+// lookupProject is the one place that decides whether a Project is registered;
+// this method and article resolution both go through it. The id length cap
+// applies only when loading, not here.
 func (s *Snapshot) Project(id string) (scope string, ok bool) {
 	p, ok := s.lookupProject(id)
 	return p.scope, ok
