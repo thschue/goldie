@@ -294,8 +294,10 @@ func TestBinaryServesAPIWithTokenFromFile(t *testing.T) {
 }
 
 func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
-	const marker = "s3cret marker 0123456789abcdef0123" // long enough that the space is what fails
-	short := testToken[:31] // one byte under the minimum
+	// marker is long enough that its space is what fails; short is one byte
+	// under the minimum.
+	const marker = "s3cret marker 0123456789abcdef0123"
+	short := testToken[:31]
 	content := "GOLDIE_CONTENT_DIR=" + contentDir(t)
 	token := "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken)
 	for _, tc := range []struct {
