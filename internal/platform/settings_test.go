@@ -113,3 +113,14 @@ func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
 		t.Errorf("startup report must say the token is unset: %s", unset.String())
 	}
 }
+
+// The client commands' variables are documented in the configuration
+// reference, in their own table.
+func TestConfigReferenceListsClientSettings(t *testing.T) {
+	ref := string(ConfigReference(nil))
+	for _, want := range []string{"## Client commands", "| `" + EnvAddr + "` | (none) | Server URL", "| `" + EnvToken + "` | (none) | Secret: set it with GOLDIE_TOKEN_FILE."} {
+		if !strings.Contains(ref, want) {
+			t.Errorf("reference lacks %q:\n%s", want, ref)
+		}
+	}
+}

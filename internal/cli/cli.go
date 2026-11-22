@@ -17,10 +17,11 @@ import (
 )
 
 // Environment variables of the client commands. The token is a secret, so it
-// also has a _FILE form (PC-05).
+// also has a _FILE form (PC-05). They are registered in
+// platform.ClientSettings, which the configuration reference is rendered from.
 const (
-	EnvAddr  = "GOLDIE_ADDR"
-	EnvToken = "GOLDIE_TOKEN"
+	EnvAddr  = platform.EnvAddr
+	EnvToken = platform.EnvToken
 )
 
 // Usage is the one-line usage of the client commands, without the program
