@@ -164,6 +164,9 @@ type SearchResults struct {
 // ErrorResponse The body of every error response.
 type ErrorResponse = ErrorEnvelope
 
+// NotReady The body of every error response.
+type NotReady = ErrorEnvelope
+
 // RateLimited The body of every error response.
 type RateLimited = ErrorEnvelope
 
@@ -718,6 +721,8 @@ type GetArticleResponse struct {
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers429 the parsed response headers for an HTTP 429 response
@@ -752,6 +757,11 @@ func (r GetArticleResponse) GetJSON426() *UpgradeRequired {
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
 func (r GetArticleResponse) GetJSON429() *RateLimited {
 	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetArticleResponse) GetJSON503() *NotReady {
+	return r.JSON503
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -804,6 +814,8 @@ type ListProjectsResponse struct {
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers429 the parsed response headers for an HTTP 429 response
@@ -828,6 +840,11 @@ func (r ListProjectsResponse) GetJSON426() *UpgradeRequired {
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
 func (r ListProjectsResponse) GetJSON429() *RateLimited {
 	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListProjectsResponse) GetJSON503() *NotReady {
+	return r.JSON503
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -882,6 +899,8 @@ type SearchArticlesResponse struct {
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers429 the parsed response headers for an HTTP 429 response
@@ -911,6 +930,11 @@ func (r SearchArticlesResponse) GetJSON426() *UpgradeRequired {
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
 func (r SearchArticlesResponse) GetJSON429() *RateLimited {
 	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r SearchArticlesResponse) GetJSON503() *NotReady {
+	return r.JSON503
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -1180,6 +1204,13 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSON429 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -1246,6 +1277,13 @@ func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error
 			return nil, err
 		}
 		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -1320,6 +1358,13 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 			return nil, err
 		}
 		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -1701,6 +1746,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type ErrorJSONResponse ErrorEnvelope
 
+type NotReadyJSONResponse ErrorEnvelope
+
 type RateLimitedResponseHeaders struct {
 	RetryAfter *int
 }
@@ -1814,6 +1861,20 @@ func (response GetArticle429JSONResponse) VisitGetArticleResponse(w http.Respons
 	return err
 }
 
+type GetArticle503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetArticle503JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetArticledefaultJSONResponse struct {
 	Body       ErrorEnvelope
 	StatusCode int
@@ -1899,6 +1960,20 @@ func (response ListProjects429JSONResponse) VisitListProjectsResponse(w http.Res
 		}
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjects503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response ListProjects503JSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2003,6 +2078,20 @@ func (response SearchArticles429JSONResponse) VisitSearchArticlesResponse(w http
 		}
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response SearchArticles503JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }

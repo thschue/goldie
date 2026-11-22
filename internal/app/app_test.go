@@ -267,7 +267,7 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes, err := publicRoutes(snap, testToken)
+	routes, err := publicRoutes(staticSnapshot(snap), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestRouterHonoursRegisteredMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes, err := publicRoutes(snap, testToken)
+	routes, err := publicRoutes(staticSnapshot(snap), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
