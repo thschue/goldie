@@ -72,11 +72,8 @@ func runServer(out io.Writer) error {
 		_ = tel.Shutdown(fctx)
 	}()
 	logger = tel.WrapLogger(logger, "server")
-	tel.ReportErrorsTo(logger)
 	cfg.Report(logger)
-	if tel.Enabled() {
-		logger.Info("telemetry enabled")
-	}
+	tel.Report(logger)
 
 	sigs := make(chan os.Signal, 2)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
