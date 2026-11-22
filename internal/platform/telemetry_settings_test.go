@@ -145,6 +145,22 @@ func TestTelemetryRejectsBadSamplerAndLimits(t *testing.T) {
 	}
 }
 
+// The configuration reference says the span attribute cap falls back to the
+// generic OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT, and the span-specific name wins.
+func TestTraceSettingsValueLengthFallback(t *testing.T) {
+	lk := func(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+	ts, err := parseTraceSettings(lk(map[string]string{"OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "64"}))
+	if err != nil || ts.limits.AttributeValueLengthLimit != 64 {
+		t.Errorf("generic only: %d err=%v", ts.limits.AttributeValueLengthLimit, err)
+	}
+	ts, err = parseTraceSettings(lk(map[string]string{
+		"OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT": "64", "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT": "32",
+	}))
+	if err != nil || ts.limits.AttributeValueLengthLimit != 32 {
+		t.Errorf("both: %d err=%v", ts.limits.AttributeValueLengthLimit, err)
+	}
+}
+
 // NaN parses as a float but compares false against both bounds, and the SDK
 // turns it into a platform-dependent ratio. It must fail startup like any
 // other ratio outside [0, 1].

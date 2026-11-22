@@ -40,7 +40,7 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
 	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
 	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
-	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
+	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path, so a higher value lets clients grow the spans held in memory. Falls back to OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT. A value that is not a non-negative integer fails startup."},
 	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
 	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
