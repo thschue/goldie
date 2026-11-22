@@ -132,8 +132,7 @@ CONTRACT_GEN=internal/contract/contract.gen.go
 oapi_codegen() {
 	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
 	if go run "github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@${OAPI_CODEGEN_VERSION}" \
-		-config "$CONTRACT_CONFIG" "$1" >"$tmp"; then
-		cat "$tmp" >"$2"
+		-config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
 		rm -f "$tmp"
 	else
 		rm -f "$tmp"
@@ -148,13 +147,15 @@ cmd_regen() {
 }
 
 # drift <spec>: succeed when the committed generated code equals a fresh
-# generation from <spec>.
+# generation from <spec>, return 1 when they differ, and die when they cannot
+# be compared, so the fixture never passes for the wrong reason.
 drift() {
 	fresh=$(mktemp) || die "cannot create a temporary file for the drift check"
 	status=0
 	oapi_codegen "$1" "$fresh"
-	cmp -s "$fresh" "$CONTRACT_GEN" || status=1
+	cmp -s "$fresh" "$CONTRACT_GEN" || status=$?
 	rm -f "$fresh"
+	[ "$status" -le 1 ] || die "cannot compare $CONTRACT_GEN with a fresh generation (cmp exit $status)"
 	return "$status"
 }
 
