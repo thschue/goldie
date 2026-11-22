@@ -19,6 +19,10 @@ const maxQueryBytes = 1024
 var badSearch = envelope("bad_request", "missing or invalid search words",
 	"Pass one q parameter with 1 to 1024 bytes of search words.")
 
+// searchPattern is the pattern the generated router registers the search
+// operation under; the mux reports it as the request's Pattern.
+const searchPattern = http.MethodGet + " /api/v1/search"
+
 // Server implements contract.StrictServerInterface over one Snapshot. The
 // generated router decodes the parameters; these methods return the spec's
 // response types. It carries no auth: the caller wraps /api/ in RequireToken.
@@ -150,11 +154,11 @@ func nosniff(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFu
 
 // requestError answers a request whose parameters the generated router cannot
 // decode with the 400 envelope; Register hands it to the generated router and
-// the strict handler. A missing or repeated q is the envelope
-// SearchArticles gives for blank search words. The error is not echoed: it
-// quotes the request.
-func requestError(w http.ResponseWriter, _ *http.Request, err error) {
-	if paramName(err) == "q" {
+// the strict handler. A missing or repeated q on the search operation is the
+// envelope SearchArticles gives for blank search words. The error is not
+// echoed: it quotes the request.
+func requestError(w http.ResponseWriter, r *http.Request, err error) {
+	if r.Pattern == searchPattern && paramName(err) == "q" {
 		writeJSON(w, http.StatusBadRequest, badSearch)
 		return
 	}
@@ -167,15 +171,12 @@ func paramName(err error) string {
 	var (
 		required *contract.RequiredParamError
 		format   *contract.InvalidParamFormatError
-		tooMany  *contract.TooManyValuesForParamError
 	)
 	switch {
 	case errors.As(err, &required):
 		return required.ParamName
 	case errors.As(err, &format):
 		return format.ParamName
-	case errors.As(err, &tooMany):
-		return tooMany.ParamName
 	}
 	return ""
 }
