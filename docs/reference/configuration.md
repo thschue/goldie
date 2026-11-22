@@ -2,8 +2,8 @@
 
 # Goldie configuration reference
 
-Configuration is environment only (PC-04). Every variable also accepts a `NAME_FILE` form
-that reads the value from a file; setting both is an error (PC-05).
+Configuration is environment only (PC-04). Every variable in the table below also accepts
+a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -42,6 +42,7 @@ accept a _FILE form; for any other OTEL_* name it is an error.
 ## Client commands
 
 `goldie search`, `lookup`, `status` and `version` read these variables.
+Only GOLDIE_TOKEN has a _FILE form (GOLDIE_TOKEN_FILE); the client reads no other _FILE variable.
 
 | Variable | Default | Meaning |
 |---|---|---|

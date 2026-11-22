@@ -118,7 +118,12 @@ func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
 // reference, in their own table.
 func TestConfigReferenceListsClientSettings(t *testing.T) {
 	ref := string(ConfigReference(nil))
-	for _, want := range []string{"## Client commands", "| `" + EnvAddr + "` | (none) | Server URL", "| `" + EnvToken + "` | (none) | Secret: set it with GOLDIE_TOKEN_FILE."} {
+	// The intro's _FILE rule is limited to the server table, and the client
+	// section states its own exception, so the two cannot contradict.
+	if strings.Contains(ref, "Every variable also accepts") {
+		t.Errorf("the intro claims a _FILE form for every variable, which the client and OpenTelemetry sections contradict:\n%s", ref)
+	}
+	for _, want := range []string{"Every variable in the table below also accepts", "Only " + EnvToken + " has a _FILE form", "## Client commands", "| `" + EnvAddr + "` | (none) | Server URL", "| `" + EnvToken + "` | (none) | Secret: set it with GOLDIE_TOKEN_FILE."} {
 		if !strings.Contains(ref, want) {
 			t.Errorf("reference lacks %q:\n%s", want, ref)
 		}

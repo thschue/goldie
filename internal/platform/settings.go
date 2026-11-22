@@ -76,8 +76,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	var b strings.Builder
 	b.WriteString("<!-- Generated from the settings registry in internal/platform/settings.go by `./run regen`. Do not edit. -->\n\n")
 	b.WriteString("# Goldie configuration reference\n\n")
-	b.WriteString("Configuration is environment only (PC-04). Every variable also accepts a `NAME_FILE` form\n")
-	b.WriteString("that reads the value from a file; setting both is an error (PC-05).\n\n")
+	b.WriteString("Configuration is environment only (PC-04). Every variable in the table below also accepts\n")
+	b.WriteString("a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).\n\n")
 	table(&b, rows)
 	b.WriteString("\n## OpenTelemetry\n\n")
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
@@ -89,7 +89,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
-	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables.\n\n")
+	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables.\n")
+	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
 	table(&b, ClientSettings)
 	return []byte(b.String())
 }
