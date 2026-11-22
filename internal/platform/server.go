@@ -21,12 +21,14 @@ const shutdownGrace = 30 * time.Second
 
 // Connection timeouts. Idle keep-alive connections are closed on both ports.
 // Probes are short, so the admin port also bounds each whole request and
-// response; the app port leaves body and write deadlines to role handlers,
-// some of which stream. Variables so tests can shorten them.
+// response. The app port bounds reading a whole request (headers and body)
+// with appReadTimeout but sets no WriteTimeout: responses can be long, and
+// /mcp bounds its own requests. Variables so tests can shorten them.
 var (
 	readHeaderTimeout = 10 * time.Second
 	idleTimeout       = 60 * time.Second
 	adminIOTimeout    = 10 * time.Second
+	appReadTimeout    = 30 * time.Second
 )
 
 // Server is the process skeleton: the app listener, the admin listener and
@@ -113,6 +115,7 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 	app := &http.Server{
 		Handler:           s.Telemetry.WrapHandler(s.appHandler()),
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       appReadTimeout,
 		IdleTimeout:       idleTimeout,
 	}
 	admin := &http.Server{
