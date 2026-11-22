@@ -253,7 +253,8 @@ func (c *commander) project() (detectedProject, error) {
 // version prints the client version, and the server's API version when an
 // address is configured and the server answers. The server part is best
 // effort: GOLDIE_ADDR is also the server's listen address (":8080"), so an
-// address that is not a URL is skipped instead of failing the command. The API
+// address that is not a URL is reported as not set instead of failing the
+// command. The API
 // document takes the API's token (#101), so it is sent when one is set. When
 // the version is missing the output says why (no token, token rejected, server
 // unreachable), with a hint where the user can act, as status does on its Auth
@@ -263,16 +264,24 @@ func (c *commander) project() (detectedProject, error) {
 func (c *commander) version(ctx context.Context) error {
 	info := map[string]any{"version": platform.Version}
 	line := platform.Version
-	cl, err := c.client(c.s.token != "")
-	if err != nil {
-		return c.printVersion(info, line)
-	}
 	var note string
 	var hint *string
-	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
+	cl, err := c.client(c.s.token != "")
+	var doc *contract.GetOpenAPIJSONResponse
+	if err == nil {
+		doc, err = cl.GetOpenAPIJSONWithResponse(ctx)
+	}
 	switch {
+	case cl == nil:
+		// client only fails on an unusable address here: the token is
+		// requested only when one is set.
+		note = "no server address set"
+		h := "set " + EnvAddr + " to the server address to see the server API version"
+		hint = &h
 	case err != nil:
 		note = "the server cannot be reached"
+		h := "check that the server is running and the address is right"
+		hint = &h
 	case doc.JSON200 != nil:
 		_, apiVersion := specInfo(*doc.JSON200)
 		info["serverApiVersion"] = apiVersion
