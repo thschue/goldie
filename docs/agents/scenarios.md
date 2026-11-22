@@ -18,7 +18,8 @@ number names the case that motivated the rule.
 | S10 | Clean review, `run` gains a task (#58); another PR adds `\|\| true` to an existing step | delivery | First: `review:` reason judged not significant in the marker, merged. Second: significant, `needs-maintainer` |
 | S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table; the implementer ran on `opus` |
 | S13 | Implementer unsure which module owns a function | delivery | a `Consult (architect):` note with question and answer; implementer resumed; 4th consult parks `needs-info reason=spec` |
-| S14 | Clean except a non-additive product question | delivery | `review reason=decision`, `needs-info reason=decision`; product answers `PM decision: merge`; merge-pr on the same head |
+| S14 | Clean except a non-additive product question; answered by the product session or the maintainer (#180) | delivery | `review reason=decision` with `needs-info` and `question` in one command; on the answer, both labels off and merge-pr on the same head |
+| S26 | Clean and armed, then `main` moves and CI goes red (#195) | delivery | `red`: auto-merge disabled before the implementer fixes it; the new commits are reviewed and `scripts/merge-pr` re-runs, test lock included |
 | S15 | `ci` red on `main` | delivery, product | Delivery claims nothing new, fixes `main` as a found-fix stream; product puts it first in the inbox |
 | S16 | Renovate PR bumps a Go module | delivery | `reviewer` reads diff and notes, no local code run; clean, merge-pr; an Actions bump is held by the gate |
 | S17 | Implementer ends without a JSON block and with commits unpushed (#141, #153) | delivery | Nothing written from the report; the same implementer is resumed once to push, write the PR body and report; a second `blocked` parks `needs-info reason=human-check` |

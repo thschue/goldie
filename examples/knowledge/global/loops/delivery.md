@@ -11,7 +11,8 @@ Run one tick. The repository's loop rules are authoritative; this Item is the su
 (`goldie lookup agent-loops`).
 
 1. If `main` is red, fix it first.
-2. Advance every stream whose subagent returned; resume your own streams from GitHub state.
+2. Advance every stream whose subagent returned; resume your own streams from GitHub state. A
+   stream owns its PR until it merges or closes: red CI, conflicts and answers to its questions.
 3. While fewer than two streams run, claim the first issue of the ranked frontier (bugs and
    priorities, then the started epic, then standalone work, then a new epic) by pushing its branch.
    The first push wins.

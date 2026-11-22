@@ -31,9 +31,10 @@ are in the [README](./README.md).
 
 Each step runs only after the steps before it are done.
 
-1. **PM decisions.** A PR with `needs-info` and a `reason=decision` marker for its head gets
-   `PM decision: merge` or `PM decision: change` (with the rework and the record it rests on) in this
-   tick. Then remove `needs-info` and log it.
+1. **PM decisions.** A PR whose `reason=decision` marker for its head has no answer yet
+   (`decisions=`, with or without its labels) gets `PM decision: merge` or `PM decision: change`
+   (with the rework and the record it rests on) in this tick, and `needs-info` and `question` if
+   they're missing. Log it. Escalate only the critical list.
 2. **Triage** every `needs-triage` issue, bugs and security first. First bundle follow-ups by area
    into the oldest issue (a checklist; the rest close as duplicates). Then apply exactly one
    verdict:
@@ -79,7 +80,7 @@ Each step runs only after the steps before it are done.
    - a `priority` issue not merged within a day;
    - `round-cap`, `security` and `human-check` parks;
    - `needs-maintainer` older than a day;
-   - a stream idle for over 2 h;
+   - a stream idle for over 2 h, or an owned PR `red` or `dirty` for over 30 min;
    - a red workflow on `main`.
 
    Release `in-progress` claims older than 24 h that have no PR.
@@ -113,7 +114,8 @@ sections, in order:
 1. **Stop the line:** red `main`, a buffer below target (claimable vs target, and the one blocker
    to clear), `needs-triage` older than one tick.
 2. **Merge to approve:** `needs-maintainer` PRs with their gate reasons.
-3. **Decide:** tier-3 questions, `grilling-needed`, maintainer-owned `needs-info`.
+3. **Decide:** tier-3 questions and PRs labelled `question` for the maintainer, `grilling-needed`,
+   maintainer-owned `needs-info`.
 4. **Windows closing:** tier-2 decisions, with their UTC deadline.
 5. **Harness feedback:** the top 5 open items from the pinned `Harness feedback` issue, ranked by
    occurrences and time lost, for the weekly batch. Close items unconfirmed for 3 weeks.
