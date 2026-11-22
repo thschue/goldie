@@ -46,11 +46,14 @@ func NewDirSource(root string) DirSource { return DirSource{root: root} }
 // first invalid file, and the error names that file relative to the root. A
 // root without global/articles yields an empty Snapshot.
 func (s DirSource) Load() (*Snapshot, error) {
-	info, err := os.Stat(s.root)
-	if err != nil || !info.IsDir() {
+	// os.Root confines every Stat, ReadDir and Open to the root, so a symlinked
+	// global or global/articles directory cannot lead the walk out of it.
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
 		return nil, errors.New("content directory is not readable")
 	}
-	fsys := os.DirFS(s.root)
+	defer func() { _ = root.Close() }()
+	fsys := root.FS()
 	var articles []Article
 	err = fs.WalkDir(fsys, articlesDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {

@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,5 +50,37 @@ func TestLoadIgnoresSymlinks(t *testing.T) {
 	}
 	if n := len(snap.Articles()); n != 1 {
 		t.Fatalf("articles = %d, want 1", n)
+	}
+}
+
+// TestLoadRejectsSymlinkedArticlesDir proves a symlinked global or
+// global/articles directory cannot pull files from outside the root.
+func TestLoadRejectsSymlinkedArticlesDir(t *testing.T) {
+	for _, link := range []string{"global", "global/articles"} {
+		t.Run(link, func(t *testing.T) {
+			root, outside := t.TempDir(), t.TempDir()
+			if err := os.MkdirAll(filepath.Join(outside, "articles"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			md := []byte("---\nname: Outside\n---\n")
+			for _, p := range []string{"o.md", filepath.Join("articles", "o.md")} {
+				if err := os.WriteFile(filepath.Join(outside, p), md, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, link)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(root, link)); err != nil {
+				t.Skip("symlinks unavailable")
+			}
+			snap, err := NewDirSource(root).Load()
+			if err == nil {
+				t.Fatalf("loaded %d articles through a symlink out of the root", len(snap.Articles()))
+			}
+			if strings.Contains(err.Error(), outside) || strings.Contains(err.Error(), root) {
+				t.Fatalf("error leaks a host path: %v", err)
+			}
+		})
 	}
 }
