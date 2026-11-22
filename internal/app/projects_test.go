@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -69,7 +68,7 @@ func TestSearchMatchesTheProjectIgnoringCase(t *testing.T) {
 // names the id and says how to register it, with no HTTP route and no client
 // command, so the same text works in the CLI, MCP and the UI.
 func wantUnregisteredHint(id string) string {
-	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+	return "The Project " + id + " is not registered on this server, so this is global guidance only. " +
 		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
 }
 
@@ -134,30 +133,17 @@ func TestSearchWithUnknownProjectIsGlobalWithAHint(t *testing.T) {
 // The hint examples in the spec are the text the API sends, so the reference
 // docs show a caller what it will read.
 func TestUnregisteredHintMatchesTheSpecExamples(t *testing.T) {
-	spec, err := contract.SpecJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Components struct {
-			Schemas map[string]struct {
-				Properties map[string]struct {
-					Examples []any `json:"examples"`
-				} `json:"properties"`
-			} `json:"schemas"`
-		} `json:"components"`
-	}
-	if err := json.Unmarshal(spec, &doc); err != nil {
-		t.Fatal(err)
-	}
 	for schema, path := range map[string]string{
 		"SearchResults": "/api/v1/search?q=kubernetes&project=github.com/acme/none",
 		"Article":       "/api/v1/articles/platform%2Fdeploy?project=github.com/acme/none",
 	} {
 		got := getProject(t, path, http.StatusOK).Hint
-		examples := doc.Components.Schemas[schema].Properties["hint"].Examples
+		examples := specExamples(t, schema, "hint")
 		if got == nil || len(examples) != 1 || examples[0] != any(*got) {
 			t.Errorf("%s.hint examples = %q, the API sends %v", schema, examples, got)
+		}
+		if got != nil && !strings.Contains(*got, "global guidance only") {
+			t.Errorf("%s: hint %q lacks the phrase \"global guidance only\"", schema, *got)
 		}
 	}
 }

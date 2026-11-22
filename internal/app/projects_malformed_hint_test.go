@@ -77,7 +77,7 @@ func TestMalformedProjectHintIsTheSameForEveryMalformedValueAndEchoesNothing(t *
 
 // The exact text of the malformed-project hint: one canonical example Project
 // id, a plain statement of what leaving project out does, and no route.
-const malformedHintText = "Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to search all global content."
+const malformedHintText = "Pass project as host/org/repo, for example github.com/acme/shop. Leave it out to get global guidance only."
 
 func TestMalformedProjectHintIsTheExactText(t *testing.T) {
 	for _, path := range malformedPaths {
@@ -85,15 +85,32 @@ func TestMalformedProjectHintIsTheExactText(t *testing.T) {
 			t.Errorf("%s: hint %q, want %q", path, got, malformedHintText)
 		}
 	}
-	if strings.Contains(malformedHintText, "global answer") {
-		t.Error("the hint uses the ADR term \"global answer\"")
+}
+
+// Leaving project out gets the global result on both routes (a search, an
+// article lookup), so the hint says nothing route-specific about it and uses
+// the one phrase the unregistered-Project hint uses too.
+func TestMalformedProjectHintIsTrueOnBothRoutesAndUsesTheSharedPhrase(t *testing.T) {
+	if !strings.Contains(malformedHintText, "global guidance only") {
+		t.Errorf("hint %q lacks the phrase \"global guidance only\"", malformedHintText)
+	}
+	for _, path := range malformedPaths {
+		hint := malformedHint(t, path+"acme/shop")
+		for _, stale := range []string{"search", "global content", "global answer"} {
+			if strings.Contains(hint, stale) {
+				t.Errorf("%s: hint %q contains %q, which is wrong on the article route or off the shared phrase", path, hint, stale)
+			}
+		}
+		if !strings.Contains(hint, "global guidance only") {
+			t.Errorf("%s: hint %q lacks \"global guidance only\"", path, hint)
+		}
 	}
 }
 
-// The spec carries the text the API sends, so the reference docs show a
-// caller what it will read: the hint equals an example of
-// components.schemas.ErrorDetails.properties.hint, and names no route.
-func TestMalformedProjectHintMatchesAnExampleInTheSpec(t *testing.T) {
+// specExamples returns the examples of components.schemas.<schema>.properties.<property>
+// in the served spec, or of the schema itself when property is empty.
+func specExamples(t *testing.T, schema, property string) []any {
+	t.Helper()
 	spec, err := contract.SpecJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -101,6 +118,7 @@ func TestMalformedProjectHintMatchesAnExampleInTheSpec(t *testing.T) {
 	var doc struct {
 		Components struct {
 			Schemas map[string]struct {
+				Examples   []any `json:"examples"`
 				Properties map[string]struct {
 					Examples []any `json:"examples"`
 				} `json:"properties"`
@@ -110,11 +128,25 @@ func TestMalformedProjectHintMatchesAnExampleInTheSpec(t *testing.T) {
 	if err := json.Unmarshal(spec, &doc); err != nil {
 		t.Fatal(err)
 	}
+	s, ok := doc.Components.Schemas[schema]
+	if !ok {
+		t.Fatalf("the spec has no schema %q", schema)
+	}
+	if property == "" {
+		return s.Examples
+	}
+	return s.Properties[property].Examples
+}
+
+// The spec carries the text the API sends, so the reference docs show a
+// caller what it will read: the hint equals an example of
+// components.schemas.ErrorDetails.properties.hint, and names no route.
+func TestMalformedProjectHintMatchesAnExampleInTheSpec(t *testing.T) {
 	hint := malformedHint(t, malformedPaths[0]+"acme/shop")
 	if strings.Contains(hint, "/api/") {
 		t.Errorf("hint %q contains an /api/ route", hint)
 	}
-	examples := doc.Components.Schemas["ErrorDetails"].Properties["hint"].Examples
+	examples := specExamples(t, "ErrorDetails", "hint")
 	var found bool
 	for _, e := range examples {
 		if e == any(hint) {
@@ -132,34 +164,18 @@ func TestSpecUsesOneCanonicalExampleProjectID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc struct {
-		Components struct {
-			Schemas map[string]struct {
-				Examples []any `json:"examples"`
-				Items    struct {
-					Examples []any `json:"examples"`
-				} `json:"items"`
-				Properties map[string]struct {
-					Examples []any `json:"examples"`
-				} `json:"properties"`
-			} `json:"schemas"`
-		} `json:"components"`
-	}
-	if err := json.Unmarshal(spec, &doc); err != nil {
-		t.Fatal(err)
-	}
 	const id = "github.com/acme/shop"
-	if ex := doc.Components.Schemas["ProjectId"].Examples; len(ex) == 0 || ex[0] != any(id) {
+	if ex := specExamples(t, "ProjectId", ""); len(ex) == 0 || ex[0] != any(id) {
 		t.Errorf("ProjectId examples = %v, want %q first", ex, id)
 	}
-	if raw, _ := json.Marshal(doc.Components.Schemas["ProjectList"]); !strings.Contains(string(raw), id) {
+	if raw, _ := json.Marshal(specExamples(t, "ProjectList", "projects")); !strings.Contains(string(raw), id) {
 		t.Errorf("ProjectList examples do not use %q: %s", id, raw)
 	}
 	if strings.Contains(string(spec), "github.com/acme/payments") {
 		t.Error("the spec still uses the example id github.com/acme/payments")
 	}
 	var hintExample bool
-	for _, e := range doc.Components.Schemas["ErrorDetails"].Properties["hint"].Examples {
+	for _, e := range specExamples(t, "ErrorDetails", "hint") {
 		if s, _ := e.(string); strings.Contains(s, "host/org/repo") {
 			hintExample = true
 			if !strings.Contains(s, id) {

@@ -10,7 +10,7 @@ import (
 // hint names no HTTP route and no client command.
 
 func wantRegisterHint(id string) string {
-	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+	return "The Project " + id + " is not registered on this server, so this is global guidance only. " +
 		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
 }
 
