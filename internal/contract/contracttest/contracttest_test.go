@@ -81,7 +81,8 @@ func TestFindOperationPrefersLiteralSegments(t *testing.T) {
 		"literal in a later segment wins":     {"get", "/items/42/details", "details", "#/paths/~1items~1{id}~1details/get"},
 		"earlier literal segment wins":        {"get", "/items/search", "search", "#/paths/~1items~1search/get"},
 		"template in a later segment":         {"get", "/items/42/other", "idName", "#/paths/~1items~1{id}~1{name}/get"},
-		"most specific path lacks the method": {"delete", "/items/search", "", ""},
+		"most specific path lacks the method": {"delete", "/items/search", "del", "#/paths/~1items~1{id}/delete"},
+		"no matching path offers the method":  {"put", "/items/search", "", ""},
 		"no match":                            {"get", "/nope", "", ""},
 	} {
 		t.Run(name, func(t *testing.T) {

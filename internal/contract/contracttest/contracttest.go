@@ -124,30 +124,33 @@ func escape(s string) string {
 var paramRE = regexp.MustCompile(`\\\{[^/]*?\\\}`)
 
 // findOperation matches the request path against the spec's path templates.
-// When several templates match, the most specific one decides, as OpenAPI
-// requires: comparing segment by segment from the left, a literal segment
-// beats a templated one. It does not fall back to a less specific template
-// that offers the method, so a request the concrete path does not allow is
-// reported as unmatched. The result never depends on map order.
+// Only templates that offer the method compete, as in the server's
+// method-qualified net/http ServeMux routes. Among those, the most specific one
+// decides, as OpenAPI requires: comparing segment by segment from the left, a
+// literal segment beats a templated one. A request no matching template offers
+// the method for is reported as unmatched (the router's 405). The result never
+// depends on map order.
 func findOperation(doc map[string]any, method, path string) (map[string]any, string) {
 	paths, _ := doc["paths"].(map[string]any)
 	best := ""
-	for tmpl := range paths {
+	var bestOp map[string]any
+	for tmpl, item := range paths {
+		op, ok := item.(map[string]any)[method].(map[string]any)
+		if !ok {
+			continue
+		}
 		re := paramRE.ReplaceAllString(regexp.QuoteMeta(tmpl), `[^/]+`)
 		if !regexp.MustCompile("^" + re + "$").MatchString(path) {
 			continue
 		}
-		if best == "" || moreSpecific(tmpl, best) {
-			best = tmpl
+		if bestOp == nil || moreSpecific(tmpl, best) {
+			best, bestOp = tmpl, op
 		}
 	}
-	if best == "" {
+	if bestOp == nil {
 		return nil, ""
 	}
-	if op, ok := paths[best].(map[string]any)[method].(map[string]any); ok {
-		return op, "#/paths/" + escape(best) + "/" + method
-	}
-	return nil, ""
+	return bestOp, "#/paths/" + escape(best) + "/" + method
 }
 
 // moreSpecific reports whether template a is more specific than b: at the
