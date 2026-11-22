@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -76,7 +77,7 @@ func (p *proc) logs() string {
 }
 
 // testToken is the API token startServer passes through GOLDIE_API_TOKEN_FILE.
-const testToken = "binary-test-token-0123456789"
+const testToken = "binary-test-token-0123456789abcdef"
 
 // contentDir is the example content, a valid dir Source.
 func contentDir(t *testing.T) string {
@@ -99,16 +100,22 @@ func tokenFile(t *testing.T, value string) string {
 	return path
 }
 
+// startServer starts the binary with env added to a working configuration.
+// The API token is testToken from GOLDIE_API_TOKEN_FILE unless env sets
+// GOLDIE_API_TOKEN or GOLDIE_API_TOKEN_FILE itself.
 func startServer(t *testing.T, env ...string) *proc {
 	t.Helper()
 	cmd := exec.Command(goldieBinary(t), "server")
-	cmd.Env = append([]string{
+	base := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"GOLDIE_ADDR=127.0.0.1:0",
 		"GOLDIE_ADMIN_ADDR=127.0.0.1:0",
 		"GOLDIE_CONTENT_DIR=" + contentDir(t),
-		"GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken),
-	}, env...)
+	}
+	if !slices.ContainsFunc(env, func(e string) bool { return strings.HasPrefix(e, "GOLDIE_API_TOKEN") }) {
+		base = append(base, "GOLDIE_API_TOKEN_FILE="+tokenFile(t, testToken))
+	}
+	cmd.Env = append(base, env...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +294,10 @@ func TestBinaryServesAPIWithTokenFromFile(t *testing.T) {
 }
 
 func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
-	const marker = "s3cret marker"
+	// marker is long enough that its space is what fails; short is one byte
+	// under the minimum.
+	const marker = "s3cret marker 0123456789abcdef0123"
+	short := testToken[:31]
 	content := "GOLDIE_CONTENT_DIR=" + contentDir(t)
 	token := "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken)
 	for _, tc := range []struct {
@@ -298,6 +308,8 @@ func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
 		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN="}},
 		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, marker)}},
 		{"GOLDIE_API_TOKEN", []string{content, token, "GOLDIE_API_TOKEN=" + testToken}},
+		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN=" + short}},
+		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, short)}},
 		{"GOLDIE_CONTENT_DIR", []string{token}},
 		{"GOLDIE_CONTENT_DIR", []string{token, "GOLDIE_CONTENT_DIR=" + filepath.Join(t.TempDir(), "missing")}},
 	} {
@@ -315,9 +327,43 @@ func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
 		if err == nil || !strings.Contains(string(out), tc.name) {
 			t.Errorf("%v: err = %v, want a failure naming %s: %s", tc.env, err, tc.name, out)
 		}
-		if strings.Contains(string(out), marker) || strings.Contains(string(out), testToken) {
+		if strings.Contains(string(out), marker) || strings.Contains(string(out), short) {
 			t.Errorf("%v: output echoes the token: %s", tc.env, out)
 		}
+		if strings.Contains(string(out), "31 byte") {
+			t.Errorf("%v: output gives the token's length: %s", tc.env, out)
+		}
+	}
+}
+
+// A token of exactly the minimum length starts the server, from the plain
+// variable and from a file with a trailing newline.
+func TestBinaryAcceptsMinimumLengthToken(t *testing.T) {
+	atMin := testToken[:32]
+	for name, env := range map[string]string{
+		"GOLDIE_API_TOKEN":      "GOLDIE_API_TOKEN=" + atMin,
+		"GOLDIE_API_TOKEN_FILE": "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, atMin),
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := startServer(t, "GOLDIE_DRAIN_SECONDS=0", env)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+p.app+"/api/v1/articles/agent-loops", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+atMin)
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec // loopback test URL
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("status %d, want 200", resp.StatusCode)
+			}
+			_ = p.cmd.Process.Signal(syscall.SIGTERM)
+			if err := p.waitExit(t, 5*time.Second); err != nil {
+				t.Fatalf("exit: %v", err)
+			}
+		})
 	}
 }
 
