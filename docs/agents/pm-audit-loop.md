@@ -156,7 +156,9 @@ unblocks.
   - An **infra flake** (runner, network, rate limit): rerun once per SHA on an own PR, and make sure a
     flake issue exists (add `priority` at the third PR with the same signature).
   - A **real failure on a ready PR** is the review loop's: it shows up as a failing gate in the
-    review.
+    review, and an armed PR that turns red is disarmed and re-reviewed
+    ([red after arming](./review-loop.md#tick)). Report one still red and armed after a tick as a
+    stall.
   - Report anything else.
 - **`main`:** a red workflow on `main` goes to the top of the inbox ([stop the line](./label-contract.md#stop-the-line)).
 - **Stalls:** report each one with its likely cause:

@@ -74,12 +74,16 @@ issue-worker)
 	work=$((rework + inflight + frontier))
 	;;
 review)
-	# Ready PRs that aren't parked, handed back, held or already armed.
-	work=$(gh pr list --json number,isDraft,labels,headRefName,autoMergeRequest,author --jq '
+	# Ready PRs that aren't parked, handed back, held or already armed, plus
+	# armed PRs that need the tick: a head committed after arming (drift) or
+	# a failed check on the head (red after arming).
+	work=$(gh pr list --json number,isDraft,labels,headRefName,autoMergeRequest,author,statusCheckRollup,commits --jq '
 		[.[] | select(.isDraft | not)
 			| select(.headRefName | startswith("release-please--") | not)
 			| select(.author.is_bot | not)
-			| select(.autoMergeRequest == null)
+			| select(.autoMergeRequest == null
+				or ((.commits | last | .committedDate) > .autoMergeRequest.enabledAt)
+				or ([.statusCheckRollup[]? | (.conclusion // .state)] | index("FAILURE")))
 			| select([.labels[].name] | (index("needs-info") or index("changes-requested") or index("needs-maintainer")) | not)
 		] | length')
 	extra=$(locks)
