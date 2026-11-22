@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/packfile"
@@ -225,14 +227,61 @@ func TestGitMemoryPeakChild(t *testing.T) {
 	fmt.Printf("%speak=%d samples=%d\n", memPeakLine, hs.peak, hs.samples)
 }
 
+// memPeakChildBound caps how long the measuring child may run. The child takes
+// about 4 seconds; runChild takes the bound as a parameter so a test can use a short one.
+const memPeakChildBound = 2 * time.Minute
+
+const memHangChildEnv = "GOLDIE_TEST_GIT_MEMORY_HANG_CHILD"
+
+// TestGitMemoryHangChild is the hanging child TestGitMemoryChildDeadline starts.
+// It runs only there, and sleeps far longer than any deadline that test sets.
+func TestGitMemoryHangChild(t *testing.T) {
+	if os.Getenv(memHangChildEnv) == "" {
+		t.Skip("runs as a child of TestGitMemoryChildDeadline")
+	}
+	time.Sleep(30 * time.Second)
+}
+
+// childBound is the deadline for a child: the bound, cut short by the test's
+// own deadline when it has one (t.Deadline reports ok == false when unset).
+func childBound(t *testing.T, bound time.Duration) time.Duration {
+	if dl, ok := t.Deadline(); ok {
+		if rem := time.Until(dl); rem < bound {
+			return rem
+		}
+	}
+	return bound
+}
+
+// runChild re-executes the test binary to run only the named test, with env
+// set, under a deadline. A child past the deadline is killed and reaped, and
+// the error names the deadline. It returns the child's combined output and its
+// pid.
+func runChild(test, env string, bound time.Duration) (out []byte, pid int, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+test+"$", "-test.count=1")
+	cmd.Env = append(os.Environ(), env+"=1")
+	cmd.WaitDelay = 5 * time.Second
+	var buf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &buf, &buf
+	if err := cmd.Start(); err != nil {
+		return nil, 0, err
+	}
+	pid = cmd.Process.Pid
+	err = cmd.Wait()
+	if ctx.Err() != nil {
+		return buf.Bytes(), pid, fmt.Errorf("the child %s hit its %v deadline and was killed: %w", test, bound, ctx.Err())
+	}
+	return buf.Bytes(), pid, err
+}
+
 // measurePeakInChild runs TestGitMemoryPeakChild in a new process and returns
-// what it measured. A child that fails, crashes or prints nothing parseable
-// fails the test.
+// what it measured. A child that fails, crashes, hangs past its deadline or
+// prints nothing parseable fails the test.
 func measurePeakInChild(t *testing.T) (peak int64, samples int) {
 	t.Helper()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestGitMemoryPeakChild$", "-test.count=1")
-	cmd.Env = append(os.Environ(), memPeakChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
+	out, _, err := runChild("TestGitMemoryPeakChild", memPeakChildEnv, childBound(t, memPeakChildBound))
 	if err != nil {
 		t.Fatalf("the measuring child failed: %v\n%s", err, out)
 	}
@@ -246,6 +295,48 @@ func measurePeakInChild(t *testing.T) (peak int64, samples int) {
 	}
 	t.Fatalf("the measuring child printed no measurement:\n%s", out)
 	return 0, 0
+}
+
+// TestGitMemoryChildDeadline runs a child that hangs under a short deadline:
+// the run returns quickly, the error names the deadline, and the child is gone.
+func TestGitMemoryChildDeadline(t *testing.T) {
+	const bound = 1500 * time.Millisecond
+	start := time.Now()
+	_, pid, err := runChild("TestGitMemoryHangChild", memHangChildEnv, bound)
+	took := time.Since(start)
+	if err == nil {
+		t.Fatal("a hung child returned no error")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), bound.String()) {
+		t.Fatalf("err = %q, want a timeout naming the %v deadline", err, bound)
+	}
+	if took < bound || took > bound+10*time.Second {
+		t.Fatalf("returned after %v, want about %v", took, bound)
+	}
+	if pid <= 0 {
+		t.Fatalf("pid = %d", pid)
+	}
+	if p, _ := os.FindProcess(pid); p != nil && p.Signal(syscall.Signal(0)) == nil {
+		t.Fatalf("child %d is still running after the deadline", pid)
+	}
+}
+
+// TestGitMemoryChildBoundUsesTestDeadline checks the child's bound is the
+// shorter of the bound and the test's remaining time, and the bound alone when
+// the test has no deadline.
+func TestGitMemoryChildBoundUsesTestDeadline(t *testing.T) {
+	if got := childBound(t, time.Nanosecond); got != time.Nanosecond {
+		t.Fatalf("childBound = %v, want the 1ns bound", got)
+	}
+	const huge = 1000 * time.Hour
+	got := childBound(t, huge)
+	if _, ok := t.Deadline(); ok {
+		if got <= 0 || got >= huge {
+			t.Fatalf("childBound = %v, want it cut to the test deadline", got)
+		}
+	} else if got != huge {
+		t.Fatalf("childBound = %v without a test deadline, want the bound", got)
+	}
 }
 
 // TestGitMemoryChargeCoversMeasuredPeak unpacks a pack of many tiny distinct
