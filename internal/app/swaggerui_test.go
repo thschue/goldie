@@ -157,3 +157,28 @@ func TestSwaggerUIRendersOnlyTheServedSpec(t *testing.T) {
 		}
 	}
 }
+
+// The page takes bearer tokens, so it runs under a strict CSP: scripts and
+// connections only from this origin, no eval, no framing, no <base> rewrite.
+// Styles keep 'unsafe-inline' because Swagger UI sets inline styles.
+func TestSwaggerUIIsServedWithAStrictCSP(t *testing.T) {
+	srv := newServer(t)
+	want := []string{
+		"default-src 'none'", "script-src 'self'", "connect-src 'self'",
+		"img-src 'self' data:", "base-uri 'none'", "frame-ancestors 'none'",
+	}
+	for _, p := range swaggerPaths {
+		resp, _ := rawGet(t, srv.URL+p)
+		csp := resp.Header.Get("Content-Security-Policy")
+		for _, d := range want {
+			if !strings.Contains(csp, d) {
+				t.Errorf("%s: CSP %q lacks %q", p, csp, d)
+			}
+		}
+		for _, bad := range []string{"unsafe-eval", "*", "http:", "https:"} {
+			if strings.Contains(csp, bad) {
+				t.Errorf("%s: CSP %q allows %q", p, csp, bad)
+			}
+		}
+	}
+}

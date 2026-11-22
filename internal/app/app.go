@@ -49,7 +49,7 @@ func swaggerUIRoutes() ([]route, error) {
 	}
 	var routes []route
 	for _, a := range assets {
-		h := staticGet(a.ContentType, a.Body)
+		h := withCSP(staticGet(a.ContentType, a.Body))
 		if a.Name == "index.html" {
 			routes = append(routes,
 				route{"/swagger-ui", []string{http.MethodGet}, h},
@@ -59,6 +59,22 @@ func swaggerUIRoutes() ([]route, error) {
 		routes = append(routes, route{"/swagger-ui/" + a.Name, []string{http.MethodGet}, h})
 	}
 	return routes, nil
+}
+
+// swaggerUICSP is the Content-Security-Policy of the Swagger UI paths. The
+// page takes bearer tokens, so scripts and requests stay on this origin, eval
+// and framing are off, and <base> cannot move relative URLs. Styles allow
+// 'unsafe-inline' because Swagger UI sets inline styles; the stylesheet's
+// icons are data: images.
+const swaggerUICSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+// withCSP adds the Swagger UI Content-Security-Policy to every response of h.
+func withCSP(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", swaggerUICSP)
+		h.ServeHTTP(w, r)
+	})
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR). It
