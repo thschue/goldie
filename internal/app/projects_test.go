@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // projectBody is the slice of a search or lookup response the project tests read.
@@ -67,6 +69,37 @@ func TestSearchWithUnknownProjectIsGlobalWithAHint(t *testing.T) {
 	}
 	if len(got.Results) != 2 || got.Results[0].Scope != "global" {
 		t.Errorf("results = %+v, want the global results", got.Results)
+	}
+}
+
+// The hint examples in the spec are the text the API sends, so the reference
+// docs show a caller what it will read.
+func TestUnregisteredHintMatchesTheSpecExamples(t *testing.T) {
+	spec, err := contract.SpecJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					Examples []any `json:"examples"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for schema, path := range map[string]string{
+		"SearchResults": "/api/v1/search?q=kubernetes&project=github.com/acme/none",
+		"Article":       "/api/v1/articles/platform%2Fdeploy?project=github.com/acme/none",
+	} {
+		got := getProject(t, path, http.StatusOK).Hint
+		examples := doc.Components.Schemas[schema].Properties["hint"].Examples
+		if got == nil || len(examples) != 1 || examples[0] != any(*got) {
+			t.Errorf("%s.hint examples = %q, the API sends %v", schema, examples, got)
+		}
 	}
 }
 

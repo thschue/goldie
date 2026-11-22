@@ -31,7 +31,7 @@ type Article struct {
 	// article is the global one, and this says what to do next.
 	//
 	//
-	// Examples: The Project is not registered on this server; these are the global results. List the registered Projects with GET /api/v1/projects.
+	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
 	Hint *string `json:"hint,omitempty"`
 
 	// Id The article id, its path under `articles/` without `.md`.
@@ -147,7 +147,7 @@ type SearchResults struct {
 	// results are the global ones, and this says what to do next.
 	//
 	//
-	// Examples: The Project is not registered on this server; these are the global results. List the registered Projects with GET /api/v1/projects.
+	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
 	Hint *string `json:"hint,omitempty"`
 
 	// Query The search words as received.

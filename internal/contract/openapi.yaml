@@ -255,7 +255,7 @@ components:
             Present when the request named a Project that is not registered: the
             results are the global ones, and this says what to do next.
           examples:
-            - The Project is not registered on this server; these are the global results. List the registered Projects with GET /api/v1/projects.
+            - The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
     ProjectId:
       type: string
       description: |
@@ -385,7 +385,7 @@ components:
             Present when the request named a Project that is not registered: the
             article is the global one, and this says what to do next.
           examples:
-            - The Project is not registered on this server; these are the global results. List the registered Projects with GET /api/v1/projects.
+            - The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
     ErrorEnvelope:
       type: object
       description: The body of every error response.
