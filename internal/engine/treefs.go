@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -15,7 +14,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-var errBadEntryName = errors.New("tree entry name is not a valid file name")
+var (
+	errBadEntryName   = errors.New("tree entry name is not a valid file name")
+	errDuplicateEntry = errors.New("tree has two entries with one name")
+)
 
 // Load limits for one treeFS. A tree that references the same subtree many
 // times expands to far more paths than it has objects, and one blob can back
@@ -42,16 +44,44 @@ type treeFS struct {
 
 func newTreeFS(root *object.Tree) treeFS {
 	return treeFS{root: root, b: &treeBudget{
-		steps: maxTreeSteps, bytes: maxTreeBytes, trees: map[plumbing.Hash]*object.Tree{},
+		steps: maxTreeSteps, bytes: maxTreeBytes,
+		trees: map[plumbing.Hash]*object.Tree{}, names: map[plumbing.Hash]map[string]int{},
 	}}
 }
 
-// treeBudget is what a treeFS may still spend, and the subtrees it decoded.
+// treeBudget is what a treeFS may still spend, the subtrees it decoded and
+// their name indexes.
 type treeBudget struct {
 	mu    sync.Mutex
 	steps int
 	bytes int
 	trees map[plumbing.Hash]*object.Tree
+	names map[plumbing.Hash]map[string]int
+}
+
+// index maps each entry name of t to its position, once per tree hash, and
+// charges the entries to the step budget. Two entries with one name would make
+// a lookup and a listing disagree, so they fail.
+func (b *treeBudget) index(t *object.Tree) (map[string]int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if m, ok := b.names[t.Hash]; ok {
+		return m, nil
+	}
+	if len(t.Entries) > b.steps {
+		b.steps = 0
+		return nil, errTreeTooLarge
+	}
+	b.steps -= len(t.Entries)
+	m := make(map[string]int, len(t.Entries))
+	for i, e := range t.Entries {
+		if _, dup := m[e.Name]; dup {
+			return nil, errDuplicateEntry
+		}
+		m[e.Name] = i
+	}
+	b.names[t.Hash] = m
+	return m, nil
 }
 
 func (b *treeBudget) spend(steps int) error {
@@ -86,6 +116,9 @@ func (b *treeBudget) subtree(parent *object.Tree, e object.TreeEntry) (*object.T
 	t, err := parent.Tree(e.Name)
 	if err != nil {
 		return nil, err
+	}
+	if t.Hash != e.Hash {
+		return nil, errDuplicateEntry
 	}
 	b.trees[e.Hash] = t
 	return t, nil
@@ -175,8 +208,12 @@ func (f treeFS) lookup(op, name string) (node, error) {
 			}
 			return fail(fs.ErrNotExist)
 		}
-		i := slices.IndexFunc(n.dir.Entries, func(e object.TreeEntry) bool { return e.Name == part })
-		if i < 0 {
+		names, err := f.b.index(n.dir)
+		if err != nil {
+			return fail(err)
+		}
+		i, ok := names[part]
+		if !ok {
 			return fail(fs.ErrNotExist)
 		}
 		n = node{entry: n.dir.Entries[i], parent: n.dir}
@@ -244,7 +281,11 @@ func (f treeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		err = &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
 	}
 	if err == nil {
-		if serr := f.b.spend(len(n.dir.Entries)); serr != nil {
+		serr := f.b.spend(len(n.dir.Entries))
+		if serr == nil {
+			_, serr = f.b.index(n.dir)
+		}
+		if serr != nil {
 			err = &fs.PathError{Op: "readdir", Path: name, Err: serr}
 		}
 	}
