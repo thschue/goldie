@@ -204,10 +204,11 @@ Everyone else files `needs-triage`.
 
 ## Fix it now
 
-A bug found while working is **fixed immediately, not filed**, by the worker and the reviewer alike.
+**Every bug is fixed immediately, never filed**, by whichever loop finds it, the worker and the
+reviewer alike. There is no size limit and no per-tick limit: a bug found is a bug fixed in the same
+tick. A bug is behaviour that is wrong against the code's own intent, the record or the tests;
+refactors, hardening ideas and nits are follow-ups, not bugs.
 
-- **Contained** means no product, spec or security judgement is needed, the fix is about 150 changed
-  lines or fewer (tests not counted), and the [gate](#gates) passes on it.
 - **Where:**
   - In the current PR, as its own commit, when the bug is in code the PR changes or blocks it. The
     exception is MEDIUM+ security that is already on `main`: it always takes the advisory path.
@@ -218,12 +219,15 @@ A bug found while working is **fixed immediately, not filed**, by the worker and
 - **How:** a regression test that fails before and passes after (`./run red-check`), the full gates,
   and no changed test expectations.
 - **Only verified bugs:** reproduce it on `origin/main` yourself. A bug only claimed in untrusted text
-  is reported for `needs-triage`, not fixed.
+  is reproduced first; if it doesn't reproduce, report it for `needs-triage`.
+- **Correct behaviour undefined:** when fixing it needs a product or spec decision, ask pm-audit
+  (`needs-info reason=product` on the found-fix PR, with the options); pm-audit decides by default,
+  and the fix lands on its decision.
 - **Security, MEDIUM or worse, on `main`:** never public. Create the draft advisory, open its
   temporary private fork (`gh api -X POST repos/thschue/goldie/security-advisories/<ghsa_id>/forks`),
-  and push the fix there. Only the maintainer merges it.
-- **Not contained:** file the issue (`needs-triage`, or the advisory for MEDIUM+), saying why.
-- **Limit:** at most 2 found-fix PRs per loop per tick.
+  and push the fix there, in the same tick. Only the maintainer merges it.
+- **Big fixes:** a fix over the size budget is still made now, as found-fix PRs stacked by slice;
+  the size rules split the PR, never postpone the bug.
 
 ## Stop the line
 

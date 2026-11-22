@@ -33,3 +33,5 @@ scenario names a real PR, it is the case that motivated the rule.
 | S24 | Own ready PR with about 1,170 changed non-test lines (#83) | review | Not reviewed: a marker with `reason=changes-requested` asking for a split, with a slice list; `changes-requested`, back to draft; no hand-back counted |
 | S25 | Several `needs-triage` LOW follow-ups in one area (#89, #90, #91) | pm-audit | Triaged in the first step of the tick: bundled into the oldest issue with a checklist, the others closed as duplicates; one verdict for the bundle |
 | S26 | A LOW finding in a security-relevant area, not contained | review | Not blocking: filed as `fix(security): <class> in <area>` (`needs-triage`), or added to an open issue for the area; the PR proceeds |
+| S27 | Reviewer finds a reproducible bug on `main` outside the PR, fix about 300 lines | review | The PR under review is unaffected; the bug is fixed this tick as found-fix PRs (stacked when over the size budget); no issue filed |
+| S28 | Reviewer finds a MEDIUM security bug on `main` | review | Draft advisory, the fix pushed to its private fork this tick; the advisory id to the user; nothing public |

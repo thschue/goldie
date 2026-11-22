@@ -145,10 +145,10 @@ this:
 
    A partial fix is fine: list the rest for the hand-back. List the LOW findings you didn't fix as
    follow-ups.
-9. **Findings already on `main`:** keep them separate. Fix a contained one only after reproducing it
-   on `origin/main`, in a second worktree branched from there, never from an external diff. Push it
-   as `fix/found-<slug>`, at most 2. For MEDIUM+ security, commit locally and report only the
-   worktree path.
+9. **Bugs already on `main`:** keep them out of this PR, and fix **every** one now, whatever its
+   size, after reproducing it on `origin/main`, in a second worktree branched from there, never from
+   an external diff. Push each as `fix/found-<slug>`. For MEDIUM+ security, commit locally and report
+   only the worktree path; the orchestrator moves it to the advisory fork this tick.
 10. **Report** in prose, then the JSON block
    ([reports](./label-contract.md#reports-and-dry-runs)):
    - `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;
@@ -219,8 +219,8 @@ Outcomes:
 
 ## Findings on `main`
 
-A pre-existing finding never blocks the PR under review. It's
-[fixed now](./label-contract.md#fix-it-now) rather than filed:
+A pre-existing finding never blocks the PR under review. A bug is
+[fixed now](./label-contract.md#fix-it-now), every one, never filed:
 
 1. Environmental noise is only reported to the user.
 2. Verify the finding on `origin/main` and search for duplicates. If an open item covers it, comment
@@ -241,11 +241,11 @@ A pre-existing finding never blocks the PR under review. It's
    JSON
    ```
 
-   With a contained fix, open the advisory's private fork
-   (`gh api -X POST repos/thschue/goldie/security-advisories/<ghsa_id>/forks`), push the fix there,
-   and open its PR in the fork. The maintainer merges it.
-5. **Not fixable now:** if an open issue already covers the same area, add the finding to it as a
-   comment. Otherwise file an issue, starting at `needs-triage`, and say why the fix wasn't made.
+   Open the advisory's private fork
+   (`gh api -X POST repos/thschue/goldie/security-advisories/<ghsa_id>/forks`), push the reviewer's
+   fix there, and open its PR in the fork, in this tick. The maintainer merges it.
+5. **Not a bug** (a refactor, a hardening idea, a nit): if an open issue already covers the same
+   area, add the finding to it as a comment. Otherwise file an issue, starting at `needs-triage`.
    - LOW security: titled `fix(security): <generic class> in <area>`, labelled `security`, with no
      exploit steps.
    - Not security: a Conventional Commit title, with Problem, Evidence and Acceptance sections.

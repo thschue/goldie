@@ -21,7 +21,7 @@ summary.
 - **Dependencies only when the issue needs one**, added with the tooling, never by editing a
   lockfile. Write a dependency brief: why it's necessary, the alternatives, how well maintained it
   is, and why this version.
-- **Fix bugs you find, don't file them:**
+- **Fix every bug you find, now, whatever its size; never file one:**
   - in this PR when they're in code you change;
   - otherwise in a found-fix PR branched off `origin/main` (one bug, a regression test, no
     `Closes`);

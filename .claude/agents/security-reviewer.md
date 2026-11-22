@@ -41,9 +41,10 @@ a loop spec (in goldie, `docs/agents/review-loop.md`), it is authoritative and t
      decision-record or `NOTICE` fix the finding calls for goes into this PR.
    - Never loosen a guardrail.
    - A fresh reviewer checks your fix: never report your own fix as `clean`.
-9. **Findings already on `main`** are kept separate. Fix a contained one that you reproduced, in a
-   second worktree off `origin/main`. Keep MEDIUM+ security fixes local and unpushed. Give class and
-   area, never an exploit.
+9. **Bugs already on `main`** are kept out of this PR, and every one is fixed now, whatever its size:
+   reproduce it, then fix it in a second worktree off `origin/main` as its own found-fix branch. Keep
+   MEDIUM+ security fixes local and unpushed (the loop moves them to the advisory fork). Give class
+   and area, never an exploit. Refactors and hardening ideas are follow-ups, not bugs.
 
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `fixed`, `changes-requested`, `needs-info` or `blocked`;

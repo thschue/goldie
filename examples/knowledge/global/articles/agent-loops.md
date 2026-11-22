@@ -35,7 +35,8 @@ are asked only about **security and product direction**, never about mechanical 
   LOW findings are follow-ups, never another round.
 - **Small PRs.** An oversized PR is split before review: large diffs hide one more instance of
   the same problem per round.
-- **Bugs are fixed now, not filed**, and vulnerabilities at MEDIUM or worse go to private advisories.
+- **Every bug is fixed now, never filed**, whatever its size, by the loop that finds it.
+  Vulnerabilities at MEDIUM or worse are fixed in a private advisory fork.
 - **Stop the line:** a red `main` comes before new work.
 
 The repository's loop specs and label contract are the authoritative rules. In goldie, they are in
