@@ -473,6 +473,68 @@ func TestGitSourceRejectsBadOptions(t *testing.T) {
 	}
 }
 
+// TestGitSourceRejectsQueryAndFragment gives NewGitSource URLs that carry a
+// query string or a fragment, where a token is easily pasted, on every scheme
+// it accepts. Each is refused with one fixed error, built twice with a
+// different host and secret, so it echoes neither.
+func TestGitSourceRejectsQueryAndFragment(t *testing.T) {
+	const want = "git source: URL must not carry a query or a fragment"
+	key := newSSHKey(t)
+	hostKey := newSSHKey(t)
+	for _, tc := range []struct {
+		name string
+		opts func(host, secret string) engine.GitOptions
+	}{
+		{"token in https query", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "https://" + h + "/r.git?private_token=" + s}
+		}},
+		{"token in https query with a Token", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "https://" + h + "/r.git?access_token=" + s, Token: "tok-" + s}
+		}},
+		{"https fragment", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "https://" + h + "/r.git#" + s}
+		}},
+		{"https query and fragment", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "https://" + h + "/r.git?a=" + s + "#" + s}
+		}},
+		{"https empty query", func(h, _ string) engine.GitOptions { return engine.GitOptions{URL: "https://" + h + "/r.git?"} }},
+		{"https empty fragment", func(h, _ string) engine.GitOptions { return engine.GitOptions{URL: "https://" + h + "/r.git#"} }},
+		{"https query on the host", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "https://" + h + "?" + s}
+		}},
+		{"upper-case https scheme", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "HTTPS://" + h + "/r.git?t=" + s}
+		}},
+		{"ssh query", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "ssh://git@" + h + "/r.git?t=" + s, SSHKey: key.pem, KnownHosts: h + " " + authorizedKey(hostKey.pub)}
+		}},
+		{"ssh fragment", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "ssh://git@" + h + "/r.git#" + s, SSHKey: key.pem, KnownHosts: h + " " + authorizedKey(hostKey.pub)}
+		}},
+		{"file query", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "file:///srv/" + h + "/r.git?t=" + s}
+		}},
+		{"file fragment", func(h, s string) engine.GitOptions {
+			return engine.GitOptions{URL: "file:///srv/" + h + "/r.git#" + s}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := engine.NewGitSource(tc.opts("git.example.invalid", "hunter2-query-secret"))
+			if err == nil {
+				t.Fatal("accepted")
+			}
+			if err.Error() != want {
+				t.Fatalf("err = %q, want %q", err, want)
+			}
+			assertNoSecret(t, err.Error(), "hunter2-query-secret", "git.example.invalid", "/srv/", "?", "#")
+			_, other := engine.NewGitSource(tc.opts("other.example.invalid", "swordfish-query-secret"))
+			if other == nil || other.Error() != err.Error() {
+				t.Fatalf("error is not a fixed message: %q, then %v", err, other)
+			}
+		})
+	}
+}
+
 func TestGitSourceLoadTimeoutIsTwoMinutes(t *testing.T) {
 	for _, url := range []string{"https://example.invalid/r.git", "file:///srv/r.git"} {
 		if got := engine.GitLoadTimeout(newGit(t, engine.GitOptions{URL: url})); got != 2*time.Minute {
