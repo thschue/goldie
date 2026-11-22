@@ -34,43 +34,71 @@ type Hit struct {
 	Matched []string
 }
 
-// Search scores every article against each whitespace-separated, lower-cased
-// query word. Per word and keyword, an exact match scores +4 and a word that is
-// a substring of the keyword +1. A word that is a substring of the name scores
-// +2. Hits sort by score, highest first, then by ID.
+// Search scores every global article against each whitespace-separated,
+// lower-cased query word. Per word and keyword, an exact match scores +4 and a
+// word that is a substring of the keyword +1. A word that is a substring of the
+// name scores +2. Hits sort by score, highest first, then by ID.
 func (s *Snapshot) Search(query string) []Hit {
+	return s.SearchIn("", query)
+}
+
+// SearchIn is Search for a Project ("host/org/repo", case-insensitive). The
+// Project's articles take part together with the global ones; when both have an
+// ID, the Project's article wins and the global one is dropped. On equal score
+// Project hits sort before global ones, then by ID. An empty or unregistered
+// Project searches the global articles only.
+func (s *Snapshot) SearchIn(proj, query string) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
-	for _, a := range s.articles {
-		h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: ScopeGlobal, Keywords: append([]string(nil), a.Keywords...)}
-		name := strings.ToLower(a.Name)
-		for _, w := range words {
-			for _, k := range a.Keywords {
-				switch {
-				case k == w:
-					h.Score += scoreExactKeyword
-					h.Matched = addOnce(h.Matched, k)
-				case strings.Contains(k, w):
-					h.Score += scoreSubstring
-					h.Matched = addOnce(h.Matched, k)
-				}
+	taken := map[string]bool{}
+	for _, list := range s.resolutionOrder(proj) {
+		var layer []string
+		for _, a := range list {
+			id := strings.ToLower(a.ID)
+			if taken[id] {
+				continue
 			}
-			if strings.Contains(name, w) {
-				h.Score += scoreName
-				h.Matched = addOnce(h.Matched, "name")
+			layer = append(layer, id)
+			if h := scoreArticle(a, words); h.Score > 0 {
+				hits = append(hits, h)
 			}
 		}
-		if h.Score > 0 {
-			hits = append(hits, h)
+		for _, id := range layer {
+			taken[id] = true
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].Score != hits[j].Score {
 			return hits[i].Score > hits[j].Score
 		}
+		if gi, gj := hits[i].Scope == ScopeGlobal, hits[j].Scope == ScopeGlobal; gi != gj {
+			return gj
+		}
 		return hits[i].ID < hits[j].ID
 	})
 	return hits
+}
+
+func scoreArticle(a Article, words []string) Hit {
+	h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...)}
+	name := strings.ToLower(a.Name)
+	for _, w := range words {
+		for _, k := range a.Keywords {
+			switch {
+			case k == w:
+				h.Score += scoreExactKeyword
+				h.Matched = addOnce(h.Matched, k)
+			case strings.Contains(k, w):
+				h.Score += scoreSubstring
+				h.Matched = addOnce(h.Matched, k)
+			}
+		}
+		if strings.Contains(name, w) {
+			h.Score += scoreName
+			h.Matched = addOnce(h.Matched, "name")
+		}
+	}
+	return h
 }
 
 func addOnce(s []string, v string) []string {

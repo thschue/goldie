@@ -23,6 +23,27 @@ func FuzzParseArticle(f *testing.F) {
 	})
 }
 
+// FuzzValidProjectSegment checks that an accepted Project path segment can never
+// traverse, hide a file or contain a separator or control byte.
+func FuzzValidProjectSegment(f *testing.F) {
+	for _, s := range []string{"github.com", "GitHub.com", "..", ".", ".git", "a/b", "a\x00b", "a\nb", "a b", "", "my_repo-1"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, name string) {
+		for depth := 0; depth <= 2; depth++ {
+			if validProjectSegment(depth, name) != nil {
+				continue
+			}
+			if name == "" || strings.HasPrefix(name, ".") || strings.ContainsAny(name, "/\\\x00\n\r ") {
+				t.Fatalf("depth %d accepted %q", depth, name)
+			}
+			if depth == 0 && name != strings.ToLower(name) {
+				t.Fatalf("host accepted upper case: %q", name)
+			}
+		}
+	})
+}
+
 // TestLoadIgnoresSymlinks proves a Source cannot pull files from outside its root.
 func TestLoadIgnoresSymlinks(t *testing.T) {
 	root := t.TempDir()
