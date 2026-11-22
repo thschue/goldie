@@ -228,6 +228,28 @@ func TestResolveProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
 	}
 }
 
+// TestResolveProjectOversizedFiles checks the maxProjectFile cap: an
+// oversized .git/config yields no Project, an oversized .goldie/config.yaml
+// is an error.
+func TestResolveProjectOversizedFiles(t *testing.T) {
+	pad := "# " + strings.Repeat("x", maxProjectFile) + "\n"
+	big := repo(t, "[remote \"origin\"]\n\turl = https://github.com/a/b\n"+pad)
+	if got, err := ResolveProject(big, "", ""); err != nil || got.ID != "" {
+		t.Errorf("oversized .git/config: got %+v, %v; want no Project", got, err)
+	}
+	dir := repo(t, "[remote \"origin\"]\n\turl = https://github.com/a/b\n")
+	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: github.com/c/d\n"+pad)
+	if _, err := ResolveProject(dir, "", ""); err == nil || !strings.Contains(err.Error(), "cannot read .goldie/config.yaml") {
+		t.Errorf("oversized .goldie/config.yaml: err = %v, want the read error", err)
+	}
+	// Exactly at the cap is still read.
+	cfg := "[remote \"origin\"]\n\turl = https://github.com/a/b\n"
+	exact := repo(t, cfg+strings.Repeat("#", maxProjectFile-len(cfg)))
+	if got, err := ResolveProject(exact, "", ""); err != nil || got.ID != "github.com/a/b" {
+		t.Errorf(".git/config at the cap: got %+v, %v", got, err)
+	}
+}
+
 func TestResolveProjectConfigFileErrorsAndUntrustedValues(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: [unclosed\n")
