@@ -78,12 +78,12 @@ func TestServerSpanHasNoClientInfoByDefault(t *testing.T) {
 	for _, kv := range got[0].Attributes {
 		for _, bad := range clientInfoAttrs {
 			if string(kv.Key) == bad {
-				t.Errorf("span carries %s=%q by default", kv.Key, kv.Value.Emit())
+				t.Errorf("span carries %s=%q by default", kv.Key, kv.Value.String())
 			}
 		}
 		for _, bad := range []string{spoofedIP, testAgent} {
-			if strings.Contains(kv.Value.Emit(), bad) {
-				t.Errorf("span attribute %s=%q leaks %q", kv.Key, kv.Value.Emit(), bad)
+			if strings.Contains(kv.Value.String(), bad) {
+				t.Errorf("span attribute %s=%q leaks %q", kv.Key, kv.Value.String(), bad)
 			}
 		}
 	}
