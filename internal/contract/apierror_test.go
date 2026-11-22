@@ -55,6 +55,11 @@ func TestDecodeAPIErrorReadsRetryAfterInWholeSeconds(t *testing.T) {
 		{"a minute", http.Header{"Retry-After": {"60"}}, 60},
 		{"leading zeros", http.Header{"Retry-After": {"007"}}, 7},
 		{"set through Set", func() http.Header { h := http.Header{}; h.Set("retry-after", "42"); return h }(), 42},
+		// #182 (from #200): a wait above an hour is unknown, so clients say "Wait a little".
+		{"an hour", http.Header{"Retry-After": {"3600"}}, 3600},
+		{"an hour and a second", http.Header{"Retry-After": {"3601"}}, 0},
+		{"a day", http.Header{"Retry-After": {"86400"}}, 0},
+		{"above an hour with leading zeros", http.Header{"Retry-After": {"0003601"}}, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
