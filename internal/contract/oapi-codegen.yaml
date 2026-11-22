@@ -1,0 +1,7 @@
+# oapi-codegen configuration. `./run regen` generates internal/contract/contract.gen.go
+# from openapi.yaml with this file; it writes to stdout, so no output is set here.
+package: contract
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true

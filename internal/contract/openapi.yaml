@@ -95,6 +95,7 @@ components:
             - {}
   responses:
     Error:
+      x-go-name: ErrorResponse
       description: An error, in the error envelope.
       content:
         application/json:
