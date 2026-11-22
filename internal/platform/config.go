@@ -24,6 +24,8 @@ const (
 	EnvAPITokens  = "GOLDIE_API_TOKENS" // secret: never logged
 
 	EnvRateLimit = "GOLDIE_RATE_LIMIT"
+
+	EnvMinClientVersion = "GOLDIE_MIN_CLIENT_VERSION"
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -40,6 +42,8 @@ type Config struct {
 	// these at startup.
 	RateLimit     RateLimit // the per-token request limit, default applied (ParseRateLimit)
 	rateLimitText string    // RateLimit as written, for the startup report
+
+	MinClientVersion string // the oldest X-Goldie-Client version served, as written; "" for no gate
 
 	// SetupTelemetry owns GOLDIE_TELEMETRY_CLIENT_INFO and fails startup on a
 	// bad value; this copy is only for the startup report.
@@ -97,6 +101,12 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvRateLimit, err))
 	} else {
 		cfg.RateLimit = l
+	}
+	cfg.MinClientVersion = str(EnvMinClientVersion, def(EnvMinClientVersion))
+	if cfg.MinClientVersion != "" {
+		if _, err := ParseSemver(cfg.MinClientVersion); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", EnvMinClientVersion, err))
+		}
 	}
 	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
 	cfg.SwaggerUIEnabled = true
@@ -173,6 +183,7 @@ func (c Config) effective() map[string]any {
 		EnvAPIToken:            c.APIToken,
 		EnvAPITokens:           c.APITokens,
 		EnvRateLimit:           c.rateLimitText,
+		EnvMinClientVersion:    c.MinClientVersion,
 		EnvTelemetryClientInfo: c.telemetryClientInfo,
 	}
 }

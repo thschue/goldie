@@ -133,6 +133,7 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		EnvSwaggerUIEnabled:    "false",
 		EnvContentDir:          "/srv/content-sample",
 		EnvRateLimit:           "5/m",
+		EnvMinClientVersion:    "1.4.0",
 		EnvTelemetryClientInfo: "true",
 	}
 	env := map[string]string{}

@@ -30,6 +30,7 @@ type publicMux struct {
 	mux     *http.ServeMux
 	tokens  *api.Tokens
 	limiter *api.RateLimiter
+	gate    *api.ClientVersionGate
 	routes  []route
 }
 
@@ -42,16 +43,17 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 	if err != nil {
 		tokens = &api.Tokens{}
 	}
-	return newPublicMuxWith(snap, tokens, rateLimiter(platform.DefaultRateLimit()))
+	return newPublicMuxWith(snap, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
 }
 
-// newPublicMuxWith is newPublicMux guarded by a token set and a rate limiter.
-func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter) (*publicMux, error) {
+// newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
+// version (nil for none) and a rate limiter.
+func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(snap)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
 	srv.Register(m)
 	return m, nil
 }
@@ -96,8 +98,9 @@ var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
 // documents and the Swagger UI (#101). A new route fails closed. API paths are
-// then behind the per-token rate limit, so a request the tokens reject never
-// counts against a bucket. Every operation today is open to readers; an
+// then behind the minimum client version and then the per-token rate limit, so
+// a request the tokens reject learns nothing of the gate, and neither a 401 nor
+// a 426 counts against a bucket. Every operation today is open to readers; an
 // operator-only one (sync, activity) passes api.RoleOperator when it lands.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
@@ -108,7 +111,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 	case docPaths[path]:
 		return m.tokens.Require(api.RoleReader, h)
 	}
-	return m.tokens.Require(api.RoleReader, m.limiter.Limit(h))
+	return m.tokens.Require(api.RoleReader, m.gate.Require(m.limiter.Limit(h)))
 }
 
 // RateLimitRejections returns a copy of the requests rejected by the rate
@@ -154,12 +157,28 @@ type Options struct {
 	APIToken   string             // one operator token, the shorthand (GOLDIE_API_TOKEN)
 	APITokens  string             // name:role:token lines (GOLDIE_API_TOKENS)
 	RateLimit  platform.RateLimit // per-token limit as LoadConfig parsed it (GOLDIE_RATE_LIMIT)
+
+	MinClientVersion string // oldest goldie client served, "" for no gate (GOLDIE_MIN_CLIENT_VERSION)
 }
 
 // rateLimiter builds the per-token limiter from the RateLimit LoadConfig
 // parsed, as is.
 func rateLimiter(l platform.RateLimit) *api.RateLimiter {
 	return api.NewRateLimiter(l.Requests, l.Per, l.Burst)
+}
+
+// clientVersionGate builds the minimum client version gate from
+// GOLDIE_MIN_CLIENT_VERSION; "" is no gate (nil). Errors name the variable and
+// never contain the value.
+func clientVersionGate(minimum string) (*api.ClientVersionGate, error) {
+	if minimum == "" {
+		return nil, nil
+	}
+	v, err := platform.ParseSemver(minimum)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", platform.EnvMinClientVersion, err)
+	}
+	return api.NewClientVersionGate(v), nil
 }
 
 // apiTokens builds the token set from exactly one of GOLDIE_API_TOKEN and
@@ -245,6 +264,10 @@ func PublicHandler(opts Options) (http.Handler, error) {
 		return nil, &ConfigError{err}
 	}
 	limiter := rateLimiter(opts.RateLimit)
+	gate, err := clientVersionGate(opts.MinClientVersion)
+	if err != nil {
+		return nil, &ConfigError{err}
+	}
 	if opts.ContentDir == "" {
 		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
 	}
@@ -252,7 +275,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
-	m, err := newPublicMuxWith(snap, tokens, limiter)
+	m, err := newPublicMuxWith(snap, tokens, limiter, gate)
 	if err != nil {
 		return nil, err
 	}

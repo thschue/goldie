@@ -1,0 +1,64 @@
+package api
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/platform"
+)
+
+// maxClientHeader bounds the X-Goldie-Client value the gate parses. Longer
+// values are not a goldie version, so they are let through unread.
+const maxClientHeader = 256
+
+// ClientVersionGate refuses goldie clients older than a minimum version
+// (GOLDIE_MIN_CLIENT_VERSION, #102). A nil gate lets every request through.
+type ClientVersionGate struct {
+	min platform.Semver
+}
+
+// NewClientVersionGate refuses goldie clients older than minimum.
+func NewClientVersionGate(minimum platform.Semver) *ClientVersionGate {
+	return &ClientVersionGate{min: minimum}
+}
+
+// Require answers 426 in the error envelope when the request names a goldie
+// version older than the minimum, and otherwise serves next. A request that
+// does not name a goldie version, with no header, several, or one that is not
+// goldie/<semver>, is let through: the header is a courtesy for goldie's own
+// CLI, not a credential, so refusing what it cannot read would protect
+// nothing and lock out other clients. It goes inside a Tokens.Require guard
+// and outside RateLimiter.Limit, so a 401 reveals nothing of it and a refusal
+// spends no bucket.
+func (g *ClientVersionGate) Require(next http.Handler) http.Handler {
+	if g == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v, ok := clientVersion(r.Header.Values(contract.ClientHeader)); ok && v.Less(g.min) {
+			// The hint uses String, which leaves out build metadata: it takes no
+			// part in precedence, and clients need not see what an operator
+			// writes there.
+			WriteError(w, http.StatusUpgradeRequired, "upgrade_required",
+				"this goldie client is older than the server accepts",
+				"Upgrade goldie to version "+g.min.String()+" or newer, then retry.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// clientVersion reads the version from exactly one X-Goldie-Client value of
+// the form goldie/<semver>, where a leading v (a release tag's) is skipped.
+func clientVersion(values []string) (platform.Semver, bool) {
+	if len(values) != 1 || len(values[0]) > maxClientHeader {
+		return platform.Semver{}, false
+	}
+	raw, ok := strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
+	if !ok {
+		return platform.Semver{}, false
+	}
+	v, err := platform.ParseSemver(strings.TrimPrefix(raw, "v"))
+	return v, err == nil
+}
