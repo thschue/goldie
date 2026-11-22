@@ -111,6 +111,48 @@ func TestTreeFSRejectsOverlongPaths(t *testing.T) {
 	}
 }
 
+// Each step a lookup or a listing takes spends the step budget: an entry listed
+// costs one step per listing, a path element stepped through costs one, and
+// indexing a tree for a lookup costs its entries once.
+func TestTreeFSSpendsTheStepBudget(t *testing.T) {
+	b := treeBuilder{t, memory.NewStorage()}
+	x := b.blob("x")
+	var entries []object.TreeEntry
+	for _, n := range []string{"a", "b", "c", "d", "e"} {
+		entries = append(entries, object.TreeEntry{Name: n, Mode: filemode.Regular, Hash: x})
+	}
+	root := b.tree(entries...)
+	for _, c := range []struct {
+		name  string
+		steps int
+		op    func(fs.FS) error
+		ok    bool
+	}{
+		{"listing five entries with five steps", 5, func(f fs.FS) error { _, err := fs.ReadDir(f, "."); return err }, true},
+		{"listing five entries with four steps", 4, func(f fs.FS) error { _, err := fs.ReadDir(f, "."); return err }, false},
+		{"listing twice with five steps", 5, func(f fs.FS) error {
+			if _, err := fs.ReadDir(f, "."); err != nil {
+				return err
+			}
+			_, err := fs.ReadDir(f, ".")
+			return err
+		}, false},
+		{"lookup with six steps", 6, func(f fs.FS) error { _, err := fs.Lstat(f, "a"); return err }, true},
+		{"lookup without steps", 0, func(f fs.FS) error { _, err := fs.Lstat(f, "a"); return err }, false},
+		{"lookup that cannot index", 3, func(f fs.FS) error { _, err := fs.Lstat(f, "a"); return err }, false},
+	} {
+		fsys := b.fs(root)
+		fsys.b.steps = c.steps
+		err := c.op(fsys)
+		if c.ok && err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+		if !c.ok && !errors.Is(err, errLoadLimit) {
+			t.Errorf("%s: err = %v, want errLoadLimit", c.name, err)
+		}
+	}
+}
+
 // ReadLink reads a blob too, so it spends the same byte budget as Open.
 func TestTreeFSReadLinkSpendsTheByteBudget(t *testing.T) {
 	b := treeBuilder{t, memory.NewStorage()}

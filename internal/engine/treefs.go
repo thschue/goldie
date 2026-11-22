@@ -61,21 +61,24 @@ type treeBudget struct {
 	names map[plumbing.Hash]map[string]int
 }
 
-// index maps each entry name of t to its position, once per tree hash, and
-// charges the entries to the step budget. Two entries with one name would make
-// a lookup and a listing disagree, so they fail.
-func (b *treeBudget) index(t *object.Tree) (map[string]int, error) {
+// index maps each entry name of t to its position, once per tree hash. A
+// listing charges the entries to the step budget every time; a lookup charges
+// them only when it builds the index. Two entries with one name would make a
+// lookup and a listing disagree, so they fail.
+func (b *treeBudget) index(t *object.Tree, listing bool) (map[string]int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if m, ok := b.names[t.Hash]; ok {
+	m, ok := b.names[t.Hash]
+	if ok && !listing {
 		return m, nil
 	}
-	if len(t.Entries) > b.steps {
-		b.steps = 0
-		return nil, errLoadLimit
+	if err := b.spendLocked(len(t.Entries)); err != nil {
+		return nil, err
 	}
-	b.steps -= len(t.Entries)
-	m := make(map[string]int, len(t.Entries))
+	if ok {
+		return m, nil
+	}
+	m = make(map[string]int, len(t.Entries))
 	for i, e := range t.Entries {
 		if _, dup := m[e.Name]; dup {
 			return nil, errDuplicateEntry
@@ -89,6 +92,10 @@ func (b *treeBudget) index(t *object.Tree) (map[string]int, error) {
 func (b *treeBudget) spend(steps int) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.spendLocked(steps)
+}
+
+func (b *treeBudget) spendLocked(steps int) error {
 	if steps > b.steps {
 		b.steps = 0
 		return errLoadLimit
@@ -108,7 +115,8 @@ func (b *treeBudget) spendBytes(n int) error {
 	return nil
 }
 
-// subtree decodes the directory entry e of parent once per tree hash.
+// subtree decodes the directory entry e of parent once per tree hash. The
+// caller has indexed parent, so e.Name names e alone.
 func (b *treeBudget) subtree(parent *object.Tree, e object.TreeEntry) (*object.Tree, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -118,9 +126,6 @@ func (b *treeBudget) subtree(parent *object.Tree, e object.TreeEntry) (*object.T
 	t, err := parent.Tree(e.Name)
 	if err != nil {
 		return nil, err
-	}
-	if t.Hash != e.Hash {
-		return nil, errDuplicateEntry
 	}
 	b.trees[e.Hash] = t
 	return t, nil
@@ -210,7 +215,7 @@ func (f treeFS) lookup(op, name string) (node, error) {
 			}
 			return fail(fs.ErrNotExist)
 		}
-		names, err := f.b.index(n.dir)
+		names, err := f.b.index(n.dir, false)
 		if err != nil {
 			return fail(err)
 		}
@@ -283,12 +288,8 @@ func (f treeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 		err = &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
 	}
 	if err == nil {
-		serr := f.b.spend(len(n.dir.Entries))
-		if serr == nil {
-			_, serr = f.b.index(n.dir)
-		}
-		if serr != nil {
-			err = &fs.PathError{Op: "readdir", Path: name, Err: serr}
+		if _, ierr := f.b.index(n.dir, true); ierr != nil {
+			err = &fs.PathError{Op: "readdir", Path: name, Err: ierr}
 		}
 	}
 	if err != nil {
