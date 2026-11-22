@@ -44,20 +44,22 @@ orchestrator passes you.
    - `./run check` (exit 0, zero warnings);
    - `./run red-check`;
    - `./run gate origin/main HEAD` (put its reasons in the PR body);
-   - the testing checklist;
-   - the built-in `/security-review` on your diff.
+   - the testing checklist (the `security-reviewer` and `reviewer` pass replaces the built-in
+     `/security-review` for loop PRs).
 
    Name any gate you couldn't run; CI is authoritative.
 8. **Docs** change in the same PR where behaviour, config or vocabulary changed. Regenerate
    generated code with `./run regen`, never by hand.
-9. **Push:** rebase onto `origin/main`, push only the stream's branch, with
-   `--force-with-lease=<branch>:<sha>`. Update the draft PR's title (a Conventional Commit) and body
+9. **Push:** to catch up with `origin/main`, merge it into the branch; never rebase or force-push,
+   because the `tests` marker names the acceptance-test commit. Push only the stream's branch.
+   Update the draft PR's title (a Conventional Commit) and body
    (`Closes #<n>`, the pattern followed, the gate reasons). Leave it a draft. Don't touch labels,
    don't review, don't merge. Kill every process you start.
 10. **Fix round:** fix every finding you're sent, give evidence per finding, re-run the gates, and
     push.
 
-Report in prose, then one fenced `json` block:
+**Your final message is the report**, after the push and the PR body, with nothing after it: prose,
+then one fenced `json` block:
 - `outcome`: `shipped`, `needs-info`, `consult`, `test_change_request`, `credential` or `blocked`;
 - `pr` and `head_sha`;
 - `findings`: bugs found and where each was fixed;

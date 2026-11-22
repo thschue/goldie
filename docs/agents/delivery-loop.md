@@ -32,13 +32,14 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
 6. **Clean up:** remove the worktrees of merged or closed PRs. Remove `in-progress` from issues
    whose PR merged or closed. Kill only processes this tick started, by PID.
 
-**Report:** streams advanced (step and outcome), claims, merges queued, PRs held or parked (with
+**Report:** streams advanced (step and outcome), claims, merges, PRs held or parked (with
 reason), consults, test change requests, and harness feedback filed.
 
 ## Stream
 
 1. **Acceptance tests** for `feat` and `fix`, found-fix bugs included; skipped for `docs`, `chore`,
-   `ci`, `build` and pure `refactor`.
+   `ci`, `build` and pure `refactor`. For `test` issues the `test-author` makes every test-file
+   change here, and step 2 runs only for a remaining non-test change.
    - The `test-author` writes failing tests for every acceptance criterion, at the highest seam,
      following the existing test patterns, and pushes them as the first commit
      (`test(acceptance): …`).
@@ -70,9 +71,10 @@ reason), consults, test change requests, and harness feedback filed.
 5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
    agent: fixed, or why not. Then:
    - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker, `main`'s gate and the test
-     lock, marks the PR ready, and queues it. Exit 1 means the gate holds it: add
-     `needs-maintainer` and post the reasons (for a new dependency, the verified brief in three
-     lines). Exit 3 means the test lock failed: treat it as a blocking finding;
+     lock, marks the PR ready, and merges it (auto-merge, or directly when already green). Exit 1:
+     the gate holds it; add `needs-maintainer` with the reasons (for a new dependency, the verified
+     brief in three lines). Exit 3: the test lock failed, a blocking finding. Exit 2: a tool error;
+     retry the same command on later ticks, and after 3 add `needs-maintainer`;
    - **decision:** the PR is clean except for one product question. Add
      `needs-info reason=decision` with the question, the options and a recommendation. When the
      product session answers `PM decision: merge`, finish as clean; on `change`, go to step 4 (it
@@ -86,7 +88,9 @@ reason), consults, test change requests, and harness feedback filed.
   - Allowed routes: implementer → `architect`, `ux-designer`, or `test-author` (intent only).
   - Forward the question at once and resume the asker with the answer. Post both as one note
     comment starting with `Consult (<agent>):`.
-  - Never route to or from a reviewer during review.
+  - Never route to or from a reviewer during review. A question for the maintainer becomes a
+    `needs-triage` issue labelled `question`, linked from the PR; the stream goes on unless the PR
+    depends on the answer.
   - After 3 consults on one stream, park it: `needs-info reason=spec`, because the issue wasn't
     ready.
 - **Test change requests.** Post the request with `<!-- goldie-loop:tests request -->`, then send
@@ -96,6 +100,9 @@ reason), consults, test change requests, and harness feedback filed.
   - On rejection, record `<!-- goldie-loop:tests rejected -->` with the reason; the implementer
     meets the test as written.
   - A disputed criterion goes to `needs-info reason=spec`.
+- **`blocked` reports** (or no valid JSON block): inspect the branch and the subagent's worktree,
+  then resume the same subagent once, naming what's missing (push, PR body, report). A second
+  `blocked` on the same step parks the stream as `needs-info reason=human-check`.
 
 ## Model routing
 
