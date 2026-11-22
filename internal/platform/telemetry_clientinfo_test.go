@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -245,5 +246,55 @@ func TestClientInfoSettingIsValidatedAtStartup(t *testing.T) {
 		if strings.Contains(err.Error(), marker) || strings.Contains(err.Error(), "yes") {
 			t.Errorf("%q: error echoes the value: %v", env, err)
 		}
+	}
+}
+
+// The handler reads the body through otelhttp's wrapper, so the server span
+// still records the request body size even though the handler is given the
+// original request rather than the span view.
+func TestServerSpanRecordsRequestBodySizeReadByHandler(t *testing.T) {
+	spans := newSpanSink()
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, &logSink{})
+	const payload = "hello-body-of-12"
+	h := tel.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if b, _ := io.ReadAll(r.Body); string(b) != payload {
+			t.Errorf("handler read %q, want %q", b, payload)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest("POST", "http://goldie.test/api/v1/items", strings.NewReader(payload))
+	req.RemoteAddr = peerIP + ":43210"
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if err := tel.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	got := spans.spans()
+	if len(got) != 1 {
+		t.Fatalf("got %d spans, want 1", len(got))
+	}
+	for _, kv := range got[0].Attributes {
+		if string(kv.Key) == "http.request.body.size" {
+			if kv.Value.AsInt64() != int64(len(payload)) {
+				t.Errorf("http.request.body.size=%d, want %d", kv.Value.AsInt64(), len(payload))
+			}
+			return
+		}
+	}
+	t.Error("server span has no http.request.body.size attribute")
+}
+
+// A malformed GOLDIE_TELEMETRY_CLIENT_INFO fails startup naming the variable
+// even when OTEL_SDK_DISABLED=true: the setting is validated either way.
+func TestMalformedClientInfoFailsStartupWhenSDKDisabled(t *testing.T) {
+	err := startupErr(map[string]string{"OTEL_SDK_DISABLED": "true", envClientInfo: "maybe"})
+	if err == nil {
+		t.Fatal("want a startup error")
+	}
+	if !strings.Contains(err.Error(), envClientInfo) {
+		t.Errorf("error %q does not name %s", err, envClientInfo)
+	}
+	if strings.Contains(err.Error(), "maybe") {
+		t.Errorf("error %q echoes the value", err)
 	}
 }

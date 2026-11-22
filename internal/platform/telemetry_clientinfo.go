@@ -64,7 +64,11 @@ func spanView(r *http.Request, clientInfo bool) *http.Request {
 func restoreRequest(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, view *http.Request) {
 		if orig, ok := view.Context().Value(originalKey{}).(*http.Request); ok {
-			view = orig.WithContext(view.Context())
+			// Body is otelhttp's wrapper: it counts request bytes for the span
+			// and metrics, so the handler must read through it, not orig.Body.
+			restored := orig.WithContext(view.Context())
+			restored.Body = view.Body
+			view = restored
 		}
 		h.ServeHTTP(w, view)
 	})
