@@ -19,6 +19,8 @@ info:
 servers:
   - url: /
     description: The public listener that served this document.
+security:
+  - bearerAuth: []
 tags:
   - name: contract
     description: The API contract itself.
@@ -59,6 +61,15 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        A goldie token, sent as `Authorization: Bearer <token>`. Swagger UI's
+        "Authorize" button takes it, so "Try it out" sends it. Tokens are
+        issued and checked by the auth work (#11); until it lands the server
+        does not enforce this scheme.
   schemas:
     ErrorEnvelope:
       type: object

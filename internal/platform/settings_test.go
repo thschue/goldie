@@ -15,6 +15,10 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		EnvAddr: cfg.Addr, EnvAdminAddr: cfg.AdminAddr, EnvLogLevel: cfg.LogLevel,
 		EnvDrainSeconds: "25",
 	}
+	if !cfg.SwaggerUIEnabled {
+		t.Error("Swagger UI must be enabled by default")
+	}
+	got[EnvSwaggerUIEnabled] = "true"
 	if int(cfg.DrainTimeout.Seconds()) != 25 {
 		t.Errorf("drain default = %v", cfg.DrainTimeout)
 	}
@@ -64,5 +68,21 @@ func TestCommittedConfigReferenceIsFresh(t *testing.T) {
 	added := append([]SettingSpec{{"GOLDIE_NEW", "", "new"}}, Settings...)
 	if string(committed) == string(ConfigReference(added)) {
 		t.Error("drift not detected when a setting is added")
+	}
+}
+
+func TestSwaggerUIEnabledSetting(t *testing.T) {
+	load := func(env map[string]string) (Config, error) {
+		return LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	}
+	for value, want := range map[string]bool{"true": true, "false": false, "TRUE": true, "False": false, "": true} {
+		cfg, err := load(map[string]string{EnvSwaggerUIEnabled: value})
+		if err != nil || cfg.SwaggerUIEnabled != want {
+			t.Errorf("%s=%q: enabled=%v err=%v, want %v", EnvSwaggerUIEnabled, value, cfg.SwaggerUIEnabled, err, want)
+		}
+	}
+	_, err := load(map[string]string{EnvSwaggerUIEnabled: "maybe"})
+	if err == nil || !strings.Contains(err.Error(), EnvSwaggerUIEnabled) || strings.Contains(err.Error(), "maybe") {
+		t.Errorf("invalid value: err = %v, want it to name the variable and not echo the value", err)
 	}
 }

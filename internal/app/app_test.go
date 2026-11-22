@@ -19,7 +19,12 @@ import (
 
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	h, err := PublicHandler()
+	return newServerWith(t, Options{SwaggerUI: true})
+}
+
+func newServerWith(t *testing.T, opts Options) *httptest.Server {
+	t.Helper()
+	h, err := PublicHandler(opts)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

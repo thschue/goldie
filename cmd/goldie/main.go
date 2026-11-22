@@ -78,7 +78,7 @@ func runServer(out io.Writer) error {
 		close(force)
 	}()
 
-	public, err := app.PublicHandler()
+	public, err := app.PublicHandler(app.Options{SwaggerUI: cfg.SwaggerUIEnabled})
 	if err != nil {
 		return fmt.Errorf("build public handler: %w", err)
 	}
