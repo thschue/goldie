@@ -28,7 +28,7 @@ const (
 
 // Usage is the one-line usage of the client commands, without the program
 // name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> | lookup <id> | status [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
+const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | version  [--addr URL] [--token TOKEN] [--json]"
 
 // TokenNote follows the usage text: it recommends the token variables over
 // --token, whose value shows in the process list.
@@ -85,7 +85,7 @@ func Run(ctx context.Context, args []string, env Env) error {
 	fs.SetOutput(io.Discard)
 	f := BindClientFlags(fs)
 	s := &f.s
-	if name == "status" { // only status reads the Project until #8
+	if name != "version" { // version has no use for a Project
 		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	}
 	fs.BoolVar(&s.json, "json", false, "print JSON")
