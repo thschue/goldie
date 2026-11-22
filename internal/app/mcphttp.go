@@ -72,13 +72,6 @@ func withDeadline(d time.Duration, h http.Handler) http.Handler {
 	})
 }
 
-// inProcessClient is a contract client that hands each request to api and
-// sends authorization as its Authorization header. A recovered panic in api
-// is not logged.
-func inProcessClient(api http.Handler, authorization string) contract.ClientInterface {
-	return transportClient(handlerTransport{h: api, log: discardLogger}, authorization)
-}
-
 // discardLogger drops every record.
 var discardLogger = slog.New(slog.DiscardHandler)
 
