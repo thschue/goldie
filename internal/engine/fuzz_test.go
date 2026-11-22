@@ -65,7 +65,7 @@ func TestLoadIgnoresSymlinks(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(dir, "linked")); err != nil {
 		t.Fatal(err)
 	}
-	snap, err := NewDirSource(root).Load()
+	snap, err := NewDirSource(root).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestLoadRejectsSymlinkedArticlesDir(t *testing.T) {
 			if err := os.Symlink(outside, filepath.Join(root, link)); err != nil {
 				t.Skip("symlinks unavailable")
 			}
-			snap, err := NewDirSource(root).Load()
+			snap, err := NewDirSource(root).Load(t.Context())
 			if err == nil {
 				t.Fatalf("loaded %d articles through a symlink out of the root", len(snap.Articles()))
 			}

@@ -54,7 +54,7 @@ func TestGitSourceMemoryLimit(t *testing.T) {
 			src := newGit(t, engine.GitOptions{URL: repo.url})
 			engine.SetGitLoadLimits(src, 64<<20, limit)
 			syncer := engine.NewSyncer(src)
-			err := syncer.Poll()
+			err := syncer.Poll(t.Context())
 			if err == nil || !strings.Contains(err.Error(), limitMsg) {
 				t.Fatalf("err = %v, want the load limit", err)
 			}
@@ -70,7 +70,7 @@ func TestGitSourceMemoryLimit(t *testing.T) {
 	repo.commit("main", map[string]string{"global/articles/a.md": article("Ay")})
 	src := newGit(t, engine.GitOptions{URL: repo.url})
 	engine.SetGitLoadLimits(src, 64<<20, limit)
-	if _, err := src.Load(); err != nil {
+	if _, err := src.Load(t.Context()); err != nil {
 		t.Fatalf("a repository under the limit: %v", err)
 	}
 }
@@ -95,14 +95,14 @@ func TestGitSourceWireLimit(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 
-	src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: "hunter2-token"}, certPEM(srv))
+	src, err := engine.NewGitSource(engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: "hunter2-token", CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine.SetGitLoadLimits(src, 1<<20, 64<<20)
 	engine.SetGitLoadTimeout(src, 30*time.Second)
 	start := time.Now()
-	_, err = src.Load()
+	_, err = src.Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), limitMsg) {
 		t.Fatalf("err = %v after %s, want the load limit", err, time.Since(start))
 	}
@@ -142,11 +142,11 @@ func TestGitSourceRedirects(t *testing.T) {
 			first.StartTLS()
 			defer first.Close()
 
-			src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: first.URL + "/org/repo.git", Token: token}, certPEM(first))
+			src, err := engine.NewGitSource(engine.GitOptions{URL: first.URL + "/org/repo.git", Token: token, CABundle: string(certPEM(first))})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := src.Load(); err == nil {
+			if _, err := src.Load(t.Context()); err == nil {
 				t.Fatal("loaded through a redirect to a server with no repository")
 			} else {
 				assertNoSecret(t, err.Error(), token, first.URL, target)
@@ -276,7 +276,7 @@ func slowPackServer(t *testing.T, n int) (*httptest.Server, plumbing.Hash, func(
 func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	srv, head, sent := slowPackServer(t, 200000)
 	newSrc := func() *engine.GitSource {
-		src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: srv.URL + "/org/repo.git"}, certPEM(srv))
+		src, err := engine.NewGitSource(engine.GitOptions{URL: srv.URL + "/org/repo.git", CABundle: string(certPEM(srv))})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,7 +288,7 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	// The pack is valid, and unpacking it is most of the Load.
 	src := newSrc()
 	start := time.Now()
-	if _, err := src.Load(); err != nil {
+	if _, err := src.Load(t.Context()); err != nil {
 		t.Fatalf("with room to spare: %v", err)
 	}
 	total := time.Since(start)
@@ -302,7 +302,7 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	src = newSrc()
 	engine.SetGitLoadTimeout(src, deadline)
 	start = time.Now()
-	_, err := src.Load()
+	_, err := src.Load(t.Context())
 	elapsed := time.Since(start)
 	if arrived := sent().Sub(start); arrived <= 0 || arrived >= deadline {
 		t.Fatalf("fixture: the pack arrived %s into a %s deadline; the deadline must fall while unpacking", arrived, deadline)
@@ -322,7 +322,7 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	engine.SetGitLoadTimeout(src, 2*time.Minute)
 	done := make(chan error, 1)
 	go func() {
-		_, err := src.Load()
+		_, err := src.Load(t.Context())
 		done <- err
 	}()
 	select {

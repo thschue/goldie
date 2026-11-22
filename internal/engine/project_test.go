@@ -200,7 +200,7 @@ func TestProjectValidationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			root := writeFiles(t, tt.files)
-			_, err := engine.NewDirSource(root).Load()
+			_, err := engine.NewDirSource(root).Load(t.Context())
 			if err == nil {
 				t.Fatal("Load succeeded")
 			}
@@ -245,7 +245,7 @@ func TestProjectSymlinksAreNotFollowed(t *testing.T) {
 			if err := os.Symlink(outside, filepath.Join(root, link)); err != nil {
 				t.Skip("symlinks unavailable")
 			}
-			snap, err := engine.NewDirSource(root).Load()
+			snap, err := engine.NewDirSource(root).Load(t.Context())
 			if err == nil {
 				t.Fatalf("a symlinked Project path was accepted: %v", snap.Projects())
 			}
@@ -261,7 +261,7 @@ func TestProjectArticlesSymlinkInsideRootIsRejected(t *testing.T) {
 	if err := os.Symlink("../../../../global/articles", filepath.Join(root, "projects/github.com/acme/shop/articles")); err != nil {
 		t.Skip("symlinks unavailable")
 	}
-	_, err := engine.NewDirSource(root).Load()
+	_, err := engine.NewDirSource(root).Load(t.Context())
 	if err == nil {
 		t.Fatal("a symlinked Project articles directory was accepted")
 	}

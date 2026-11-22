@@ -189,7 +189,7 @@ func TestGitSourceCommitAndLoad(t *testing.T) {
 	sha := repo.commit("main", map[string]string{"global/articles/deploy.md": article("Deploy", "deploy")})
 
 	var src engine.Source = newGit(t, engine.GitOptions{URL: repo.url})
-	snap, err := src.Load()
+	snap, err := src.Load(t.Context())
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestGitSourceCommitAndLoad(t *testing.T) {
 
 	// A new commit is picked up on the next Load; the revision follows it.
 	sha2 := repo.commit("main", map[string]string{"global/articles/other.md": article("Other")})
-	snap, err = src.Load()
+	snap, err = src.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestGitSourceRevisionEmptyBeforeFirstLoad(t *testing.T) {
 		t.Fatalf("revision before any Load = %q, want empty", got)
 	}
 	// A failed Load names no revision either.
-	if _, err := newGit(t, engine.GitOptions{URL: repo.url, Ref: "nope"}).Load(); err == nil {
+	if _, err := newGit(t, engine.GitOptions{URL: repo.url, Ref: "nope"}).Load(t.Context()); err == nil {
 		t.Fatal("unknown ref loaded")
 	}
 }
@@ -244,7 +244,7 @@ func TestGitSourceRef(t *testing.T) {
 	} {
 		t.Run(tc.ref, func(t *testing.T) {
 			src := newGit(t, engine.GitOptions{URL: repo.url, Ref: tc.ref})
-			snap, err := src.Load()
+			snap, err := src.Load(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -254,7 +254,7 @@ func TestGitSourceRef(t *testing.T) {
 		})
 	}
 
-	_, err := newGit(t, engine.GitOptions{URL: repo.url, Ref: "nope"}).Load()
+	_, err := newGit(t, engine.GitOptions{URL: repo.url, Ref: "nope"}).Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Fatalf("unknown ref: err = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestGitSourceUnchangedRefReturnsCachedSnapshot(t *testing.T) {
 	repo := newGitRepo(t)
 	sha := repo.commit("main", map[string]string{"global/articles/a.md": article("Ay")})
 	src := newGit(t, engine.GitOptions{URL: repo.url, Ref: "main"})
-	first, err := src.Load()
+	first, err := src.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestGitSourceUnchangedRefReturnsCachedSnapshot(t *testing.T) {
 	// With the objects gone a clone cannot succeed, so a Load that succeeds
 	// only listed the ref and served the cache.
 	restore := repo.hideObjects()
-	second, err := src.Load()
+	second, err := src.Load(t.Context())
 	if err != nil {
 		t.Fatalf("Load with the ref unchanged fetched again: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestGitSourceUnchangedRefReturnsCachedSnapshot(t *testing.T) {
 
 	// Once the ref moves, the next Load reads the new commit.
 	sha2 := repo.commit("main", map[string]string{"global/articles/c.md": article("Sea")})
-	third, err := src.Load()
+	third, err := src.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestGitSourceClonesIntoMemory(t *testing.T) {
 	t.Chdir(cwd)
 	dirs["working directory"] = cwd
 
-	if _, err := src.Load(); err != nil {
+	if _, err := src.Load(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	for name, dir := range dirs {
@@ -332,7 +332,7 @@ func TestGitSourceClonesIntoMemory(t *testing.T) {
 func TestGitSourceLoadsProjects(t *testing.T) {
 	repo := newGitRepo(t)
 	repo.commit("main", projectContent())
-	snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load()
+	snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestGitSourceInvalidContentNamesFile(t *testing.T) {
 	repo.commit("main", map[string]string{"global/articles/ok.md": article("Ok")})
 	src := newGit(t, engine.GitOptions{URL: repo.url})
 	syncer := engine.NewSyncer(src)
-	if err := syncer.Poll(); err != nil {
+	if err := syncer.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	good := syncer.Status().Revision
@@ -359,7 +359,7 @@ func TestGitSourceInvalidContentNamesFile(t *testing.T) {
 		"global/articles/ok.md":      article("Ok"),
 		"global/articles/sub/bad.md": "no frontmatter",
 	})
-	err := syncer.Poll()
+	err := syncer.Poll(t.Context())
 	if err == nil || !strings.HasPrefix(err.Error(), "global/articles/sub/bad.md: ") {
 		t.Fatalf("err = %v, want it to name global/articles/sub/bad.md", err)
 	}
@@ -377,7 +377,7 @@ func TestGitSourceSymlinks(t *testing.T) {
 		"global/articles/link.md": "symlink:/etc/passwd",
 		"global/articles/dir":     "symlink:../../projects",
 	})
-	snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load()
+	snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestGitSourceSymlinks(t *testing.T) {
 				"elsewhere/o.md":          article("Outside"),
 				link:                      "symlink:/elsewhere",
 			})
-			snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load()
+			snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load(t.Context())
 			if err == nil {
 				t.Fatalf("loaded %d articles through a symlink", len(snap.Articles()))
 			}
@@ -558,13 +558,13 @@ func TestGitSourceStalledServerTimesOut(t *testing.T) {
 	defer srv.Close()
 	defer close(release)
 
-	src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: "hunter2-token"}, certPEM(srv))
+	src, err := engine.NewGitSource(engine.GitOptions{URL: srv.URL + "/org/repo.git", Token: "hunter2-token", CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine.SetGitLoadTimeout(src, 300*time.Millisecond)
 	start := time.Now()
-	_, err = src.Load()
+	_, err = src.Load(t.Context())
 	if elapsed := time.Since(start); elapsed > 30*time.Second {
 		t.Fatalf("Load took %s with a 300ms bound", elapsed)
 	}
@@ -613,11 +613,11 @@ func TestGitSourceShallowCloneOverHTTPS(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 
-	src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: srv.URL + "/org/repo.git"}, certPEM(srv))
+	src, err := engine.NewGitSource(engine.GitOptions{URL: srv.URL + "/org/repo.git", CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := src.Load(); err == nil {
+	if _, err := src.Load(t.Context()); err == nil {
 		t.Fatal("loaded from a server that sends no pack")
 	} else {
 		assertNoSecret(t, err.Error(), srv.URL, srv.Listener.Addr().String())
@@ -661,7 +661,7 @@ func TestGitSourceTokenOverHTTPS(t *testing.T) {
 
 	// The server's certificate is not trusted: the load fails before any
 	// request, so the token never leaves.
-	_, err := newGit(t, engine.GitOptions{URL: url, Token: token}).Load()
+	_, err := newGit(t, engine.GitOptions{URL: url, Token: token}).Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "certificate") {
 		t.Fatalf("err = %v, want a certificate failure", err)
 	}
@@ -674,11 +674,11 @@ func TestGitSourceTokenOverHTTPS(t *testing.T) {
 	assertNoSecret(t, err.Error(), token, srv.URL, addr)
 
 	// Trusted: the token is sent as the basic-auth password.
-	src, err := engine.NewGitSourceWithCABundle(engine.GitOptions{URL: url, Token: token}, certPEM(srv))
+	src, err := engine.NewGitSource(engine.GitOptions{URL: url, Token: token, CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = src.Load()
+	_, err = src.Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("err = %v, want repository not found", err)
 	}
@@ -691,11 +691,11 @@ func TestGitSourceTokenOverHTTPS(t *testing.T) {
 	assertNoSecret(t, err.Error(), token, srv.URL, addr)
 
 	// A wrong token is an authentication failure that does not echo it.
-	src, err = engine.NewGitSourceWithCABundle(engine.GitOptions{URL: url, Token: "wrong-hunter2"}, certPEM(srv))
+	src, err = engine.NewGitSource(engine.GitOptions{URL: url, Token: "wrong-hunter2", CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = src.Load(); err == nil || !strings.Contains(err.Error(), "authentication") {
+	if _, err = src.Load(t.Context()); err == nil || !strings.Contains(err.Error(), "authentication") {
 		t.Fatalf("err = %v, want an authentication failure", err)
 	}
 	assertNoSecret(t, err.Error(), "wrong-hunter2", srv.URL, addr)
@@ -704,11 +704,11 @@ func TestGitSourceTokenOverHTTPS(t *testing.T) {
 	mu.Lock()
 	passwords = nil
 	mu.Unlock()
-	src, err = engine.NewGitSourceWithCABundle(engine.GitOptions{URL: url}, certPEM(srv))
+	src, err = engine.NewGitSource(engine.GitOptions{URL: url, CABundle: string(certPEM(srv))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = src.Load(); err == nil {
+	if _, err = src.Load(t.Context()); err == nil {
 		t.Fatal("loaded without the token")
 	}
 	mu.Lock()
@@ -746,7 +746,7 @@ func TestGitSourceNeverLogsOrLeaksCredentials(t *testing.T) {
 	} {
 		src := newGit(t, opts)
 		syncer := engine.NewSyncer(src)
-		err := syncer.Poll()
+		err := syncer.Poll(t.Context())
 		if err == nil {
 			t.Fatalf("%s: load succeeded", opts.URL)
 		}

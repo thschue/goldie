@@ -379,7 +379,7 @@ func TestGitSourceSSHTrustedHostKeyAuthenticatesWithTheConfiguredKey(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			offered, logins := srv.seen()
-			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load()
+			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load(t.Context())
 			if err == nil {
 				t.Fatal("loaded from a server that serves no repository")
 			}
@@ -431,7 +431,7 @@ func TestGitSourceSSHNegotiatesTheListedHostKeyType(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, logins := srv.seen()
 			kh := srv.pattern() + " " + authorizedKey(hostKeys[name].pub)
-			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load()
+			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load(t.Context())
 			if err == nil {
 				t.Fatal("loaded from a server that serves no repository")
 			}
@@ -478,7 +478,7 @@ func TestGitSourceSSHUntrustedHostKeyFails(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			offered, logins := srv.seen()
-			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load()
+			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load(t.Context())
 			if err == nil || !strings.Contains(err.Error(), "host key") {
 				t.Fatalf("err = %v, want a host key failure", err)
 			}
@@ -528,7 +528,7 @@ func TestGitSourceSSHCertAuthorityFailsClosed(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			offered, logins := srv.seen()
-			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load()
+			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: tc.knownHosts}).Load(t.Context())
 			if err == nil || !strings.Contains(err.Error(), "host key") {
 				t.Fatalf("err = %v, want a host key failure", err)
 			}
@@ -570,7 +570,7 @@ func TestGitSourceSSHUnusableKnownHostsFailClosed(t *testing.T) {
 				assertNoKeyMaterial(t, err.Error(), material...)
 				return
 			}
-			_, err = src.Load()
+			_, err = src.Load(t.Context())
 			if err == nil || !strings.Contains(err.Error(), "host key") {
 				t.Fatalf("err = %v, want a host key failure", err)
 			}
@@ -610,7 +610,7 @@ func TestGitSourceSSHUnusableKeyFails(t *testing.T) {
 			material := append([]string{tc.key, "hunter2-passphrase"}, client.material()...)
 			src, err := engine.NewGitSource(engine.GitOptions{URL: srv.url("git"), SSHKey: tc.key, KnownHosts: srv.line()})
 			if err == nil {
-				_, err = src.Load()
+				_, err = src.Load(t.Context())
 			}
 			if err == nil {
 				t.Fatal("loaded with an unusable key")
@@ -675,7 +675,7 @@ func TestGitSourceSSHIgnoresAmbientSSHSetup(t *testing.T) {
 	t.Run("ambient known_hosts does not trust the host", func(t *testing.T) {
 		offered, logins := srv.seen()
 		kh := srv.pattern() + " " + authorizedKey(other.pub)
-		_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load()
+		_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load(t.Context())
 		if err == nil || !strings.Contains(err.Error(), "host key") {
 			t.Fatalf("err = %v, want a host key failure", err)
 		}
@@ -686,7 +686,7 @@ func TestGitSourceSSHIgnoresAmbientSSHSetup(t *testing.T) {
 
 	t.Run("agent key is not offered", func(t *testing.T) {
 		offered, logins := srv.seen()
-		_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: srv.line()}).Load()
+		_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: srv.line()}).Load(t.Context())
 		if err == nil || !strings.Contains(err.Error(), "authentication") {
 			t.Fatalf("err = %v, want an authentication failure", err)
 		}
@@ -713,7 +713,7 @@ func TestGitSourceSSHWrongKeyFailsAuthentication(t *testing.T) {
 	accepted := newSSHKey(t)
 	client := newSSHKey(t)
 	srv := newSSHServer(t, accepted.pub)
-	_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: srv.line()}).Load()
+	_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: srv.line()}).Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "authentication") {
 		t.Fatalf("err = %v, want an authentication failure", err)
 	}
@@ -760,7 +760,7 @@ func TestGitSourceSSHNeverLogsOrLeaksKeyMaterial(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := append(slices.Clone(material), knownHostsMaterial(tc.opts.KnownHosts)...)
 			syncer := engine.NewSyncer(newGit(t, tc.opts))
-			err := syncer.Poll()
+			err := syncer.Poll(t.Context())
 			if err == nil {
 				t.Fatal("load succeeded")
 			}

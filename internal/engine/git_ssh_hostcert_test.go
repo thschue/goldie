@@ -67,7 +67,7 @@ func TestGitSourceSSHHostCertificateOnAPlainLineFailsClosed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newSSHServer(t, client.pub, tc.signer)
 			kh := tc.kh(srv)
-			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load()
+			_, err := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load(t.Context())
 			if err == nil || !strings.Contains(err.Error(), "host key") {
 				t.Fatalf("err = %v, want a host key failure", err)
 			}
@@ -91,7 +91,7 @@ func TestGitSourceSSHNoListedHostKeyTypeIsAHostKeyError(t *testing.T) {
 		t.Fatal(err)
 	}
 	kh := srv.pattern() + " " + authorizedKey(sshKeyFrom(t, ecPriv).pub)
-	_, err = newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load()
+	_, err = newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: kh}).Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "host key") {
 		t.Fatalf("err = %v, want a host key failure", err)
 	}
@@ -110,7 +110,7 @@ func TestGitSourceSSHReadsCountAgainstTheWireLimit(t *testing.T) {
 	srv := newSSHServer(t, client.pub)
 	src := newGit(t, engine.GitOptions{URL: srv.url("git"), SSHKey: client.pem, KnownHosts: srv.line()})
 	engine.SetGitLoadLimits(src, 64, 64<<20)
-	_, err := src.Load()
+	_, err := src.Load(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "exceeds the load limits") {
 		t.Fatalf("err = %v, want the load limit error", err)
 	}
