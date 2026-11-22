@@ -16,6 +16,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		EnvDrainSeconds: "25",
 		EnvContentDir:   cfg.ContentDir, EnvAPIToken: cfg.APIToken,
 		"GOLDIE_API_TOKENS": cfg.APITokens,
+		envRateLimit:        reported(t, cfg, envRateLimit),
 	}
 	if !cfg.SwaggerUIEnabled {
 		t.Error("Swagger UI must be enabled by default")

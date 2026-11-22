@@ -292,7 +292,7 @@ func TestPC05ConfigErrorsNeverEchoValues(t *testing.T) {
 	if err := os.WriteFile(path, []byte(marker+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{EnvAddr, EnvAdminAddr, EnvLogLevel, EnvDrainSeconds, EnvSwaggerUIEnabled} {
+	for _, name := range []string{EnvAddr, EnvAdminAddr, EnvLogLevel, EnvDrainSeconds, EnvSwaggerUIEnabled, envRateLimit} {
 		for _, env := range []map[string]string{{name + "_FILE": path}, {name: marker}} {
 			_, err := LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
 			if err == nil || !strings.Contains(err.Error(), name) {
