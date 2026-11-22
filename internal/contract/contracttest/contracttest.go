@@ -54,7 +54,9 @@ func Check(resp *http.Response, body []byte) error {
 	if method == "head" {
 		method = "get"
 	}
-	op, opPtr := findOperation(doc, method, resp.Request.URL.Path)
+	// Match the escaped path: a path parameter is one segment, and a "/"
+	// inside it arrives as %2F, which the decoded path would split.
+	op, opPtr := findOperation(doc, method, resp.Request.URL.EscapedPath())
 	var node map[string]any
 	var ptr string
 	if op == nil {

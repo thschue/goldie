@@ -8,12 +8,36 @@ package contract
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/oapi-codegen/runtime"
 )
+
+// Article One article.
+type Article struct {
+	// Content The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML.
+	//
+	// Examples: Use the platform chart.
+	Content string `json:"content"`
+
+	// Id The article id, its path under `articles/` without `.md`.
+	//
+	// Examples: platform/deploy
+	Id string `json:"id"`
+
+	// Keywords The keywords from the article's frontmatter, lower case.
+	//
+	// Examples: ["kubernetes","deploy"]
+	Keywords []string `json:"keywords"`
+
+	// Name The article's display title, from its frontmatter.
+	//
+	// Examples: Deploying to Kubernetes
+	Name string `json:"name"`
+}
 
 // Error One error. It never contains addresses, paths or stack traces.
 type Error struct {
@@ -48,11 +72,78 @@ type ErrorEnvelope struct {
 	Error Error `json:"error"`
 }
 
+// SearchHit One article that matched a search.
+//
+// Examples: {"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}
+type SearchHit struct {
+	// Id The article id, for a lookup.
+	//
+	// Examples: platform/deploy
+	Id string `json:"id"`
+
+	// Keywords The article's keywords, lower case.
+	//
+	// Examples: ["kubernetes","deploy"]
+	Keywords []string `json:"keywords"`
+
+	// Kind The Kind of the Item, such as `article` (ADR 0005).
+	//
+	// Examples: article
+	Kind string `json:"kind"`
+
+	// Matched What matched, in order of first match - keywords, and `name` when the name matched.
+	//
+	// Examples: ["kubernetes","name"]
+	Matched []string `json:"matched"`
+
+	// Name The display title from the frontmatter.
+	//
+	// Examples: Deploying to Kubernetes
+	Name string `json:"name"`
+
+	// Scope Where the Item applies, such as `global` (ADR 0005).
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+
+	// Score The relevance score; higher is better.
+	//
+	// Examples: 6
+	Score int `json:"score"`
+}
+
+// SearchResults The result of a search.
+//
+// Examples: {"query":"kubernetes","results":[{"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}]}
+type SearchResults struct {
+	// Query The search words as received.
+	//
+	// Examples: deploy kubernetes
+	Query string `json:"query"`
+
+	// Results The matching articles, best first, then by id.
+	//
+	// Examples: []
+	Results []SearchHit `json:"results"`
+}
+
 // ErrorResponse The body of every error response.
 type ErrorResponse = ErrorEnvelope
 
+// SearchArticlesParams defines parameters for SearchArticles.
+type SearchArticlesParams struct {
+	// Q Search words, separated by spaces. Matching ignores case.
+	Q string `form:"q" json:"q"`
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetArticle Look up one article
+	// (GET /api/v1/articles/{id})
+	GetArticle(w http.ResponseWriter, r *http.Request, id string)
+	// SearchArticles Search articles by keyword
+	// (GET /api/v1/search)
+	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(w http.ResponseWriter, r *http.Request)
@@ -69,6 +160,65 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetArticle operation middleware
+func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArticle(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SearchArticles operation middleware
+func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchArticlesParams
+
+	// ------------- Required query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SearchArticles(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetOpenAPIJSON operation middleware
 func (siw *ServerInterfaceWrapper) GetOpenAPIJSON(w http.ResponseWriter, r *http.Request) {
@@ -218,6 +368,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search", wrapper.SearchArticles)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPIYAML)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetOpenAPIJSON)
 
@@ -225,6 +377,140 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 }
 
 type ErrorJSONResponse ErrorEnvelope
+
+type GetArticleRequestObject struct {
+	Id string `json:"id"`
+}
+
+type GetArticleResponseObject interface {
+	VisitGetArticleResponse(w http.ResponseWriter) error
+}
+
+type GetArticle200JSONResponse Article
+
+func (response GetArticle200JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticle401JSONResponse ErrorEnvelope
+
+func (response GetArticle401JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticle404JSONResponse ErrorEnvelope
+
+func (response GetArticle404JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticledefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetArticledefaultJSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticlesRequestObject struct {
+	Params SearchArticlesParams
+}
+
+type SearchArticlesResponseObject interface {
+	VisitSearchArticlesResponse(w http.ResponseWriter) error
+}
+
+type SearchArticles200JSONResponse SearchResults
+
+func (response SearchArticles200JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles400JSONResponse ErrorEnvelope
+
+func (response SearchArticles400JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles401JSONResponse ErrorEnvelope
+
+func (response SearchArticles401JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticlesdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response SearchArticlesdefaultJSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetOpenAPIJSONRequestObject struct {
 }
@@ -310,6 +596,12 @@ func (response GetOpenAPIYAMLdefaultJSONResponse) VisitGetOpenAPIYAMLResponse(w 
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetArticle Look up one article
+	// (GET /api/v1/articles/{id})
+	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
+	// SearchArticles Search articles by keyword
+	// (GET /api/v1/search)
+	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(ctx context.Context, request GetOpenAPIJSONRequestObject) (GetOpenAPIJSONResponseObject, error)
@@ -358,6 +650,58 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetArticle operation middleware
+func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id string) {
+	var request GetArticleRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetArticle(ctx, request.(GetArticleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArticle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArticleResponseObject); ok {
+		if err := validResponse.VisitGetArticleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SearchArticles operation middleware
+func (sh *strictHandler) SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams) {
+	var request SearchArticlesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.SearchArticles(ctx, request.(SearchArticlesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SearchArticles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SearchArticlesResponseObject); ok {
+		if err := validResponse.VisitSearchArticlesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetOpenAPIJSON operation middleware

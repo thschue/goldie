@@ -18,6 +18,9 @@ const (
 	EnvDrainSeconds = "GOLDIE_DRAIN_SECONDS"
 
 	EnvSwaggerUIEnabled = "GOLDIE_SWAGGER_UI_ENABLED"
+
+	EnvContentDir = "GOLDIE_CONTENT_DIR"
+	EnvAPIToken   = "GOLDIE_API_TOKEN" // secret: never logged
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -29,6 +32,10 @@ type Config struct {
 	DrainTimeout time.Duration // time between failing readiness and shutdown
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
+
+	// The server role validates these at startup; health does not need them.
+	ContentDir string // root of the dir Source
+	APIToken   string // static bearer token for /api/; secret
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -69,6 +76,8 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		}
 	}
 	cfg.DrainTimeout = time.Duration(secs) * time.Second
+	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
+	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
 	case "true":
@@ -112,7 +121,7 @@ func Setting(lookup Lookup, readFile func(string) ([]byte, error), name string) 
 }
 
 // Report logs the effective configuration once at startup (PC-06). Secret
-// settings must be redacted before they are added here; there are none yet.
+// settings are redacted: only whether they are set is logged.
 func (c Config) Report(l *slog.Logger) {
 	l.Info("config",
 		EnvAddr, c.Addr,
@@ -120,5 +129,15 @@ func (c Config) Report(l *slog.Logger) {
 		EnvLogLevel, c.LogLevel,
 		EnvDrainSeconds, int(c.DrainTimeout/time.Second),
 		EnvSwaggerUIEnabled, c.SwaggerUIEnabled,
+		EnvContentDir, c.ContentDir,
+		EnvAPIToken, redacted(c.APIToken),
 	)
+}
+
+// redacted stands in for a secret value in logs.
+func redacted(secret string) string {
+	if secret == "" {
+		return "(unset)"
+	}
+	return "(redacted)"
 }

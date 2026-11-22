@@ -14,6 +14,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got := map[string]string{
 		EnvAddr: cfg.Addr, EnvAdminAddr: cfg.AdminAddr, EnvLogLevel: cfg.LogLevel,
 		EnvDrainSeconds: "25",
+		EnvContentDir:   cfg.ContentDir, EnvAPIToken: cfg.APIToken,
 	}
 	if !cfg.SwaggerUIEnabled {
 		t.Error("Swagger UI must be enabled by default")
@@ -84,5 +85,31 @@ func TestSwaggerUIEnabledSetting(t *testing.T) {
 	_, err := load(map[string]string{EnvSwaggerUIEnabled: "maybe"})
 	if err == nil || !strings.Contains(err.Error(), EnvSwaggerUIEnabled) || strings.Contains(err.Error(), "maybe") {
 		t.Errorf("invalid value: err = %v, want it to name the variable and not echo the value", err)
+	}
+}
+
+func TestAPITokenIsReadFromFileAndRedacted(t *testing.T) {
+	const token = "file-token-0123456789"
+	path := t.TempDir() + "/token"
+	if err := os.WriteFile(path, []byte(token+"\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{EnvAPIToken + "_FILE": path, EnvContentDir: "/srv/content"}
+	cfg, err := LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIToken != token || cfg.ContentDir != "/srv/content" {
+		t.Fatalf("token %q, content dir %q: want the file's token without its newline", cfg.APIToken, cfg.ContentDir)
+	}
+	var buf syncBuffer
+	cfg.Report(NewLogger(&buf, 0, "server"))
+	if strings.Contains(buf.String(), token) || !strings.Contains(buf.String(), `"GOLDIE_API_TOKEN":"(redacted)"`) {
+		t.Errorf("startup report must redact the token: %s", buf.String())
+	}
+	var unset syncBuffer
+	Config{}.Report(NewLogger(&unset, 0, "server"))
+	if !strings.Contains(unset.String(), `"GOLDIE_API_TOKEN":"(unset)"`) {
+		t.Errorf("startup report must say the token is unset: %s", unset.String())
 	}
 }

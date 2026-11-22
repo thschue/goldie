@@ -15,6 +15,7 @@ import (
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/contract/contracttest"
+	"github.com/thschue/goldie/internal/engine"
 )
 
 func newServer(t *testing.T) *httptest.Server {
@@ -22,8 +23,16 @@ func newServer(t *testing.T) *httptest.Server {
 	return newServerWith(t, Options{SwaggerUI: true})
 }
 
+// newServerWith starts the public handler; an unset content dir or token is
+// the test one.
 func newServerWith(t *testing.T, opts Options) *httptest.Server {
 	t.Helper()
+	if opts.ContentDir == "" {
+		opts.ContentDir = testContent
+	}
+	if opts.APIToken == "" {
+		opts.APIToken = testToken
+	}
 	h, err := PublicHandler(opts)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
@@ -182,7 +191,11 @@ func specOperations(t *testing.T) []string {
 }
 
 func TestRoutesAndSpecAgree(t *testing.T) {
-	routes, err := publicRoutes()
+	snap, err := engine.NewDirSource(testContent).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := publicRoutes(snap, testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +228,7 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 		if strings.Contains(path, "{") {
 			continue
 		}
-		resp, _ := do(t, method, srv.URL+path, nil)
+		resp, _ := do(t, method, srv.URL+path, bearer(testToken))
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
 			t.Errorf("%s answers %d: the operation is in the spec but the router does not serve it", o, resp.StatusCode)
 		}

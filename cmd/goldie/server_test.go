@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -74,6 +75,30 @@ func (p *proc) logs() string {
 	return strings.Join(p.allLogs, "\n")
 }
 
+// testToken is the API token startServer passes through GOLDIE_API_TOKEN_FILE.
+const testToken = "binary-test-token-0123456789"
+
+// contentDir is the example content, a valid dir Source.
+func contentDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.Abs("../../examples/knowledge")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// tokenFile writes value, with a trailing newline as editors and Secrets
+// leave it, to a file and returns its path.
+func tokenFile(t *testing.T, value string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(path, []byte(value+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func startServer(t *testing.T, env ...string) *proc {
 	t.Helper()
 	cmd := exec.Command(goldieBinary(t), "server")
@@ -81,6 +106,8 @@ func startServer(t *testing.T, env ...string) *proc {
 		"PATH=" + os.Getenv("PATH"),
 		"GOLDIE_ADDR=127.0.0.1:0",
 		"GOLDIE_ADMIN_ADDR=127.0.0.1:0",
+		"GOLDIE_CONTENT_DIR=" + contentDir(t),
+		"GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken),
 	}, env...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -220,6 +247,76 @@ func TestPC04InvalidConfigFailsFast(t *testing.T) {
 		}
 		if !strings.Contains(string(out), tc.name) {
 			t.Errorf("%s: output does not name the variable: %s", tc.name, out)
+		}
+	}
+}
+
+// The binary serves the API from GOLDIE_CONTENT_DIR to callers with the
+// token from GOLDIE_API_TOKEN_FILE, and never logs the token (PC-05, PC-06).
+func TestBinaryServesAPIWithTokenFromFile(t *testing.T) {
+	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
+	url := "http://" + p.app + "/api/v1/articles/agent-loops"
+	for auth, want := range map[string]int{"": 401, "Bearer wrong": 401, "Bearer " + testToken: 200} {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		resp, err := http.DefaultClient.Do(req) //nolint:gosec // loopback test URL
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Errorf("Authorization %q: status %d, want %d: %s", auth, resp.StatusCode, want, body)
+		}
+	}
+	_ = p.cmd.Process.Signal(syscall.SIGTERM)
+	if err := p.waitExit(t, 5*time.Second); err != nil {
+		t.Fatalf("exit: %v", err)
+	}
+	if strings.Contains(p.logs(), testToken) {
+		t.Errorf("the logs contain the API token:\n%s", p.logs())
+	}
+	if !strings.Contains(p.logs(), `"GOLDIE_API_TOKEN":"(redacted)"`) {
+		t.Errorf("the startup report does not show the token as redacted:\n%s", p.logs())
+	}
+}
+
+func TestPC04ServerNeedsTokenAndContent(t *testing.T) {
+	const marker = "s3cret marker"
+	content := "GOLDIE_CONTENT_DIR=" + contentDir(t)
+	token := "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken)
+	for _, tc := range []struct {
+		name string
+		env  []string
+	}{
+		{"GOLDIE_API_TOKEN", []string{content}},
+		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN="}},
+		{"GOLDIE_API_TOKEN", []string{content, "GOLDIE_API_TOKEN_FILE=" + tokenFile(t, marker)}},
+		{"GOLDIE_API_TOKEN", []string{content, token, "GOLDIE_API_TOKEN=" + testToken}},
+		{"GOLDIE_CONTENT_DIR", []string{token}},
+		{"GOLDIE_CONTENT_DIR", []string{token, "GOLDIE_CONTENT_DIR=" + filepath.Join(t.TempDir(), "missing")}},
+	} {
+		// A server that wrongly starts must fail this case, not hang the run.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cmd := exec.CommandContext(ctx, goldieBinary(t), "server")
+		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADDR=127.0.0.1:0", "GOLDIE_ADMIN_ADDR=127.0.0.1:0"}, tc.env...)
+		out, err := cmd.CombinedOutput()
+		timedOut := ctx.Err() != nil
+		cancel()
+		if timedOut {
+			t.Errorf("%v: the server started instead of failing naming %s", tc.env, tc.name)
+			continue
+		}
+		if err == nil || !strings.Contains(string(out), tc.name) {
+			t.Errorf("%v: err = %v, want a failure naming %s: %s", tc.env, err, tc.name, out)
+		}
+		if strings.Contains(string(out), marker) || strings.Contains(string(out), testToken) {
+			t.Errorf("%v: output echoes the token: %s", tc.env, out)
 		}
 	}
 }
