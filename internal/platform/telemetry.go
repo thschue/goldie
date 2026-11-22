@@ -188,6 +188,9 @@ const (
 	envOTelService  = "OTEL_SERVICE_NAME"
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
 
+	// defaultOTLPEndpoint is the OTLP/HTTP default when no endpoint is set.
+	defaultOTLPEndpoint = "http://localhost:4318"
+
 	envOTelSampler    = "OTEL_TRACES_SAMPLER"
 	envOTelSamplerArg = "OTEL_TRACES_SAMPLER_ARG"
 )
@@ -298,27 +301,29 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
 	)
+	// The endpoint and headers are always passed, defaults included, so the
+	// SDK's own reading of the process environment is overridden.
+	endpointOf := func(signal string) string {
+		if e := endpoints[signal]; e != "" {
+			return e
+		}
+		return defaultOTLPEndpoint + "/v1/" + signal
+	}
+	headersOf := func(signal string) map[string]string {
+		if h := headers[signal]; h != nil {
+			return h
+		}
+		return map[string]string{}
+	}
 	if on["traces"] {
-		opts := []otlptracehttp.Option{}
-		if e := endpoints["traces"]; e != "" {
-			opts = append(opts, otlptracehttp.WithEndpointURL(e))
-		}
-		if h := headers["traces"]; h != nil {
-			opts = append(opts, otlptracehttp.WithHeaders(h))
-		}
-		if spans, err = otlptracehttp.New(ctx, opts...); err != nil {
+		if spans, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(endpointOf("traces")),
+			otlptracehttp.WithHeaders(headersOf("traces"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_TRACES_*: cannot configure the trace exporter")
 		}
 	}
 	if on["logs"] {
-		opts := []otlploghttp.Option{}
-		if e := endpoints["logs"]; e != "" {
-			opts = append(opts, otlploghttp.WithEndpointURL(e))
-		}
-		if h := headers["logs"]; h != nil {
-			opts = append(opts, otlploghttp.WithHeaders(h))
-		}
-		if logs, err = otlploghttp.New(ctx, opts...); err != nil {
+		if logs, err = otlploghttp.New(ctx, otlploghttp.WithEndpointURL(endpointOf("logs")),
+			otlploghttp.WithHeaders(headersOf("logs"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -34,8 +35,8 @@ func newCollector(t *testing.T) (*httptest.Server, *collectorSeen) {
 	return srv, seen
 }
 
-// The SDK reads nothing from the process environment: endpoint, headers,
-// sampler and resource all come from lookup. The process environment holds
+// The SDK's own reading of the process environment is overridden: endpoint,
+// headers, sampler and resource all come from lookup. The process environment holds
 // conflicting values that would break each assertion if the SDK read them.
 func TestTelemetrySettingsComeFromLookupNotTheProcessEnvironment(t *testing.T) {
 	collector, seen := newCollector(t)
@@ -81,6 +82,54 @@ func TestTelemetrySettingsComeFromLookupNotTheProcessEnvironment(t *testing.T) {
 	}
 	if i := strings.Index(body, "goldie.mode"); i < 0 || !strings.HasPrefix(strings.TrimLeft(body[i+len("goldie.mode"):], "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12"), "all") {
 		t.Error("goldie.mode is not the fixed value \"all\"")
+	}
+}
+
+// With an exporter selected in lookup but no endpoint or headers there, the
+// exporters must not fall back to the OTEL_EXPORTER_OTLP_* values in the
+// process environment.
+func TestTelemetryExportersIgnoreProcessEndpointAndHeaders(t *testing.T) {
+	collector, seen := newCollector(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", collector.URL+"/v1/traces")
+	t.Setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", collector.URL+"/v1/logs")
+	tel, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
+		"OTEL_TRACES_EXPORTER": "otlp", "OTEL_LOGS_EXPORTER": "otlp",
+	}))
+	if err != nil || !tel.Enabled() {
+		t.Fatalf("enabled=%v err=%v", tel.Enabled(), err)
+	}
+	_, span := tel.tp.Tracer("t").Start(context.Background(), "s")
+	span.End()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = tel.Shutdown(ctx)
+	seen.mu.Lock()
+	if len(seen.bodies) != 0 {
+		t.Errorf("exported to the process-environment endpoint: %v", seen.auth)
+	}
+	seen.mu.Unlock()
+
+	// Endpoint from lookup, headers only in the process environment.
+	collector2, seen2 := newCollector(t)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=process")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=process")
+	tel, err = SetupTelemetry(context.Background(), mapLookup(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": collector2.URL, "OTEL_LOGS_EXPORTER": "none",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, span = tel.tp.Tracer("t").Start(context.Background(), "s")
+	span.End()
+	_ = tel.Shutdown(context.Background())
+	seen2.mu.Lock()
+	defer seen2.mu.Unlock()
+	if len(seen2.bodies["/v1/traces"]) == 0 {
+		t.Fatal("no spans reached the lookup endpoint")
+	}
+	if a := seen2.auth["/v1/traces"]; a != "" {
+		t.Errorf("Authorization = %q, want none: the process environment's headers were sent", a)
 	}
 }
 

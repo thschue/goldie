@@ -21,7 +21,7 @@ Variables use the `GOLDIE_` prefix, with one exception: the standard `OTEL_*` Op
 | PC-09 | **Health subcommand.** `goldie health` probes the local admin port and exits non-zero when unhealthy, for images without a shell or `curl`. |
 | PC-10 | **Generated component docs.** Configuration and endpoint reference docs are generated from code (`./run regen`) and CI fails on drift. |
 | PC-11 | **Hardened image.** The image is distroless, non-root and runs with a read-only root filesystem. |
-| PC-12 | **Telemetry.** Traces of the public listener and logs are exported over OTLP http/protobuf, configured by the standard `OTEL_*` variables, and are off unless an endpoint or exporter variable selects them (`OTEL_SDK_DISABLED=true` always turns them off). Goldie validates the variables that select and address the exporters, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER{,_ARG}` and the `OTEL_*_COUNT_LIMIT`/`LENGTH_LIMIT` span limits (PC-04); they fail fast naming the variable, never its value. Other `OTEL_*` variables (batch tuning, timeouts, TLS, compression) keep the SDK's own handling and are not validated. The admin port is never traced, and stdout logs keep PC-07. |
+| PC-12 | **Telemetry.** Traces of the public listener and logs are exported over OTLP http/protobuf, configured by the standard `OTEL_*` variables, and are off unless an endpoint or exporter variable selects them (`OTEL_SDK_DISABLED=true` always turns them off). Goldie validates the variables that select and address the exporters, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER{,_ARG}` and the span limits `OTEL_{SPAN_,}ATTRIBUTE_{VALUE_LENGTH,COUNT}_LIMIT`, `OTEL_SPAN_{EVENT,LINK}_COUNT_LIMIT` and `OTEL_{EVENT,LINK}_ATTRIBUTE_COUNT_LIMIT` (PC-04); they fail fast naming the variable, never its value. Other `OTEL_*` variables (batch tuning, timeouts, TLS, compression) keep the SDK's own handling and are not validated. The admin port is never traced, and stdout logs keep PC-07. |
 
 Changing a clause is a decision: update this file and, when it is hard to reverse, add an ADR.
 
@@ -36,8 +36,8 @@ and running `./run regen`.
   OTLP headers (`OTEL_EXPORTER_OTLP_HEADERS` and its `_TRACES_`/`_LOGS_` forms) accept `_FILE`; for any
   other `OTEL_*` name the SDK would ignore it, so it is an error.
 - Goldie reads each `OTEL_*` variable it validates through the injected lookup and passes the result to the
-  exporters, sampler, span limits and resource explicitly, so the SDK does not re-read the process
-  environment for them. The SDK still reads the other `OTEL_*` variables itself. Goldie validates `OTEL_SDK_DISABLED`,
+  exporters, sampler, span limits and resource explicitly, defaults included, so the SDK's own reading of
+  the process environment for them is overridden. The SDK still reads the other `OTEL_*` variables itself. Goldie validates `OTEL_SDK_DISABLED`,
   `OTEL_EXPORTER_OTLP_{,TRACES_,LOGS_}{ENDPOINT,PROTOCOL,HEADERS}`, `OTEL_{TRACES,LOGS}_EXPORTER`,
   `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER{,_ARG}` and the span limits (a malformed value, such as a pair without `=` or
   a bad percent escape, fails startup). Every OTLP headers variable that is set is checked, and a header
