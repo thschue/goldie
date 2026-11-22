@@ -76,6 +76,12 @@ func search(ctx context.Context, c contract.ClientWithResponsesInterface, q stri
 }
 
 func article(ctx context.Context, c contract.ClientWithResponsesInterface, id string) *sdk.CallToolResult {
+	// An empty or dot-only id would be cleaned out of the article path and
+	// reach another endpoint, so it is refused before any request.
+	if contract.CheckArticleID(id) != nil {
+		return failure(withHint("the article id is empty or made only of dots",
+			"Search for the article with search_knowledge, then use an id from its results."))
+	}
 	resp, err := c.GetArticleWithResponse(ctx, id)
 	if err != nil {
 		return failure(transportError(err))
@@ -115,10 +121,16 @@ func apiError(resp *http.Response, body []byte) error {
 		return fmt.Errorf("the knowledge server answered %d %s", e.Status, status)
 	}
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Hint != "" {
-		msg += "\nHint: " + e.Hint
+	if e.Hint == "" {
+		return errors.New(msg)
 	}
-	return errors.New(msg)
+	return withHint(msg, e.Hint)
+}
+
+// withHint words an error the agent can act on: what went wrong, then the
+// next step.
+func withHint(msg, hint string) error {
+	return errors.New(msg + "\nHint: " + hint)
 }
 
 func list(l []string) string {
