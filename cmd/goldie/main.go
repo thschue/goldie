@@ -107,7 +107,9 @@ func runServer(out io.Writer) error {
 	if err != nil {
 		return handlerError(err)
 	}
-	srv := &platform.Server{Config: cfg, Logger: logger, Ready: platform.NewRegistry(0), App: public, Telemetry: tel}
+	ready := platform.NewRegistry(0)
+	public.Start(ctx, ready)
+	srv := &platform.Server{Config: cfg, Logger: logger, Ready: ready, App: public, Telemetry: tel}
 	return srv.Serve(ctx, force)
 }
 
