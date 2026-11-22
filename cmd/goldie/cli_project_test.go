@@ -9,41 +9,6 @@ import (
 	"testing"
 )
 
-// statusJSON runs status --json in dir and decodes the answer.
-func statusJSON(t *testing.T, dir string, args ...string) map[string]any {
-	t.Helper()
-	out, err := runCLIIn(t, dir, append([]string{"status", "--json"}, args...)...)
-	if err != nil {
-		t.Fatalf("status --json: %v", err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(out), &m); err != nil {
-		t.Fatalf("status --json is not JSON: %v\n%s", err, out)
-	}
-	return m
-}
-
-func TestCLIStatusJSONTokenGiven(t *testing.T) {
-	srv := cliServer(t)
-	cases := []struct {
-		name            string
-		args            []string
-		given, accepted bool
-	}{
-		{"no token", nil, false, false},
-		{"rejected token", []string{"--token", "wrong-token-value"}, true, false},
-		{"accepted token", []string{"--token", cliToken}, true, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			m := statusJSON(t, t.TempDir(), append([]string{"--addr", srv.URL}, c.args...)...)
-			if m["tokenGiven"] != c.given || m["tokenAccepted"] != c.accepted {
-				t.Errorf("tokenGiven=%v tokenAccepted=%v, want %v and %v", m["tokenGiven"], m["tokenAccepted"], c.given, c.accepted)
-			}
-		})
-	}
-}
-
 // gitRepo writes a repository whose .git/config is cfg and returns its path.
 func gitRepo(t *testing.T, cfg string) string {
 	t.Helper()
@@ -128,48 +93,5 @@ func TestCLIProjectOverrideOrder(t *testing.T) {
 	m = statusJSON(t, dir, "--addr", srv.URL)
 	if m["project"] != "github.com/me/detected" || m["projectSource"] != "git remote origin" {
 		t.Errorf("detection: %v from %v", m["project"], m["projectSource"])
-	}
-}
-
-func TestCLIStatusNeverPrintsRemoteCredentials(t *testing.T) {
-	srv := cliServer(t)
-	const secret = "ghp_s3cretTokenValue"
-	dir := gitRepo(t, "[remote \"origin\"]\n\turl = https://user:"+secret+"@github.com/acme/widgets.git\n")
-	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
-		out, err := runCLIIn(t, dir, append(args, "--addr", srv.URL)...)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(out, secret) || strings.Contains(out, "user:") {
-			t.Errorf("%v leaks the remote's userinfo:\n%s", args, out)
-		}
-		if !strings.Contains(out, "github.com/acme/widgets") {
-			t.Errorf("%v lacks the Project:\n%s", args, out)
-		}
-	}
-	// A credential in an unreadable value never reaches the output. status
-	// reports the problem on its Project: line and exits 0 (#145).
-	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
-		out, err := runCLIIn(t, t.TempDir(), append(args, "--addr", srv.URL, "--project", "user:"+secret+"@host")...)
-		if err != nil {
-			t.Errorf("%v: err = %v, want exit 0 with the problem reported", args, err)
-			continue
-		}
-		for _, leak := range []string{secret, "user:", "@host"} {
-			if strings.Contains(out, leak) {
-				t.Errorf("%v leaks %q:\n%s", args, leak, out)
-			}
-		}
-		if args[len(args)-1] == "status" && !strings.HasPrefix(projectLine(t, out), "Project:") {
-			t.Errorf("%v: no Project: line in:\n%s", args, out)
-		}
-		if len(args) == 2 && !strings.Contains(out, "projectError") {
-			t.Errorf("%v lacks projectError:\n%s", args, out)
-		}
-	}
-	// Commands that still fail on a bad Project never echo the credential in the error.
-	_, err := runCLIIn(t, t.TempDir(), "search", "kubernetes", "--addr", srv.URL, "--project", "user:"+secret+"@host")
-	if err == nil || strings.Contains(err.Error(), secret) {
-		t.Errorf("search err = %v, want an error without the credential", err)
 	}
 }

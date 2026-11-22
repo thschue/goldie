@@ -200,10 +200,9 @@ func whoami(t *testing.T, opts platform.Config) *publicMux {
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
-	m, ok := h.(*publicMux)
-	if !ok {
-		t.Fatalf("PublicHandler returned %T, want the *publicMux the probe route is registered on", h)
-	}
+	// *Public embeds the *publicMux it serves from, so a route registered on
+	// it is served by h.
+	m := h.publicMux
 	m.HandleFunc("GET /v2/whoami", func(w http.ResponseWriter, r *http.Request) {
 		name, ok := api.TokenName(r.Context())
 		if !ok {
