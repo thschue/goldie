@@ -102,8 +102,13 @@ func (s *Syncer) load() (snap *Snapshot, rev string, err error) {
 }
 
 // Run polls once at once, then on every tick of interval, and returns when ctx
-// ends. Failed polls are recorded in Status and do not stop Run.
+// ends. Failed polls are recorded in Status and do not stop Run. An interval of
+// zero or less means no periodic polling: Run polls once and returns.
 func (s *Syncer) Run(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		_ = s.Poll()
+		return
+	}
 	ticks, stop := s.newTicker(interval)
 	defer stop()
 	_ = s.Poll()

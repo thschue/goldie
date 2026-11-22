@@ -168,6 +168,16 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 	<-stopped
 }
 
+func TestSyncerRunWithoutIntervalPollsOnce(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second} {
+		s := NewSyncer(plainSource{})
+		s.Run(context.Background(), d) // must return, not panic or block
+		if s.Current() == nil {
+			t.Fatalf("interval %v: Run must poll once", d)
+		}
+	}
+}
+
 func TestRedactLeavesNoCredentialsOrAddresses(t *testing.T) {
 	for _, tc := range []struct{ msg, leak string }{
 		{"Authorization: Bearer SECRET0 rejected", "SECRET0"},
