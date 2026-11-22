@@ -155,7 +155,7 @@ func TestSpecUsesOneCanonicalExampleProjectID(t *testing.T) {
 	if raw, _ := json.Marshal(doc.Components.Schemas["ProjectList"]); !strings.Contains(string(raw), id) {
 		t.Errorf("ProjectList examples do not use %q: %s", id, raw)
 	}
-	if strings.Contains(string(spec), "github.com/acme/shop") {
+	if strings.Contains(string(spec), "github.com/acme/payments") {
 		t.Error("the spec still uses the example id github.com/acme/payments")
 	}
 	var hintExample bool
