@@ -14,7 +14,7 @@
 #   ./run red-check [base]  the PR's new tests must fail on <base> (origin/main)
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
-#   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint reference docs)
+#   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs)
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run versions   print the toolchain versions this repository expects
@@ -286,6 +286,7 @@ cmd_test() {
 # Generated files, relative to the repository root.
 CONTRACT_SPEC=internal/contract/openapi.yaml
 CONTRACT_DOCS=docs/reference/api.md
+CONFIG_DOCS=docs/reference/configuration.md
 CONTRACT_CONFIG=internal/contract/oapi-codegen.yaml
 CONTRACT_GEN=internal/contract/contract.gen.go
 
@@ -310,7 +311,9 @@ cmd_regen() {
 	say "regen: endpoint reference docs"
 	mkdir -p "$(dirname "$CONTRACT_DOCS")"
 	go run ./internal/contract/cmd/refdocs "$CONTRACT_SPEC" "$CONTRACT_DOCS" || die "cannot generate $CONTRACT_DOCS"
-	# TypeScript types and configuration docs register here as their issues land.
+	say "regen: configuration reference docs"
+	go run ./internal/platform/cmd/configdocs "$CONFIG_DOCS" || die "cannot generate $CONFIG_DOCS"
+	# TypeScript types register here as their issue lands.
 }
 
 # drift <spec>: succeed when the committed generated code equals a fresh
@@ -329,24 +332,33 @@ drift() {
 	return "$status"
 }
 
-# docs_drift <spec>: the same for the endpoint reference docs.
+# docs_drift <committed> <generator...>: succeed when <committed> equals the
+# output of the generator, which is run with a temporary output path appended.
+# Returns 1 when they differ and dies when they cannot be compared.
 docs_drift() {
+	committed=$1
+	shift
 	fresh=$(mktemp) || die "cannot create a temporary file for the docs drift check"
-	if ! go run ./internal/contract/cmd/refdocs "$1" "$fresh"; then
+	if ! "$@" "$fresh"; then
 		rm -f "$fresh"
-		die "refdocs failed for $1"
+		die "generator failed: $*"
 	fi
 	status=0
-	cmp -s "$fresh" "$CONTRACT_DOCS" || status=$?
+	cmp -s "$fresh" "$committed" || status=$?
 	rm -f "$fresh"
-	[ "$status" -le 1 ] || die "cannot compare $CONTRACT_DOCS with a fresh generation (cmp exit $status)"
+	[ "$status" -le 1 ] || die "cannot compare $committed with a fresh generation (cmp exit $status)"
 	return "$status"
 }
+
+# Endpoint reference docs from <spec>; configuration docs from the registry.
+refdocs_drift() { docs_drift "$CONTRACT_DOCS" go run ./internal/contract/cmd/refdocs "$1"; }
+configdocs_drift() { docs_drift "${1:-$CONFIG_DOCS}" go run ./internal/platform/cmd/configdocs; }
 
 cmd_regen_check() {
 	say "regen drift check (generated code and docs must match the spec)"
 	drift "$CONTRACT_SPEC" || die "$CONTRACT_GEN is out of date with $CONTRACT_SPEC (run: ./run regen)"
-	docs_drift "$CONTRACT_SPEC" || die "$CONTRACT_DOCS is out of date with $CONTRACT_SPEC (run: ./run regen)"
+	refdocs_drift "$CONTRACT_SPEC" || die "$CONTRACT_DOCS is out of date with $CONTRACT_SPEC (run: ./run regen)"
+	configdocs_drift || die "$CONFIG_DOCS is out of date with the settings registry (run: ./run regen)"
 }
 
 # The drifted fixture is a spec the committed generated code was not made from:
@@ -356,8 +368,11 @@ cmd_regen_fixture() {
 	if drift testdata/openapi/drifted.yaml; then
 		die "drift check did not fire for testdata/openapi/drifted.yaml"
 	fi
-	if docs_drift testdata/openapi/drifted.yaml; then
+	if refdocs_drift testdata/openapi/drifted.yaml; then
 		die "docs drift check did not fire for testdata/openapi/drifted.yaml"
+	fi
+	if configdocs_drift testdata/config/drifted.md; then
+		die "config docs drift check did not fire for testdata/config/drifted.md"
 	fi
 }
 

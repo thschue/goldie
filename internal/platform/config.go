@@ -48,14 +48,14 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		return v
 	}
 	cfg := Config{
-		Addr:      str(EnvAddr, ":8080"),
-		AdminAddr: str(EnvAdminAddr, ":8081"),
-		LogLevel:  strings.ToLower(str(EnvLogLevel, "info")),
+		Addr:      str(EnvAddr, def(EnvAddr)),
+		AdminAddr: str(EnvAdminAddr, def(EnvAdminAddr)),
+		LogLevel:  strings.ToLower(str(EnvLogLevel, def(EnvLogLevel))),
 	}
 	if _, err := ParseLevel(cfg.LogLevel); err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvLogLevel, err))
 	}
-	secs := 25
+	secs, _ := strconv.Atoi(def(EnvDrainSeconds))
 	if raw := str(EnvDrainSeconds, ""); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 0 || n > 3600 {

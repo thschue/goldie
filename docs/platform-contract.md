@@ -22,14 +22,11 @@ Variables use the `GOLDIE_` prefix. Implementation lives in `internal/platform`.
 
 Changing a clause is a decision: update this file and, when it is hard to reverse, add an ADR.
 
-## Settings and endpoints (skeleton)
+## Settings and endpoints
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `GOLDIE_ADDR` | `:8080` | Public (app) listener. |
-| `GOLDIE_ADMIN_ADDR` | `:8081` | Admin listener: `/livez`, `/readyz`, `/version`. Must differ from `GOLDIE_ADDR`. |
-| `GOLDIE_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
-| `GOLDIE_DRAIN_SECONDS` | `25` | Time between failing readiness on SIGTERM and shutting the listeners down. `0` to `3600`. |
+The settings are documented in the generated [configuration reference](reference/configuration.md),
+rendered from the registry in `internal/platform/settings.go`. Add a variable by adding a row there
+and running `./run regen`.
 
 - Any variable accepts a `NAME_FILE` form that reads the value from a file; setting both is an error.
   Errors name the variable, never its value or the file path.
@@ -43,5 +40,5 @@ Changing a clause is a decision: update this file and, when it is hard to revers
   After the drain, in-flight requests get up to 30 s to finish; past that the server exits non-zero.
   Set the pod's termination grace period above `GOLDIE_DRAIN_SECONDS` plus that 30 s.
 - The public endpoints are documented in the generated [API reference](reference/api.md)
-  (`./run regen`; `./run check` fails on drift). The configuration docs of PC-10 and PC-11 (image)
-  have their own issues; the tables above are hand-written until `./run regen` generates them.
+  (`./run regen`; `./run check` fails on drift), as is the configuration reference (PC-10). The image
+  of PC-11 has its own issue.
