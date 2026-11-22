@@ -139,9 +139,10 @@ type commander struct {
 	http *http.Client
 }
 
-// client builds the generated client for the configured address. It sends the
-// token, when there is one, as a bearer token.
-func (c *commander) client(needToken bool) (*contract.ClientWithResponses, error) {
+// client builds the generated client for the configured address. With
+// withToken it sends the token as a bearer token and fails when there is none;
+// without, it sends no token, for the public routes such as /openapi.json.
+func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error) {
 	if c.s.addr == "" {
 		return nil, fmt.Errorf("no server address: set --addr or %s", EnvAddr)
 	}
@@ -149,11 +150,11 @@ func (c *commander) client(needToken bool) (*contract.ClientWithResponses, error
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, errors.New("the server address must be an http:// or https:// URL")
 	}
-	if needToken && c.s.token == "" {
+	if withToken && c.s.token == "" {
 		return nil, fmt.Errorf("no token: set --token, %s or %s_FILE", EnvToken, EnvToken)
 	}
 	opts := []contract.ClientOption{contract.WithHTTPClient(c.http)}
-	if c.s.token != "" {
+	if withToken {
 		token := c.s.token
 		opts = append(opts, contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set("Authorization", "Bearer "+token)

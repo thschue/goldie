@@ -261,6 +261,39 @@ func TestCLIVersionIgnoresUnusableClientSettings(t *testing.T) {
 	}
 }
 
+// /openapi.json is public, so status and version never send the token there;
+// status still sends it to the token check.
+func TestCLIKeepsTokenOffPublicRoutes(t *testing.T) {
+	var docAuth, searchAuth []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/openapi.json" {
+			docAuth = append(docAuth, r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"info":{"title":"Stub","version":"1"}}`))
+			return
+		}
+		searchAuth = append(searchAuth, r.Header.Get("Authorization"))
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer srv.Close()
+	for _, cmd := range []string{"status", "version"} {
+		if _, err := runCLI(t, cmd, "--addr", srv.URL, "--token", cliToken); err != nil {
+			t.Fatalf("%s: %v", cmd, err)
+		}
+	}
+	if len(docAuth) != 2 {
+		t.Fatalf("/openapi.json fetched %d times, want 2", len(docAuth))
+	}
+	for _, a := range docAuth {
+		if a != "" {
+			t.Errorf("/openapi.json got Authorization %q, want none", a)
+		}
+	}
+	if len(searchAuth) != 1 || searchAuth[0] != "Bearer "+cliToken {
+		t.Errorf("token check got Authorization %q, want the bearer token", searchAuth)
+	}
+}
+
 // The usage line names the program once, before the server and client
 // commands alike.
 func TestCLIUsageNamesProgramOnce(t *testing.T) {

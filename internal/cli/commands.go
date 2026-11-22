@@ -82,6 +82,7 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 // status reports whether the server answers and whether it accepts the token.
 // The API has no status or sync route yet (that is the sync work, #6), so this
 // reports only what the contract supports: the API document and one search.
+// The token goes only to the search, never to the public API document.
 //
 // TODO(#6): the token probe is a real search, so it will count as search and
 // Miss activity once those are recorded. Replace it with the status route.
@@ -101,7 +102,11 @@ func (c *commander) status(ctx context.Context) error {
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
 	if c.s.token != "" {
-		resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
+		authed, err := c.client(true)
+		if err != nil {
+			return err
+		}
+		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
 		switch {
 		case err != nil:
 			return unreachable()
