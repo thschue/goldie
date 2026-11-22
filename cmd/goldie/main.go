@@ -44,12 +44,23 @@ func run(args []string, out io.Writer) error {
 		return runServer(out)
 	case "health":
 		return runHealth(args[1:])
+	case "mcp":
+		return runMCP(args[1:])
 	}
 	return usageError()
 }
 
 func usageError() error {
-	return errors.New("usage: goldie server | health [--ready] | " + cli.Usage)
+	return errors.New("usage: goldie server | health [--ready] | " + app.MCPUsage + " | " + cli.Usage)
+}
+
+// runMCP serves MCP on stdin and stdout until the client closes stdin or a
+// SIGTERM or SIGINT arrives. Errors go to stderr through main: stdout carries
+// only MCP messages.
+func runMCP(args []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return app.RunMCP(ctx, args, cli.DefaultEnv(io.Discard), os.Stdin, os.Stdout)
 }
 
 // runServer starts the server and blocks until it stops. The first SIGTERM or
