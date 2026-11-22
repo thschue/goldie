@@ -3,11 +3,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract"
@@ -244,6 +247,40 @@ func (e *ConfigError) Error() string { return e.err.Error() }
 
 func (e *ConfigError) Unwrap() error { return e.err }
 
+// sourceDirCheck is the name of the dir Source's readiness check (PC-02).
+const sourceDirCheck = "source:dir"
+
+// dirPollInterval is how often the dir Source is polled for changed content.
+const dirPollInterval = 30 * time.Second
+
+// Public is the handler of the public listener and the owner of its Source's
+// Syncer. It embeds the router, so it is an http.Handler and counts rate limit rejections. Until Start runs, it serves the content PublicHandler loaded.
+type Public struct {
+	*publicMux
+	syncer *engine.Syncer
+	once   sync.Once
+}
+
+// Start runs the dir Source's poll loop until ctx ends and registers its
+// readiness check, "source:dir", with reg. It does not block. The check is
+// ready while the Syncer holds a Snapshot, so a stale Source stays ready and
+// no error reaches /readyz (PC-02). Only the first call starts a loop; every
+// call registers the check, which replaces itself.
+func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
+	reg.Add(sourceDirCheck, func(context.Context) error {
+		if p.syncer.Current() == nil {
+			return errors.New("no snapshot")
+		}
+		return nil
+	})
+	p.once.Do(func() {
+		if ctx.Err() != nil {
+			return
+		}
+		go p.syncer.Run(ctx, dirPollInterval)
+	})
+}
+
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
 // the Config LoadConfig returned, used as is, and the server's component
 // logger (nil discards). It loads the dir Source and serves the API under
@@ -256,7 +293,7 @@ func (e *ConfigError) Unwrap() error { return e.err }
 // and none its value, so the server fails at startup (PC-04) and the operator
 // fixes them all in one restart.
 // Platform stays unaware of the contract: this is where the two meet.
-func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, error) {
+func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	var errs []error
 	tokens, err := apiTokens(cfg)
 	if err != nil {
@@ -293,5 +330,5 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, erro
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
 	m.mux.Handle("/", notFound)
-	return m, nil
+	return &Public{publicMux: m, syncer: syncer}, nil
 }
