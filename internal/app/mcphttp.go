@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -44,9 +45,14 @@ const mcpIOTimeout = 10 * time.Second
 // The SDK's localhost Host check is off: it guards unauthenticated local
 // servers against DNS rebinding, but here every request needs the token, and
 // it would reject a reverse proxy on the same host as the /api/ paths are not.
-func addMCP(m *publicMux, api http.Handler) {
+//
+// A panic in api is recovered into the 500 envelope and logged to logger, the
+// server's component logger, as one line naming the API request's method and
+// path.
+func addMCP(m *publicMux, api http.Handler, logger *slog.Logger) {
+	t := handlerTransport{h: api, log: logger}
 	h := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
-		return gmcp.New(inProcessClient(api, r.Header.Get("Authorization")))
+		return gmcp.New(transportClient(t, r.Header.Get("Authorization")))
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true})
 	m.handle(http.MethodPost, mcpPath, withDeadline(mcpIOTimeout, h))
 }
@@ -67,10 +73,20 @@ func withDeadline(d time.Duration, h http.Handler) http.Handler {
 }
 
 // inProcessClient is a contract client that hands each request to api and
-// sends authorization as its Authorization header.
+// sends authorization as its Authorization header. A recovered panic in api
+// is not logged.
 func inProcessClient(api http.Handler, authorization string) contract.ClientInterface {
+	return transportClient(handlerTransport{h: api, log: discardLogger}, authorization)
+}
+
+// discardLogger drops every record.
+var discardLogger = slog.New(slog.DiscardHandler)
+
+// transportClient is a contract client that hands each request to t and sends
+// authorization as its Authorization header.
+func transportClient(t handlerTransport, authorization string) contract.ClientInterface {
 	c, err := contract.NewClient(inProcessBase,
-		contract.WithHTTPClient(&http.Client{Transport: handlerTransport{api}}),
+		contract.WithHTTPClient(&http.Client{Transport: t}),
 		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set("Authorization", authorization)
 			return nil
@@ -86,8 +102,14 @@ func inProcessClient(api http.Handler, authorization string) contract.ClientInte
 // no listener, no address, no network. The MCP SDK calls it on a tool
 // goroutine that recovers nothing, so a panic in h is recovered here, as
 // net/http would for a request, and answered with the 500 envelope instead of
-// ending the process. The panic value is never passed on.
-type handlerTransport struct{ h http.Handler }
+// ending the process. The recovery is logged to log as one line with the
+// request's method and escaped path, so the operator the envelope points at
+// finds an entry. The panic value is never passed on, nor logged: it may hold
+// anything the handler had, a credential included.
+type handlerTransport struct {
+	h   http.Handler
+	log *slog.Logger
+}
 
 func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.Body == nil {
@@ -96,6 +118,10 @@ func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	w := &responseBuffer{header: http.Header{}}
 	if serveRecovered(t.h, w, r) {
+		// EscapedPath percent-encodes control characters, so the caller's
+		// path cannot forge a line even in a sink that is not JSON.
+		t.log.ErrorContext(r.Context(), "recovered a panic in an API handler behind /mcp",
+			"method", r.Method, "path", r.URL.EscapedPath())
 		w = &responseBuffer{header: http.Header{}}
 		api.WriteError(w, http.StatusInternalServerError, "internal_error", "the server could not answer",
 			"Retry the request; if it keeps failing, ask the operator to check the server logs.")
