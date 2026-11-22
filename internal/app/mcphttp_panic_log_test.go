@@ -205,6 +205,7 @@ func TestMCPOverHTTPAdvertisesToolsAndNotLogging(t *testing.T) {
 	if caps == nil || caps.Tools == nil {
 		t.Fatalf("the server does not advertise tools: %+v", caps)
 	}
+	//nolint:staticcheck // SA1019: checking the deprecated logging capability is absent is the point.
 	if caps.Logging != nil {
 		t.Errorf("the server advertises the logging capability: %+v", caps.Logging)
 	}
