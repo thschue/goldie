@@ -81,12 +81,17 @@ const EnvToken = "GOLDIE_TOKEN"
 // the detection from git remotes and is overridden by --project.
 const EnvProject = "GOLDIE_PROJECT"
 
+// EnvDir is the directory of content the client commands serve from an
+// embedded server, so they need no server started by hand. --dir overrides it.
+const EnvDir = "GOLDIE_DIR"
+
 // ClientSettings lists the variables the client commands (search, lookup,
 // status, version) and goldie mcp --transport stdio read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
 	{Name: EnvAddr, Meaning: "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
 	{Name: EnvToken, Secret: true, Meaning: "The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
+	{Name: EnvDir, Meaning: "A directory of content (global/articles under it). search, lookup, status and goldie mcp --transport stdio start an embedded server over it on loopback, with its own random token, and stop it when they end; --dir overrides it. Setting it together with --addr, or with GOLDIE_ADDR when --dir is not given, is an error; an explicit --dir wins over GOLDIE_ADDR in the environment, and GOLDIE_TOKEN is ignored. Content that does not load stops the command. version ignores it."},
 	{Name: EnvProject, Meaning: "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it."},
 }
 
@@ -142,7 +147,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
 	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")
-	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR and GOLDIE_TOKEN).\n")
+	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR, GOLDIE_TOKEN and GOLDIE_DIR).\n")
 	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
 	table(&b, ClientSettings)
 	return []byte(b.String())
