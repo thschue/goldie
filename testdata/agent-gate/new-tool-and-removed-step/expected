@@ -1,0 +1,2 @@
+gate: new pinned tool: github.com/example/compat
+gate: step removed from ./run check: cmd_fmt

@@ -1,0 +1,67 @@
+#!/bin/sh
+# loop-poll: the cheap first step of every loop tick (docs/agents/label-contract.md).
+#
+#   scripts/loop-poll <issue-worker|review|pm-audit>
+#
+# Prints one line:
+#   main=<green|red|pending|unknown> red=<other red workflows on main, or -> work=<n> fingerprint=<hash>
+# main is the state of the `ci` workflow on the head of main (red stops the
+# line). work counts what the loop could act on now; 0 lets the tick end
+# without further reasoning. pm-audit compares the fingerprint (main, open
+# issues, open PR heads and labels) with its ledger instead. Read-only.
+set -eu
+
+die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
+[ $# -eq 1 ] || die "usage: scripts/loop-poll <issue-worker|review|pm-audit>"
+loop=$1
+
+main_sha=$(gh api 'repos/{owner}/{repo}/commits/main' --jq .sha) || die "cannot read main"
+
+# Latest run of each workflow on main's head.
+runs=$(gh run list --branch main --limit 30 --json workflowName,headSha,status,conclusion \
+	--jq "[.[] | select(.headSha == \"$main_sha\")] | group_by(.workflowName) | map(.[0])") ||
+	die "cannot list workflow runs"
+main=$(printf '%s' "$runs" | jq -r '
+	(map(select(.workflowName == "ci")) | .[0]) as $ci
+	| if $ci == null then "unknown"
+	  elif $ci.status != "completed" then "pending"
+	  elif $ci.conclusion == "success" then "green"
+	  else "red" end')
+red=$(printf '%s' "$runs" | jq -r '
+	[.[] | select(.workflowName != "ci" and .status == "completed"
+		and (.conclusion == "failure" or .conclusion == "timed_out"))
+		| .workflowName] | if length == 0 then "-" else join(",") end')
+
+case "$loop" in
+issue-worker)
+	rework=$(gh pr list --author @me --label changes-requested --json number,labels \
+		--jq '[.[] | select([.labels[].name] | index("needs-info") | not)] | length')
+	inflight=$(gh issue list --label in-progress --json number --jq length)
+	frontier=$(gh issue list --label ready-for-agent --search 'no:assignee -label:in-progress -label:epic' \
+		--json number --jq length)
+	work=$((rework + inflight + frontier))
+	;;
+review)
+	# Ready PRs that aren't parked, handed back, held or already armed.
+	work=$(gh pr list --json number,isDraft,labels,headRefName,autoMergeRequest,author --jq '
+		[.[] | select(.isDraft | not)
+			| select(.headRefName | startswith("release-please--") | not)
+			| select(.author.is_bot | not)
+			| select(.autoMergeRequest == null)
+			| select([.labels[].name] | (index("needs-info") or index("changes-requested") or index("needs-maintainer")) | not)
+		] | length')
+	;;
+pm-audit) work=- ;;
+*) die "unknown loop: $loop" ;;
+esac
+
+fingerprint=$(
+	{
+		printf '%s\n' "$main_sha"
+		gh issue list --state open --limit 500 --json number,updatedAt --jq '.[] | "\(.number) \(.updatedAt)"'
+		gh pr list --state open --limit 200 --json number,headRefOid,labels \
+			--jq '.[] | "\(.number) \(.headRefOid) \([.labels[].name] | sort | join(","))"'
+	} | git hash-object --stdin
+) || die "cannot compute the fingerprint"
+
+printf 'main=%s red=%s work=%s fingerprint=%s\n' "$main" "$red" "$work" "$fingerprint"

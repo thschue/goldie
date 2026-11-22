@@ -1,0 +1,11 @@
+#!/bin/sh
+LINT_VERSION=v1.1.0
+lint() { go run "github.com/example/lint/cmd/lint@${LINT_VERSION}" "$@"; }
+cmd_fmt() { :; }
+cmd_test() { :; }
+cmd_vet() { :; }
+cmd_check() {
+	cmd_fmt
+	cmd_vet
+	cmd_test
+}

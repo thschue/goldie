@@ -1,0 +1,66 @@
+#!/bin/sh
+# loop-guard: a Claude Code PreToolUse hook for the Bash tool (ADR 0012).
+#
+# Reads the hook input JSON on stdin and blocks (exit 2, reason on stderr)
+# the commands no agent in this repository may run, whatever its instructions
+# say. It is defence in depth under the loop specs, not a replacement for
+# them: it matches command text, so it catches mistakes, not a determined
+# attacker. Registered in .claude/settings.json; fixtures in
+# testdata/loop-guard/cases.tsv, run by `./run guard-fixture`.
+set -eu
+
+deny() { printf 'loop-guard: %s\n' "$*" >&2; exit 2; }
+
+command -v jq >/dev/null 2>&1 || deny "jq is required by the loop-guard hook; install jq"
+cmd=$(jq -r '.tool_input.command // empty') || deny "cannot parse the hook input"
+[ -n "$cmd" ] || exit 0
+
+has() { printf '%s\n' "$cmd" | grep -Eq -- "$1"; }
+
+# Command position: the start of the line, or after a shell separator.
+word='(^|[;&|(`])[[:space:]]*'
+end='([[:space:]]|$)'
+
+# --- git push ----------------------------------------------------------------
+if has "${word}git${end}" && has "${word}push${end}|git[[:space:]]+push"; then
+	if has "[[:space:]:+](refs/heads/)?main${end}"; then
+		deny "never push to main; open a PR"
+	fi
+	if has "[[:space:]](-f|--force|--force-if-includes)${end}|[[:space:]]\+[^[:space:]]+(:|${end})"; then
+		deny "force-push only with --force-with-lease=<branch>:<expected sha>"
+	fi
+	if has "[[:space:]](--delete|-d)${end}|[[:space:]]:[^[:space:]]+${end}"; then
+		deny "loops never delete remote branches"
+	fi
+fi
+
+# --- merging -------------------------------------------------------------------
+if has "gh[[:space:]]+pr[[:space:]]+merge${end}"; then
+	has "[[:space:]]--admin${end}" && deny "never merge with --admin"
+	if ! has "[[:space:]]--disable-auto${end}"; then
+		has "[[:space:]]--auto${end}" || deny "merge only through auto-merge (--auto)"
+		has "[[:space:]]--match-head-commit[[:space:]=]" || deny "auto-merge only with --match-head-commit <reviewed sha>"
+	fi
+fi
+if has "${word}gh[[:space:]]+api${end}"; then
+	write='(-X|--method)[[:space:]=]*(POST|PUT|PATCH|DELETE)'
+	if has "pulls/[0-9]+/merge" && has "(-X|--method)[[:space:]=]*PUT"; then
+		deny "never merge through the API; use gh pr merge --auto --match-head-commit"
+	fi
+	if has "/(rulesets|protection|collaborators|hooks|actions/secrets|actions/permissions)" && has "$write"; then
+		deny "repository settings, rulesets, secrets and webhooks are the maintainer's"
+	fi
+fi
+if has "gh[[:space:]]+(repo[[:space:]]+(delete|edit|rename|archive)|label[[:space:]]+delete|secret|ruleset)${end}"; then
+	deny "repository settings, labels and secrets are the maintainer's"
+fi
+
+# --- containers, clusters and clouds -----------------------------------------
+if has "${word}(docker|podman|kubectl|kind|minikube|gcloud|aws|az|terraform|tofu)${end}"; then
+	deny "no containers, clusters or cloud CLIs"
+fi
+if has "${word}helm${end}" && ! has "${word}helm[[:space:]]+(lint|template)${end}"; then
+	deny "only helm lint and helm template are allowed"
+fi
+
+exit 0

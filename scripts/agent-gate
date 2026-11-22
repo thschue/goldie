@@ -1,0 +1,148 @@
+#!/bin/sh
+# agent-gate: decide whether a change needs the maintainer (ADR 0012).
+#
+#   scripts/agent-gate <base> <head>
+#
+# Prints one "gate: <reason>" line per reason and exits 1 when there is any,
+# 0 when the change may auto-merge, 2 on a usage or git error. <base> and
+# <head> are git revisions; the diff is <base>...<head> (from the merge base),
+# without rename detection, the same measure the review loop uses.
+#
+# Human gates are kept for security and product direction only:
+#   - agent guardrails, the decision record, CI/release/architecture
+#     enforcement, deployment, and this gate itself (by path);
+#   - a new direct Go dependency, a new web dependency, or a new pinned tool
+#     (`<module>@<version>`) in `run` or `scripts/`;
+#   - a step removed from `./run check`;
+#   - a breaking change to the API contract (ADR 0011), through
+#     `./run contract-compat` ($GATE_RUN overrides which `run` is used, so CI
+#     can run main's copy against a PR).
+# Version bumps of existing modules, indirect requirements and go.sum churn
+# are not gated. Run it from the repository root.
+set -eu
+LC_ALL=C
+export LC_ALL
+
+die() { printf 'agent-gate: %s\n' "$*" >&2; exit 2; }
+
+[ $# -eq 2 ] || die "usage: scripts/agent-gate <base> <head>"
+base=$1
+head=$2
+git rev-parse --verify --quiet "$base^{commit}" >/dev/null || die "unknown revision: $base"
+git rev-parse --verify --quiet "$head^{commit}" >/dev/null || die "unknown revision: $head"
+mb=$(git merge-base "$base" "$head") || die "no merge base between $base and $head"
+
+reasons=$(mktemp) || die "cannot create a temporary file"
+trap 'rm -f "$reasons"' EXIT INT TERM
+gate() { printf 'gate: %s\n' "$*" >>"$reasons"; }
+
+# show <rev> <path>: the file at that revision, or nothing when it is absent.
+show() { git show "$1:$2" 2>/dev/null || true; }
+
+# --- 1. Gated paths -----------------------------------------------------------
+files=$(git diff --name-only --no-renames "$mb" "$head") || die "git diff failed"
+printf '%s\n' "$files" | while IFS= read -r f; do
+	case "$f" in
+	docs/agents/* | .claude/* | CLAUDE.md | AGENTS.md | SECURITY.md)
+		gate "agent guardrail changed: $f" ;;
+	CONTEXT.md | docs/adr/* | docs/design/* | LICENSE | NOTICE)
+		gate "decision record changed: $f" ;;
+	.github/* | release-please-config.json | .goreleaser.*)
+		gate "CI or release configuration changed: $f" ;;
+	.golangci.* | testdata/depguard/*)
+		gate "architecture enforcement changed: $f" ;;
+	scripts/agent-gate | scripts/loop-guard | testdata/agent-gate/* | testdata/loop-guard/*)
+		gate "agent gate changed: $f" ;;
+	deploy/* | Dockerfile | */Dockerfile)
+		gate "deployment changed: $f" ;;
+	esac
+done
+
+# --- 2. New direct Go dependencies -------------------------------------------
+# direct_requires: module paths required without "// indirect", from both the
+# block form and the single-line form of `require`.
+direct_requires() {
+	awk '
+		/^require[ \t]*\(/ { inblock = 1; next }
+		inblock && /^\)/ { inblock = 0; next }
+		inblock { line = $0 }
+		!inblock && /^require[ \t]/ { line = $0; sub(/^require[ \t]+/, "", line) }
+		line != "" {
+			sub(/^[ \t]+/, "", line)
+			if (line !~ /\/\/[ \t]*indirect/) { split(line, w, /[ \t]+/); if (w[1] != "") print w[1] }
+			line = ""
+		}
+	' | sort -u
+}
+new_lines() { # new_lines <old> <new>: lines in <new> that are not in <old>
+	printf '%s\n' "$1" | sed '/^$/d' | sort -u >"$reasons.old"
+	printf '%s\n' "$2" | sed '/^$/d' | sort -u | comm -13 "$reasons.old" -
+	rm -f "$reasons.old"
+}
+if printf '%s\n' "$files" | grep -qx 'go.mod'; then
+	old=$(show "$mb" go.mod | direct_requires)
+	new=$(show "$head" go.mod | direct_requires)
+	for m in $(new_lines "$old" "$new"); do gate "new direct Go dependency: $m"; done
+fi
+
+# --- 3. New web dependencies ---------------------------------------------------
+if printf '%s\n' "$files" | grep -qx 'web/package.json'; then
+	command -v jq >/dev/null 2>&1 || die "jq is required to read web/package.json"
+	deps='[(.dependencies // {}), (.devDependencies // {}), (.optionalDependencies // {}), (.peerDependencies // {})] | add | keys[]'
+	old=$(show "$mb" web/package.json | jq -r "$deps" 2>/dev/null || true)
+	new=$(show "$head" web/package.json | jq -r "$deps") || die "web/package.json at $head is not valid JSON"
+	for m in $(new_lines "$old" "$new"); do gate "new web dependency: $m"; done
+fi
+
+# --- 4. New pinned tools -------------------------------------------------------
+# A tool is pinned as "<module path>@<version or variable>" in `run` or a
+# script, and run through `go run`. A new module path is a new dependency.
+tool_pins() {
+	grep -oE '[a-z0-9.-]+\.[a-z]{2,}/[A-Za-z0-9._~/-]+@' | sed 's/@$//' | sort -u
+}
+pin_files() { # pin_files <rev>: the contents of `run` and every script at <rev>
+	show "$1" run
+	for s in $(git ls-tree -r --name-only "$1" -- scripts 2>/dev/null); do show "$1" "$s"; done
+}
+if printf '%s\n' "$files" | grep -qE '^(run|scripts/.*)$'; then
+	old=$(pin_files "$mb" | tool_pins)
+	new=$(pin_files "$head" | tool_pins)
+	for m in $(new_lines "$old" "$new"); do gate "new pinned tool: $m"; done
+fi
+
+# --- 5. Steps removed from ./run check ----------------------------------------
+# The steps are the cmd_* calls in the bodies of cmd_check and its groups.
+check_steps() {
+	awk '/^cmd_check[a-z_]*\(\)/ { on = 1; next } on && /^}/ { on = 0 } on { split($0, w, /[ \t]+/); step = (w[1] == "" ? w[2] : w[1]); if (step ~ /^cmd_[a-z_]+$/) print step }' | sort -u
+}
+if printf '%s\n' "$files" | grep -qx 'run'; then
+	old=$(show "$mb" run | check_steps)
+	new=$(show "$head" run | check_steps)
+	for s in $(new_lines "$new" "$old"); do gate "step removed from ./run check: $s"; done
+fi
+
+# --- 6. Breaking API contract changes ------------------------------------------
+spec=internal/contract/openapi.yaml
+if printf '%s\n' "$files" | grep -qx "$spec" && git cat-file -e "$mb:$spec" 2>/dev/null; then
+	if ! git cat-file -e "$head:$spec" 2>/dev/null; then
+		gate "API contract removed: $spec"
+	else
+		git show "$mb:$spec" >"$reasons.old.yaml"
+		git show "$head:$spec" >"$reasons.new.yaml"
+		status=0
+		"${GATE_RUN:-$(git rev-parse --show-toplevel)/run}" contract-compat \
+			"$reasons.old.yaml" "$reasons.new.yaml" >/dev/null 2>&1 || status=$?
+		rm -f "$reasons.old.yaml" "$reasons.new.yaml"
+		case "$status" in
+		0) ;;
+		1) gate "breaking API contract change (ADR 0011; details: ./run contract-compat)" ;;
+		*) gate "API contract compatibility could not be checked (exit $status)" ;;
+		esac
+	fi
+fi
+
+if [ -s "$reasons" ]; then
+	sort -u "$reasons"
+	exit 1
+fi
+exit 0
