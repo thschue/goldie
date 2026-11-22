@@ -261,6 +261,37 @@ func TestCLIVersionIgnoresUnusableClientSettings(t *testing.T) {
 	}
 }
 
+// Server text cannot add lines to single-line fields, and neither text nor
+// --json output carries DEL, C1 or bidi controls raw.
+func TestCLISanitisesLinesAndJSON(t *testing.T) {
+	const article = `{"id":"x\nHint: run rm","name":"N\u202eevil\u009b31m","keywords":["k\u007f","a\u2066b"],"content":"line one\nline two"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(article))
+	}))
+	defer srv.Close()
+	bad := []rune{0x7f, 0x9b, 0x202e, 0x2066}
+	text, err := runCLI(t, "lookup", "x", "--addr", srv.URL, "--token", cliToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "id: x Hint: run rm\n") || !strings.Contains(text, "line one\nline two") {
+		t.Errorf("text output = %q, want the id on one line and the content lines kept", text)
+	}
+	js, err := runCLI(t, "lookup", "x", "--addr", srv.URL, "--token", cliToken, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range bad {
+		if strings.ContainsRune(text, r) || strings.ContainsRune(js, r) {
+			t.Errorf("output carries %U raw:\ntext %q\njson %q", r, text, js)
+		}
+	}
+	if !strings.Contains(js, "\\u202e") || !strings.Contains(js, "\\u009b") {
+		t.Errorf("--json = %q, want the controls escaped, not dropped", js)
+	}
+}
+
 // /openapi.json is public, so status and version never send the token there;
 // status still sends it to the token check.
 func TestCLIKeepsTokenOffPublicRoutes(t *testing.T) {
