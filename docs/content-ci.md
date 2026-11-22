@@ -16,6 +16,22 @@ The reason names a file relative to the directory, never an absolute path. It is
 `goldie server -dev` ends with for that directory. A second directory argument is a usage error
 (exit 1, usage on stderr).
 
+## Lifecycle frontmatter
+
+Besides `name` and `keywords`, an article may set three lifecycle fields. Any other value fails the
+load, and the reason names the file and the field.
+
+| Field | Values | Default |
+| --- | --- | --- |
+| `status` | `draft`, `published` or `deprecated`, lower case | `published` |
+| `enforced` | a YAML bool, `true` or `false` (`yes`, `on` and `"true"` are rejected) | `false` |
+| `replaced_by` | a reference `<kind>:<name>`, such as `article:platform/deploy` | none |
+
+A `replaced_by` reference (ADR 0021) resolves in the referring article's view: a project article
+sees its Project, then global; a global article sees global only. It fails the load when it does not
+resolve, names the article itself, names a draft or is part of a cycle. A name has no `..`, empty
+segment, leading `/`, extra colon or control character.
+
 ## Pipeline snippet
 
 Put the `goldie` binary on `PATH` in your pipeline, then fail the job on a non-zero exit:
