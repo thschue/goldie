@@ -14,6 +14,11 @@ import (
 
 // shortPublicTimeouts sets the three timeouts under test. Tests keep the
 // others long, so a cut-off can only come from the timeout under test.
+//
+// Hook contract (issue #170): server.go declares `appReadTimeout` as a
+// time.Duration var in the same var block as readHeaderTimeout, idleTimeout
+// and adminIOTimeout. It is wired to the public http.Server's ReadTimeout, and
+// these tests shorten it. Until it exists the package does not compile.
 func shortPublicTimeouts(t *testing.T, header, read, idle time.Duration) {
 	t.Helper()
 	oh, or, oi := readHeaderTimeout, appReadTimeout, idleTimeout
