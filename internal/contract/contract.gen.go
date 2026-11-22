@@ -31,7 +31,7 @@ type Article struct {
 	// article is the global one, and this says what to do next.
 	//
 	//
-	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Id The article id, its path under `articles/` without `.md`.
@@ -147,7 +147,7 @@ type SearchResults struct {
 	// results are the global ones, and this says what to do next.
 	//
 	//
-	// Examples: The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects.
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is the global answer. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Query The search words as received.
