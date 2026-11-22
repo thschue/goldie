@@ -134,6 +134,9 @@ type SearchResults struct {
 // ErrorResponse The body of every error response.
 type ErrorResponse = ErrorEnvelope
 
+// RateLimited The body of every error response.
+type RateLimited = ErrorEnvelope
+
 // SearchArticlesParams defines parameters for SearchArticles.
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
@@ -542,6 +545,11 @@ type ClientWithResponsesInterface interface {
 	GetOpenAPIYAMLWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIYAMLResponse, error)
 }
 
+// GetArticleResponse429Headers the declared response headers of an HTTP 429 response for GetArticle
+type GetArticleResponse429Headers struct {
+	RetryAfter *int
+}
+
 type GetArticleResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -551,8 +559,12 @@ type GetArticleResponse struct {
 	JSON401 *ErrorEnvelope
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ErrorEnvelope
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetArticleResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -568,6 +580,11 @@ func (r GetArticleResponse) GetJSON401() *ErrorEnvelope {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r GetArticleResponse) GetJSON404() *ErrorEnvelope {
 	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetArticleResponse) GetJSON429() *RateLimited {
+	return r.JSON429
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -604,6 +621,11 @@ func (r GetArticleResponse) ContentType() string {
 	return ""
 }
 
+// SearchArticlesResponse429Headers the declared response headers of an HTTP 429 response for SearchArticles
+type SearchArticlesResponse429Headers struct {
+	RetryAfter *int
+}
+
 type SearchArticlesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -613,8 +635,12 @@ type SearchArticlesResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *SearchArticlesResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -630,6 +656,11 @@ func (r SearchArticlesResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r SearchArticlesResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r SearchArticlesResponse) GetJSON429() *RateLimited {
+	return r.JSON429
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -861,6 +892,13 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -868,6 +906,19 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSONDefault = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetArticleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -908,6 +959,13 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -915,6 +973,19 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 		}
 		response.JSONDefault = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers SearchArticlesResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -1228,6 +1299,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 type ErrorJSONResponse ErrorEnvelope
 
+type RateLimitedResponseHeaders struct {
+	RetryAfter *int
+}
+type RateLimitedJSONResponse struct {
+	Body ErrorEnvelope
+
+	Headers RateLimitedResponseHeaders
+}
+
 type GetArticleRequestObject struct {
 	Id string `json:"id"`
 }
@@ -1274,6 +1354,29 @@ func (response GetArticle404JSONResponse) VisitGetArticleResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticle429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetArticle429JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1341,6 +1444,29 @@ func (response SearchArticles401JSONResponse) VisitSearchArticlesResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response SearchArticles429JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }

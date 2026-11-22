@@ -22,6 +22,8 @@ const (
 	EnvContentDir = "GOLDIE_CONTENT_DIR"
 	EnvAPIToken   = "GOLDIE_API_TOKEN"  // secret: never logged
 	EnvAPITokens  = "GOLDIE_API_TOKENS" // secret: never logged
+
+	EnvRateLimit = "GOLDIE_RATE_LIMIT"
 )
 
 // Config is the effective server configuration. It is read once at startup
@@ -38,6 +40,8 @@ type Config struct {
 	ContentDir string // root of the dir Source
 	APIToken   string // the shorthand for one operator token; secret
 	APITokens  string // name:role:token lines, as read; secret
+
+	RateLimit string // the per-token request limit, as written (ParseRateLimit)
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -81,6 +85,10 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
+	cfg.RateLimit = str(EnvRateLimit, def(EnvRateLimit))
+	if _, err := ParseRateLimit(cfg.RateLimit); err != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", EnvRateLimit, err))
+	}
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
 	case "true":
@@ -135,6 +143,7 @@ func (c Config) Report(l *slog.Logger) {
 		EnvContentDir, c.ContentDir,
 		EnvAPIToken, redacted(c.APIToken),
 		EnvAPITokens, redacted(c.APITokens),
+		EnvRateLimit, c.RateLimit,
 	)
 }
 

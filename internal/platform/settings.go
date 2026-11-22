@@ -27,6 +27,7 @@ var Settings = []SettingSpec{
 	{EnvContentDir, "", "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
 	{EnvAPIToken, "", "goldie server needs this or GOLDIE_API_TOKENS, not both. Secret: set it with GOLDIE_API_TOKEN_FILE. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
 	{EnvAPITokens, "", "goldie server needs this or GOLDIE_API_TOKEN, not both. Secret: set it with GOLDIE_API_TOKENS_FILE. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes. Blank lines and lines starting with # are ignored. A bad line stops the server, naming the line number, never the token."},
+	{EnvRateLimit, "20/s,burst=40", "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An /mcp tool call that reads the API also counts its API request. A malformed value stops the server."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
@@ -45,7 +46,7 @@ var TelemetrySettings = []SettingSpec{
 	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
 	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
-	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
+	{"OTEL_SERVICE_NAME", defaultServiceName, "Overrides the service.name resource attribute."},
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
 
@@ -95,7 +96,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
 	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
-	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
+	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
+	b.WriteString("printed; goldie logs one fixed warning instead. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")

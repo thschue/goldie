@@ -67,6 +67,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/articles/{id}:
@@ -113,6 +115,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         default:
           $ref: "#/components/responses/Error"
   /openapi.yaml:
@@ -159,7 +163,8 @@ components:
         A goldie token, sent as `Authorization: Bearer <token>`. Swagger UI's
         "Authorize" button takes it, so "Try it out" sends it. The server
         enforces it on every `/api/` path, where a missing or wrong token is a
-        401. The OpenAPI document and Swagger UI are not yet covered; the auth
+        401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
+        token over its limit is a 429 with `Retry-After`. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
   schemas:
     SearchResults:
@@ -347,3 +352,23 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: |
+        The token sent more requests than `GOLDIE_RATE_LIMIT` allows. The limit
+        is per token name and per server process; requests without a valid
+        token are rejected with 401 first and never count. Wait the seconds in
+        `Retry-After`, then retry.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  headers:
+    RetryAfter:
+      description: Whole seconds until the token may send a request again, rounded up; at least 1.
+      schema:
+        type: integer
+        minimum: 1
+      example: 30

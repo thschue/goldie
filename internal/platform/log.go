@@ -41,5 +41,11 @@ func NewLogger(w io.Writer, level slog.Level, component string) *slog.Logger {
 			return a
 		},
 	})
-	return slog.New(h).With("component", component, "version", Version)
+	return slog.New(h.WithAttrs(identityAttrs(component)))
+}
+
+// identityAttrs are the attributes every record carries (PC-07), for stdout
+// and for the OTLP bridge alike.
+func identityAttrs(component string) []slog.Attr {
+	return []slog.Attr{slog.String("component", component), slog.String("version", Version)}
 }
