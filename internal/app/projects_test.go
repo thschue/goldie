@@ -3,6 +3,8 @@ package app
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -136,6 +138,43 @@ func TestMalformedProjectIsABadRequestWithAHint(t *testing.T) {
 				t.Errorf("%s%s: code %q, hint %q", path, project, code, hint)
 			}
 		}
+	}
+}
+
+// A project one byte over the spec's maxLength of 512 is a 400 on both
+// operations, even though it matches the pattern.
+func TestOverlongProjectIsABadRequest(t *testing.T) {
+	srv := newServer(t)
+	head := "github.com/acme/"
+	for n, want := range map[int]int{512: http.StatusOK, 513: http.StatusBadRequest} {
+		project := head + strings.Repeat("r", n-len(head))
+		for _, path := range []string{"/api/v1/search?q=kubernetes&project=", "/api/v1/articles/platform%2Fdeploy?project="} {
+			resp, body := apiGet(t, srv.URL+path+project)
+			if resp.StatusCode != want {
+				t.Errorf("%s<%d bytes>: status %d, want %d", path, n, resp.StatusCode, want)
+				continue
+			}
+			if want == http.StatusBadRequest {
+				if code, _ := errorHint(t, body); code != "bad_request" || strings.Contains(string(body), "rrrr") {
+					t.Errorf("%s<%d bytes>: code %q, or the value is echoed: %s", path, n, code, body)
+				}
+			}
+		}
+	}
+}
+
+func TestProjectsIsAnEmptyListWithoutProjects(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "global", "articles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	srv := newServerWith(t, Options{ContentDir: dir})
+	resp, body := apiGet(t, srv.URL+"/api/v1/projects")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
+	}
+	if got, want := strings.TrimSpace(string(body)), `{"projects":[]}`; got != want {
+		t.Errorf("body = %s, want %s", got, want)
 	}
 }
 
