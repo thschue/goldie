@@ -5,3 +5,13 @@ This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
 Goldie is based on the talk by Jessica Andersson at Cloud Native Denmark 2026
 and on the Solisol/goldenpath-demo repository (https://github.com/Solisol/goldenpath-demo).
+
+This product includes Swagger UI, vendored in internal/contract/swaggerui/vendor/ and embedded in
+the goldie binary. Swagger UI is licensed under the Apache License, Version 2.0. Its NOTICE text
+follows.
+
+swagger-ui
+Copyright 2020-2021 SmartBear Software Inc.
+
+The Swagger UI licence (LICENSE) and the licences of the third-party code in its bundle
+(swagger-ui-bundle.js.LICENSE.txt) are in internal/contract/swaggerui/vendor/.
