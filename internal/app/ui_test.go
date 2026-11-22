@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -397,6 +398,77 @@ func TestStartupWarnsOnceWhenTheUIIsNotBuilt(t *testing.T) {
 	}
 	if warns[0]["level"] != "warn" {
 		t.Errorf("the UI-not-built line has level %v, want warn", warns[0]["level"])
+	}
+}
+
+// --- PC-01: the probes are reserved on the public listener -------------------
+
+// The public listener never serves /livez, /readyz or /version, and a monitor
+// pointed at the wrong port must not read a 200: these three exact paths are
+// not UI fallback paths. They answer the 404 envelope, JSON with no HTML, no
+// CSP and no index page, whether or not the UI is built, with or without a
+// token. Matching is exact and case-sensitive: "/livez/x", "/readyzz" and
+// "/Version" are ordinary extensionless paths and fall back to the UI.
+func TestProbePathsAreNotFoundOnThePublicListenerNotTheUI(t *testing.T) {
+	srv := newServer(t)
+	index := uiIndex(t)
+	for _, p := range []string{"/livez", "/readyz", "/version"} {
+		for who, auth := range map[string]func(*http.Request){"no token": nil, "token": bearer(testToken)} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				what := method + " " + p + " " + who
+				resp, body := uiDo(t, method, srv.URL+p, auth)
+				if resp.StatusCode != http.StatusNotFound {
+					t.Errorf("%s: status %d, want 404", what, resp.StatusCode)
+				}
+				if !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
+					t.Errorf("%s: Content-Type %q, want application/json", what, resp.Header.Get("Content-Type"))
+				}
+				if resp.Header.Get("Content-Security-Policy") != "" {
+					t.Errorf("%s: carries a CSP; it is not a UI path", what)
+				}
+				if bytes.Contains(body, index) || strings.Contains(strings.ToLower(string(body)), "<html") {
+					t.Errorf("%s: the UI page was served", what)
+				}
+				if method == http.MethodGet {
+					assertEnvelope(t, body, "not_found")
+					if strings.Contains(string(body), strings.TrimPrefix(p, "/")) {
+						t.Errorf("%s: the envelope echoes the path: %s", what, body)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestProbeNearMissesFallBackToTheUI(t *testing.T) {
+	srv := newServer(t)
+	index := uiIndex(t)
+	for _, p := range []string{"/livez/x", "/readyzz", "/Version", "/LIVEZ", "/readyz2", "/xversion", "/version/1"} {
+		resp, body := uiDo(t, http.MethodGet, srv.URL+p, nil)
+		assertUIPage(t, "GET "+p, resp, body, index)
+	}
+}
+
+func TestAdminListenerStillServesTheRealProbes(t *testing.T) {
+	cfg := publicConfig(t)
+	pub, err := PublicHandler(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := platform.NewRegistry(0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startReturns(t, pub, ctx, reg)
+	admin := adminServer(t, cfg, pub, reg)
+	index := uiIndex(t)
+	for _, p := range []string{"/livez", "/readyz", "/version"} {
+		resp, body := uiDo(t, http.MethodGet, "http://"+admin+p, nil)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("admin GET %s: status %d, want 200", p, resp.StatusCode)
+		}
+		if bytes.Contains(body, index) || strings.Contains(strings.ToLower(string(body)), "<html") {
+			t.Errorf("admin GET %s: HTML on the admin listener", p)
+		}
 	}
 }
 
