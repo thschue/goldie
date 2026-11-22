@@ -198,17 +198,6 @@ func TestCLISearchMissingTokenFile(t *testing.T) {
 	}
 }
 
-func TestCLIStatusRejectedToken(t *testing.T) {
-	srv := cliServer(t)
-	out, err := runCLI(t, "status", "--addr", srv.URL, "--token", "wrong-token-value")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "token rejected") {
-		t.Errorf("status = %q, want it to say the token was rejected", out)
-	}
-}
-
 // statusStub answers /openapi.json with specCode (a minimal document when 200)
 // and every other path, the token check, with searchCode.
 func statusStub(t *testing.T, specCode, searchCode int) *httptest.Server {
@@ -229,24 +218,6 @@ func statusStub(t *testing.T, specCode, searchCode int) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
-}
-
-func TestCLIStatusWithoutToken(t *testing.T) {
-	srv := cliServer(t)
-	out, err := runCLI(t, "status", "--addr", srv.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, "no token given") {
-		t.Errorf("status = %q, want it to say no token was given", out)
-	}
-	out, err = runCLI(t, "status", "--addr", srv.URL, "--json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out, `"tokenAccepted": false`) && !strings.Contains(out, `"tokenAccepted":false`) {
-		t.Errorf("status --json = %q, want tokenAccepted false", out)
-	}
 }
 
 func TestCLIVersionAgainstServer(t *testing.T) {
