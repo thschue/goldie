@@ -4,8 +4,8 @@
 #   ./run check      everything CI runs (the four check-* groups below)
 #   ./run check-lint     format, go mod tidy, build, golangci-lint, depguard fixture
 #   ./run check-spec     spec lint, regen drift check, and their fixtures
-#   ./run check-harness  the loop tooling fixtures (gate-, guard-, test-lock-, frontier-, claim-fixture),
-#                        agent definitions, and the harness line budget
+#   ./run check-harness  the loop tooling fixtures (gate-, guard-, test-lock-, frontier-,
+#                        stream-state-, claim-fixture), agent definitions, the line budget
 #   ./run check-test     go test -race
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
@@ -272,6 +272,17 @@ cmd_frontier_fixture() {
 	[ -z "$out" ] || die "frontier case failed: $out"
 }
 
+# testdata/stream-state/cases.json: each case's PR must get the case's state
+# from stream_state in scripts/lib/markers.jq (what a delivery tick does next).
+cmd_stream_state_fixture() {
+	say "stream-state fixture (a stream owns its PR until it merges or closes)"
+	out=$(jq -L scripts/lib -r 'include "markers";
+		.[] | (.pr | stream_state("loop")) as $got
+		| select($got != .want) | "\(.name): want \(.want), got \($got)"' testdata/stream-state/cases.json) ||
+		die "cannot run the stream-state cases"
+	[ -z "$out" ] || die "stream-state case failed: $out"
+}
+
 # Two delivery sessions claim the same issue at once against a local origin,
 # with a fake gh (testdata/claim/bin): exactly one must win, with an area
 # prefix ("mcp: …") turned into the PR title's scope; a later claim and an
@@ -536,6 +547,7 @@ cmd_check_harness() {
 	cmd_guard_fixture
 	cmd_test_lock_fixture
 	cmd_frontier_fixture
+	cmd_stream_state_fixture
 	cmd_claim_fixture
 	cmd_agents_check
 	cmd_harness_budget
@@ -568,6 +580,7 @@ check-harness) cmd_check_harness ;;
 test-lock-fixture) cmd_test_lock_fixture ;;
 claim-fixture) cmd_claim_fixture ;;
 frontier-fixture) cmd_frontier_fixture ;;
+stream-state-fixture) cmd_stream_state_fixture ;;
 gate-fixture) cmd_gate_fixture ;;
 guard-fixture) cmd_guard_fixture ;;
 check-test) cmd_check_test ;;

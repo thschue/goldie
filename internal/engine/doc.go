@@ -18,10 +18,14 @@
 // (no disk), depth 1 over https and ssh. Each Load lists the remote refs first
 // and clones only when the ref moved; otherwise it returns the cached
 // Snapshot. Its revision is the commit SHA, and one Load is bounded by two
-// minutes. A remote is untrusted, so each Load also has a byte budget: what it
-// reads from an https or ssh server, ref listing included, and the pack plus
-// its objects once unpacked, charged from the object headers before anything
-// is unpacked. A load over either stops there with a fixed error.
+// minutes, unpacking included. A remote is untrusted, so each Load also has a
+// byte budget: what it reads from an https or ssh server, ref listing
+// included, and the pack plus its objects once unpacked, charged from the
+// object headers before anything is unpacked. Each object is charged 1024
+// bytes on top of its size, above the about 540 live bytes per object a pack
+// of tiny objects was measured to peak at; go-git's delta-base cache (at most
+// 96 MiB of copies of charged objects) is not charged again. A load over
+// either budget stops there with a fixed error.
 // NewGitSource installs, once per process, go-git's in-process file:// server,
 // an https client that charges the budget, and an ssh dialer that charges it
 // and ends each connection at the Load's bound.
@@ -32,7 +36,8 @@
 // is always verified from that content in memory: plain and hashed hosts,
 // [host]:port, negation and @revoked, while wildcards, @cert-authority and
 // host certificates fail closed. No ~/.ssh file and no SSH agent is read. A password in the URL,
-// any other URL user, http:// and git:// are rejected. Errors are fixed
+// any other URL user, a query string or a fragment, http:// and git:// are
+// rejected. Errors are fixed
 // messages that never carry the URL, a credential, a key fingerprint,
 // known_hosts content or a host path.
 //

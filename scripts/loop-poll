@@ -4,15 +4,18 @@
 #   scripts/loop-poll <deliver|product>
 #
 # Prints one line:
-#   deliver: main=<state> red=<workflows> streams=<n>/2 renovate=<n> frontier=<n> work=<n> fingerprint=<hash>
+#   deliver: main=<state> red=<workflows> streams=<n>/2 attention=<n> renovate=<n> frontier=<n> work=<n> fingerprint=<hash>
 #   product: main=<state> red=<workflows> triage=<n> decisions=<n> buffer=<n> wip=<n> fingerprint=<hash>
 # main is the `ci` workflow on the head of main (green, red, pending, unknown;
 # red stops the line); red lists other failed workflows there. For deliver,
 # streams counts this session's open PRs ($GOLDIE_SESSION, default: the short
-# node name) without a final review marker for their head, renovate the
+# node name) that aren't parked: a stream lasts until its PR merges or closes.
+# attention counts those that need action now (stream_state in
+# scripts/lib/markers.jq: disarm, red, dirty, answered), renovate the
 # unreviewed Renovate PRs, and work what the tick can act on (0 ends it).
-# For product, decisions counts PRs waiting on a PM decision, buffer the
-# claimable issues, and wip the issues in progress. Read-only.
+# For product, decisions counts PRs whose decision for the head has no
+# answer yet (label or not), buffer the claimable issues, and wip the issues
+# in progress. Read-only.
 set -eu
 
 die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
@@ -35,7 +38,8 @@ red=$(printf '%s' "$runs" | jq -r '
 		and (.conclusion == "failure" or .conclusion == "timed_out")) | .workflowName]
 	| if length == 0 then "-" else join(",") end')
 
-prs=$(gh pr list --state open --limit 200 --json number,headRefOid,headRefName,labels,author,comments) ||
+prs=$(gh pr list --state open --limit 200 \
+	--json number,headRefOid,headRefName,labels,author,comments,mergeStateStatus,autoMergeRequest,statusCheckRollup) ||
 	die "cannot list PRs"
 frontier=$(gh issue list --state open --label ready-for-agent --limit 500 \
 	--search 'no:assignee -label:in-progress -label:epic -is:blocked' --json number --jq length) ||
@@ -47,22 +51,22 @@ pr_count() {
 }
 case "$loop" in
 deliver)
-	streams=$(pr_count '.author.login == $me
-		and ($m | latest("claim") | .line // "" | attr("session")) == $session
-		and ([.labels[].name] | index("needs-info") | not)
-		and (($m | latest("review") | .line // "" | attr("sha")) != .headRefOid)')
+	mine='.author.login == $me and ($m | latest("claim") | .line // "" | attr("session")) == $session'
+	streams=$(pr_count "$mine and stream_state(\$me) != \"parked\"")
+	attention=$(pr_count "$mine and (stream_state(\$me) | IN(\"disarm\", \"red\", \"dirty\", \"answered\"))")
+	active=$(pr_count "$mine and stream_state(\$me) == \"active\"")
 	renovate=$(pr_count '(.author.login | test("renovate"))
 		and (($m | latest("review") | .line // "" | attr("sha")) != .headRefOid)')
 	claimable=0
 	[ "$streams" -ge 2 ] || claimable=$frontier
-	work=$((streams + renovate + claimable))
-	extra="streams=$streams/2 renovate=$renovate frontier=$frontier work=$work"
+	work=$((active + attention + renovate + claimable))
+	extra="streams=$streams/2 attention=$attention renovate=$renovate frontier=$frontier work=$work"
 	;;
 product)
 	triage=$(gh issue list --state open --label needs-triage --limit 500 --json number --jq length) ||
 		die "cannot count needs-triage issues"
-	decisions=$(pr_count '([.labels[].name] | index("needs-info"))
-		and (($m | latest("review") | .line // "" | attr("reason")) == "decision")')
+	decisions=$(pr_count '($m | latest("review") | .line // "") as $r
+		| ($r | attr("reason")) == "decision" and ($r | attr("sha")) == .headRefOid and (answered($me) | not)')
 	wip=$(gh issue list --state open --label in-progress --limit 500 --json number --jq length) ||
 		die "cannot count issues in progress"
 	extra="triage=$triage decisions=$decisions buffer=$frontier wip=$wip"

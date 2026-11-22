@@ -8,16 +8,26 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
 ## Tick
 
 0. **Setup.** Resolve `$me` (on a 401, ask the user to refresh `gh`, and stop). Run
-   `scripts/loop-poll deliver`. It prints `main=`, `streams=<n>/2`, `frontier=` and `work=`.
+   `scripts/loop-poll deliver`. It prints `main=`, `streams=<n>/2`, `attention=`, `frontier=`
+   and `work=`.
    - `main=red`: the only new work is the fix for `main`, as a found-fix stream.
    - `work=0`: report "nothing to do" and stop. The same applies with two streams running and no
      subagent returned.
    - `dry-run`: write nothing, print each write.
    - Rebuild all state from GitHub every tick; never rely on what an earlier tick remembers.
 1. **Advance returned subagents**, per stream, through the [stream](#stream) steps.
-2. **Resume:** own open PRs whose latest `claim` marker names this session, with no `review`
-   marker for the head and no `needs-info`. A PR with no live subagent continues at the step its
-   markers show. Adopt a stream idle for over 2 h ([sessions](./README.md#identity-and-sessions)).
+2. **Own streams.** Every open PR whose latest `claim` marker names this session is its stream
+   **until it merges or closes**: red CI, conflicts and answers stay this session's job. Act on its
+   `stream_state` (`scripts/lib/markers.jq`):
+   - `disarm` (head moved past the clean marker): `gh pr merge <n> --disable-auto` first, then
+     review the new commits (step 3) and re-run `scripts/merge-pr`;
+   - `red` or `dirty` after a clean review: disarm, resume the implementer (merge `origin/main`,
+     fix), then step 3 for the change;
+   - `answered`: remove `needs-info` and `question`; `merge` finishes as clean, `change` goes to
+     step 4 (not a round);
+   - `active` with no live subagent: continue at the step its markers show.
+
+   Adopt a stream idle for over 2 h ([sessions](./README.md#identity-and-sessions)).
 3. **Renovate PRs:** an open, unreviewed `renovate[bot]` PR is a stream with no test or implement
    step. The `reviewer` reads the diff and the release notes; no code from it runs locally; CI is
    authoritative.
@@ -75,10 +85,9 @@ reason), consults, test change requests, and harness feedback filed.
      the gate holds it; add `needs-maintainer` with the reasons (for a new dependency, the verified
      brief in three lines). Exit 3: the test lock failed, a blocking finding. Exit 2: a tool error;
      retry the same command on later ticks, and after 3 add `needs-maintainer`;
-   - **decision:** the PR is clean except for one product question. Add
-     `needs-info reason=decision` with the question, the options and a recommendation. When the
-     product session answers `PM decision: merge`, finish as clean; on `change`, go to step 4 (it
-     doesn't count as a round);
+   - **decision:** the PR is clean except for one product question. Post the marker with the
+     question, the options and a recommendation, and add `needs-info` and `question` **in the same
+     command**. The answer (`PM decision:`, or the maintainer's comment) is handled in step 2;
    - **needs-info** `security` or `human-check`: post it and stop the stream; it is the
      maintainer's.
 
@@ -104,26 +113,16 @@ reason), consults, test change requests, and harness feedback filed.
   then resume the same subagent once, naming what's missing (push, PR body, report). A second
   `blocked` on the same step parks the stream as `needs-info reason=human-check`.
 
-## Model routing
+## Routing, size, found-fixes, pacing
 
-`implementer` and `test-author` run on `sonnet`, and on `opus` when the issue's cited paths are
-risk paths (the review table above). `reviewer` and `ux-designer` run on `sonnet`; `architect` and
-`security-reviewer` on `opus`.
-
-## Size
-
-About 400 changed lines, not counting tests and generated code (`./run size`). Over 600, the
-implementer stops and reports a slice list. The stream keeps the first slice, and the product
-session files the rest.
-
-## Found-fix and security
-
-- A found-fix PR (from any subagent) becomes a new stream of this session once a slot is free. Until
-  then it waits as a ready draft.
-- A MEDIUM-or-worse security bug on `main` takes the [disclosure](./README.md#disclosure-and-quoting)
-  path in the same tick: draft advisory, private fork, fix pushed there. Tell the user the id.
-
-## Pacing
-
-Run `/loop /deliver`. Wake in 2 to 5 min while a stream is running, and in 20 to 30 min when
-`work=0`. Restart the session daily (same `GOLDIE_SESSION`); streams resume from GitHub.
+- **Models:** `implementer` and `test-author` on `sonnet`, `opus` when the issue's cited paths are
+  risk paths (the review table); `reviewer` and `ux-designer` on `sonnet`; `architect` and
+  `security-reviewer` on `opus`.
+- **Size:** about 400 changed lines without tests and generated code (`./run size`). Over 600, the
+  implementer reports a slice list; the stream keeps the first slice, the product session files
+  the rest.
+- **Found-fixes** become streams of this session when a slot is free; until then, ready drafts. A
+  MEDIUM+ security bug on `main` takes the [disclosure](./README.md#disclosure-and-quoting) path in
+  the same tick (draft advisory, private fork); tell the user the id.
+- **Pacing:** `/loop /deliver`; wake in 2 to 5 min with work, 20 to 30 min at `work=0`. Restart
+  daily (same `GOLDIE_SESSION`); streams resume from GitHub.
