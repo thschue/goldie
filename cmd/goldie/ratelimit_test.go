@@ -78,10 +78,14 @@ func TestBinaryReportsTheDefaultRateLimit(t *testing.T) {
 }
 
 // An invalid GOLDIE_RATE_LIMIT, from the variable or the file, stops startup
-// naming the variable and without echoing the value.
+// naming the variable and without echoing the value. A rate above 1e9 per
+// second is invalid (#178): it would round to no limit at all.
 func TestBinaryRejectsAnInvalidRateLimit(t *testing.T) {
 	const bad = "fast-marker/s"
-	for _, form := range []string{"GOLDIE_RATE_LIMIT=" + bad, "GOLDIE_RATE_LIMIT_FILE=" + tokenFile(t, bad), "GOLDIE_RATE_LIMIT=0/s"} {
+	for _, form := range []string{
+		"GOLDIE_RATE_LIMIT=" + bad, "GOLDIE_RATE_LIMIT_FILE=" + tokenFile(t, bad), "GOLDIE_RATE_LIMIT=0/s",
+		"GOLDIE_RATE_LIMIT=1000000001/s", "GOLDIE_RATE_LIMIT_FILE=" + tokenFile(t, "60000000001/m"),
+	} {
 		// A server that wrongly starts must fail this case, not hang the run.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		cmd := exec.CommandContext(ctx, goldieBinary(t), "server")
@@ -102,6 +106,23 @@ func TestBinaryRejectsAnInvalidRateLimit(t *testing.T) {
 		}
 		if strings.Contains(string(out), "fast-marker") {
 			t.Errorf("%s: output echoes the value: %s", label, out)
+		}
+	}
+}
+
+// Every role validates GOLDIE_RATE_LIMIT, not only the server (#178): the
+// health probe stops on an invalid value too, naming the variable without
+// echoing the value, before it probes anything.
+func TestBinaryHealthRejectsAnInvalidRateLimit(t *testing.T) {
+	for _, form := range []string{"GOLDIE_RATE_LIMIT=fast-marker/s", "GOLDIE_RATE_LIMIT=1000000001/s"} {
+		cmd := exec.Command(goldieBinary(t), "health")
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADMIN_ADDR=127.0.0.1:1", form}
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "GOLDIE_RATE_LIMIT") {
+			t.Errorf("health with %s: err = %v, want a failure naming GOLDIE_RATE_LIMIT: %s", form, err, out)
+		}
+		if strings.Contains(string(out), "fast-marker") || strings.Contains(string(out), "1000000001") {
+			t.Errorf("health with %s: output echoes the value: %s", form, out)
 		}
 	}
 }

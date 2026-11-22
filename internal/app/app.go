@@ -43,11 +43,7 @@ func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
 	if err != nil {
 		tokens = &api.Tokens{}
 	}
-	limiter, err := rateLimiter("")
-	if err != nil {
-		return nil, err
-	}
-	return newPublicMuxWith(snap, tokens, limiter, nil)
+	return newPublicMuxWith(snap, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
 }
 
 // newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
@@ -154,23 +150,19 @@ func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.Se
 // configuration by the caller so this package stays the only place that knows
 // both modules.
 type Options struct {
-	SwaggerUI  bool   // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
-	ContentDir string // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
-	APIToken   string // one operator token, the shorthand (GOLDIE_API_TOKEN)
-	APITokens  string // name:role:token lines (GOLDIE_API_TOKENS)
-	RateLimit  string // per-token limit, "" for the default (GOLDIE_RATE_LIMIT)
+	SwaggerUI  bool               // serve /swagger-ui (GOLDIE_SWAGGER_UI_ENABLED)
+	ContentDir string             // the dir Source, loaded once here (GOLDIE_CONTENT_DIR)
+	APIToken   string             // one operator token, the shorthand (GOLDIE_API_TOKEN)
+	APITokens  string             // name:role:token lines (GOLDIE_API_TOKENS)
+	RateLimit  platform.RateLimit // per-token limit as LoadConfig parsed it (GOLDIE_RATE_LIMIT)
 
 	MinClientVersion string // oldest goldie client served, "" for no gate (GOLDIE_MIN_CLIENT_VERSION)
 }
 
-// rateLimiter builds the per-token limiter from GOLDIE_RATE_LIMIT. Errors name
-// the variable and never contain the value.
-func rateLimiter(spec string) (*api.RateLimiter, error) {
-	l, err := platform.ParseRateLimit(spec)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", platform.EnvRateLimit, err)
-	}
-	return api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil
+// rateLimiter builds the per-token limiter from the RateLimit LoadConfig
+// parsed, as is.
+func rateLimiter(l platform.RateLimit) *api.RateLimiter {
+	return api.NewRateLimiter(l.Requests, l.Per, l.Burst)
 }
 
 // apiTokens builds the token set from exactly one of GOLDIE_API_TOKEN and
@@ -255,10 +247,7 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, &ConfigError{err}
 	}
-	limiter, err := rateLimiter(opts.RateLimit)
-	if err != nil {
-		return nil, &ConfigError{err}
-	}
+	limiter := rateLimiter(opts.RateLimit)
 	gate, err := newClientGate(opts.MinClientVersion)
 	if err != nil {
 		return nil, &ConfigError{err}

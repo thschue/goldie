@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -40,7 +41,7 @@ type articleInput struct {
 // The tool set is fixed, so the server advertises tools without listChanged:
 // a client cannot park a request waiting for tool-list changes that never
 // come, and hold up a drain with it.
-func New(client contract.ClientWithResponsesInterface) *sdk.Server {
+func New(client contract.ClientInterface) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
 		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
@@ -54,10 +55,14 @@ func New(client contract.ClientWithResponsesInterface) *sdk.Server {
 	return s
 }
 
-func search(ctx context.Context, c contract.ClientWithResponsesInterface, q string) *sdk.CallToolResult {
-	resp, err := c.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q})
+func search(ctx context.Context, c contract.ClientInterface, q string) *sdk.CallToolResult {
+	raw, err := c.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q})
 	if err != nil {
 		return failure(transportError(err))
+	}
+	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
+	if err != nil {
+		return failure(err)
 	}
 	if resp.JSON200 == nil {
 		return failure(apiError(resp.HTTPResponse, resp.Body))
@@ -75,16 +80,20 @@ func search(ctx context.Context, c contract.ClientWithResponsesInterface, q stri
 	return success(b.String())
 }
 
-func article(ctx context.Context, c contract.ClientWithResponsesInterface, id string) *sdk.CallToolResult {
+func article(ctx context.Context, c contract.ClientInterface, id string) *sdk.CallToolResult {
 	// An empty or dot-only id would be cleaned out of the article path and
 	// reach another endpoint, so it is refused before any request.
 	if contract.CheckArticleID(id) != nil {
 		return failure(withHint("the article id is empty or made only of dots",
 			"Search for the article with search_knowledge, then use an id from its results."))
 	}
-	resp, err := c.GetArticleWithResponse(ctx, id, nil)
+	raw, err := c.GetArticle(ctx, id, nil)
 	if err != nil {
 		return failure(transportError(err))
+	}
+	resp, err := parseOK(raw, contract.ParseGetArticleResponse)
+	if err != nil {
+		return failure(err)
 	}
 	if resp.JSON200 == nil {
 		return failure(apiError(resp.HTTPResponse, resp.Body))
@@ -112,19 +121,60 @@ func transportError(err error) error {
 	return errors.New("cannot reach the knowledge server: it is not running or its address is wrong")
 }
 
-// apiError words an error response. contract.DecodeAPIError passes on only
-// the status and the cleaned message and hint of the server's envelope.
-func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, body)
-	status := http.StatusText(e.Status)
-	if e.Message == "" {
-		return fmt.Errorf("the knowledge server answered %d %s", e.Status, status)
+// parseOK hands raw to the generated parse only when the API answered 200.
+// Any other answer is read by apiError alone: the generated parser fails on a
+// 429 whose Retry-After is not an integer, which would turn the 429 into a
+// transport failure.
+func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, error) {
+	var zero T
+	if raw.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(raw.Body)
+		_ = raw.Body.Close()
+		if err != nil {
+			return zero, transportError(err)
+		}
+		return zero, apiError(raw, body)
 	}
+	resp, err := parse(raw)
+	if err != nil {
+		return zero, transportError(err)
+	}
+	return resp, nil
+}
+
+// apiError words an error response. contract.DecodeAPIError passes on only
+// the status, the cleaned message and hint of the server's envelope, and the
+// wait of a valid Retry-After.
+//
+// The agent never sees the headers, so a wait or a 429 gets its own hint
+// instead of the server's, which points at Retry-After. Without a valid wait
+// it says none, rather than "0 seconds" or the server's raw value.
+func apiError(resp *http.Response, body []byte) error {
+	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
+	status := http.StatusText(e.Status)
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Hint == "" {
+	if e.Message == "" {
+		msg = fmt.Sprintf("the knowledge server answered %d %s", e.Status, status)
+	}
+	hint := e.Hint
+	switch {
+	case e.RetryAfter > 0:
+		hint = fmt.Sprintf("Wait %s, then call the tool again.", seconds(e.RetryAfter))
+	case e.Status == http.StatusTooManyRequests:
+		hint = "Wait a little, then call the tool again."
+	}
+	if hint == "" {
 		return errors.New(msg)
 	}
-	return withHint(msg, e.Hint)
+	return withHint(msg, hint)
+}
+
+// seconds words a wait of n whole seconds.
+func seconds(n int) string {
+	if n == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", n)
 }
 
 // withHint words an error the agent can act on: what went wrong, then the

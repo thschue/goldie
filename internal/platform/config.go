@@ -38,14 +38,17 @@ type Config struct {
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
 
+	// Every role that loads the configuration (server and health) validates
+	// these at startup.
+	RateLimit     RateLimit // the per-token request limit, default applied (ParseRateLimit)
+	rateLimitText string    // RateLimit as written, for the startup report
+
+	MinClientVersion string // the oldest X-Goldie-Client version served, as written; "" for no gate
+
 	// The server role validates these at startup; health does not need them.
 	ContentDir string // root of the dir Source
 	APIToken   string // the shorthand for one operator token; secret
 	APITokens  string // name:role:token lines, as read; secret
-
-	RateLimit string // the per-token request limit, as written (ParseRateLimit)
-
-	MinClientVersion string // the oldest X-Goldie-Client version served, as written; "" for no gate
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -89,9 +92,11 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
-	cfg.RateLimit = str(EnvRateLimit, def(EnvRateLimit))
-	if _, err := ParseRateLimit(cfg.RateLimit); err != nil {
+	cfg.rateLimitText = str(EnvRateLimit, def(EnvRateLimit))
+	if l, err := ParseRateLimit(cfg.rateLimitText); err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", EnvRateLimit, err))
+	} else {
+		cfg.RateLimit = l
 	}
 	cfg.MinClientVersion = str(EnvMinClientVersion, def(EnvMinClientVersion))
 	if cfg.MinClientVersion != "" {
@@ -153,7 +158,7 @@ func (c Config) Report(l *slog.Logger) {
 		EnvContentDir, c.ContentDir,
 		EnvAPIToken, redacted(c.APIToken),
 		EnvAPITokens, redacted(c.APITokens),
-		EnvRateLimit, c.RateLimit,
+		EnvRateLimit, c.rateLimitText,
 		EnvMinClientVersion, c.MinClientVersion,
 	)
 }
