@@ -306,7 +306,7 @@ func TestNewRoutesNeedTheTokenByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := newPublicMux(snap, testToken)
+	m, err := newPublicMux(staticSnapshot(snap), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestRoutePatternWithoutMethodPanics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := newPublicMux(snap, testToken)
+	m, err := newPublicMux(staticSnapshot(snap), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}

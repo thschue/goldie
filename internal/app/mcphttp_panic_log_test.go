@@ -64,7 +64,7 @@ func mcpServerWithAPI(t *testing.T, api func(m *publicMux) http.Handler) (*httpt
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := newPublicMux(snap, testToken)
+	m, err := newPublicMux(staticSnapshot(snap), testToken)
 	if err != nil {
 		t.Fatal(err)
 	}
