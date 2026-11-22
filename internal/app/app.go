@@ -69,16 +69,17 @@ func staticGet(contentType string, body []byte) http.Handler {
 	})
 }
 
-// writeError writes the error envelope {"error":{code,message,details}}.
-// hint is the next-step hint in details; it must not echo the request or
-// contain addresses, paths or stack traces.
+// writeError writes the error envelope {"error":{code,message,details}},
+// built from the generated contract types (ADR 0014). hint is the next-step
+// hint in details; it must not echo the request or contain addresses, paths
+// or stack traces.
 func writeError(w http.ResponseWriter, status int, code, message, hint string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{
-		"code":    code,
-		"message": message,
-		"details": map[string]any{"hint": hint},
+	_ = json.NewEncoder(w).Encode(contract.ErrorEnvelope{Error: contract.Error{
+		Code:    code,
+		Message: message,
+		Details: contract.ErrorDetails{Hint: hint},
 	}})
 }
