@@ -1,0 +1,61 @@
+package platform
+
+import (
+	"regexp"
+	"testing"
+)
+
+// #207: the startup report is pinned byte for byte, so moving the effective
+// values onto the registry rows cannot change a key, its order, a value's JSON
+// type or the redaction of a Secret row (PC-06).
+
+// reportTS matches the timestamp of a log line, the one part that varies.
+var reportTS = regexp.MustCompile(`"ts":"[^"]*",`)
+
+func TestStartupReportGolden(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{
+			name: "defaults",
+			env:  nil,
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_TELEMETRY_CLIENT_INFO":false}` + "\n",
+		},
+		{
+			name: "every setting set",
+			env: map[string]string{
+				EnvAddr:                "127.0.0.1:9000",
+				EnvAdminAddr:           "127.0.0.1:9001",
+				EnvLogLevel:            "DEBUG",
+				EnvDrainSeconds:        "7",
+				EnvSwaggerUIEnabled:    "False",
+				EnvContentDir:          "/srv/content",
+				EnvAPIToken:            "golden-token-0123456789abcdef0123456789",
+				EnvRateLimit:           "5/m",
+				EnvMinClientVersion:    "1.4.0-rc.2",
+				EnvTelemetryClientInfo: "true",
+			},
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":"127.0.0.1:9000","GOLDIE_ADMIN_ADDR":"127.0.0.1:9001","GOLDIE_LOG_LEVEL":"debug","GOLDIE_DRAIN_SECONDS":7,"GOLDIE_SWAGGER_UI_ENABLED":false,"GOLDIE_CONTENT_DIR":"/srv/content","GOLDIE_API_TOKEN":"(redacted)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"5/m","GOLDIE_MIN_CLIENT_VERSION":"1.4.0-rc.2","GOLDIE_TELEMETRY_CLIENT_INFO":true}` + "\n",
+		},
+		{
+			name: "named tokens",
+			env:  map[string]string{EnvAPITokens: "ci:reader:golden-token-0123456789abcdef0123456789"},
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(redacted)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_TELEMETRY_CLIENT_INFO":false}` + "\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := loadEnv(c.env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf syncBuffer
+			cfg.Report(NewLogger(&buf, 0, "server"))
+			if got := reportTS.ReplaceAllString(buf.String(), ""); got != c.want {
+				t.Errorf("startup report changed:\n got: %s\nwant: %s", got, c.want)
+			}
+		})
+	}
+}

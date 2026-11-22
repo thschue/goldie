@@ -171,40 +171,22 @@ func Setting(lookup Lookup, readFile func(string) ([]byte, error), name string) 
 }
 
 // Report logs the effective configuration once at startup (PC-06): every
-// Settings row, in registry order. A row marked Secret is redacted by that
-// flag alone: only whether it is set is logged.
+// Settings row, in registry order, with the value its Value accessor reads
+// from c. A row marked Secret is redacted by that flag alone: only whether it
+// is set is logged.
 func (c Config) Report(l *slog.Logger) {
-	values := c.effective()
 	args := make([]any, 0, 2*len(Settings))
 	for _, s := range Settings {
-		v, ok := values[s.Name]
-		if !ok {
-			panic("platform: setting " + s.Name + " has no value in Config.effective")
+		if s.Value == nil {
+			panic("platform: setting " + s.Name + " has no Value accessor in the Settings registry")
 		}
+		v := s.Value(c)
 		if s.Secret {
 			v = redacted(v)
 		}
 		args = append(args, s.Name, v)
 	}
 	l.Info("config", args...)
-}
-
-// effective maps each Settings row to the value the startup report shows,
-// before redaction.
-func (c Config) effective() map[string]any {
-	return map[string]any{
-		EnvAddr:                c.Addr,
-		EnvAdminAddr:           c.AdminAddr,
-		EnvLogLevel:            c.LogLevel,
-		EnvDrainSeconds:        int(c.DrainTimeout / time.Second),
-		EnvSwaggerUIEnabled:    c.SwaggerUIEnabled,
-		EnvContentDir:          c.ContentDir,
-		EnvAPIToken:            c.APIToken,
-		EnvAPITokens:           c.APITokens,
-		EnvRateLimit:           c.rateLimitText,
-		EnvMinClientVersion:    c.minClientVersionText,
-		EnvTelemetryClientInfo: c.telemetryClientInfo,
-	}
 }
 
 // redacted stands in for a secret value in logs. Anything but a non-empty
