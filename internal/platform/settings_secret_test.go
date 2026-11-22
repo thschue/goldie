@@ -337,8 +337,14 @@ func TestConfigReferencePrintsSecretNoteFromTheFlag(t *testing.T) {
 	if strings.Contains(ref, "<b>") {
 		t.Error("raw HTML in output")
 	}
+	// The fixed TelemetrySettings and ClientSettings tables always follow and
+	// carry their own Secret rows' notes, so the check is on the unmarked
+	// row's own line: exactly its Meaning, and its _FILE name nowhere.
 	unmarked := string(ConfigReference([]SettingSpec{withSecret(t, secret, false)}))
-	if strings.Contains(unmarked, "Secret:") {
+	if !strings.Contains(unmarked, "\n| `GOLDIE_S` | (none) | Holds a key. |\n") {
+		t.Errorf("a row not marked Secret must render its Meaning with no note:\n%s", unmarked)
+	}
+	if strings.Contains(unmarked, "GOLDIE_S_FILE") {
 		t.Errorf("a row not marked Secret carries the note:\n%s", unmarked)
 	}
 }
