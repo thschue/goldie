@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -15,6 +16,10 @@ import (
 
 // articlesDir is where a Source keeps its global articles, relative to its root.
 const articlesDir = "global/articles"
+
+// maxArticleBytes caps one article file, so a Source cannot make Load read
+// without bound.
+const maxArticleBytes = 1 << 20
 
 // Article is one global Item of Kind article: a Markdown file with frontmatter.
 type Article struct {
@@ -57,9 +62,9 @@ func (s DirSource) Load() (*Snapshot, error) {
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
 		}
-		raw, err := fs.ReadFile(fsys, p)
+		raw, err := readLimited(fsys, p)
 		if err != nil {
-			return fmt.Errorf("%s: cannot read", p)
+			return fmt.Errorf("%s: %w", p, err)
 		}
 		id := strings.TrimSuffix(strings.TrimPrefix(p, articlesDir+"/"), ".md")
 		a, err := parseArticle(id, raw)
@@ -73,6 +78,23 @@ func (s DirSource) Load() (*Snapshot, error) {
 		return nil, err
 	}
 	return newSnapshot(articles), nil
+}
+
+// readLimited reads at most maxArticleBytes of a file and fails if it is larger.
+func readLimited(fsys fs.FS, p string) ([]byte, error) {
+	f, err := fsys.Open(p)
+	if err != nil {
+		return nil, errors.New("cannot read")
+	}
+	defer func() { _ = f.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(f, maxArticleBytes+1))
+	if err != nil {
+		return nil, errors.New("cannot read")
+	}
+	if len(raw) > maxArticleBytes {
+		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
+	}
+	return raw, nil
 }
 
 func parseArticle(id string, raw []byte) (Article, error) {

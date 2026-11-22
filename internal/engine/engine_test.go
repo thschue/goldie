@@ -113,6 +113,7 @@ func TestLoadErrors(t *testing.T) {
 		{"missing name", map[string]string{"global/articles/sub/a.md": "---\nkeywords: [x]\n---\n"}, "global/articles/sub/a.md: frontmatter has no name"},
 		{"blank name", map[string]string{"global/articles/a.md": "---\nname: \"  \"\n---\n"}, "global/articles/a.md: frontmatter has no name"},
 		{"empty frontmatter", map[string]string{"global/articles/a.md": "---\n---\nbody"}, "global/articles/a.md: frontmatter has no name"},
+		{"too large", map[string]string{"global/articles/a.md": "---\nname: A\n---\n" + strings.Repeat("x", 1<<20)}, "global/articles/a.md: article is larger than 1048576 bytes"},
 		{"bad yaml", map[string]string{"global/articles/a.md": "---\nname: [unclosed\n---\n"}, "global/articles/a.md: malformed frontmatter"},
 		{"keywords not a list", map[string]string{"global/articles/a.md": "---\nname: A\nkeywords:\n  a: b\n---\n"}, "global/articles/a.md: malformed frontmatter"},
 	}
