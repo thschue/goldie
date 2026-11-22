@@ -93,3 +93,13 @@ func TestTreeFSRejectsOverlongPaths(t *testing.T) {
 		t.Fatalf("Stat of a %d-byte path: err = %v, want ErrInvalid", len(path), err)
 	}
 }
+
+// ReadLink reads a blob too, so it spends the same byte budget as Open.
+func TestTreeFSReadLinkSpendsTheByteBudget(t *testing.T) {
+	b := treeBuilder{t, memory.NewStorage()}
+	fsys := b.fs(b.tree(object.TreeEntry{Name: "link", Mode: filemode.Symlink, Hash: b.blob("a/long/target")}))
+	fsys.b.bytes = 4
+	if _, err := fs.ReadLink(fsys, "link"); !errors.Is(err, errTreeTooLarge) {
+		t.Fatalf("err = %v, want errTreeTooLarge", err)
+	}
+}

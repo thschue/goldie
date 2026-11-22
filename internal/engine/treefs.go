@@ -271,7 +271,7 @@ func (f treeFS) ReadLink(name string) (string, error) {
 		return "", &fs.PathError{Op: "readlink", Path: name, Err: err}
 	}
 	defer func() { _ = r.Close() }()
-	target, err := io.ReadAll(io.LimitReader(r, 4096))
+	target, err := io.ReadAll(io.LimitReader(budgetReader{r, f.b}, 4096))
 	return string(target), err
 }
 
