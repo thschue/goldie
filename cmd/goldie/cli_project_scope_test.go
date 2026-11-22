@@ -223,8 +223,8 @@ func TestCLISearchGivesProjectScopedResultsForARegisteredProject(t *testing.T) {
 	if hint != "" {
 		t.Errorf("registered Project got hint %q", hint)
 	}
-	if len(hits) == 0 || hits[0].Scope != "project" || hits[0].Name != "Shop deploy" {
-		t.Errorf("first hit = %+v, want the shop article with scope project", hits)
+	if len(hits) == 0 || hits[0].Scope != registeredProject || hits[0].Name != "Shop deploy" {
+		t.Errorf("first hit = %+v, want the shop article with the Project as its scope", hits)
 	}
 	text, err := runScoped(t, t.TempDir(), "", scopedArgs(srv, "search", "kubernetes", "--project", registeredProject)...)
 	if err != nil {
