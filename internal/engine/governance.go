@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -83,20 +84,35 @@ func scalar(n yaml.Node, tag string) (string, bool) {
 	return n.Value, true
 }
 
-// parseRef parses an Item reference, <kind>:<name> (ADR 0021): a lower-case
-// Kind, then a slash-separated name whose segments are neither empty nor dot
-// segments, with no colon, backslash, control or other invisible character.
+// maxRefBytes caps a reference, Kind and name together, like the Project id
+// cap in projectDirs.
+const maxRefBytes = 256
+
+// maxQuotedRefRunes is how much of a reference an error message quotes.
+const maxQuotedRefRunes = 64
+
+// parseRef parses an Item reference, <kind>:<name> (ADR 0021), of at most
+// maxRefBytes: a known Kind in lower-case letters, then a slash-separated name
+// whose segments are neither empty nor dot segments. The name holds only
+// printable characters other than spaces (no Unicode space, control, format or
+// bidi character), and no colon or backslash.
 func parseRef(ref string) (itemKey, error) {
+	if len(ref) > maxRefBytes {
+		return itemKey{}, fmt.Errorf("is longer than %d bytes", maxRefBytes)
+	}
 	kind, name, ok := strings.Cut(ref, ":")
 	if !ok || kind == "" || name == "" {
 		return itemKey{}, errors.New("is not of the form <kind>:<name>")
 	}
 	if strings.Trim(kind, "abcdefghijklmnopqrstuvwxyz") != "" {
-		return itemKey{}, errors.New("has a Kind that is not lower-case letters")
+		return itemKey{}, errors.New("has a kind that is not lower-case letters")
+	}
+	if kind != KindArticle {
+		return itemKey{}, errors.New("has a kind goldie does not know; the known kind is article")
 	}
 	for _, r := range name {
-		if r == ':' || r == '\\' || (r != ' ' && !unicode.IsGraphic(r)) {
-			return itemKey{}, errors.New("has a name with a character a name cannot hold")
+		if r == ':' || r == '\\' || r == ' ' || r == utf8.RuneError || !unicode.IsPrint(r) {
+			return itemKey{}, errors.New("has a name with a space, control, format, colon or backslash character")
 		}
 	}
 	for _, seg := range strings.Split(name, "/") {
@@ -107,10 +123,16 @@ func parseRef(ref string) (itemKey, error) {
 	return keyOf(kind, name), nil
 }
 
-// quoteRef renders a reference for an error message. Quoting escapes control
+// quoteRef renders a reference for an error message: at most
+// maxQuotedRefRunes runes, then an ellipsis. Quoting escapes control
 // characters, and redact strips anything that looks like a credential, path or
 // address, since the message reaches sync status and logs.
-func quoteRef(ref string) string { return redact(strconv.Quote(ref)) }
+func quoteRef(ref string) string {
+	if utf8.RuneCountInString(ref) > maxQuotedRefRunes {
+		ref = string([]rune(ref)[:maxQuotedRefRunes]) + "…"
+	}
+	return redact(strconv.Quote(ref))
+}
 
 // articleFile is the path of a's file relative to the Source root.
 func articleFile(a *Article) string {
