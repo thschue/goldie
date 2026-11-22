@@ -251,18 +251,54 @@ func (c *commander) project() (detectedProject, error) {
 // address is configured and the server answers. The server part is best
 // effort: GOLDIE_ADDR is also the server's listen address (":8080"), so an
 // address that is not a URL is skipped instead of failing the command. The API
-// document takes the API's token (#101), so it is sent when one is set; without
-// an accepted token the server's API version is left out.
+// document takes the API's token (#101), so it is sent when one is set. When
+// the version is missing the output says why (no token, token rejected, server
+// unreachable), with a hint where the user can act, as status does on its Auth
+// line. It never prints the address or the token. The JSON key stays
+// serverApiVersion (the contract is additive-only) and is null when unknown,
+// with the reason in serverNote.
 func (c *commander) version(ctx context.Context) error {
 	info := map[string]any{"version": platform.Version}
 	line := platform.Version
-	if cl, err := c.client(c.s.token != ""); err == nil {
-		if doc, err := cl.GetOpenAPIJSONWithResponse(ctx); err == nil && doc.JSON200 != nil {
-			_, apiVersion := specInfo(*doc.JSON200)
-			info["serverApiVersion"] = apiVersion
-			line += "\nserver API: " + contract.CleanLine(apiVersion)
-		}
+	cl, err := c.client(c.s.token != "")
+	if err != nil {
+		return c.printVersion(info, line)
 	}
+	var note string
+	var hint *string
+	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
+	switch {
+	case err != nil:
+		note = "the server cannot be reached"
+	case doc.JSON200 != nil:
+		_, apiVersion := specInfo(*doc.JSON200)
+		info["serverApiVersion"] = apiVersion
+		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(apiVersion))
+	case doc.StatusCode() == http.StatusUnauthorized && c.s.token == "":
+		note = "no token given"
+		h := "set " + EnvToken + " or " + EnvToken + "_FILE (or pass --token) to see the server API version"
+		hint = &h
+	case doc.StatusCode() == http.StatusUnauthorized:
+		note = "the token was rejected"
+		h := "check " + EnvToken + " or " + EnvToken + "_FILE"
+		hint = &h
+	default:
+		note = "the server did not return its API document"
+	}
+	info["serverApiVersion"] = nil
+	info["serverNote"] = note
+	line += "\nserver API: unknown (" + note + ")"
+	if hint != nil {
+		info["hint"] = *hint
+		var b strings.Builder
+		writeHint(&b, hint)
+		line += "\n" + strings.TrimSuffix(b.String(), "\n")
+	}
+	return c.printVersion(info, line)
+}
+
+// printVersion writes the version report as JSON or as text.
+func (c *commander) printVersion(info map[string]any, line string) error {
 	if c.s.json {
 		return c.printJSON(info)
 	}
