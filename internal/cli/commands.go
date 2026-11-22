@@ -101,12 +101,15 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 // status reports whether the server answers and whether it accepts the token.
 // The API has no status or sync route yet (that is the sync work, #6), so this
 // reports only what the contract supports: the API document and one search.
-// The token goes only to the search, never to the public API document.
+// The API document takes the same token as the API (#101), so the token goes
+// to both. Without a token, or with a rejected one, the document's 401 still
+// shows the server is reachable, and the API name stays unknown.
 //
 // TODO(#6): the token probe is a real search, so it will count as search and
 // Miss activity once those are recorded. Replace it with the status route.
 func (c *commander) status(ctx context.Context) error {
-	cl, err := c.client(false)
+	given := c.s.token != ""
+	cl, err := c.client(given)
 	if err != nil {
 		return err
 	}
@@ -114,44 +117,60 @@ func (c *commander) status(ctx context.Context) error {
 	if err != nil {
 		return transportError(err)
 	}
-	if doc.JSON200 == nil {
+	if doc.JSON200 == nil && doc.StatusCode() != http.StatusUnauthorized {
 		return apiError(doc.HTTPResponse, doc.Body)
 	}
-	title, apiVersion := specInfo(*doc.JSON200)
 	project, err := c.project()
 	if err != nil {
 		return err
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
-	if c.s.token != "" {
-		authed, err := c.client(true)
-		if err != nil {
-			return err
+	var title, apiVersion string
+	switch {
+	case doc.JSON200 != nil:
+		title, apiVersion = specInfo(*doc.JSON200)
+		if given {
+			if auth, accepted, err = probeToken(ctx, cl); err != nil {
+				return err
+			}
 		}
-		resp, err := authed.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
-		switch {
-		case err != nil:
-			return transportError(err)
-		case resp.JSON200 != nil:
-			auth, accepted = "token accepted", true
-		case resp.StatusCode() == http.StatusUnauthorized:
-			auth = "token rejected"
-		default:
-			return apiError(resp.HTTPResponse, resp.Body)
-		}
+	case given:
+		auth = "token rejected"
 	}
 	if c.s.json {
-		out := map[string]any{"reachable": true, "api": title, "apiVersion": apiVersion,
-			"tokenGiven": c.s.token != "", "tokenAccepted": accepted, "project": nil, "projectSource": nil}
+		out := map[string]any{"reachable": true, "api": nil, "apiVersion": nil,
+			"tokenGiven": given, "tokenAccepted": accepted, "project": nil, "projectSource": nil}
+		if doc.JSON200 != nil {
+			out["api"], out["apiVersion"] = title, apiVersion
+		}
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
 		return c.printJSON(out)
 	}
-	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		contract.CleanLine(title), contract.CleanLine(apiVersion), auth, project.describe())
+	apiLine := "unknown (the API document needs an accepted token)"
+	if doc.JSON200 != nil {
+		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
+	}
+	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
+		apiLine, auth, project.describe())
 	return err
+}
+
+// probeToken checks the token with one search, so status reports the token as
+// accepted only where the API answers it.
+func probeToken(ctx context.Context, cl *contract.ClientWithResponses) (auth string, accepted bool, err error) {
+	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie"})
+	switch {
+	case err != nil:
+		return "", false, transportError(err)
+	case resp.JSON200 != nil:
+		return "token accepted", true, nil
+	case resp.StatusCode() == http.StatusUnauthorized:
+		return "token rejected", false, nil
+	}
+	return "", false, apiError(resp.HTTPResponse, resp.Body)
 }
 
 // project resolves the Project for the working directory.
@@ -167,11 +186,13 @@ func (c *commander) project() (detectedProject, error) {
 // version prints the client version, and the server's API version when an
 // address is configured and the server answers. The server part is best
 // effort: GOLDIE_ADDR is also the server's listen address (":8080"), so an
-// address that is not a URL is skipped instead of failing the command.
+// address that is not a URL is skipped instead of failing the command. The API
+// document takes the API's token (#101), so it is sent when one is set; without
+// an accepted token the server's API version is left out.
 func (c *commander) version(ctx context.Context) error {
 	info := map[string]any{"version": platform.Version}
 	line := platform.Version
-	if cl, err := c.client(false); err == nil {
+	if cl, err := c.client(c.s.token != ""); err == nil {
 		if doc, err := cl.GetOpenAPIJSONWithResponse(ctx); err == nil && doc.JSON200 != nil {
 			_, apiVersion := specInfo(*doc.JSON200)
 			info["serverApiVersion"] = apiVersion

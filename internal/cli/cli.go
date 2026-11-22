@@ -191,7 +191,8 @@ type commander struct {
 
 // client builds the generated client for the configured address. With
 // withToken it sends the token as a bearer token and fails when there is none;
-// without, it sends no token, for the public routes such as /openapi.json.
+// without, it sends no token, for status and version, which still answer
+// without one and then report less.
 func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error) {
 	if c.s.addr == "" {
 		return nil, fmt.Errorf("no server address: set --addr or %s", EnvAddr)

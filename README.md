@@ -12,7 +12,8 @@ Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUD
 ```
 
 The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
-`/openapi.json`. The source is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
+`/openapi.json`, behind the same Bearer token as the API (at least the `reader` Role). The source
+is `internal/contract/openapi.yaml`; `./run lint-spec` lints it.
 
 ## CLI
 
@@ -20,7 +21,8 @@ The server publishes its OpenAPI 3.1 contract on the public listener at `/openap
 running server through the generated client. Each takes `--addr` (or `GOLDIE_ADDR`), `--token` (or
 `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it from a file) and `--json`. `status` reports
 whether the server answers and accepts the token (`--json` adds `tokenGiven`) and which Project the
-CLI works for. The Project is `--project` (only `status` takes it for now), else `GOLDIE_PROJECT`,
+CLI works for; without an accepted token it cannot read the API document, so it reports the API as
+unknown, and `version` leaves out the server's API version. The Project is `--project` (only `status` takes it for now), else `GOLDIE_PROJECT`,
 else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git
 remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git need not be
 installed, and credentials in a remote URL are never printed. The sync state arrives with the sync
