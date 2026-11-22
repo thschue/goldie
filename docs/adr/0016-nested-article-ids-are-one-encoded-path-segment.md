@@ -1,6 +1,6 @@
 # 16. Nested article ids travel as one percent-encoded path segment
 
-Status: proposed
+Status: accepted
 
 ## Context
 

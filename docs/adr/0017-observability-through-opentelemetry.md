@@ -1,6 +1,6 @@
 # 17. Observability through OpenTelemetry, configured by the standard OTEL_* variables
 
-Status: proposed
+Status: accepted
 
 ## Context
 
