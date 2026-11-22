@@ -458,7 +458,7 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 			}
 			n++
 			responses, _ := o["responses"].(map[string]any)
-			resp := contracttest.Resolve(doc, responses["429"])
+			resp := contracttest.ResolveRef(doc, responses["429"])
 			if resp == nil {
 				t.Errorf("%s %s: no 429 response", method, path)
 				continue
@@ -470,7 +470,7 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 				t.Errorf("%s %s: 429 body schema %v, want the ErrorEnvelope", method, path, schema)
 			}
 			headers, _ := resp["headers"].(map[string]any)
-			header := contracttest.Resolve(doc, headers["Retry-After"])
+			header := contracttest.ResolveRef(doc, headers["Retry-After"])
 			hs, _ := header["schema"].(map[string]any)
 			if header == nil || hs["type"] != "integer" {
 				t.Errorf("%s %s: 429 Retry-After header %v, want one with an integer schema", method, path, header)

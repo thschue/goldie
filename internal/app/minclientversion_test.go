@@ -421,7 +421,7 @@ func TestSpecDeclaresTheUpgradeRequiredResponse(t *testing.T) {
 			}
 			n++
 			responses, _ := o["responses"].(map[string]any)
-			resp := contracttest.Resolve(doc, responses["426"])
+			resp := contracttest.ResolveRef(doc, responses["426"])
 			if resp == nil {
 				t.Errorf("%s %s: no 426 response", method, path)
 				continue

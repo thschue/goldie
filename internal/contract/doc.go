@@ -13,8 +13,6 @@
 // article ids that URL path cleaning would resolve away. The package imports no
 // other goldie module.
 //
-// contract/contracttest checks a response against the document with Conforms.
-// ExamplePath builds a request path for an operation from the examples the
-// spec declares, each encoded as one path segment, and fails naming a path
-// parameter whose example is missing or empty. Resolve follows a local $ref.
+// The package comment of contract/contracttest describes Conforms, ExamplePath
+// and ResolveRef.
 package contract
