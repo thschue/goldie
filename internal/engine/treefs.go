@@ -7,21 +7,105 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 var errBadEntryName = errors.New("tree entry name is not a valid file name")
 
+// Load limits for one treeFS. A tree that references the same subtree many
+// times expands to far more paths than it has objects, and one blob can back
+// many files, so a hostile tree could make a load run and allocate without
+// bound. These cap the work and the content one load may read.
+const (
+	maxTreeSteps   = 1 << 20   // entries listed plus path elements stepped through
+	maxTreeBytes   = 256 << 20 // file content read
+	maxTreePathLen = 4096      // bytes in one path
+)
+
+// errTreeTooLarge is returned once a treeFS runs past its load limits.
+var errTreeTooLarge = errors.New("git tree exceeds the load limits")
+
 // treeFS is a read-only fs.FS over one git tree, so the shared loader reads a
 // commit without a working tree. It never follows a symlink: opening one or a
 // path through one fails, and only Lstat reports it. A submodule is an
 // irregular entry. A tree entry whose name could traverse makes ReadDir fail.
-type treeFS struct{ root *object.Tree }
+// Its budget is shared by every call, so build one treeFS per load.
+type treeFS struct {
+	root *object.Tree
+	b    *treeBudget
+}
 
-func newTreeFS(root *object.Tree) treeFS { return treeFS{root: root} }
+func newTreeFS(root *object.Tree) treeFS {
+	return treeFS{root: root, b: &treeBudget{
+		steps: maxTreeSteps, bytes: maxTreeBytes, trees: map[plumbing.Hash]*object.Tree{},
+	}}
+}
+
+// treeBudget is what a treeFS may still spend, and the subtrees it decoded.
+type treeBudget struct {
+	mu    sync.Mutex
+	steps int
+	bytes int
+	trees map[plumbing.Hash]*object.Tree
+}
+
+func (b *treeBudget) spend(steps int) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if steps > b.steps {
+		b.steps = 0
+		return errTreeTooLarge
+	}
+	b.steps -= steps
+	return nil
+}
+
+func (b *treeBudget) spendBytes(n int) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n > b.bytes {
+		b.bytes = 0
+		return errTreeTooLarge
+	}
+	b.bytes -= n
+	return nil
+}
+
+// subtree decodes the directory entry e of parent once per tree hash.
+func (b *treeBudget) subtree(parent *object.Tree, e object.TreeEntry) (*object.Tree, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if t, ok := b.trees[e.Hash]; ok {
+		return t, nil
+	}
+	t, err := parent.Tree(e.Name)
+	if err != nil {
+		return nil, err
+	}
+	b.trees[e.Hash] = t
+	return t, nil
+}
+
+// budgetReader charges what it reads to the treeFS byte budget.
+type budgetReader struct {
+	io.ReadCloser
+	b *treeBudget
+}
+
+func (r budgetReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 {
+		if berr := r.b.spendBytes(n); berr != nil {
+			return 0, berr
+		}
+	}
+	return n, err
+}
 
 var (
 	_ fs.ReadDirFS  = treeFS{}
@@ -72,7 +156,7 @@ func (n node) reader() (io.ReadCloser, error) {
 
 func (f treeFS) lookup(op, name string) (node, error) {
 	fail := func(err error) (node, error) { return node{}, &fs.PathError{Op: op, Path: name, Err: err} }
-	if !fs.ValidPath(name) {
+	if !fs.ValidPath(name) || len(name) > maxTreePathLen {
 		return fail(fs.ErrInvalid)
 	}
 	n := node{dir: f.root}
@@ -80,6 +164,9 @@ func (f treeFS) lookup(op, name string) (node, error) {
 		return n, nil
 	}
 	for part := range strings.SplitSeq(name, "/") {
+		if err := f.b.spend(1); err != nil {
+			return fail(err)
+		}
 		if n.dir == nil {
 			if n.entry.Mode == filemode.Symlink {
 				// Not followed, and not reported missing either, so a
@@ -94,7 +181,7 @@ func (f treeFS) lookup(op, name string) (node, error) {
 		}
 		n = node{entry: n.dir.Entries[i], parent: n.dir}
 		if n.entry.Mode == filemode.Dir {
-			sub, err := n.parent.Tree(part)
+			sub, err := f.b.subtree(n.parent, n.entry)
 			if err != nil {
 				return fail(err)
 			}
@@ -121,7 +208,7 @@ func (f treeFS) Open(name string) (fs.File, error) {
 		if err != nil {
 			return nil, &fs.PathError{Op: "open", Path: name, Err: err}
 		}
-		return &treeFile{info: n.info(), ReadCloser: r}, nil
+		return &treeFile{info: n.info(), ReadCloser: budgetReader{r, f.b}}, nil
 	}
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 }
@@ -155,6 +242,11 @@ func (f treeFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	n, err := f.lookup("readdir", name)
 	if err == nil && n.dir == nil {
 		err = &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrInvalid}
+	}
+	if err == nil {
+		if serr := f.b.spend(len(n.dir.Entries)); serr != nil {
+			err = &fs.PathError{Op: "readdir", Path: name, Err: serr}
+		}
 	}
 	if err != nil {
 		return nil, err

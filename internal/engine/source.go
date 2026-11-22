@@ -122,7 +122,7 @@ func projectDirs(fsys fs.FS) ([]projectDir, error) {
 			if dir == projectsDir && errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
-			return fmt.Errorf("%s: cannot read", dir)
+			return fmt.Errorf("%s: %w", dir, readErr(err))
 		}
 		for _, e := range entries {
 			p := dir + "/" + e.Name()
@@ -182,7 +182,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 			if p == dir && errors.Is(err, fs.ErrNotExist) {
 				return fs.SkipAll
 			}
-			return fmt.Errorf("%s: cannot read", p)
+			return fmt.Errorf("%s: %w", p, readErr(err))
 		}
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
@@ -211,17 +211,26 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 func readLimited(fsys fs.FS, p string) ([]byte, error) {
 	f, err := fsys.Open(p)
 	if err != nil {
-		return nil, errors.New("cannot read")
+		return nil, readErr(err)
 	}
 	defer func() { _ = f.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(f, maxArticleBytes+1))
 	if err != nil {
-		return nil, errors.New("cannot read")
+		return nil, readErr(err)
 	}
 	if len(raw) > maxArticleBytes {
 		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
 	}
 	return raw, nil
+}
+
+// readErr hides why a read failed, except when a Source ran past its load
+// limits, which the operator needs to see.
+func readErr(err error) error {
+	if errors.Is(err, errTreeTooLarge) {
+		return errTreeTooLarge
+	}
+	return errors.New("cannot read")
 }
 
 func parseArticle(id string, raw []byte) (Article, error) {
