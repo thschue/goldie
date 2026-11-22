@@ -30,8 +30,11 @@ CLI works for; without an accepted token it cannot read the API document, so it 
 unknown, and `version` leaves out the server's API version. `search`, `lookup` and `status` take `--project`, and `search` and `lookup` send the resolved Project
 to the server as `project=`. If the server does not have that Project registered, it answers with
 the global results plus a hint, which the CLI prints (and carries in `--json`, for `status` too). An
-unusable Project (a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error before
-any request is made, for `search` and `lookup` as for `status`. The Project is `--project`, else `GOLDIE_PROJECT`,
+unusable Project (a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error
+before any request is made for `search` and `lookup`; `status` instead reports it on its `Project:`
+line and exits 0 (`--json` adds `projectError`). If a git remote `upstream` or `origin` exists but
+is not in `host/org/repo` form and nothing else gives a Project, `status` names that remote (never
+its URL) on the `Project:` line, and `--json` adds `projectHint`. The Project is `--project`, else `GOLDIE_PROJECT`,
 else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream` (or `origin`) git
 remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git need not be
 installed, and credentials in a remote URL are never printed. The sync state arrives with the sync

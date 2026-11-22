@@ -2,6 +2,8 @@ package contract
 
 import (
 	"encoding/json"
+	"net/http"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -49,25 +51,44 @@ func CleanLine(s string) string {
 }
 
 // APIError is what a client may pass on from an error response: the status,
-// and the envelope's message and hint cleaned with CleanLine. Each client
-// words its own message from it.
+// the envelope's message and hint cleaned with CleanLine, and the wait of a
+// valid Retry-After header. Each client words its own message from it.
 type APIError struct {
 	Status  int
 	Message string
 	Hint    string
+	// RetryAfter is the wait the server asked for, in whole seconds. It is 0
+	// when the header is absent, malformed or 0, so no client claims a wait
+	// the server did not send.
+	RetryAfter int
 }
 
 // DecodeAPIError reads an error response. A body that is not an error
-// envelope, or an envelope without a message, yields only the status:
-// nothing else of the body is passed on.
-func DecodeAPIError(status int, body []byte) APIError {
+// envelope, or an envelope without a message, yields only the status and
+// RetryAfter: nothing else of the body is passed on.
+func DecodeAPIError(status int, header http.Header, body []byte) APIError {
+	e := APIError{Status: status, RetryAfter: retryAfter(header)}
 	var env ErrorEnvelope
-	if json.Unmarshal(body, &env) != nil || env.Error.Message == "" {
-		return APIError{Status: status}
+	if json.Unmarshal(body, &env) != nil {
+		return e
 	}
-	msg := CleanLine(env.Error.Message)
-	if msg == "" {
-		return APIError{Status: status}
+	if e.Message = CleanLine(env.Error.Message); e.Message != "" {
+		e.Hint = CleanLine(env.Error.Details.Hint)
 	}
-	return APIError{Status: status, Message: msg, Hint: CleanLine(env.Error.Details.Hint)}
+	return e
+}
+
+// retryAfter reads Retry-After as delay-seconds (RFC 9110, 10.2.3): one or
+// more ASCII digits and nothing else. Any other value, or one too large for
+// an int, is 0. The HTTP-date form is not read: the API never sends it.
+func retryAfter(h http.Header) int {
+	v := h.Get("Retry-After")
+	if v == "" || strings.Trim(v, "0123456789") != "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0
+	}
+	return n
 }

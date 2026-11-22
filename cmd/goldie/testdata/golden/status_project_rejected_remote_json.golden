@@ -1,0 +1,10 @@
+{
+  "api": "Goldie API",
+  "apiVersion": "0.1.0",
+  "project": null,
+  "projectHint": "found a git remote origin, but its URL is not in the accepted host/org/repo form (set --project, GOLDIE_PROJECT or .goldie/config.yaml)",
+  "projectSource": null,
+  "reachable": true,
+  "tokenAccepted": true,
+  "tokenGiven": true
+}

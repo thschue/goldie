@@ -35,8 +35,13 @@ func TestProjectIDTable(t *testing.T) {
 }
 
 // validProjectLayout applies validProjectSegment to each of exactly three
-// segments, as loading projects/<host>/<org>/<repo>/ does.
+// segments, as loading projects/<host>/<org>/<repo>/ does, and holds the id to
+// maxProjectIDLen as loading does. The table's over-long line ties that cap to
+// the spec's maxLength.
 func validProjectLayout(id string) bool {
+	if len(id) > maxProjectIDLen {
+		return false
+	}
 	segs := strings.Split(id, "/")
 	if len(segs) != 3 {
 		return false

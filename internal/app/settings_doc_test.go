@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -56,4 +57,45 @@ func TestAPITokensSettingDocumentsFormatsHashingAndStrength(t *testing.T) {
 	if !strings.Contains(meaning[platform.EnvAPIToken], "operator") {
 		t.Errorf("%s description %q does not say it is an operator token", platform.EnvAPIToken, meaning[platform.EnvAPIToken])
 	}
+}
+
+// The GOLDIE_API_TOKENS description says, in one sentence, that a plaintext
+// token must not start with sha256: (#159), and the committed configuration
+// reference carries it (regenerated with ./run regen).
+func TestAPITokensSettingSaysPlaintextMustNotStartWithSHA256(t *testing.T) {
+	const rule = "must not start with sha256:"
+	var tokens string
+	for _, s := range platform.Settings {
+		if s.Name == platform.EnvAPITokens {
+			tokens = s.Meaning
+		}
+	}
+	if tokens == "" {
+		t.Fatalf("%s is not in platform.Settings", platform.EnvAPITokens)
+	}
+	var sentences []string
+	for _, s := range strings.Split(tokens, ". ") {
+		if strings.Contains(strings.ToLower(s), rule) {
+			sentences = append(sentences, s)
+		}
+	}
+	if len(sentences) != 1 {
+		t.Fatalf("%s description %q: %d sentences say %q, want exactly one", platform.EnvAPITokens, tokens, len(sentences), rule)
+	}
+	if !strings.Contains(strings.ToLower(sentences[0]), "plaintext token") {
+		t.Errorf("%s description: the sentence %q does not say it is about a plaintext token", platform.EnvAPITokens, sentences[0])
+	}
+	ref, err := os.ReadFile("../../docs/reference/configuration.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(ref), "\n") {
+		if strings.HasPrefix(line, "| `"+platform.EnvAPITokens+"` |") {
+			if !strings.Contains(strings.ToLower(line), rule) {
+				t.Errorf("docs/reference/configuration.md does not say a plaintext token %s (run: ./run regen): %s", rule, line)
+			}
+			return
+		}
+	}
+	t.Errorf("docs/reference/configuration.md has no %s row", platform.EnvAPITokens)
 }

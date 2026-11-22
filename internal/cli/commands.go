@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -49,9 +50,13 @@ func (c *commander) search(ctx context.Context, q string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
+	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: project.param()})
 	if err != nil {
 		return transportError(err)
+	}
+	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
+	if err != nil {
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -91,9 +96,13 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := cl.GetArticleWithResponse(ctx, id, &contract.GetArticleParams{Project: project.param()})
+	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: project.param()})
 	if err != nil {
 		return transportError(err)
+	}
+	resp, err := parseOK(raw, contract.ParseGetArticleResponse)
+	if err != nil {
+		return err
 	}
 	if resp.JSON200 == nil {
 		return apiError(resp.HTTPResponse, resp.Body)
@@ -139,9 +148,13 @@ func (c *commander) status(ctx context.Context) error {
 	if doc.JSON200 == nil && doc.StatusCode() != http.StatusUnauthorized {
 		return apiError(doc.HTTPResponse, doc.Body)
 	}
-	project, err := c.project()
-	if err != nil {
-		return err
+	// A Project problem is reported on the Project line, not as a failure:
+	// status is how a user finds out what is wrong. Other commands still fail.
+	project, perr := c.project()
+	projectError := ""
+	if perr != nil {
+		projectError = contract.CleanLine(perr.Error())
+		project = detectedProject{}
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
@@ -167,6 +180,12 @@ func (c *commander) status(ctx context.Context) error {
 		if project.ID != "" {
 			out["project"], out["projectSource"] = project.ID, project.Source
 		}
+		if projectError != "" {
+			out["projectError"] = projectError
+		}
+		if h := project.hint(); h != "" {
+			out["projectHint"] = h
+		}
 		if hint != nil && *hint != "" {
 			out["hint"] = contract.CleanLine(*hint)
 		}
@@ -177,7 +196,7 @@ func (c *commander) status(ctx context.Context) error {
 		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		apiLine, auth, project.describe())
+		apiLine, auth, describeProject(project, projectError))
 	if err == nil {
 		var b strings.Builder
 		writeHint(&b, hint)
@@ -188,18 +207,34 @@ func (c *commander) status(ctx context.Context) error {
 
 // probeToken checks the token with one search for project, so status reports
 // the token as accepted only where the API answers it, and passes on the
-// server's hint for an unregistered Project.
+// server's hint for an unregistered Project. Any answer other than 200 or 401
+// is read by parseOK, so a 429 stays a rate-limit error.
 func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId) (auth string, accepted bool, hint *string, err error) {
-	resp, err := cl.SearchArticlesWithResponse(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
-	switch {
-	case err != nil:
+	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
+	if err != nil {
 		return "", false, nil, transportError(err)
-	case resp.JSON200 != nil:
-		return "token accepted", true, resp.JSON200.Hint, nil
-	case resp.StatusCode() == http.StatusUnauthorized:
+	}
+	if raw.StatusCode == http.StatusUnauthorized {
+		_ = raw.Body.Close()
 		return "token rejected", false, nil, nil
 	}
-	return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
+	resp, err := parseOK(raw, contract.ParseSearchArticlesResponse)
+	switch {
+	case err != nil:
+		return "", false, nil, err
+	case resp.JSON200 == nil:
+		return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
+	}
+	return "token accepted", true, resp.JSON200.Hint, nil
+}
+
+// describeProject is the text of the Project line: the problem when there is
+// one, else the Project or what was found.
+func describeProject(p detectedProject, problem string) string {
+	if problem != "" {
+		return "problem: " + problem
+	}
+	return p.describe()
 }
 
 // project resolves the Project for the working directory.
@@ -255,19 +290,60 @@ func transportError(err error) error {
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
 
-// apiError words an error response. contract.DecodeAPIError passes on only
-// the status and the cleaned message and hint of the server's envelope.
-func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, body)
-	status := http.StatusText(e.Status)
-	if e.Message == "" {
-		return fmt.Errorf("the server answered %d %s", e.Status, status)
+// parseOK hands raw to the generated parse only when the server answered 200.
+// Any other answer is read by apiError alone: the generated parser fails on a
+// 429 whose Retry-After is not an integer, which would turn the 429 into a
+// transport failure.
+func parseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (T, error) {
+	var zero T
+	if raw.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(raw.Body)
+		_ = raw.Body.Close()
+		if err != nil {
+			return zero, transportError(err)
+		}
+		return zero, apiError(raw, body)
 	}
+	resp, err := parse(raw)
+	if err != nil {
+		return zero, transportError(err)
+	}
+	return resp, nil
+}
+
+// apiError words an error response. contract.DecodeAPIError passes on only
+// the status, the cleaned message and hint of the server's envelope, and the
+// wait of a valid Retry-After.
+//
+// A wait or a 429 gets its own hint instead of the server's, which points at
+// a header the user does not see. Without a valid wait it says none, rather
+// than "0 seconds" or the server's raw value.
+func apiError(resp *http.Response, body []byte) error {
+	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
+	status := http.StatusText(e.Status)
 	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Hint != "" {
-		msg += "\nHint: " + e.Hint
+	if e.Message == "" {
+		msg = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	}
+	hint := e.Hint
+	switch {
+	case e.RetryAfter > 0:
+		hint = fmt.Sprintf("Wait %s, then retry.", seconds(e.RetryAfter))
+	case e.Status == http.StatusTooManyRequests:
+		hint = "Wait a little, then retry."
+	}
+	if hint != "" {
+		msg += "\nHint: " + hint
 	}
 	return errors.New(msg)
+}
+
+// seconds words a wait of n whole seconds.
+func seconds(n int) string {
+	if n == 1 {
+		return "1 second"
+	}
+	return fmt.Sprintf("%d seconds", n)
 }
 
 func cleanList(l []string) string {
