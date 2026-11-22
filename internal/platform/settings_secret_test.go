@@ -60,9 +60,10 @@ func TestRegistryMarksExactlyTheSecretSettings(t *testing.T) {
 		t.Errorf("ClientSettings rows marked Secret = %v, want %v", got, want)
 	}
 	headers := map[string]bool{
-		"OTEL_EXPORTER_OTLP_HEADERS":        true,
-		"OTEL_EXPORTER_OTLP_TRACES_HEADERS": true,
-		"OTEL_EXPORTER_OTLP_LOGS_HEADERS":   true,
+		"OTEL_EXPORTER_OTLP_HEADERS":         true,
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  true,
+		"OTEL_EXPORTER_OTLP_LOGS_HEADERS":    true,
+		"OTEL_EXPORTER_OTLP_METRICS_HEADERS": true,
 	}
 	got := secretNames(t, TelemetrySettings)
 	if !contains(got, "OTEL_EXPORTER_OTLP_HEADERS") {

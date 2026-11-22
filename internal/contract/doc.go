@@ -4,5 +4,7 @@
 // holds what every API client shares: NewAPIClient, the hardened client (no
 // redirects, a 16 MiB answer cap, X-Goldie-Client), CleanText and CleanLine
 // for untrusted server text, and ParseOK and DecodeAPIError for the error
-// envelope. It imports no other goldie module.
+// envelope. Its subpackages hold other shared helpers: contract/project detects
+// the Project of a working directory for the CLI and MCP, contract/contracttest
+// checks responses against the document. It imports no other goldie module.
 package contract
