@@ -1,0 +1,6 @@
+Server: reachable
+API: Goldie API 0.1.0
+Auth: token accepted
+Project: found a git remote origin, but its URL is not in the accepted host/org/repo form (set --project, GOLDIE_PROJECT or .goldie/config.yaml)
+
+Search with: goldie search <words>
