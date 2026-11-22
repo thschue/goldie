@@ -109,6 +109,7 @@ func runServer(out io.Writer) error {
 		ContentDir: cfg.ContentDir,
 		APIToken:   cfg.APIToken,
 		APITokens:  cfg.APITokens,
+		RateLimit:  cfg.RateLimit,
 	})
 	if err != nil {
 		return handlerError(err)

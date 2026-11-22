@@ -14,6 +14,7 @@ a `NAME_FILE` form that reads the value from a file; setting both is an error (P
 | `GOLDIE_CONTENT_DIR` | (none) | Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server. |
 | `GOLDIE_DRAIN_SECONDS` | `25` | Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600. |
 | `GOLDIE_LOG_LEVEL` | `info` | Log level: debug, info, warn or error. |
+| `GOLDIE_RATE_LIMIT` | `20/s,burst=40` | The request limit per token on every /api/ path: &lt;n&gt;/s or &lt;n&gt;/m, n requests per second or per minute for each token name, optionally followed by ,burst=&lt;b&gt;, the most requests a token may send at once (b defaults to n). n and b are positive integers. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. A malformed value stops the server. |
 | `GOLDIE_SWAGGER_UI_ENABLED` | `true` | Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404. |
 
 ## OpenTelemetry

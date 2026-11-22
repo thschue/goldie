@@ -28,6 +28,7 @@ Operation ID: `getArticle`
 | `200` | The article. | `application/json` (`Article`) |
 | `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
 | `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/search`
@@ -46,6 +47,7 @@ Operation ID: `searchArticles`
 | `200` | The matching articles, best first. | `application/json` (`SearchResults`) |
 | `400` | The search words are missing or longer than 1024 bytes. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /openapi.json`
