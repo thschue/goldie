@@ -81,3 +81,8 @@ linters:
             - {pkg: github.com/thschue/goldie/internal/cli, desc: "platform is cross-cutting: it must not import cli"}
             - {pkg: github.com/thschue/goldie/internal/contract, desc: "platform is cross-cutting: it must not import contract"}
             - {pkg: github.com/thschue/goldie/internal/app, desc: "platform is cross-cutting: it must not import app"}
+        contracttest:
+          # Test-only helper: it pulls in the jsonschema dependency, so only _test.go files may import it.
+          files: ["$all", "!$test"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/contract/contracttest, desc: "contracttest is test-only: import it from _test.go files, never from production code"}
