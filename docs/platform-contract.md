@@ -21,7 +21,7 @@ Variables use the `GOLDIE_` prefix, with one exception: the standard `OTEL_*` Op
 | PC-09 | **Health subcommand.** `goldie health` probes the local admin port and exits non-zero when unhealthy, for images without a shell or `curl`. |
 | PC-10 | **Generated component docs.** Configuration and endpoint reference docs are generated from code (`./run regen`) and CI fails on drift. |
 | PC-11 | **Hardened image.** The image is distroless, non-root and runs with a read-only root filesystem. |
-| PC-12 | **Telemetry.** Traces of the public listener and logs are exported over OTLP http/protobuf, configured by the standard `OTEL_*` variables, and are off unless an endpoint or exporter variable selects them (`OTEL_SDK_DISABLED=true` always turns them off). Goldie validates the variables that select and address the exporters, `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` (PC-04); they fail fast naming the variable, never its value. Other `OTEL_*` variables (samplers, batch tuning, timeouts, TLS, compression) keep the SDK's own handling and are not validated. The admin port is never traced, and stdout logs keep PC-07. |
+| PC-12 | **Telemetry.** Traces of the public listener and logs are exported over OTLP http/protobuf, configured by the standard `OTEL_*` variables, and are off unless an endpoint or exporter variable selects them (`OTEL_SDK_DISABLED=true` always turns them off). Goldie validates the variables that select and address the exporters, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER{,_ARG}` and the span limits `OTEL_{SPAN_,}ATTRIBUTE_{VALUE_LENGTH,COUNT}_LIMIT`, `OTEL_SPAN_{EVENT,LINK}_COUNT_LIMIT` and `OTEL_{EVENT,LINK}_ATTRIBUTE_COUNT_LIMIT` (PC-04); they fail fast naming the variable, never its value. Other `OTEL_*` variables (batch tuning, timeouts, TLS, compression) keep the SDK's own handling and are not validated. The admin port is never traced, and stdout logs keep PC-07. |
 
 Changing a clause is a decision: update this file and, when it is hard to reverse, add an ADR.
 
@@ -35,14 +35,19 @@ and running `./run regen`.
   error. Errors name the variable, never its value or the file path. Of the `OTEL_*` variables only the
   OTLP headers (`OTEL_EXPORTER_OTLP_HEADERS` and its `_TRACES_`/`_LOGS_` forms) accept `_FILE`; for any
   other `OTEL_*` name the SDK would ignore it, so it is an error.
-- `OTEL_*` is read by the OpenTelemetry SDK as well as by goldie. Goldie validates `OTEL_SDK_DISABLED`,
+- Goldie reads each `OTEL_*` variable it validates through the injected lookup and passes the result to the
+  exporters, sampler, span limits and resource explicitly, defaults included, so the SDK's own reading of
+  the process environment for them is overridden. The SDK still reads the other `OTEL_*` variables itself. Goldie validates `OTEL_SDK_DISABLED`,
   `OTEL_EXPORTER_OTLP_{,TRACES_,LOGS_}{ENDPOINT,PROTOCOL,HEADERS}`, `OTEL_{TRACES,LOGS}_EXPORTER`,
-  `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` (a malformed value, such as a pair without `=` or
+  `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER{,_ARG}` and the span limits (a malformed value, such as a pair without `=` or
   a bad percent escape, fails startup). Every OTLP headers variable that is set is checked, and a header
   key must be an RFC 7230 token, because the SDK prints a rejected key or value to its own logger.
   `OTEL_RESOURCE_ATTRIBUTES` cannot override `service.version`
   or `goldie.mode`. The generated configuration reference lists them and names the ones left to the SDK.
-  Only protocol `http/protobuf` is supported. The one `OTEL_*` limit goldie sets itself is a 1024-byte
+  Only protocol `http/protobuf` is supported. With an exporter selected and no endpoint, goldie passes the
+  SDK's default `https://localhost:4318`. The endpoint's scheme, the default's included, decides between
+  plain HTTP and TLS, so `OTEL_EXPORTER_OTLP{,_TRACES,_LOGS}_INSECURE` has no effect; the CA and client
+  certificate variables keep the SDK's handling. The one `OTEL_*` limit goldie sets itself is a 1024-byte
   default for `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
 - `/readyz` returns `{"status":"ready|not_ready|draining","checks":[{"name","status"}]}` with 200 or
   503. Each check has its own timeout (2 s) and its error text is never echoed.

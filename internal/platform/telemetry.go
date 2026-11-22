@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,17 +78,106 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 // spans stay in memory until the collector accepts them.
 const defaultSpanAttributeValueLimit = 1024
 
+// traceSettings are the trace sampler and span limits, parsed from the
+// injected lookup and handed to the SDK explicitly, so it reads neither from
+// the process environment.
+type traceSettings struct {
+	sampler sdktrace.Sampler
+	limits  sdktrace.SpanLimits
+}
+
+// The span limit variables, each with its SDK fallback where one exists.
+const (
+	envSpanAttrValueLen = "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT"
+	envAttrValueLen     = "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT"
+	envSpanAttrCount    = "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT"
+	envAttrCount        = "OTEL_ATTRIBUTE_COUNT_LIMIT"
+	envSpanEventCount   = "OTEL_SPAN_EVENT_COUNT_LIMIT"
+	envSpanLinkCount    = "OTEL_SPAN_LINK_COUNT_LIMIT"
+	envEventAttrCount   = "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT"
+	envLinkAttrCount    = "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT"
+)
+
+// parseTraceSettings reads OTEL_TRACES_SAMPLER{,_ARG} and the span limit
+// variables through get. Errors name the variable, never the value.
+func parseTraceSettings(get func(string) string) (traceSettings, error) {
+	var errs []error
+	// The SDK's defaults, not NewSpanLimits, which reads the process
+	// environment: only lookup decides. The value length keeps goldie's cap.
+	ts := traceSettings{limits: sdktrace.SpanLimits{
+		AttributeValueLengthLimit:   defaultSpanAttributeValueLimit,
+		AttributeValueDepthLimit:    sdktrace.DefaultAttributeValueDepthLimit,
+		AttributeCountLimit:         sdktrace.DefaultAttributeCountLimit,
+		EventCountLimit:             sdktrace.DefaultEventCountLimit,
+		LinkCountLimit:              sdktrace.DefaultLinkCountLimit,
+		AttributePerEventCountLimit: sdktrace.DefaultAttributePerEventCountLimit,
+		AttributePerLinkCountLimit:  sdktrace.DefaultAttributePerLinkCountLimit,
+	}}
+	limit := func(dst *int, names ...string) {
+		for _, name := range names {
+			v := get(name)
+			if v == "" {
+				continue
+			}
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				errs = append(errs, fmt.Errorf("%s: must be a non-negative integer", name))
+			} else {
+				*dst = n
+			}
+			return
+		}
+	}
+	limit(&ts.limits.AttributeValueLengthLimit, envSpanAttrValueLen, envAttrValueLen)
+	limit(&ts.limits.AttributeCountLimit, envSpanAttrCount, envAttrCount)
+	limit(&ts.limits.EventCountLimit, envSpanEventCount)
+	limit(&ts.limits.LinkCountLimit, envSpanLinkCount)
+	limit(&ts.limits.AttributePerEventCountLimit, envEventAttrCount)
+	limit(&ts.limits.AttributePerLinkCountLimit, envLinkAttrCount)
+
+	arg := get(envOTelSamplerArg)
+	ratio := func() (float64, bool) {
+		if arg == "" {
+			return 1, true
+		}
+		f, err := strconv.ParseFloat(arg, 64)
+		// NaN compares false against both bounds, so it is checked itself.
+		if err != nil || math.IsNaN(f) || f < 0 || f > 1 {
+			errs = append(errs, fmt.Errorf("%s: must be a number from 0 to 1", envOTelSamplerArg))
+			return 0, false
+		}
+		return f, true
+	}
+	switch strings.ToLower(get(envOTelSampler)) {
+	case "", "parentbased_always_on":
+		ts.sampler = sdktrace.ParentBased(sdktrace.AlwaysSample())
+	case "always_on":
+		ts.sampler = sdktrace.AlwaysSample()
+	case "always_off":
+		ts.sampler = sdktrace.NeverSample()
+	case "parentbased_always_off":
+		ts.sampler = sdktrace.ParentBased(sdktrace.NeverSample())
+	case "traceidratio":
+		if f, ok := ratio(); ok {
+			ts.sampler = sdktrace.TraceIDRatioBased(f)
+		}
+	case "parentbased_traceidratio":
+		if f, ok := ratio(); ok {
+			ts.sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(f))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("%s: must be always_on, always_off, traceidratio or a parentbased_ form of them", envOTelSampler))
+	}
+	return ts, errors.Join(errs...)
+}
+
 // newTelemetry wires the providers around the given exporters. Batch
 // processors keep export off the request path; Shutdown flushes them.
-func newTelemetry(res *resource.Resource, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
+func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanExporter, logs sdklog.Exporter) *Telemetry {
 	t := &Telemetry{}
 	if spans != nil {
-		limits := sdktrace.NewSpanLimits() // honours the OTEL_SPAN_* limit variables
-		if limits.AttributeValueLengthLimit < 0 {
-			limits.AttributeValueLengthLimit = defaultSpanAttributeValueLimit
-		}
 		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
-			sdktrace.WithRawSpanLimits(limits))
+			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
 	}
 	if logs != nil {
 		t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
@@ -103,6 +194,14 @@ const (
 	envOTLPHeaders  = "OTEL_EXPORTER_OTLP_HEADERS"
 	envOTelService  = "OTEL_SERVICE_NAME"
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
+
+	// defaultOTLPEndpoint is the Go SDK's own default when no endpoint is
+	// set. It is https, so a header such as an API token is never sent in
+	// plain text unless an operator chooses an http endpoint.
+	defaultOTLPEndpoint = "https://localhost:4318"
+
+	envOTelSampler    = "OTEL_TRACES_SAMPLER"
+	envOTelSamplerArg = "OTEL_TRACES_SAMPLER_ARG"
 )
 
 // secretOTelNames are the variables with a _FILE form (PC-05).
@@ -145,6 +244,10 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		errs = append(errs, fmt.Errorf("%s: %w", envOTelResAttrs, err))
 	}
 	serviceName := get(envOTelService)
+	traceCfg, err := parseTraceSettings(get)
+	if err != nil {
+		errs = append(errs, err)
+	}
 	type signal struct{ name, exporter, prefix string }
 	signals := []signal{
 		{"traces", "OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_"},
@@ -207,31 +310,36 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
 	)
+	// The endpoint and headers are always passed, defaults included, so the
+	// SDK's own reading of the process environment is overridden.
+	headersOf := func(signal string) map[string]string {
+		if h := headers[signal]; h != nil {
+			return h
+		}
+		return map[string]string{}
+	}
 	if on["traces"] {
-		opts := []otlptracehttp.Option{}
-		if e := endpoints["traces"]; e != "" {
-			opts = append(opts, otlptracehttp.WithEndpointURL(e))
-		}
-		if h := headers["traces"]; h != nil {
-			opts = append(opts, otlptracehttp.WithHeaders(h))
-		}
-		if spans, err = otlptracehttp.New(ctx, opts...); err != nil {
+		if spans, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(otlpEndpoint(endpoints, "traces")),
+			otlptracehttp.WithHeaders(headersOf("traces"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_TRACES_*: cannot configure the trace exporter")
 		}
 	}
 	if on["logs"] {
-		opts := []otlploghttp.Option{}
-		if e := endpoints["logs"]; e != "" {
-			opts = append(opts, otlploghttp.WithEndpointURL(e))
-		}
-		if h := headers["logs"]; h != nil {
-			opts = append(opts, otlploghttp.WithHeaders(h))
-		}
-		if logs, err = otlploghttp.New(ctx, opts...); err != nil {
+		if logs, err = otlploghttp.New(ctx, otlploghttp.WithEndpointURL(otlpEndpoint(endpoints, "logs")),
+			otlploghttp.WithHeaders(headersOf("logs"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	return newTelemetry(telemetryResource(serviceName, resAttrs), spans, logs), nil
+	return newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs), nil
+}
+
+// otlpEndpoint is the endpoint URL for signal: the configured one, or the
+// default with the signal path.
+func otlpEndpoint(endpoints map[string]string, signal string) string {
+	if e := endpoints[signal]; e != "" {
+		return e
+	}
+	return defaultOTLPEndpoint + "/v1/" + signal
 }
 
 // parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the

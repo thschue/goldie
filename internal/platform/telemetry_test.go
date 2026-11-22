@@ -75,6 +75,12 @@ func mapLookup(m map[string]string) Lookup {
 	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
 }
 
+// defaultTraceSettings is what an empty lookup yields.
+func defaultTraceSettings() traceSettings {
+	ts, _ := parseTraceSettings(func(string) string { return "" })
+	return ts
+}
+
 // startTraced runs a Server with telemetry on ephemeral ports. The returned
 // stop cancels the server (the drain flushes telemetry) and waits for Serve.
 func startTraced(t *testing.T, tel *Telemetry, logs *syncBuffer) (app, admin string, stop func()) {
@@ -127,7 +133,7 @@ func startTraced(t *testing.T, tel *Telemetry, logs *syncBuffer) (app, admin str
 
 func TestTelemetryOneServerSpanOnPublicListener(t *testing.T) {
 	spans := newSpanSink()
-	tel := newTelemetry(telemetryResource("", nil), spans, &logSink{})
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, &logSink{})
 	app, admin, stop := startTraced(t, tel, &syncBuffer{})
 
 	req, _ := http.NewRequest("GET", "http://"+app+"/api/v1/items?token=s3cret&q=hunter2", nil)
@@ -183,7 +189,7 @@ func TestTelemetryOneServerSpanOnPublicListener(t *testing.T) {
 
 func TestTelemetryLogsFlowThroughBridgeAndKeepPC07Shape(t *testing.T) {
 	logs := &logSink{}
-	tel := newTelemetry(telemetryResource("", nil), newSpanSink(), logs)
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), logs)
 	out := &syncBuffer{}
 	_, _, stop := startTraced(t, tel, out)
 	stop()
@@ -362,7 +368,7 @@ func TestTelemetryHeaderValuesArePercentDecoded(t *testing.T) {
 // up to the 1 MiB header limit until the collector takes it.
 func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 	spans := newSpanSink()
-	tel := newTelemetry(telemetryResource("", nil), spans, nil)
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, nil)
 	app, _, stop := startTraced(t, tel, &syncBuffer{})
 	req, _ := http.NewRequest("GET", "http://"+app+"/"+strings.Repeat("p", 4000), nil)
 	req.Header.Set("User-Agent", strings.Repeat("A", 100_000))
@@ -389,7 +395,7 @@ func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 func TestTelemetryReportErrorsToRedactsAndRateLimits(t *testing.T) {
 	prev := otel.GetErrorHandler()
 	t.Cleanup(func() { otel.SetErrorHandler(prev) })
-	tel := newTelemetry(telemetryResource("", nil), newSpanSink(), nil)
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), nil)
 	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
 	out := &syncBuffer{}
 	tel.ReportErrorsTo(NewLogger(out, 0, "server"))
@@ -424,7 +430,7 @@ func TestTelemetryHeaderBadEscapeFailsWithoutEcho(t *testing.T) {
 // both outputs.
 func TestTelemetryLogBridgeHonoursLogLevel(t *testing.T) {
 	logs := &logSink{}
-	tel := newTelemetry(telemetryResource("", nil), nil, logs)
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), nil, logs)
 	l := tel.WrapLogger(NewLogger(&syncBuffer{}, slog.LevelWarn, "server"), "server")
 	l.Info("quiet-info")
 	l.With("k", "v").Warn("loud-warn")

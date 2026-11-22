@@ -33,14 +33,17 @@ var Settings = []SettingSpec{
 // part of Config; SetupTelemetry validates them. Unset, telemetry is off.
 var TelemetrySettings = []SettingSpec{
 	{"OTEL_SDK_DISABLED", "", "true turns telemetry off even when an endpoint is set."},
-	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export."},
+	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect."},
 	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", "Collector URL for traces only, used as-is; wins over the base URL."},
 	{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "", "Collector URL for logs only, used as-is; wins over the base URL."},
 	{"OTEL_EXPORTER_OTLP_PROTOCOL", "", "Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL."},
 	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
 	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
 	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
-	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
+	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path, so a higher value lets clients grow the spans held in memory. Falls back to OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT. A value that is not a non-negative integer fails startup."},
+	{"OTEL_TRACES_SAMPLER", "parentbased_always_on", "Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms."},
+	{"OTEL_TRACES_SAMPLER_ARG", "1", "Sampling ratio from 0 to 1, for the traceidratio samplers."},
+	{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "128", "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
 	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
 }
@@ -83,7 +86,8 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
-	b.WriteString("headers and query strings are not recorded. Other OTEL_* variables, such as samplers,\n")
+	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
+	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
 	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
