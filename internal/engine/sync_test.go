@@ -169,6 +169,34 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 	<-stopped
 }
 
+// panicSource serves good once, then panics with a secret-bearing value.
+type panicSource struct{ calls int }
+
+func (p *panicSource) Load() (*Snapshot, error) {
+	p.calls++
+	if p.calls == 1 {
+		return snapOf("a"), nil
+	}
+	panic("open /srv/secret token=abc123")
+}
+
+func TestSyncerPanicInLoadKeepsLastGood(t *testing.T) {
+	s := NewSyncer(&panicSource{})
+	if err := s.Poll(); err != nil {
+		t.Fatal(err)
+	}
+	good := s.Current()
+	if err := s.Poll(); err == nil {
+		t.Fatal("a panicking load must fail the poll")
+	}
+	if s.Current() != good {
+		t.Fatal("a panicking load must keep the last good Snapshot")
+	}
+	if got := s.Status().LastError; got != "source load panicked" {
+		t.Fatalf("LastError = %q", got)
+	}
+}
+
 // orderSource numbers its loads; the first one blocks until release is closed.
 type orderSource struct {
 	mu      sync.Mutex

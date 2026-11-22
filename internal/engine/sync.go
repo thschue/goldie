@@ -77,7 +77,7 @@ func (s *Syncer) Status() SyncStatus {
 func (s *Syncer) Poll() error {
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
-	snap, err := s.src.Load()
+	snap, rev, err := s.load()
 	if err == nil && snap == nil {
 		err = errNilSnapshot
 	}
@@ -92,10 +92,26 @@ func (s *Syncer) Poll() error {
 	s.current.Store(snap)
 	s.status.LastSuccess = now
 	s.status.LastError = ""
-	if r, ok := s.src.(Revisioner); ok {
-		s.status.Revision = r.Revision()
-	}
+	s.status.Revision = rev
 	return nil
+}
+
+// load calls the Source. A panic in Load or Revision becomes errLoadPanicked,
+// so a Source bug fails one poll instead of the process, and the panic value
+// never reaches Status.
+func (s *Syncer) load() (snap *Snapshot, rev string, err error) {
+	defer func() {
+		if recover() != nil {
+			snap, rev, err = nil, "", errLoadPanicked
+		}
+	}()
+	snap, err = s.src.Load()
+	if err == nil && snap != nil {
+		if r, ok := s.src.(Revisioner); ok {
+			rev = r.Revision()
+		}
+	}
+	return snap, rev, err
 }
 
 // Run polls once at once, then on every tick of interval, and returns when ctx
@@ -118,7 +134,10 @@ type syncError string
 
 func (e syncError) Error() string { return string(e) }
 
-const errNilSnapshot = syncError("source returned no snapshot")
+const (
+	errNilSnapshot  = syncError("source returned no snapshot")
+	errLoadPanicked = syncError("source load panicked")
+)
 
 var (
 	urlRe  = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`)
