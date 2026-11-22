@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -20,18 +19,6 @@ const maxQueryBytes = 1024
 var badSearch = envelope("bad_request", "missing or invalid search words",
 	"Pass one q parameter with 1 to 1024 bytes of search words.")
 
-// projectIDPattern is the ProjectId schema's pattern, read from the spec so
-// the contract is the one definition (ADR 0018).
-var projectIDPattern = mustProjectPattern()
-
-func mustProjectPattern() *regexp.Regexp {
-	pattern, err := contract.ProjectIDPattern()
-	if err != nil {
-		panic(err)
-	}
-	return regexp.MustCompile(pattern)
-}
-
 // badProject is the 400 envelope for a project parameter that is not a ProjectId.
 var badProject = envelope("bad_request", "invalid project",
 	"Pass project as host/org/repo, for example github.com/acme/shop, or list the registered Projects with GET /api/v1/projects.")
@@ -40,9 +27,6 @@ var badProject = envelope("bad_request", "invalid project",
 // hold that it got the global answer (ADR 0014).
 const unregisteredHint = "The Project is not registered on this server, so this is the global answer. List the registered Projects with GET /api/v1/projects."
 
-// maxProjectBytes is the spec's maxLength on ProjectId.
-const maxProjectBytes = 512
-
 // scopeHint validates the optional project parameter. It returns the Project
 // to resolve for, the hint when it is not registered, and false when the
 // parameter is not a ProjectId.
@@ -50,7 +34,7 @@ func (s *Server) scopeHint(project *contract.ProjectId) (proj string, hint *stri
 	if project == nil {
 		return "", nil, true
 	}
-	if len(*project) > maxProjectBytes || !projectIDPattern.MatchString(*project) {
+	if !contract.ValidProjectID(*project) {
 		return "", nil, false
 	}
 	for _, p := range s.snap.Projects() {
