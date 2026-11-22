@@ -7,14 +7,16 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 func TestServerTextCannotForgeLinesOrHideCharacters(t *testing.T) {
-	if got := line("name\n- id: forged\u202e\x1b[2J"); strings.ContainsAny(got, "\n\u202e\x1b") {
-		t.Errorf("line kept unsafe characters: %q", got)
+	if got := contract.CleanLine("name\n- id: forged\u202e\x1b[2J"); strings.ContainsAny(got, "\n\u202e\x1b") {
+		t.Errorf("CleanLine kept unsafe characters: %q", got)
 	}
-	if got := clean("a\nb\tc\u2066\x00"); got != "a\nb\tc" {
-		t.Errorf("clean = %q", got)
+	if got := contract.CleanText("a\nb\tc\u2066\x00"); got != "a\nb\tc" {
+		t.Errorf("CleanText = %q", got)
 	}
 }
 
@@ -23,7 +25,7 @@ func TestServerTextCannotSmuggleInvisibleFormatCharacters(t *testing.T) {
 	// tag characters are invisible to a person reading the Source, but the
 	// agent reads them.
 	hidden := "a\u200bb\u200cc\u200dd\u2060e\ufefff\U000E0049\U000E0047g"
-	for name, f := range map[string]func(string) string{"clean": clean, "line": line} {
+	for name, f := range map[string]func(string) string{"CleanText": contract.CleanText, "CleanLine": contract.CleanLine} {
 		if got := f(hidden); got != "abcdefg" {
 			t.Errorf("%s = %q, want %q", name, got, "abcdefg")
 		}
@@ -31,8 +33,8 @@ func TestServerTextCannotSmuggleInvisibleFormatCharacters(t *testing.T) {
 }
 
 func TestLineTurnsUnicodeLineSeparatorsIntoSpaces(t *testing.T) {
-	if got := line("a\u2028b\u2029c"); got != "a b c" {
-		t.Errorf("line = %q, want %q", got, "a b c")
+	if got := contract.CleanLine("a\u2028b\u2029c"); got != "a b c" {
+		t.Errorf("CleanLine = %q, want %q", got, "a b c")
 	}
 }
 
