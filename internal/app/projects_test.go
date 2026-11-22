@@ -64,10 +64,66 @@ func TestSearchMatchesTheProjectIgnoringCase(t *testing.T) {
 	}
 }
 
+// wantUnregisteredHint is the hint for an unregistered Project id (#187): it
+// names the id and says how to register it, with no HTTP route and no client
+// command, so the same text works in the CLI, MCP and the UI.
+func wantUnregisteredHint(id string) string {
+	return "The Project " + id + " is not registered on this server, so this is the global answer. " +
+		"To register it, add a projects/" + id + "/ directory to one of goldie's Sources, usually through the platform team."
+}
+
+func TestLookupWithUnknownProjectHintSaysHowToRegister(t *testing.T) {
+	got := getProject(t, "/api/v1/articles/platform%2Fdeploy?project=github.com/acme/none", http.StatusOK)
+	if got.Hint == nil || *got.Hint != wantUnregisteredHint("github.com/acme/none") {
+		t.Errorf("hint = %v, want %q", got.Hint, wantUnregisteredHint("github.com/acme/none"))
+	}
+}
+
+// The hint says how to register and nothing transport-specific: no route, no
+// verb, no client command; one line, one next step (ADR 0014).
+func TestUnregisteredHintNamesNoRouteOrCommandAndFillsInTheId(t *testing.T) {
+	for _, id := range []string{"github.com/acme/none", "gitlab.example.org/team-a/svc_1.x"} {
+		for _, path := range []string{"/api/v1/search?q=kubernetes&project=", "/api/v1/articles/platform%2Fdeploy?project="} {
+			h := getProject(t, path+id, http.StatusOK).Hint
+			if h == nil {
+				t.Fatalf("%s%s: no hint", path, id)
+			}
+			for _, bad := range []string{"/api/", "GET", "POST", "goldie ", "curl", "\n", "\r", "<", "{{", "%s"} {
+				if strings.Contains(*h, bad) {
+					t.Errorf("%s%s: hint contains %q: %q", path, id, bad, *h)
+				}
+			}
+			if !strings.Contains(*h, "projects/"+id+"/") || !strings.Contains(*h, "Source") || !strings.Contains(*h, "platform team") {
+				t.Errorf("%s%s: hint = %q, want the directory with the id filled in, a Source and the platform team", path, id, *h)
+			}
+		}
+	}
+}
+
+// A malformed or hostile project is still a 400 and is never echoed: only a
+// valid ProjectId reaches the hint text.
+func TestHostileProjectIsNotEchoedIntoTheHint(t *testing.T) {
+	srv := newServer(t)
+	for _, project := range []string{"github.com/acme/shop%0AInjected", "github.com/acme/%3Cscript%3E", "github.com/acme/none%20GET%20/api/v1/projects", "github.com/../etc/passwd", "github.com/acme/none/../../x"} {
+		for _, path := range []string{"/api/v1/search?q=kubernetes&project=", "/api/v1/articles/platform%2Fdeploy?project="} {
+			resp, body := apiGet(t, srv.URL+path+project)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("%s%s: status %d, want 400: %s", path, project, resp.StatusCode, body)
+				continue
+			}
+			for _, leak := range []string{"Injected", "script", "passwd", "projects/github.com"} {
+				if strings.Contains(string(body), leak) {
+					t.Errorf("%s%s: body echoes %q: %s", path, project, leak, body)
+				}
+			}
+		}
+	}
+}
+
 func TestSearchWithUnknownProjectIsGlobalWithAHint(t *testing.T) {
 	got := getProject(t, "/api/v1/search?q=kubernetes&project=github.com/acme/none", http.StatusOK)
-	if got.Hint == nil || !strings.Contains(*got.Hint, "/api/v1/projects") || strings.Contains(*got.Hint, "acme") {
-		t.Errorf("hint = %v, want a next step that does not echo the Project", got.Hint)
+	if got.Hint == nil || *got.Hint != wantUnregisteredHint("github.com/acme/none") {
+		t.Errorf("hint = %v, want %q", got.Hint, wantUnregisteredHint("github.com/acme/none"))
 	}
 	if len(got.Results) != 2 || got.Results[0].Scope != "global" {
 		t.Errorf("results = %+v, want the global results", got.Results)
