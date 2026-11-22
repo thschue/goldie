@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -376,6 +378,30 @@ func TestTelemetrySpanAttributeValuesAreBounded(t *testing.T) {
 	for _, kv := range got[0].Attributes {
 		if n := len(kv.Value.String()); n > defaultSpanAttributeValueLimit {
 			t.Errorf("span attribute %s is %d bytes, want at most %d", kv.Key, n, defaultSpanAttributeValueLimit)
+		}
+	}
+}
+
+// SDK export errors carry the collector URL, which can hold credentials
+// (PC-05): only a fixed warning is logged, at most once a minute.
+func TestTelemetryReportErrorsToRedactsAndRateLimits(t *testing.T) {
+	prev := otel.GetErrorHandler()
+	t.Cleanup(func() { otel.SetErrorHandler(prev) })
+	tel := newTelemetry(telemetryResource(), newSpanSink(), nil)
+	t.Cleanup(func() { _ = tel.Shutdown(context.Background()) })
+	out := &syncBuffer{}
+	tel.ReportErrorsTo(NewLogger(out, 0, "server"))
+
+	otel.Handle(errors.New(`Post "http://user:pw@collector:4318/v1/traces": dial failed`))
+	otel.Handle(errors.New(`Post "http://user:pw@collector:4318/v1/traces": dial failed`))
+
+	got := out.String()
+	if n := strings.Count(got, "telemetry export failed"); n != 1 {
+		t.Errorf("got %d warnings, want exactly 1 (rate limit): %s", n, got)
+	}
+	for _, bad := range []string{"user:pw", "collector:4318", "dial failed"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("log leaks the SDK error text %q: %s", bad, got)
 		}
 	}
 }
