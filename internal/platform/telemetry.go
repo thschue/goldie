@@ -296,7 +296,26 @@ func (t *Telemetry) WrapLogger(l *slog.Logger, component string) *slog.Logger {
 	}
 	bridge := otelslog.NewHandler("goldie", otelslog.WithLoggerProvider(t.lp)).
 		WithAttrs([]slog.Attr{slog.String("component", component), slog.String("version", Version)})
-	return slog.New(slog.NewMultiHandler(l.Handler(), bridge))
+	return slog.New(slog.NewMultiHandler(l.Handler(), levelGate{Handler: bridge, gate: l.Handler()}))
+}
+
+// levelGate makes the bridge honour the logger's level (GOLDIE_LOG_LEVEL): the
+// batch processor does not filter by severity.
+type levelGate struct {
+	slog.Handler
+	gate slog.Handler
+}
+
+func (g levelGate) Enabled(ctx context.Context, lv slog.Level) bool {
+	return g.gate.Enabled(ctx, lv) && g.Handler.Enabled(ctx, lv)
+}
+
+func (g levelGate) WithAttrs(a []slog.Attr) slog.Handler {
+	return levelGate{Handler: g.Handler.WithAttrs(a), gate: g.gate}
+}
+
+func (g levelGate) WithGroup(name string) slog.Handler {
+	return levelGate{Handler: g.Handler.WithGroup(name), gate: g.gate}
 }
 
 // Shutdown flushes and stops the exporters. It is safe to call twice; later

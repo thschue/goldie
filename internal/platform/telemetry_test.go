@@ -418,6 +418,23 @@ func TestTelemetryHeaderBadEscapeFailsWithoutEcho(t *testing.T) {
 	}
 }
 
+// The bridge must not export records the logger drops: GOLDIE_LOG_LEVEL gates
+// both outputs.
+func TestTelemetryLogBridgeHonoursLogLevel(t *testing.T) {
+	logs := &logSink{}
+	tel := newTelemetry(telemetryResource("", nil), nil, logs)
+	l := tel.WrapLogger(NewLogger(&syncBuffer{}, slog.LevelWarn, "server"), "server")
+	l.Info("quiet-info")
+	l.With("k", "v").Warn("loud-warn")
+	if err := tel.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := logs.bodies()
+	if len(got) != 1 || got[0] != "loud-warn" {
+		t.Errorf("exported %v, want only loud-warn", got)
+	}
+}
+
 // A malformed OTEL_RESOURCE_ATTRIBUTES fails startup naming the variable and
 // never echoing it; the SDK alone would drop it silently.
 func TestTelemetryResourceAttributesMalformedFailsFast(t *testing.T) {
