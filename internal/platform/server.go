@@ -38,6 +38,9 @@ type Server struct {
 	// App serves the public listener. nil means every path is the not-found
 	// envelope. Probes and /version are admin-only (PC-01).
 	App http.Handler
+	// Telemetry traces the public listener and is flushed in the drain. nil
+	// means no telemetry.
+	Telemetry *Telemetry
 	// OnListen, when set, is called with each bound address ("app" or
 	// "admin") before serving starts. Tests use it with port 0.
 	OnListen func(listener, addr string)
@@ -104,7 +107,7 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 		return listenError(EnvAdminAddr, err)
 	}
 	app := &http.Server{
-		Handler:           s.appHandler(),
+		Handler:           s.Telemetry.WrapHandler(s.appHandler()),
 		ReadHeaderTimeout: readHeaderTimeout,
 		IdleTimeout:       idleTimeout,
 	}
@@ -172,6 +175,10 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 		default:
 		}
 		return fmt.Errorf("shutdown: %w", err)
+	}
+	// Flush spans and log records once no request is left to add more.
+	if err := s.Telemetry.Shutdown(sctx); err != nil {
+		s.Logger.Warn("telemetry flush failed")
 	}
 	s.Logger.Info("stopped")
 	return nil

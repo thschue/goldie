@@ -28,6 +28,23 @@ var Settings = []SettingSpec{
 	{EnvAPIToken, "", "Required by goldie server. Secret: set it with GOLDIE_API_TOKEN_FILE. The static bearer token that every /api/ request must send. Printable ASCII without spaces; a trailing newline in the file is ignored."},
 }
 
+// TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
+// They keep their standard names, so they are not GOLDIE_ prefixed and are not
+// part of Config; SetupTelemetry validates them. Unset, telemetry is off.
+var TelemetrySettings = []SettingSpec{
+	{"OTEL_SDK_DISABLED", "", "true turns telemetry off even when an endpoint is set."},
+	{"OTEL_EXPORTER_OTLP_ENDPOINT", "", "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export."},
+	{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "", "Collector URL for traces only, used as-is; wins over the base URL."},
+	{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "", "Collector URL for logs only, used as-is; wins over the base URL."},
+	{"OTEL_EXPORTER_OTLP_PROTOCOL", "", "Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL."},
+	{"OTEL_EXPORTER_OTLP_HEADERS", "", "Collector request headers as key=value pairs, for example an API token. Secret: also accepts OTEL_EXPORTER_OTLP_HEADERS_FILE (and _TRACES_ and _LOGS_ forms)."},
+	{"OTEL_TRACES_EXPORTER", "", "otlp or none. none turns off trace export."},
+	{"OTEL_LOGS_EXPORTER", "", "otlp or none. none turns off log export."},
+	{"OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "1024", "Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path."},
+	{"OTEL_SERVICE_NAME", "goldie", "Overrides the service.name resource attribute."},
+	{"OTEL_RESOURCE_ATTRIBUTES", "", "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
+}
+
 // def returns the registered default of a variable. A variable missing from
 // the registry is a programming error, so it panics at the first LoadConfig.
 func def(name string) string {
@@ -51,6 +68,22 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("that reads the value from a file; setting both is an error (PC-05).\n\n")
 	b.WriteString("| Variable | Default | Meaning |\n|---|---|---|\n")
 	for _, s := range rows {
+		d := "(none)"
+		if s.Default != "" {
+			d = "`" + cell(s.Default) + "`"
+		}
+		b.WriteString("| `" + cell(s.Name) + "` | " + d + " | " + cell(s.Meaning) + " |\n")
+	}
+	b.WriteString("\n## OpenTelemetry\n\n")
+	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
+	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
+	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
+	b.WriteString("headers and query strings are not recorded. Other OTEL_* variables, such as samplers,\n")
+	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
+	b.WriteString("handling: goldie neither validates nor documents them. Only the OTLP headers variables\n")
+	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
+	b.WriteString("| Variable | Default | Meaning |\n|---|---|---|\n")
+	for _, s := range TelemetrySettings {
 		d := "(none)"
 		if s.Default != "" {
 			d = "`" + cell(s.Default) + "`"
