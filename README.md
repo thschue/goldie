@@ -47,6 +47,22 @@ goldie search kubernetes
 goldie lookup platform/deploy
 ```
 
+## Try it on your own content
+
+`goldie server -dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
+the working directory) with a random token made for this run, and prints the line that points the
+client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
+API token variables, so the same shell can run it again. The token is printed only in that line,
+never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
+[configuration reference](docs/reference/configuration.md#goldie-server--dev).
+
+```sh
+goldie server -dev examples/knowledge
+# export GOLDIE_ADDR=http://127.0.0.1:41234 GOLDIE_TOKEN=<64 hex characters>
+```
+
+Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there.
+
 ## MCP over stdio
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
