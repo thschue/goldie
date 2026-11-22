@@ -12,9 +12,12 @@ import (
 	"github.com/thschue/goldie/internal/platform"
 )
 
-// Per-token rate limiting (#100). Options.RateLimit carries GOLDIE_RATE_LIMIT
+// Per-token rate limiting (#100). Config.RateLimit carries GOLDIE_RATE_LIMIT
 // as LoadConfig parsed it, the default (20/s,burst=40) already applied (#178):
-// PublicHandler uses the typed value as is and parses nothing. The tests
+// PublicHandler uses the typed value as is and parses nothing, except that a
+// RateLimit of zero requests fails closed (#186,
+// TestZeroValueRateLimitFailsClosed). The helpers below fill an unset
+// RateLimit with the default, as LoadConfig does. The tests
 // write a limit as the operator does, "<n>/s" or "<n>/m", optionally
 // ",burst=<b>", and get the value through LoadConfig. Every token name has its
 // own bucket, held in memory by the handler PublicHandler returns, so a new
@@ -49,10 +52,11 @@ type rejectionCounter interface {
 }
 
 // rateHandler builds the public handler with only opts' tokens configured.
-func rateHandler(t *testing.T, opts Options) http.Handler {
+func rateHandler(t *testing.T, opts platform.Config) http.Handler {
 	t.Helper()
 	opts.ContentDir = testContent
-	h, err := PublicHandler(opts)
+	opts.RateLimit = withDefaultRateLimit(opts.RateLimit)
+	h, err := PublicHandler(opts, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
@@ -96,7 +100,7 @@ const lookupPath = "/api/v1/articles/agent-loops"
 // The response conforms to the spec and leaks neither a secret nor an
 // address.
 func TestTokenOverItsLimitGets429WhileAnotherTokenIsUnaffected(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "2/m")})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "2/m")})
 	for i := range 2 {
 		if resp, _ := do(t, http.MethodGet, srv.URL+lookupPath, bearer(readerToken)); resp.StatusCode != http.StatusOK {
 			t.Fatalf("reader request %d within the limit: status %d, want 200", i+1, resp.StatusCode)
@@ -142,7 +146,7 @@ func TestTokenOverItsLimitGets429WhileAnotherTokenIsUnaffected(t *testing.T) {
 // the first rejection. A smaller burst than the rate holds too.
 func TestRequestsWithinTheLimitPassUpToTheBurst(t *testing.T) {
 	for limit, burst := range map[string]int{"3/m": 3, "2/m,burst=5": 5, "60/m,burst=1": 1, "1/s,burst=4": 4} {
-		h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, limit)})
+		h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, limit)})
 		for i := range burst {
 			if rec := hit(t, h, lookupPath, readerToken); rec.Code != http.StatusOK {
 				t.Fatalf("%s: request %d of a burst of %d: status %d, want 200", limit, i+1, burst, rec.Code)
@@ -159,7 +163,7 @@ func TestRequestsWithinTheLimitPassUpToTheBurst(t *testing.T) {
 // second is 1, never 0.
 func TestRetryAfterIsTheWaitInWholeSecondsRoundedUp(t *testing.T) {
 	for limit, want := range map[string]string{"1/m": "60", "2/m,burst=1": "30", "3/m": "20", "1/s,burst=1": "1"} {
-		h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, limit)})
+		h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, limit)})
 		var rec *httptest.ResponseRecorder
 		for range 10 {
 			if rec = hit(t, h, lookupPath, readerToken); rec.Code == http.StatusTooManyRequests {
@@ -174,7 +178,7 @@ func TestRetryAfterIsTheWaitInWholeSecondsRoundedUp(t *testing.T) {
 			t.Errorf("%s: Retry-After %q, want %q", limit, got, want)
 		}
 	}
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "20/s,burst=1")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "20/s,burst=1")})
 	for range 200 {
 		if rec := hit(t, h, lookupPath, readerToken); rec.Code == http.StatusTooManyRequests {
 			if got := rec.Header().Get("Retry-After"); got != "1" {
@@ -189,7 +193,7 @@ func TestRetryAfterIsTheWaitInWholeSecondsRoundedUp(t *testing.T) {
 // The bucket refills at the configured rate: at 1000/s with a burst of 1, a
 // token that waits a few milliseconds between requests is never rejected.
 func TestTheBucketRefillsAtTheConfiguredRate(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1000/s,burst=1")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1000/s,burst=1")})
 	for i := range 30 {
 		if rec := hit(t, h, lookupPath, readerToken); rec.Code != http.StatusOK {
 			t.Fatalf("request %d, 5 ms after the last: status %d, want 200 (the bucket must refill)", i+1, rec.Code)
@@ -205,7 +209,7 @@ func TestTheBucketRefillsAtTheConfiguredRate(t *testing.T) {
 // passes, but the default is a limit, so a flood is rejected. The default is
 // the one LoadConfig applies for an unset GOLDIE_RATE_LIMIT.
 func TestDefaultLimitIsGenerousButBounded(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "")})
 	for i := range 40 {
 		if rec := hit(t, h, lookupPath, readerToken); rec.Code != http.StatusOK {
 			t.Fatalf("default limit: request %d of 40: status %d, want 200", i+1, rec.Code)
@@ -230,7 +234,7 @@ func TestDefaultLimitIsGenerousButBounded(t *testing.T) {
 // they count against no token's bucket and no counter: a flood of missing,
 // unknown and near-miss tokens leaves the reader its whole burst.
 func TestUnauthenticatedRequestsAre401AndNotCounted(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=2")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=2")})
 	strangers := map[string]string{
 		"no token":         "",
 		"unknown token":    "unknown-token-0123456789abcdef0123456789",
@@ -276,7 +280,7 @@ func TestUnauthenticatedRequestsAre401AndNotCounted(t *testing.T) {
 // the scheme's case, forwarding headers and a fresh connection all leave a
 // limited token limited.
 func TestALimitedTokenCannotEscapeItsBucket(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
 	if resp, _ := do(t, http.MethodGet, srv.URL+lookupPath, bearer(readerToken)); resp.StatusCode != http.StatusOK {
 		t.Fatalf("first request: status %d, want 200", resp.StatusCode)
 	}
@@ -308,7 +312,7 @@ func TestALimitedTokenCannotEscapeItsBucket(t *testing.T) {
 // Concurrent requests from one token cannot overrun the bucket: of 40 at
 // once against a burst of 5, exactly 5 pass and 35 are counted rejections.
 func TestConcurrentRequestsCannotOverrunTheBurst(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=5")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=5")})
 	const n = 40
 	codes := make([]int, n)
 	var wg sync.WaitGroup
@@ -338,7 +342,7 @@ func TestConcurrentRequestsCannotOverrunTheBurst(t *testing.T) {
 // shorthand alike, and never under a secret, a digest or an empty name. The
 // map it returns is a copy.
 func TestRejectionCounterIsPerTokenNameAndNeverASecret(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
 	if got := rejections(t, h); len(got) != 0 {
 		t.Errorf("before any request: rejections = %v, want none", got)
 	}
@@ -366,7 +370,7 @@ func TestRejectionCounterIsPerTokenNameAndNeverASecret(t *testing.T) {
 		t.Errorf("changing the returned map changed the counter: %v", again)
 	}
 
-	short := rateHandler(t, Options{APIToken: testToken, RateLimit: loadedRateLimit(t, "1/m")})
+	short := rateHandler(t, platform.Config{APIToken: testToken, RateLimit: loadedRateLimit(t, "1/m")})
 	for range 3 {
 		hit(t, short, lookupPath, testToken)
 	}
@@ -380,7 +384,7 @@ func TestRejectionCounterIsPerTokenNameAndNeverASecret(t *testing.T) {
 // after a restart, starts every token with its whole burst and its own
 // counter.
 func TestEachHandlerHoldsItsOwnBuckets(t *testing.T) {
-	opts := Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")}
+	opts := platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")}
 	first := rateHandler(t, opts)
 	hit(t, first, lookupPath, readerToken)
 	if rec := hit(t, first, lookupPath, readerToken); rec.Code != http.StatusTooManyRequests {
@@ -398,7 +402,7 @@ func TestEachHandlerHoldsItsOwnBuckets(t *testing.T) {
 // The OpenAPI documents are not behind the tokens, so a limited token can
 // still read them.
 func TestALimitedTokenCanStillReadTheSpec(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m")})
 	hit(t, h, lookupPath, readerToken)
 	for _, path := range []string{"/openapi.json", "/openapi.yaml"} {
 		if rec := hit(t, h, path, readerToken); rec.Code != http.StatusOK {
@@ -409,14 +413,16 @@ func TestALimitedTokenCanStillReadTheSpec(t *testing.T) {
 
 // PublicHandler applies the RateLimit it is given as is (#178): it parses
 // nothing, so the limit LoadConfig read is the limit the handler enforces,
-// and the burst decides when a token is first rejected.
+// and the burst decides when a token is first rejected. The one value it
+// does not take as is, zero requests, it refuses rather than serving without
+// a limit (#186): TestZeroValueRateLimitFailsClosed.
 func TestPublicHandlerAppliesTheTypedLimitAsIs(t *testing.T) {
 	for _, l := range []platform.RateLimit{
 		{Requests: 1, Per: time.Minute, Burst: 2},
 		{Requests: 3, Per: time.Second, Burst: 3},
 		{Requests: 2, Per: time.Minute, Burst: 1},
 	} {
-		h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: l})
+		h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: l})
 		for i := range l.Burst {
 			if rec := hit(t, h, lookupPath, readerToken); rec.Code != http.StatusOK {
 				t.Fatalf("%+v: request %d of a burst of %d: status %d, want 200", l, i+1, l.Burst, rec.Code)

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // These tests drive /mcp on the public handler with an MCP client over
@@ -104,7 +106,7 @@ func TestMCPOverHTTPIsServedByThePublicHandler(t *testing.T) {
 
 // /mcp is there whether Swagger UI is on or off.
 func TestMCPOverHTTPDoesNotDependOnSwaggerUI(t *testing.T) {
-	srv := newServerWith(t, Options{SwaggerUI: false})
+	srv := newServerWith(t, platform.Config{SwaggerUIEnabled: false})
 	cs := mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport))
 	assertToolsAnswerOverHTTP(t, cs)
 }
@@ -125,7 +127,7 @@ func inProcess(h http.Handler) http.RoundTripper {
 // over the network. The public handler is never put on a listener here, so
 // the tools can only answer if the API is reached without one.
 func TestMCPOverHTTPCallsTheAPIInProcess(t *testing.T) {
-	h, err := PublicHandler(Options{ContentDir: testContent, APIToken: testToken})
+	h, err := PublicHandler(platform.Config{ContentDir: testContent, APIToken: testToken, RateLimit: platform.DefaultRateLimit()}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

@@ -3,6 +3,8 @@ package app
 import (
 	"net/http"
 	"testing"
+
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // /mcp opens no event stream: with the token, GET and DELETE are the 405
@@ -27,7 +29,7 @@ func TestMCPOverHTTPOpensNoEventStream(t *testing.T) {
 // Every named token, reader, operator and hashed reader alike, reaches the
 // tools over /mcp; the shorthand token, configured nowhere here, does not.
 func TestMCPOverHTTPAcceptsEveryNamedToken(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines()})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines()})
 	for _, token := range []string{readerToken, operatorToken, hashedSecret} {
 		assertToolsAnswerOverHTTP(t, mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(token, http.DefaultTransport)))
 	}

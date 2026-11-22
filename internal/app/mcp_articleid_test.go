@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Acceptance tests for #147: get_article rejects the empty id and ids made
@@ -26,7 +28,7 @@ var invalidArticleIDs = map[string]string{
 // request it receives, whatever the path.
 func countingServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	h, err := PublicHandler(Options{SwaggerUI: true, ContentDir: testContent, APIToken: testToken})
+	h, err := PublicHandler(platform.Config{SwaggerUIEnabled: true, ContentDir: testContent, APIToken: testToken, RateLimit: platform.DefaultRateLimit()}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

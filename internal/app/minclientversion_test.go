@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,9 +10,9 @@ import (
 	"github.com/thschue/goldie/internal/platform"
 )
 
-// Minimum client version (#102). Options.MinClientVersion carries
-// GOLDIE_MIN_CLIENT_VERSION as LoadConfig read it: a semantic version, or ""
-// for no gate. The CLI sends X-Goldie-Client: goldie/<version> (#150). On
+// Minimum client version (#102). Config.MinClientVersion carries
+// GOLDIE_MIN_CLIENT_VERSION as LoadConfig parsed it, once (#186): a typed
+// platform.Semver, or the zero Semver for no gate. The CLI sends X-Goldie-Client: goldie/<version> (#150). On
 // every path behind the tokens (/api/ and /mcp), a request whose header names
 // an older goldie version is refused with 426 in the error envelope, code
 // upgrade_required, and a hint that names the minimum and says to upgrade.
@@ -47,7 +46,7 @@ func asClient(token, client string) func(*http.Request) {
 // gatedServer starts the public handler with the named tokens and minimum.
 func gatedServer(t *testing.T, minimum string) *httptest.Server {
 	t.Helper()
-	return tokenServer(t, Options{APITokens: namedTokenLines(), MinClientVersion: minimum})
+	return tokenServer(t, platform.Config{APITokens: namedTokenLines(), MinClientVersion: semver(t, minimum)})
 }
 
 // serveAs serves one GET in process with the reader token and mutate applied,
@@ -182,7 +181,7 @@ func TestVersionGateFollowsSemverPrecedence(t *testing.T) {
 		{"1.4.0", "goldie/v1.3.0", true},
 		{"1.4.0", "goldie/v1.4.0", false},
 	} {
-		h := rateHandler(t, Options{APITokens: namedTokenLines(), MinClientVersion: c.minimum})
+		h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), MinClientVersion: semver(t, c.minimum)})
 		rec := serveAs(t, h, lookupPath, func(r *http.Request) { r.Header.Set(clientHeader, c.client) })
 		want := http.StatusOK
 		if c.refused {
@@ -250,11 +249,11 @@ func TestRequestsWithoutAGoldieVersionAreLetThrough(t *testing.T) {
 
 // Unset or empty, there is no gate: the oldest version is served.
 func TestNoMinimumMeansNoGate(t *testing.T) {
-	for _, opts := range []Options{{APITokens: namedTokenLines()}, {APITokens: namedTokenLines(), MinClientVersion: ""}} {
+	for _, opts := range []platform.Config{{APITokens: namedTokenLines()}, {APITokens: namedTokenLines(), MinClientVersion: platform.Semver{}}} {
 		srv := tokenServer(t, opts)
 		for _, client := range []string{"goldie/0.0.1", "goldie/0.1.0-alpha", "goldie/0.0.0"} {
 			if resp, body := do(t, http.MethodGet, srv.URL+lookupPath, asClient(readerToken, client)); resp.StatusCode != http.StatusOK {
-				t.Errorf("minimum %q, %s: status %d, want 200: %s", opts.MinClientVersion, client, resp.StatusCode, body)
+				t.Errorf("minimum %s, %s: status %d, want 200: %s", opts.MinClientVersion, client, resp.StatusCode, body)
 			}
 		}
 	}
@@ -314,7 +313,7 @@ func TestUnauthenticatedRequestsAre401AndLearnNothingOfTheGate(t *testing.T) {
 // gets its whole burst and then 429, and an old client over the limit is told
 // to upgrade, which is what fixes it, rather than to wait.
 func TestGateRunsBeforeTheRateLimit(t *testing.T) {
-	h := rateHandler(t, Options{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=2"), MinClientVersion: minVersion})
+	h := rateHandler(t, platform.Config{APITokens: namedTokenLines(), RateLimit: loadedRateLimit(t, "1/m,burst=2"), MinClientVersion: semver(t, minVersion)})
 	old := func(r *http.Request) { r.Header.Set(clientHeader, "goldie/1.3.0") }
 	current := func(r *http.Request) { r.Header.Set(clientHeader, "goldie/"+minVersion) }
 	for i := range 5 {
@@ -362,7 +361,7 @@ func setClientVersion(t *testing.T, v string) {
 // the server's upgrade hint, naming the minimum; a CLI at the minimum and a
 // dev build are served.
 func TestOldCLIIsShownTheUpgradeHint(t *testing.T) {
-	srv := newServerWith(t, Options{MinClientVersion: minVersion})
+	srv := newServerWith(t, platform.Config{MinClientVersion: semver(t, minVersion)})
 	setClientVersion(t, "1.3.0")
 	for _, args := range [][]string{{"search", "kubernetes"}, {"lookup", "agent-loops"}} {
 		_, err := runCLI(t, srv.URL, args...)
@@ -383,18 +382,17 @@ func TestOldCLIIsShownTheUpgradeHint(t *testing.T) {
 	}
 }
 
-// An invalid GOLDIE_MIN_CLIENT_VERSION fails startup with a *ConfigError
-// naming the variable, without echoing the value.
+// An invalid GOLDIE_MIN_CLIENT_VERSION fails startup naming the variable,
+// without echoing the value. It is parsed once, by LoadConfig (#186), whose
+// errors the server reports as invalid configuration; PublicHandler takes
+// the parsed Semver and has no second error path.
 func TestInvalidMinClientVersionFailsStartupNamingTheVariable(t *testing.T) {
 	for _, v := range []string{"marker", "1.2", "dev", "01.2.3", ">=1.2.3", "1.2.3\x00", "goldie/1.2.3", "1.2.3-marker!"} {
-		_, err := PublicHandler(Options{ContentDir: testContent, APITokens: namedTokenLines(), MinClientVersion: v})
+		env := map[string]string{platform.EnvContentDir: testContent, platform.EnvAPITokens: namedTokenLines(), envMinClientVersion: v}
+		_, err := platform.LoadConfig(func(k string) (string, bool) { s, ok := env[k]; return s, ok })
 		if err == nil || !strings.Contains(err.Error(), envMinClientVersion) {
 			t.Errorf("%q: err = %v, want a failure naming %s", v, err, envMinClientVersion)
 			continue
-		}
-		var cfgErr *ConfigError
-		if !errors.As(err, &cfgErr) {
-			t.Errorf("%q: err = %v, want a *ConfigError so the caller labels it invalid configuration", v, err)
 		}
 		if strings.Contains(err.Error(), "marker") {
 			t.Errorf("%q: error echoes the value: %v", v, err)

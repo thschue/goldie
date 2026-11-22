@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/contract/contracttest"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Docs endpoints behind reader auth (#101, from #11): /openapi.yaml,
@@ -74,7 +75,7 @@ func assertUnauthorized(t *testing.T, what string, resp *http.Response, body []b
 // and hashed, get the documents and the Swagger UI; everyone else gets the
 // API's 401.
 func TestDocsEndpointsRoleMatrix(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	callers := map[string]string{
 		"reader":           readerToken,
 		"operator":         operatorToken,
@@ -125,7 +126,7 @@ func TestDocsEndpointsTakeTheShorthandToken(t *testing.T) {
 // token in the query string, a cookie, Basic auth or a bare header opens
 // nothing, and the 401 never echoes it.
 func TestDocsEndpointsRejectCredentialsOutsideTheBearerHeader(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	basic := func(user string) func(*http.Request) {
 		return func(r *http.Request) {
 			r.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+readerToken)))
@@ -165,7 +166,7 @@ func TestDocsEndpointsRejectCredentialsOutsideTheBearerHeader(t *testing.T) {
 
 // HEAD is served wherever GET is, so it is guarded wherever GET is.
 func TestDocsEndpointsGuardHEAD(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	for _, p := range docsPaths {
 		resp, _ := rawDo(t, http.MethodHead, srv.URL+p, nil)
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -181,7 +182,7 @@ func TestDocsEndpointsGuardHEAD(t *testing.T) {
 // Another method on a docs path is checked for the token first, as on the
 // API: without one it is the 401, with a reader token the 405 envelope.
 func TestDocsEndpointsCheckTheTokenBeforeTheMethod(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	methods := []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
 	for _, p := range docsPaths {
 		for _, m := range methods {
@@ -200,7 +201,7 @@ func TestDocsEndpointsCheckTheTokenBeforeTheMethod(t *testing.T) {
 // Neither a trailing path, a case variant nor a path trick reaches a document
 // or the Swagger UI, with or without a token.
 func TestDocsPathVariantsServeNoDocument(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	variants := []string{
 		"/openapi.json/", "/openapi.json/x", "/openapi.yaml/", "/openapi.json.bak", "/openapi.json%00",
 		"/openapi.json;x", "/openapi", "/openapi.yml", "/OpenAPI.json", "/OPENAPI.JSON", "/OpenAPI.yaml",
@@ -250,7 +251,7 @@ func TestDocsPathVariantsServeNoDocument(t *testing.T) {
 // A percent-encoded spelling of a docs path is the same path, so it needs the
 // token just the same.
 func TestDocsPathEncodedSpellingsNeedTheToken(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	for _, v := range []string{"/%6fpenapi.json", "/openapi%2Eyaml", "/%73wagger-ui", "/swagger-ui/swagger-ui%2Ecss"} {
 		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
 		if err != nil {
@@ -277,7 +278,7 @@ func TestDocsPathEncodedSpellingsNeedTheToken(t *testing.T) {
 // The Swagger UI's 401s and 405s are still under the page's CSP: every
 // response from those paths carries it.
 func TestSwaggerUIRejectionsKeepTheCSP(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	for _, p := range swaggerPaths {
 		for name, c := range map[string]struct {
 			method string
@@ -305,7 +306,7 @@ func TestSwaggerUIRejectionsKeepTheCSP(t *testing.T) {
 // spec. Without a token, or with a wrong one, the page does not open and the
 // spec does not load.
 func TestSwaggerUILoadsTheSpecWithAReaderToken(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	asReader := bearer(readerToken)
 
 	resp, page := rawDo(t, http.MethodGet, srv.URL+"/swagger-ui", asReader)
@@ -349,7 +350,7 @@ func TestSwaggerUILoadsTheSpecWithAReaderToken(t *testing.T) {
 // the browser's credentials from its fetches nor stores what "Authorize"
 // takes, and nothing reads a token from the URL.
 func TestSwaggerUIDoesNotEmbedOrPersistTheToken(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	for _, p := range swaggerPaths {
 		_, body := rawDo(t, http.MethodGet, srv.URL+p, bearer(readerToken))
 		if strings.Contains(string(body), readerToken) {
@@ -373,7 +374,7 @@ func TestSwaggerUIDoesNotEmbedOrPersistTheToken(t *testing.T) {
 // itself behind the token, still declares the global bearerAuth requirement,
 // and the documents do not mark themselves anonymous with an empty one.
 func TestServedSpecStillDeclaresBearerAuthForTryItOut(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: true})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: true})
 	resp, body := rawDo(t, http.MethodGet, srv.URL+"/openapi.json", bearer(readerToken))
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("/openapi.json as reader: status %d, want 200", resp.StatusCode)
@@ -417,7 +418,7 @@ func TestServedSpecStillDeclaresBearerAuthForTryItOut(t *testing.T) {
 // Switching the Swagger UI off still leaves its paths at 404 for a reader,
 // and the documents stay behind the token.
 func TestSwaggerUIDisabledWithAuthOn(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines(), SwaggerUI: false})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines(), SwaggerUIEnabled: false})
 	for _, p := range swaggerPaths {
 		resp, body := rawDo(t, http.MethodGet, srv.URL+p, bearer(readerToken))
 		if resp.StatusCode != http.StatusNotFound {

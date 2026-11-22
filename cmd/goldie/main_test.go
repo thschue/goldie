@@ -29,7 +29,7 @@ func TestRunUnknownCommandFails(t *testing.T) {
 }
 
 func TestHandlerErrorLabelsOnlyConfigurationAsInvalidConfiguration(t *testing.T) {
-	_, cfgErr := app.PublicHandler(app.Options{})
+	_, cfgErr := app.PublicHandler(platform.Config{}, nil)
 	if cfgErr == nil {
 		t.Fatal("PublicHandler without a token must fail")
 	}

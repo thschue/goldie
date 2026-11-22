@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // statusLimitedServer serves the real API document, and answers every /api/
@@ -14,7 +15,7 @@ import (
 // status command's token probe is the request over the limit.
 func statusLimitedServer(t *testing.T, retryAfter string) string {
 	t.Helper()
-	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken})
+	h, err := app.PublicHandler(platform.Config{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: platform.DefaultRateLimit()}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

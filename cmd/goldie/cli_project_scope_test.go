@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Acceptance tests for #121: search and lookup send the resolved Project as
@@ -35,7 +36,7 @@ type scopedServer struct {
 
 func newScopedServer(t *testing.T) *scopedServer {
 	t.Helper()
-	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken})
+	h, err := app.PublicHandler(platform.Config{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: platform.DefaultRateLimit()}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

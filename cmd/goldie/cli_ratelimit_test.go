@@ -46,7 +46,7 @@ func TestCLIRateLimitedSaysHowLongToWait(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseRateLimit: %v", err)
 	}
-	h, err := app.PublicHandler(app.Options{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: limit})
+	h, err := app.PublicHandler(platform.Config{ContentDir: "../../internal/app/testdata/content", APIToken: cliToken, RateLimit: limit}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}

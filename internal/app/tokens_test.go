@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/api"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // Named tokens (#99): GOLDIE_API_TOKENS holds name:role:token lines, or
-// name:role:sha256:<hex> for a hashed entry. Options.APITokens carries the
+// name:role:sha256:<hex> for a hashed entry. Config.APITokens carries the
 // variable's value as LoadConfig read it.
 const (
 	envAPITokens = "GOLDIE_API_TOKENS"
@@ -39,10 +40,11 @@ func namedTokenLines() string {
 
 // tokenServer starts the public handler with only opts' tokens configured:
 // newServerWith would add the GOLDIE_API_TOKEN shorthand.
-func tokenServer(t *testing.T, opts Options) *httptest.Server {
+func tokenServer(t *testing.T, opts platform.Config) *httptest.Server {
 	t.Helper()
 	opts.ContentDir = testContent
-	h, err := PublicHandler(opts)
+	opts.RateLimit = withDefaultRateLimit(opts.RateLimit)
+	h, err := PublicHandler(opts, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
@@ -58,7 +60,7 @@ func tokenServer(t *testing.T, opts Options) *httptest.Server {
 // the digest of a hashed entry above all (it is not a credential). Sync,
 // activity, list and bundles get their roles when they land.
 func TestNamedTokenRoleMatrix(t *testing.T) {
-	srv := tokenServer(t, Options{APITokens: namedTokenLines()})
+	srv := tokenServer(t, platform.Config{APITokens: namedTokenLines()})
 	ops := map[string]int{
 		"/api/v1/search?q=kubernetes":  http.StatusOK,
 		"/api/v1/articles/agent-loops": http.StatusOK,
@@ -114,7 +116,7 @@ func TestNamedTokenRoleMatrix(t *testing.T) {
 // GOLDIE_API_TOKEN keeps working as the shorthand for one operator token, and
 // it does not make the named tokens' secrets valid or vice versa.
 func TestAPITokenShorthandStillAuthenticates(t *testing.T) {
-	srv := tokenServer(t, Options{APIToken: testToken})
+	srv := tokenServer(t, platform.Config{APIToken: testToken})
 	for token, want := range map[string]int{
 		testToken:     http.StatusOK,
 		readerToken:   http.StatusUnauthorized,
@@ -156,7 +158,7 @@ func TestBadTokenLinesFailStartupNamingTheVariable(t *testing.T) {
 		"hash too long":               {"ci:reader:sha256:" + digest + "0", []string{digest}},
 		"empty hash":                  {"ci:reader:sha256:", nil},
 	} {
-		_, err := PublicHandler(Options{ContentDir: testContent, APITokens: tc.lines})
+		_, err := PublicHandler(platform.Config{ContentDir: testContent, APITokens: tc.lines, RateLimit: platform.DefaultRateLimit()}, nil)
 		if err == nil || !strings.Contains(err.Error(), envAPITokens) {
 			t.Errorf("%s: err = %v, want a failure naming %s", name, err, envAPITokens)
 			continue
@@ -180,7 +182,7 @@ func TestBadTokenLinesFailStartupNamingTheVariable(t *testing.T) {
 // either Role, next to a hashed entry.
 func TestTokenLineAtTheMinimumLengthIsAccepted(t *testing.T) {
 	atMin := readerToken[:api.MinTokenLength]
-	srv := tokenServer(t, Options{APITokens: "ci:reader:" + atMin + "\nci-hashed:operator:sha256:" + sha256Hex(hashedSecret)})
+	srv := tokenServer(t, platform.Config{APITokens: "ci:reader:" + atMin + "\nci-hashed:operator:sha256:" + sha256Hex(hashedSecret)})
 	for _, token := range []string{atMin, hashedSecret} {
 		if resp, _ := do(t, http.MethodGet, srv.URL+"/api/v1/articles/agent-loops", bearer(token)); resp.StatusCode != http.StatusOK {
 			t.Errorf("token %.12s…: status %d, want 200", token, resp.StatusCode)
@@ -190,10 +192,11 @@ func TestTokenLineAtTheMinimumLengthIsAccepted(t *testing.T) {
 
 // whoami is a probe route behind the token guard that answers with the token
 // name api.TokenName finds in the request context.
-func whoami(t *testing.T, opts Options) *publicMux {
+func whoami(t *testing.T, opts platform.Config) *publicMux {
 	t.Helper()
 	opts.ContentDir = testContent
-	h, err := PublicHandler(opts)
+	opts.RateLimit = withDefaultRateLimit(opts.RateLimit)
+	h, err := PublicHandler(opts, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
@@ -227,7 +230,7 @@ func probe(t *testing.T, m *publicMux, token string) (int, string) {
 // for activity (#12) and telemetry (#13): the handler behind the guard sees
 // the name of the line that matched, plaintext or hashed.
 func TestTokenNameIsInTheRequestContext(t *testing.T) {
-	m := whoami(t, Options{APITokens: namedTokenLines()})
+	m := whoami(t, platform.Config{APITokens: namedTokenLines()})
 	for token, want := range map[string]string{
 		readerToken:   "ci-reader",
 		operatorToken: "ci-operator",
@@ -245,7 +248,7 @@ func TestTokenNameIsInTheRequestContext(t *testing.T) {
 
 // The GOLDIE_API_TOKEN shorthand has a name too, and it is not the secret.
 func TestShorthandTokenHasANameThatIsNotTheSecret(t *testing.T) {
-	m := whoami(t, Options{APIToken: testToken})
+	m := whoami(t, platform.Config{APIToken: testToken})
 	code, got := probe(t, m, testToken)
 	if code != http.StatusOK || got == "" {
 		t.Fatalf("status %d name %q, want 200 with a token name", code, got)

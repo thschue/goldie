@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // The OpenAPI document takes the same credentials as the API (#101), so
@@ -42,10 +43,11 @@ func TestCLISendsTheTokenToTheAPIDocument(t *testing.T) {
 // read the API document with that token.
 func TestCLIStatusAndVersionWithAReaderToken(t *testing.T) {
 	const reader = "cli-reader-token-0123456789abcdef0123456789"
-	h, err := app.PublicHandler(app.Options{
+	h, err := app.PublicHandler(platform.Config{
 		ContentDir: "../../internal/app/testdata/content",
 		APITokens:  "cli-reader:reader:" + reader,
-	})
+		RateLimit:  platform.DefaultRateLimit(),
+	}, nil)
 	if err != nil {
 		t.Fatalf("PublicHandler: %v", err)
 	}
