@@ -44,7 +44,10 @@ The rest (main, `--admin`, leases, containers) is enforced by the
    - re-queue the PR.
 4. **Queue**, in this order (`main=red` first: the fix for `main`):
    1. own PRs whose latest own marker is `reason=self-fix` for a different head (**delta reviews**);
-   2. non-draft PRs with no own review marker for their head, own PRs before external ones, oldest
+   2. own PRs whose latest own marker is `reason=needs-info`, and which no longer carry `needs-info`:
+      the decision was made (in the issue body or a maintainer or pm-audit comment), so review the
+      head again with it;
+   3. non-draft PRs with no own review marker for their head, own PRs before external ones, oldest
       first.
 
    Skip release and bot PRs, PRs with `needs-info`, `changes-requested` or `in-review`, and drafts.

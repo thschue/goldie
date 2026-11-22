@@ -48,21 +48,32 @@ in the [label contract](./label-contract.md).
 
 ## Decision rights
 
-**The record** is spec #1, `CONTEXT.md`, `docs/adr/` and `docs/design/`. The maintainer owns
-outcomes, scope and critical decisions. A gap in the record is not permission.
+**The record** is spec #1, `CONTEXT.md`, `docs/adr/`, `docs/design/` and
+`docs/platform-contract.md`. The maintainer owns outcomes, scope and critical decisions; the loop
+owns everything else. **Decide by default:** the maintainer's attention is the scarcest resource
+in this repository, so a question the loop can answer, it answers. Asking is the exception.
 
 | Tier | When | What the loop does |
 |---|---|---|
-| 1. Decide and record | Inside the record: triage verdicts, ordering, slicing an epic along its stated parts, criteria that follow from the record, closing fixed or superseded work | Act, then one comment and one decision-log entry |
-| 2. Announce, then act after 24 h | `wontfix` on product grounds, striking an epic goal, re-scoping beyond the criteria, slicing differently from the body | Comment "PM decision, acting on <UTC time> unless the maintainer objects", list it in the inbox, act when the window ends, log it |
-| 3. Escalate | The critical list, or anything outside the record | Keep the labels, add `question`, comment an either/or with a recommendation, list it in the inbox |
+| 1. Decide and record | The record answers it, even indirectly (an ADR, a `PC-xx` clause, the spec's decisions); triage verdicts, ordering, slicing, dependency edges, criteria that follow from the record, closing fixed or superseded work, and process gaps (file the fix as an issue) | Act, then one comment and one decision-log entry |
+| 2. Announce, then act after 8 h | Not in the record, but reversible: a contract or API shape before the first release, `wontfix` on product grounds, striking an epic goal, re-scoping, a milestone | Comment "PM decision: <what>, acting on <UTC time> unless the maintainer objects", list it in the inbox, act when the window ends, log it |
+| 3. Escalate | The critical list only | Keep the labels, add `question`, comment the decision needed with a recommendation, list it in the inbox |
 
-**Critical list (always tier 3):**
-- security posture, secrets and credentials, release operations;
+**Critical list (the only tier-3 items):**
+- security posture, secrets and credentials;
+- **releasing is the maintainer's decision:** when to release, which version, and what goes into
+  it. No loop merges, approves or arms a release PR, or proposes a release date. Filing an issue
+  to make release *configuration* match the record (for example `0.x` versions, ADR 0011) is tier
+  1; its PR is gated, so the maintainer merges it;
 - deleting user data, or removing a user-facing feature;
-- any change to a loop's rules;
-- external commitments, licensing or cost, milestone placement;
+- external commitments, licensing or cost;
 - closing an external contributor's PR.
+
+**Actions, not questions.** Every inbox entry names what will happen next and when, or links the
+one thing the maintainer has to do (merge a PR, answer one tier-3 question). A recommendation the
+loop could carry out itself is carried out (tier 1) or announced (tier 2), never only recommended.
+A gap in the loop rules is filed as an issue for the worker with the proposed rule; the gate sends
+that PR to the maintainer to merge.
 
 A maintainer override is permanent precedent. Every fix direction the loop writes names the root
 cause and the existing pattern it follows, by file. A workaround is labelled as one.
@@ -145,11 +156,17 @@ unblocks.
 - **Critical path:** order the frontier by how much it unblocks. Store each issue's count of open
   issues it transitively unblocks (`gh api repos/thschue/goldie/issues/<n>/dependencies/blocking`)
   in the ledger, and keep the top 2 as `priority` (at most 2 open, removed once claimed).
-- **Depth:** keep at least 3 issues on the frontier. When it runs short, in this order:
-  1. slice epics along their stated parts;
-  2. write criteria the record already answers;
-  3. add missing `blocked_by` edges;
-  4. report "worker will starve in N claims".
+- **Depth:** keep at least 3 issues on the frontier, on at least 2 independent tracks, so the
+  worker never waits on one PR. When it runs short, in this order:
+  1. **challenge blocking edges:** keep `blocked_by` only when the blocked issue can't be built and
+     merged without code the blocker adds. "Should follow its conventions" or "same area" is not a
+     dependency: remove the edge (tier 1) and note any convention in the blocked issue's body;
+  2. slice epics and large issues so that a first slice needs nothing open;
+  3. write criteria the record already answers;
+  4. add `blocked_by` edges only for real code dependencies, and for overlap on the same files.
+
+  If the frontier is still short, the inbox's first section says "worker starving: N claimable"
+  with the one blocker to clear.
 - **Backstop:** re-apply the readiness gate to every unclaimed `ready-for-agent` issue.
 - **No silent parking:** no `needs-info` issue goes more than 2 days without an inbox line naming its
   owner.
@@ -167,7 +184,7 @@ One pinned issue titled `Maintainer inbox`, created on first use. pm-audit **rew
 tick and never comments on it. Each entry is 2–3 lines with a link: what, why it needs the
 maintainer, and the recommended action. The sections, in order:
 
-1. **Stop the line:** a red workflow on `main`, with the failing job.
+1. **Stop the line:** a red workflow on `main`, with the failing job, or a starving worker.
 2. **Merge to approve:** PRs with `needs-maintainer`, each with its gate reasons and, for a new
    dependency, the brief in one line.
 3. **Decide:** tier-3 `question` items as either/or with a recommendation, the `grilling-needed`
