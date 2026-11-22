@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -38,6 +40,15 @@ func TestAPIErrorWithoutAnEnvelopeNamesOnlyTheStatus(t *testing.T) {
 	err := apiError(&http.Response{StatusCode: http.StatusBadGateway}, []byte("<html>http://10.0.0.1/internal</html>"))
 	if got := err.Error(); got != "the knowledge server answered 502 Bad Gateway" {
 		t.Errorf("error = %q", got)
+	}
+}
+
+func TestTransportErrorNamesCancellationAndTimeout(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		err := transportError(fmt.Errorf("Get \"http://10.0.0.1:8080/api/v1/search\": %w", cause))
+		if got := err.Error(); got != "the request to the knowledge server was cancelled or timed out" {
+			t.Errorf("%v: error = %q", cause, got)
+		}
 	}
 }
 

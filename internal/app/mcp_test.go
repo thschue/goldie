@@ -212,3 +212,11 @@ func TestMCPUnreachableAPIDoesNotLeakTheAddress(t *testing.T) {
 		t.Errorf("want a tool error without the address: %v %s", isErr, text)
 	}
 }
+
+func TestMCPGetArticleUnreachableAPIDoesNotLeakTheAddress(t *testing.T) {
+	cs := session(t, "http://127.0.0.1:1", testToken)
+	text, isErr := call(t, cs, "get_article", map[string]any{"id": "agent-loops"})
+	if !isErr || strings.Contains(text, "127.0.0.1") || strings.Contains(text, "/api/") {
+		t.Errorf("want a tool error without the address: %v %s", isErr, text)
+	}
+}
