@@ -36,7 +36,11 @@ type Syncer struct {
 	src     Source
 	current atomic.Pointer[Snapshot]
 
-	mu     sync.Mutex // guards status and serialises polls
+	// pollMu serialises whole polls, Load included, so a slow older load can
+	// never replace a newer Snapshot. mu only guards status, so Status does not
+	// wait for a slow Load.
+	pollMu sync.Mutex
+	mu     sync.Mutex
 	status SyncStatus
 
 	// now and newTicker are replaced in tests, so no test waits on real time.
@@ -71,6 +75,8 @@ func (s *Syncer) Status() SyncStatus {
 // failure it keeps the previous Snapshot, records a redacted error and returns
 // the original error.
 func (s *Syncer) Poll() error {
+	s.pollMu.Lock()
+	defer s.pollMu.Unlock()
 	snap, err := s.src.Load()
 	if err == nil && snap == nil {
 		err = errNilSnapshot

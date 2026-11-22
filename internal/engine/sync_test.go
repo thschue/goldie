@@ -168,3 +168,48 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 	<-done
 	<-stopped
 }
+
+// orderSource numbers its loads; the first one blocks until release is closed.
+type orderSource struct {
+	mu      sync.Mutex
+	n       int
+	started chan int
+	release chan struct{}
+}
+
+func (o *orderSource) Load() (*Snapshot, error) {
+	o.mu.Lock()
+	o.n++
+	n := o.n
+	o.mu.Unlock()
+	o.started <- n
+	if n == 1 {
+		<-o.release
+	}
+	return snapOf(string(rune('0' + n))), nil
+}
+
+func TestSyncerConcurrentPollsNeverRegress(t *testing.T) {
+	src := &orderSource{started: make(chan int, 2), release: make(chan struct{})}
+	s := NewSyncer(src)
+
+	first := make(chan struct{})
+	go func() { _ = s.Poll(); close(first) }()
+	<-src.started // the first, older load is in flight
+
+	second := make(chan struct{})
+	go func() { _ = s.Poll(); close(second) }()
+	// Give an unserialised second poll the chance to finish first. A correct
+	// Syncer holds it back, so this wait can only hide the bug, never fail.
+	select {
+	case <-second:
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(src.release)
+	<-first
+	<-second
+
+	if got := s.Current().Articles()[0].ID; got != "2" {
+		t.Fatalf("Current is from load %s; the newer load 2 must win", got)
+	}
+}
