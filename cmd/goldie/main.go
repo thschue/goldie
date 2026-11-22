@@ -120,6 +120,8 @@ func publicOptions(cfg platform.Config, logger *slog.Logger) app.Options {
 		APITokens:  cfg.APITokens,
 		RateLimit:  cfg.RateLimit,
 		Logger:     logger,
+
+		MinClientVersion: cfg.MinClientVersion,
 	}
 }
 

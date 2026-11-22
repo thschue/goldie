@@ -79,6 +79,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
         default:
@@ -143,6 +145,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
         default:
@@ -170,6 +174,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
         default:
@@ -443,6 +449,18 @@ components:
     Error:
       x-go-name: ErrorResponse
       description: An error, in the error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    UpgradeRequired:
+      description: |
+        The request named a goldie client older than `GOLDIE_MIN_CLIENT_VERSION`
+        in its `X-Goldie-Client: goldie/<version>` header. The hint names the
+        minimum version: upgrade goldie, then retry. Requests without the
+        header, or whose header is not `goldie/<semver>`, are not refused;
+        requests without a valid token are rejected with 401 first, and a
+        refused request does not count against the rate limit.
       content:
         application/json:
           schema:

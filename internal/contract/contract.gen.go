@@ -167,6 +167,9 @@ type ErrorResponse = ErrorEnvelope
 // RateLimited The body of every error response.
 type RateLimited = ErrorEnvelope
 
+// UpgradeRequired The body of every error response.
+type UpgradeRequired = ErrorEnvelope
+
 // GetArticleParams defines parameters for GetArticle.
 type GetArticleParams struct {
 	// Project Look the article up for this Project (ADR 0020): its own article
@@ -711,6 +714,8 @@ type GetArticleResponse struct {
 	JSON401 *ErrorEnvelope
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -737,6 +742,11 @@ func (r GetArticleResponse) GetJSON401() *ErrorEnvelope {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r GetArticleResponse) GetJSON404() *ErrorEnvelope {
 	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetArticleResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -790,6 +800,8 @@ type ListProjectsResponse struct {
 	JSON200 *ProjectList
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -806,6 +818,11 @@ func (r ListProjectsResponse) GetJSON200() *ProjectList {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r ListProjectsResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r ListProjectsResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -861,6 +878,8 @@ type SearchArticlesResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *RateLimited
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -882,6 +901,11 @@ func (r SearchArticlesResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r SearchArticlesResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r SearchArticlesResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
@@ -1142,6 +1166,13 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest RateLimited
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -1201,6 +1232,13 @@ func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest RateLimited
@@ -1268,6 +1306,13 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest RateLimited
@@ -1665,6 +1710,8 @@ type RateLimitedJSONResponse struct {
 	Headers RateLimitedResponseHeaders
 }
 
+type UpgradeRequiredJSONResponse ErrorEnvelope
+
 type GetArticleRequestObject struct {
 	Id     string `json:"id"`
 	Params GetArticleParams
@@ -1726,6 +1773,20 @@ func (response GetArticle404JSONResponse) VisitGetArticleResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticle426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetArticle426JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1801,6 +1862,20 @@ func (response ListProjects401JSONResponse) VisitListProjectsResponse(w http.Res
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListProjects426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response ListProjects426JSONResponse) VisitListProjectsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1891,6 +1966,20 @@ func (response SearchArticles401JSONResponse) VisitSearchArticlesResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response SearchArticles426JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
 	_, err := buf.WriteTo(w)
 	return err
 }

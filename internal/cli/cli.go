@@ -216,7 +216,7 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 	}
 	opts := []contract.ClientOption{contract.WithHTTPClient(c.http),
 		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set("X-Goldie-Client", "goldie/"+platform.Version)
+			r.Header.Set(contract.ClientHeader, contract.ClientHeaderPrefix+platform.Version)
 			return nil
 		})}
 	if withToken {

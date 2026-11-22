@@ -19,6 +19,7 @@ func TestPublicOptionsCarryTheServerLoggerAndSettings(t *testing.T) {
 		APIToken:         "operator-token",
 		APITokens:        "ci:reader:reader-token",
 		RateLimit:        platform.RateLimit{Requests: 7, Per: time.Minute, Burst: 3},
+		MinClientVersion: "1.2.0",
 	}
 	logger := platform.NewLogger(io.Discard, slog.LevelInfo, "server")
 	opts := publicOptions(cfg, logger)
@@ -28,5 +29,8 @@ func TestPublicOptionsCarryTheServerLoggerAndSettings(t *testing.T) {
 	if !opts.SwaggerUI || opts.ContentDir != cfg.ContentDir || opts.APIToken != cfg.APIToken ||
 		opts.APITokens != cfg.APITokens || opts.RateLimit != cfg.RateLimit {
 		t.Errorf("the public handler settings differ from the config: %+v", opts)
+	}
+	if opts.MinClientVersion != cfg.MinClientVersion {
+		t.Errorf("the minimum client version is %q, want %q", opts.MinClientVersion, cfg.MinClientVersion)
 	}
 }
