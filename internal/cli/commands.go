@@ -119,15 +119,13 @@ func (c *commander) status(ctx context.Context) error {
 }
 
 // version prints the client version, and the server's API version when an
-// address is configured and the server answers.
+// address is configured and the server answers. The server part is best
+// effort: GOLDIE_ADDR is also the server's listen address (":8080"), so an
+// address that is not a URL is skipped instead of failing the command.
 func (c *commander) version(ctx context.Context) error {
 	info := map[string]any{"version": platform.Version}
 	line := platform.Version
-	if c.s.addr != "" {
-		cl, err := c.client(false)
-		if err != nil {
-			return err
-		}
+	if cl, err := c.client(false); err == nil {
 		if doc, err := cl.GetOpenAPIJSONWithResponse(ctx); err == nil && doc.JSON200 != nil {
 			_, apiVersion := specInfo(*doc.JSON200)
 			info["serverApiVersion"] = apiVersion

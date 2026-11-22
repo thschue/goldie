@@ -77,7 +77,9 @@ func Run(ctx context.Context, args []string, env Env) error {
 	if s.addr == "" {
 		s.addr, _ = env.Lookup(EnvAddr)
 	}
-	if s.token == "" {
+	// version needs no token, and must keep working where the token settings
+	// are absent or broken.
+	if s.token == "" && name != "version" {
 		if s.token, err = platform.Setting(env.Lookup, env.ReadFile, EnvToken); err != nil {
 			return err
 		}

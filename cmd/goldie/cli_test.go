@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/app"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files in testdata/golden")
@@ -172,6 +173,27 @@ func TestCLIVersionAgainstServer(t *testing.T) {
 	}
 	if !strings.Contains(out, `"serverApiVersion"`) || !strings.Contains(out, `"version"`) {
 		t.Errorf("version --json = %q", out)
+	}
+}
+
+// GOLDIE_ADDR is also the server's listen address, so `goldie version` must
+// still print the client version where it holds ":8080", or where the token
+// settings are broken; version needs neither.
+func TestCLIVersionIgnoresUnusableClientSettings(t *testing.T) {
+	for _, env := range [][2]string{
+		{"GOLDIE_ADDR", ":8080"},
+		{"GOLDIE_TOKEN_FILE", filepath.Join(t.TempDir(), "missing")},
+	} {
+		t.Run(env[0], func(t *testing.T) {
+			t.Setenv(env[0], env[1])
+			var out bytes.Buffer
+			if err := run([]string{"version"}, &out); err != nil {
+				t.Fatalf("version with %s=%q: %v", env[0], env[1], err)
+			}
+			if got := strings.TrimSpace(out.String()); got != platform.Version {
+				t.Errorf("version = %q, want %q", got, platform.Version)
+			}
+		})
 	}
 }
 
