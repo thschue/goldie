@@ -174,8 +174,10 @@ whether a blocker shipped.
   `bug`, `security` and `priority` first, then oldest first. pm-audit doesn't reorder it otherwise.
 - **Critical path:** store each issue's count of open issues it transitively unblocks
   (`gh api repos/thschue/goldie/issues/<n>/dependencies/blocking`) in the ledger, and keep the top 2
-  as `priority` (at most 2 open, removed once claimed). That is how the critical path jumps the
-  queue.
+  as `priority` (at most 2 open, removed once merged). That is how the critical path jumps the
+  queue. Slice each one to the smallest change that unblocks the waiting issues
+  ([unblockers](./label-contract.md#order-of-work)), and report one not merged within a day as a
+  stall.
 - **Depth:** keep at least 3 issues on the frontier, on at least 2 independent tracks, so the
   worker never waits on one PR. When it runs short, in this order:
   1. **challenge blocking edges:** keep `blocked_by` only when the blocked issue can't be built and

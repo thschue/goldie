@@ -24,7 +24,8 @@ authoritative and this is its summary.
 
   If it fails, slice it with dependency edges, or park it with the exact missing fact.
 - **Order of work:** bugs, security and `priority` first, then oldest first. The critical path
-  enters through `priority`: the two issues that unblock the most get it.
+  enters through `priority`: the two issues that unblock the most get it, sliced to the smallest
+  change that unblocks the waiting work, so they land as fast as possible.
 - **Get things done:** decide what the record answers, finish before starting, and never park an
   issue without an owner and a next step.
 - **Decide by default.** The maintainer's attention is the scarcest resource:
