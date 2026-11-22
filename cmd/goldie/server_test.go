@@ -217,7 +217,12 @@ func TestBinaryServesOpenAPISpecOnPublicListener(t *testing.T) {
 		"/openapi.yaml": "application/yaml",
 		"/openapi.json": "application/json",
 	} {
-		resp, err := http.Get("http://" + p.app + path) //nolint:gosec // loopback test URL
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+p.app+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		resp, err := http.DefaultClient.Do(req) //nolint:gosec // loopback test URL
 		if err != nil {
 			t.Fatalf("GET app %s: %v", path, err)
 		}
