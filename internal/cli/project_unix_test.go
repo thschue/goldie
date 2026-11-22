@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -72,5 +73,32 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 				t.Fatal("resolveProject blocked on a non-regular file")
 			}
 		})
+	}
+}
+
+// TestOpenCappedRefusesFIFO checks the open-then-check step on its own: a FIFO
+// that replaces a file between readCapped's type check and its open must not
+// block the open, and must be refused.
+func TestOpenCappedRefusesFIFO(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := syscall.Mkfifo(path, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := openCapped(path)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, errNotRegular) {
+			t.Fatalf("openCapped(fifo) error = %v, want errNotRegular", err)
+		}
+	case <-time.After(5 * time.Second):
+		// Unblock the reader so the test process can exit.
+		if f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = f.Close()
+		}
+		t.Fatal("openCapped blocked on a FIFO")
 	}
 }

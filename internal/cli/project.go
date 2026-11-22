@@ -185,7 +185,7 @@ var errNotRegular = errors.New("not a regular file")
 
 // readCapped reads a regular file of at most maxProjectFile bytes. It checks
 // the type before opening, because opening a FIFO (or a symlink to one, or to
-// /dev/tty) planted in a checkout blocks.
+// /dev/tty) planted in a checkout blocks, and so that no device is opened.
 func readCapped(path string) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -194,11 +194,25 @@ func readCapped(path string) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, errNotRegular
 	}
-	f, err := os.Open(path)
+	return openCapped(path)
+}
+
+// openCapped opens path without blocking (openFlags) and checks the type of
+// what it opened, so a FIFO swapped in after readCapped's check is refused
+// rather than read.
+func openCapped(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errNotRegular
+	}
 	b, err := io.ReadAll(io.LimitReader(f, maxProjectFile+1))
 	if err != nil {
 		return nil, err
