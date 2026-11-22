@@ -34,7 +34,8 @@ OpenTelemetry, with the validation noted. Admin-port requests are not traced. Re
 headers and query strings are not recorded. goldie reads every variable listed here through
 its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as
 OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own
-handling: goldie neither validates nor documents them. Only the OTLP headers variables
+handling: goldie neither validates nor documents them, but a value the SDK rejects is never
+printed; goldie logs one fixed warning instead. Only the OTLP headers variables
 accept a _FILE form; for any other OTEL_* name it is an error.
 
 | Variable | Default | Meaning |
