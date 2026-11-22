@@ -2,11 +2,14 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -168,26 +171,100 @@ func TestUnknownPathIsTheNotFoundEnvelope(t *testing.T) {
 	assertEnvelope(t, body, "not_found")
 }
 
+// specDoc is the spec as contracttest loads it: contract.SpecJSON, decoded.
+func specDoc(t *testing.T) map[string]any {
+	t.Helper()
+	raw, err := contract.SpecJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
+}
+
+var specMethods = []string{"GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"}
+
 // specOperations returns "METHOD path" for every operation in the spec.
 func specOperations(t *testing.T) []string {
 	t.Helper()
-	var doc struct {
-		Paths map[string]map[string]any `yaml:"paths"`
-	}
-	if err := yaml.Unmarshal(contract.SpecYAML(), &doc); err != nil {
-		t.Fatal(err)
-	}
+	paths, _ := specDoc(t)["paths"].(map[string]any)
 	var ops []string
-	for path, item := range doc.Paths {
-		for key := range item {
-			switch m := strings.ToUpper(key); m {
-			case "GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE":
+	for path, item := range paths {
+		items, _ := item.(map[string]any)
+		for key := range items {
+			if m := strings.ToUpper(key); slices.Contains(specMethods, m) {
 				ops = append(ops, m+" "+path)
 			}
 		}
 	}
 	sort.Strings(ops)
 	return ops
+}
+
+var templateRE = regexp.MustCompile(`\{([^/{}]+)\}`)
+
+// concretePath substitutes every {param} of a spec path template with the
+// example of the path parameter of that name, percent-encoded as one path
+// segment (ADR 0016). The parameters are those of the path item and of the
+// operation; an operation's parameter wins. A parameter without an example is
+// an error: the live pass cannot request the path.
+func concretePath(doc map[string]any, method, path string) (string, error) {
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths[path].(map[string]any)
+	op, _ := item[strings.ToLower(method)].(map[string]any)
+	examples := map[string]any{}
+	for _, list := range []any{item["parameters"], op["parameters"]} {
+		params, _ := list.([]any)
+		for _, p := range params {
+			pm, _ := p.(map[string]any)
+			if pm["in"] != "path" {
+				continue
+			}
+			if name, _ := pm["name"].(string); name != "" {
+				if ex, ok := pm["example"]; ok {
+					examples[name] = ex
+				}
+			}
+		}
+	}
+	var missing []string
+	out := templateRE.ReplaceAllStringFunc(path, func(tok string) string {
+		name := tok[1 : len(tok)-1]
+		ex, ok := examples[name].(string)
+		if !ok || ex == "" {
+			missing = append(missing, name)
+			return tok
+		}
+		return url.PathEscape(ex)
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("%s %s: path parameter(s) %v have no string example in the spec", method, path, missing)
+	}
+	return out, nil
+}
+
+func TestConcretePathSubstitutesExamples(t *testing.T) {
+	doc := map[string]any{"paths": map[string]any{
+		"/a/{id}/b/{n}": map[string]any{
+			"parameters": []any{map[string]any{"name": "n", "in": "path", "example": "7"}},
+			"get": map[string]any{"parameters": []any{
+				map[string]any{"name": "id", "in": "path", "example": "x/y z"},
+			}},
+		},
+		"/c/{id}": map[string]any{
+			"get": map[string]any{"parameters": []any{map[string]any{"name": "id", "in": "path"}}},
+		},
+	}}
+	got, err := concretePath(doc, "GET", "/a/{id}/b/{n}")
+	if err != nil || got != "/a/x%2Fy%20z/b/7" {
+		t.Errorf("concretePath = %q, %v; want /a/x%%2Fy%%20z/b/7", got, err)
+	}
+	if got, err := concretePath(doc, "GET", "/c/{id}"); err == nil {
+		t.Errorf("a parameter without an example gave %q, want an error", got)
+	}
 }
 
 func TestRoutesAndSpecAgree(t *testing.T) {
@@ -210,38 +287,92 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 
 	// Both directions on the table the router is built from.
 	for _, r := range registered {
-		if !contains(ops, r) {
+		if !slices.Contains(ops, r) {
 			t.Errorf("route %q is registered but not in the spec", r)
 		}
 	}
 	for _, o := range ops {
-		if !contains(registered, o) {
+		if !slices.Contains(registered, o) {
 			t.Errorf("operation %q is in the spec but not registered", o)
 		}
 	}
 
 	// And against the live router: every operation must reach a handler, not
-	// the not-found fallback. (Path templates are skipped: they need a value.)
+	// the not-found fallback. A templated path is requested with each path
+	// parameter's spec example, which the test content answers.
+	doc := specDoc(t)
 	srv := newServer(t)
 	for _, o := range ops {
 		method, path, _ := strings.Cut(o, " ")
 		if strings.Contains(path, "{") {
-			continue
+			concrete, err := concretePath(doc, method, path)
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			path = concrete
 		}
 		resp, _ := do(t, method, srv.URL+path, bearer(testToken))
 		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-			t.Errorf("%s answers %d: the operation is in the spec but the router does not serve it", o, resp.StatusCode)
+			t.Errorf("%s answers %d at %s: the operation is in the spec but the router does not serve it", o, resp.StatusCode, path)
 		}
 	}
 }
 
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
+// The route table's methods are what the router serves: a method outside them
+// is the 405 envelope whose Allow lists exactly the registered methods, with
+// HEAD wherever GET is, and HEAD is served where GET is.
+func TestRouterHonoursRegisteredMethods(t *testing.T) {
+	snap, err := engine.NewDirSource(testContent).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes, err := publicRoutes(snap, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := specDoc(t)
+	byPath := map[string][]string{}
+	for _, r := range routes {
+		byPath[r.path] = append(byPath[r.path], r.methods...)
+	}
+	srv := newServer(t)
+	for path, methods := range byPath {
+		want := slices.Clone(methods)
+		if slices.Contains(methods, http.MethodGet) {
+			want = append(want, http.MethodHead)
+		}
+		sort.Strings(want)
+		concrete := path
+		if strings.Contains(path, "{") {
+			if concrete, err = concretePath(doc, methods[0], path); err != nil {
+				t.Error(err)
+				continue
+			}
+		}
+		for _, m := range []string{http.MethodDelete, http.MethodPatch} {
+			if slices.Contains(methods, m) {
+				continue
+			}
+			resp, body := do(t, m, srv.URL+concrete, bearer(testToken))
+			if resp.StatusCode != http.StatusMethodNotAllowed {
+				t.Errorf("%s %s status %d, want 405", m, path, resp.StatusCode)
+				continue
+			}
+			assertEnvelope(t, body, "method_not_allowed")
+			got := strings.Split(strings.ReplaceAll(resp.Header.Get("Allow"), " ", ""), ",")
+			sort.Strings(got)
+			if !slices.Equal(got, want) {
+				t.Errorf("%s %s: Allow = %v, want %v", m, path, got, want)
+			}
+		}
+		if slices.Contains(methods, http.MethodGet) {
+			resp, _ := do(t, http.MethodHead, srv.URL+concrete, bearer(testToken))
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+				t.Errorf("HEAD %s answers %d, want it served wherever GET is", path, resp.StatusCode)
+			}
 		}
 	}
-	return false
 }
 
 // leaks matches what an error body must never contain: addresses, ports,
