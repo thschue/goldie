@@ -103,13 +103,31 @@ const (
 	envOTelResAttrs = "OTEL_RESOURCE_ATTRIBUTES"
 )
 
+// secretOTelNames are the variables with a _FILE form (PC-05).
+var secretOTelNames = map[string]bool{
+	envOTLPHeaders:                      true,
+	"OTEL_EXPORTER_OTLP_TRACES_HEADERS": true,
+	"OTEL_EXPORTER_OTLP_LOGS_HEADERS":   true,
+}
+
 // SetupTelemetry reads the OTEL_* variables and builds the exporters. It
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
 func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	var errs []error
 	get := func(name string) string {
-		v, err := Setting(lookup, os.ReadFile, name)
+		var v string
+		var err error
+		if secretOTelNames[name] {
+			v, err = Setting(lookup, os.ReadFile, name)
+		} else {
+			// The SDK reads these names from the environment itself and
+			// would ignore a _FILE form, so refuse it instead of dropping it.
+			if _, ok := lookup(name + "_FILE"); ok {
+				err = fmt.Errorf("%s_FILE is not supported: only the OTLP headers variables accept a _FILE form", name)
+			}
+			v, _ = lookup(name)
+		}
 		if err != nil {
 			errs = append(errs, err)
 		}

@@ -435,6 +435,17 @@ func TestTelemetryLogBridgeHonoursLogLevel(t *testing.T) {
 	}
 }
 
+// *_FILE works only where goldie reads the value itself. For the other names
+// the SDK would ignore it and fall back to its defaults, so it is an error.
+func TestTelemetryFileFormRejectedForNonSecretNames(t *testing.T) {
+	_, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT_FILE": "/run/secrets/endpoint",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "OTEL_EXPORTER_OTLP_ENDPOINT_FILE") || strings.Contains(err.Error(), "/run/secrets") {
+		t.Errorf("err = %v", err)
+	}
+}
+
 // A malformed OTEL_RESOURCE_ATTRIBUTES fails startup naming the variable and
 // never echoing it; the SDK alone would drop it silently.
 func TestTelemetryResourceAttributesMalformedFailsFast(t *testing.T) {
