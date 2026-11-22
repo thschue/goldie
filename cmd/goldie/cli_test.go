@@ -16,7 +16,7 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden files in testdata/golden")
 
-const cliToken = "cli-test-token-0123456789abcdef"
+const cliToken = "cli-test-token-0123456789abcdef0123456789"
 
 // cliServer is a real in-process server over the example content.
 func cliServer(t *testing.T) *httptest.Server {
