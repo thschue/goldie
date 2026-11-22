@@ -75,6 +75,12 @@ func mapLookup(m map[string]string) Lookup {
 	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
 }
 
+// defaultTraceSettings is what an empty lookup yields.
+func defaultTraceSettings() traceSettings {
+	ts, _ := parseTraceSettings(func(string) string { return "" })
+	return ts
+}
+
 // startTraced runs a Server with telemetry on ephemeral ports. The returned
 // stop cancels the server (the drain flushes telemetry) and waits for Serve.
 func startTraced(t *testing.T, tel *Telemetry, logs *syncBuffer) (app, admin string, stop func()) {

@@ -86,12 +86,6 @@ type traceSettings struct {
 	limits  sdktrace.SpanLimits
 }
 
-// defaultTraceSettings is what an empty lookup yields.
-func defaultTraceSettings() traceSettings {
-	ts, _ := parseTraceSettings(func(string) string { return "" })
-	return ts
-}
-
 // The span limit variables, each with its SDK fallback where one exists.
 const (
 	envSpanAttrValueLen = "OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT"
