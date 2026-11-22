@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/thschue/goldie/internal/api"
+	"github.com/thschue/goldie/internal/contract/contracttest"
 	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
@@ -59,7 +60,6 @@ func writeArticle(t *testing.T, root, id, name, body string) {
 // found from the spec so a new read is covered without editing this test.
 func readOperationPaths(t *testing.T) []string {
 	t.Helper()
-	doc := specDoc(t)
 	var out []string
 	for _, o := range specOperations(t) {
 		method, path, _ := strings.Cut(o, " ")
@@ -67,7 +67,7 @@ func readOperationPaths(t *testing.T) []string {
 			continue
 		}
 		if strings.Contains(path, "{") {
-			c, err := concretePath(doc, method, path)
+			c, err := contracttest.ExamplePath(method, path)
 			if err != nil {
 				t.Fatal(err)
 			}
