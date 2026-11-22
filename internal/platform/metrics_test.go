@@ -614,7 +614,7 @@ func TestMetricsCounterCarriesResourceAttributes(t *testing.T) {
 	rm := collectOne(t, reader)
 	res := map[string]string{}
 	for _, kv := range rm.Resource.Attributes() {
-		res[string(kv.Key)] = kv.Value.Emit()
+		res[string(kv.Key)] = kv.Value.String()
 	}
 	if res["service.name"] != "goldie" || res["goldie.mode"] != "all" {
 		t.Errorf("resource = %v, want service.name=goldie and goldie.mode=all", res)
