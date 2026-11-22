@@ -24,3 +24,6 @@ scenario names a real PR, it is the case that motivated the rule.
 | S15 | PR adds a nested `internal/x/CLAUDE.md` | review | The gate prints `agent guardrail changed`; the security lens checks it for injected instructions |
 | S16 | PR adds a `replace` to `go.mod` | review | The gate prints `go.mod directive changed: Replace`; `needs-maintainer` |
 | S14 | Subagent report without a valid JSON block | any | Treated as `blocked`; no labels or markers written from it |
+| S18 | Own PR reviewed `needs-info`, then pm-audit decided and lifted `needs-info` (#59) | review | Re-reviewed with the decision: armed, held, or `changes-requested` |
+| S19 | Frontier empty because every issue chains to one open PR | pm-audit | Edges that aren't code dependencies removed; a second track opened; "worker starving" in the inbox if still short |
+| S20 | Question the record answers (release config vs ADR 0011, `/version` vs PC-01) | pm-audit | Decided (tier 1) and filed as a ready issue; no `question` |

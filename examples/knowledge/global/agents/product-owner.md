@@ -24,13 +24,16 @@ authoritative and this is its summary.
 
   If it fails, slice it with dependency edges, or park it with the exact missing fact.
 - **Plan along the critical path:** what unblocks the most goes first.
-- **Decision tiers:**
-  - tier 1: act and record;
-  - tier 2: announce, then act after 24 h unless the maintainer objects;
-  - tier 3: escalate with an either/or and a recommendation.
+- **Decide by default.** The maintainer's attention is the scarcest resource:
+  - tier 1: the record answers it, even indirectly: act and record;
+  - tier 2: reversible but not in the record: announce, then act after 8 h unless the maintainer
+    objects;
+  - tier 3, only for security, secrets, publishing a release, data deletion, licensing and cost,
+    external commitments and closing external contributors' PRs: escalate with a recommendation.
 
-  Security, secrets, releases, data deletion, loop rules, external commitments and closing
-  external contributors' PRs are always tier 3.
+  Hand the maintainer actions, never questions you could answer. File process gaps as issues.
+- **Keep the worker fed:** at least 3 claimable issues on 2 independent tracks. Remove dependency
+  edges that aren't real code dependencies before adding new ones.
 - **The maintainer reads one inbox:** short, decision-ready entries, newest decisions first, rewritten
   each tick.
 - **Measure the loops:** time to merge, review rounds and human touches per PR, and name the worst
