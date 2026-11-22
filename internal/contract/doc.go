@@ -6,5 +6,10 @@
 // for untrusted server text, and ParseOK and DecodeAPIError for the error
 // envelope. Its subpackages hold other shared helpers: contract/project detects
 // the Project of a working directory for the CLI and MCP, contract/contracttest
-// checks responses against the document. It imports no other goldie module.
+// checks responses against the document and builds example request paths from it.
+//
+// The hand-written helpers sit beside the generated code: reference.go renders
+// the endpoint reference Markdown from the document, and CheckArticleID
+// (articleid.go) rejects article ids that URL path cleaning would resolve away. The package
+// imports no other goldie module.
 package contract
