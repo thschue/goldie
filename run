@@ -1,7 +1,8 @@
 #!/bin/sh
 # goldie task runner. POSIX sh, no dependencies beyond the Go toolchain.
 #
-#   ./run check      everything CI runs: format, build, lint, lint fixtures, spec lint, tests
+#   ./run check      everything CI runs: format, build, lint, lint fixtures, spec lint,
+#                    regen drift check and fixture, tests
 #   ./run test       go test ./... (extra arguments are passed to go test)
 #   ./run lint       golangci-lint on the module
 #   ./run lint-spec  vacuum on internal/contract/openapi.yaml (zero findings)
@@ -199,7 +200,7 @@ cmd_check() {
 }
 
 usage() {
-	sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+	sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 [ $# -ge 1 ] || { usage; exit 2; }
