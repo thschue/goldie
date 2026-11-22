@@ -323,3 +323,44 @@ func TestTelemetryHeaderErrorsNeverEchoValues(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// OTLP header values are percent-encoded (OpenTelemetry spec); a collector
+// token such as "Basic%20..." must arrive decoded.
+func TestTelemetryHeaderValuesArePercentDecoded(t *testing.T) {
+	var mu sync.Mutex
+	var got string
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		mu.Lock()
+		got = r.Header.Get("Authorization")
+		mu.Unlock()
+	}))
+	defer collector.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
+	t.Setenv("OTEL_LOGS_EXPORTER", "none")
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Basic%20c2Vrcml0")
+	tel, err := SetupTelemetry(context.Background(), os.LookupEnv)
+	if err != nil || !tel.Enabled() {
+		t.Fatalf("enabled=%v err=%v", tel.Enabled(), err)
+	}
+	app, _, stop := startTraced(t, tel, &syncBuffer{})
+	get(t, "http://"+app+"/x")
+	stop()
+	mu.Lock()
+	defer mu.Unlock()
+	if got != "Basic c2Vrcml0" {
+		t.Errorf("collector got Authorization %q, want the percent-decoded value", got)
+	}
+}
+
+// A malformed escape fails startup without echoing the value. Accepting it
+// would let the SDK's own env parser print the raw header to stderr.
+func TestTelemetryHeaderBadEscapeFailsWithoutEcho(t *testing.T) {
+	_, err := SetupTelemetry(context.Background(), mapLookup(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+		"OTEL_EXPORTER_OTLP_HEADERS":  "authorization=hunter2%zz",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "OTEL_EXPORTER_OTLP_HEADERS") || strings.Contains(err.Error(), "hunter2") {
+		t.Fatalf("err = %v", err)
+	}
+}

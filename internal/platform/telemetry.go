@@ -164,7 +164,10 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	return newTelemetry(telemetryResource(), spans, logs), nil
 }
 
-// parseOTLPHeaders parses "k=v,k2=v2". The error never contains the text.
+// parseOTLPHeaders parses "k=v,k2=v2" with percent-encoded values, as the
+// OpenTelemetry spec and the SDK define it. The error never contains the text.
+// A malformed escape is an error here: left to the SDK's own env parser, it
+// would print the raw value to stderr.
 func parseOTLPHeaders(s string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, pair := range strings.Split(s, ",") {
@@ -173,7 +176,11 @@ func parseOTLPHeaders(s string) (map[string]string, error) {
 		if !ok || k == "" {
 			return nil, errors.New("must be comma-separated key=value pairs")
 		}
-		out[k] = strings.TrimSpace(v)
+		dv, err := url.PathUnescape(v)
+		if err != nil {
+			return nil, errors.New("values must be percent-encoded")
+		}
+		out[k] = strings.TrimSpace(dv)
 	}
 	return out, nil
 }
