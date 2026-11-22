@@ -73,6 +73,11 @@ goldie server -dev examples/knowledge
 
 Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there.
 
+`goldie validate [dir]` runs the same content load without starting a server, for a pipeline: it
+exits 0 and prints nothing when the content loads, and exits 1 with one `goldie: content does not
+load: <reason>` line on stderr when it does not. It needs no token or address. See
+[Checking content in CI](docs/content-ci.md).
+
 ## MCP over stdio
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
