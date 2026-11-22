@@ -91,7 +91,7 @@ const EnvDir = "GOLDIE_DIR"
 var ClientSettings = []SettingSpec{
 	{Name: EnvAddr, Meaning: "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
 	{Name: EnvToken, Secret: true, Meaning: "The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
-	{Name: EnvDir, Meaning: "A directory of content (global/articles under it). search, lookup, status and goldie mcp --transport stdio start an embedded server over it on loopback, with its own random token, and stop it when they end; --dir overrides it. Setting it together with --addr or GOLDIE_ADDR is an error, and GOLDIE_TOKEN is ignored. Content that does not load stops the command. version ignores it."},
+	{Name: EnvDir, Meaning: "A directory of content (global/articles under it). search, lookup, status and goldie mcp --transport stdio start an embedded server over it on loopback, with its own random token, and stop it when they end; --dir overrides it. Setting it together with --addr, or with GOLDIE_ADDR when --dir is not given, is an error; an explicit --dir wins over GOLDIE_ADDR in the environment, and GOLDIE_TOKEN is ignored. Content that does not load stops the command. version ignores it."},
 	{Name: EnvProject, Meaning: "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it."},
 }
 

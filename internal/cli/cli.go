@@ -125,7 +125,8 @@ func Run(ctx context.Context, args []string, env Env) error {
 	}
 }
 
-// ClientFlags are the client settings: the server address and the API token.
+// ClientFlags are the client settings: the server address and the API token,
+// or the content directory of an embedded server.
 // Every client command reads them the same way, and so does any other role
 // that talks to the API as a client (goldie mcp --transport stdio).
 type ClientFlags struct{ s settings }
