@@ -16,6 +16,18 @@ func TestServerTextCannotForgeLinesOrHideCharacters(t *testing.T) {
 	}
 }
 
+func TestServerTextCannotSmuggleInvisibleFormatCharacters(t *testing.T) {
+	// Zero-width characters, the byte-order mark, the word joiner and Unicode
+	// tag characters are invisible to a person reading the Source, but the
+	// agent reads them.
+	hidden := "a\u200bb\u200cc\u200dd\u2060e\ufefff\U000E0049\U000E0047g"
+	for name, f := range map[string]func(string) string{"clean": clean, "line": line} {
+		if got := f(hidden); got != "abcdefg" {
+			t.Errorf("%s = %q, want %q", name, got, "abcdefg")
+		}
+	}
+}
+
 func TestLineTurnsUnicodeLineSeparatorsIntoSpaces(t *testing.T) {
 	if got := line("a\u2028b\u2029c"); got != "a b c" {
 		t.Errorf("line = %q, want %q", got, "a b c")

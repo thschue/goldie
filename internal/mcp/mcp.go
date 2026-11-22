@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -127,15 +128,16 @@ func list(l []string) string {
 	return strings.Join(out, ", ")
 }
 
-// clean drops control and bidirectional formatting characters other than
-// newline and tab, so server text cannot hide or reorder what the agent reads.
+// clean drops control characters other than newline and tab, and every format
+// character (Unicode category Cf: bidirectional controls, zero-width
+// characters, the byte-order mark, tag characters), so server text cannot hide
+// or reorder what the agent reads.
 func clean(s string) string {
 	return strings.Map(func(r rune) rune {
 		switch {
 		case r == '\n', r == '\t':
 			return r
-		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f,
-			r == 0x061c, r == 0x200e, r == 0x200f, r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f, unicode.Is(unicode.Cf, r):
 			return -1
 		}
 		return r
