@@ -1,6 +1,6 @@
 //go:build unix
 
-package cli
+package project
 
 import "syscall"
 

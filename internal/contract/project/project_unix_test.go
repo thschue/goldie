@@ -1,6 +1,6 @@
 //go:build unix
 
-package cli
+package project
 
 import (
 	"errors"
@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// TestResolveProjectSkipsNonRegularFiles checks that a FIFO (or a symlink to
+// TestDetectProjectSkipsNonRegularFiles checks that a FIFO (or a symlink to
 // one, or to a device such as /dev/tty) planted as .goldie/config.yaml, .git
 // or .git/config cannot make detection block on open or read.
-func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
+func TestDetectProjectSkipsNonRegularFiles(t *testing.T) {
 	fifo := func(t *testing.T, path string) {
 		t.Helper()
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -58,7 +58,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 			dir := mk(t)
 			done := make(chan struct{})
 			go func() {
-				_, _ = resolveProject(dir, "", "") // an error is fine; blocking is not
+				_, _ = Detect(dir, "", "") // an error is fine; blocking is not
 				close(done)
 			}()
 			select {
@@ -70,7 +70,7 @@ func TestResolveProjectSkipsNonRegularFiles(t *testing.T) {
 						_ = f.Close()
 					}
 				}
-				t.Fatal("resolveProject blocked on a non-regular file")
+				t.Fatal("Detect blocked on a non-regular file")
 			}
 		})
 	}

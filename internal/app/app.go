@@ -36,13 +36,14 @@ type publicMux struct {
 	routes  []route
 }
 
-// newPublicMuxWith returns the router with the spec's operations over snap
-// registered, and nothing else, guarded by a parsed token set, a minimum
-// client version (nil for none) and a rate limiter. PublicHandler builds the
-// public listener with it, and the tests build the bare router with it, so the
-// route table they check is the one the server serves.
-func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	srv, err := api.NewServer(snap)
+// newPublicMuxWith returns the router with the spec's operations over the
+// Snapshot provider registered, and nothing else, guarded by a parsed token
+// set, a minimum client version (nil for none) and a rate limiter.
+// PublicHandler builds the public listener with it, and the tests build the
+// bare router with it, so the route table they check is the one the server
+// serves.
+func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
+	srv, err := api.NewServer(provider)
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +132,19 @@ func (m *publicMux) methods(path string) []string {
 func (m *publicMux) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.mux.ServeHTTP(w, r) }
 
 // rateLimiter builds the per-token limiter from the RateLimit LoadConfig
-// parsed, as is. A RateLimit that limits nothing, zero requests or no period
-// (the zero value a caller gets by leaving the field out), fails closed: it is
-// an error naming GOLDIE_RATE_LIMIT, not a server without a limit.
-func rateLimiter(l platform.RateLimit) (*api.RateLimiter, error) {
+// parsed, as is. PublicHandler checks it with checkRateLimit first.
+func rateLimiter(l platform.RateLimit) *api.RateLimiter {
+	return api.NewRateLimiter(l.Requests, l.Per, l.Burst)
+}
+
+// checkRateLimit fails closed on a RateLimit that limits nothing, zero
+// requests or no period (the zero value a caller gets by leaving the field
+// out): it is an error naming GOLDIE_RATE_LIMIT, not a server without a limit.
+func checkRateLimit(l platform.RateLimit) error {
 	if l.Requests <= 0 || l.Per <= 0 {
-		return nil, fmt.Errorf("%s: no limit was given; the server does not run without one", platform.EnvRateLimit)
+		return fmt.Errorf("%s: no limit was given; the server does not run without one", platform.EnvRateLimit)
 	}
-	return api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil
+	return nil
 }
 
 // clientVersionGate builds the minimum client version gate from the Semver
@@ -177,17 +183,18 @@ func apiTokens(cfg platform.Config) (*api.Tokens, error) {
 	return tokens, nil
 }
 
-// content loads the dir Source at GOLDIE_CONTENT_DIR. Errors name the variable
-// and never the path.
-func content(dir string) (*engine.Snapshot, error) {
+// content puts the dir Source at GOLDIE_CONTENT_DIR behind a Syncer, like
+// every Source, and runs its first poll here, so unloadable content still
+// fails at startup. Errors name the variable and never the path.
+func content(dir string) (*engine.Syncer, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
 	}
-	snap, err := engine.NewDirSource(dir).Load()
-	if err != nil {
+	syncer := engine.NewSyncer(engine.NewDirSource(dir))
+	if err := syncer.Poll(); err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
 	}
-	return snap, nil
+	return syncer, nil
 }
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
@@ -255,18 +262,17 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, erro
 	if err != nil {
 		errs = append(errs, err)
 	}
-	limiter, err := rateLimiter(cfg.RateLimit)
-	if err != nil {
+	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		errs = append(errs, err)
 	}
-	snap, err := content(cfg.ContentDir)
+	syncer, err := content(cfg.ContentDir)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	m, err := newPublicMuxWith(snap, tokens, limiter, clientVersionGate(cfg.MinClientVersion))
+	m, err := newPublicMuxWith(syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
 	if err != nil {
 		return nil, err
 	}

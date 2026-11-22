@@ -83,6 +83,8 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/articles/{id}:
@@ -149,6 +151,8 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/projects:
@@ -178,6 +182,8 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
   /openapi.yaml:
@@ -445,6 +451,7 @@ components:
           description: What the caller can do next.
           examples:
             - Check the request path against the OpenAPI document.
+            - Pass project as host/org/repo, for example github.com/acme/payments. Leave it out to get the global answer.
   responses:
     Error:
       x-go-name: ErrorResponse
@@ -461,6 +468,15 @@ components:
         header, or whose header is not `goldie/<semver>`, are not refused;
         requests without a valid token are rejected with 401 first, and a
         refused request does not count against the rate limit.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotReady:
+      description: |
+        The server has not loaded its content yet, so it cannot answer; the
+        error code is `not_ready`. Retry shortly. Once a load has succeeded it
+        never answers this again, even if a later load fails.
       content:
         application/json:
           schema:

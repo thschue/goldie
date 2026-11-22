@@ -43,7 +43,7 @@ func TestRequestErrorScopesSearchWordsToSearch(t *testing.T) {
 // The generated router registers search under searchPattern, so a missing or
 // repeated q there gets the search-words message.
 func TestRegisteredSearchGetsTheSearchWordsMessage(t *testing.T) {
-	srv, err := NewServer(&engine.Snapshot{})
+	srv, err := NewServer(func() *engine.Snapshot { return &engine.Snapshot{} })
 	if err != nil {
 		t.Fatal(err)
 	}

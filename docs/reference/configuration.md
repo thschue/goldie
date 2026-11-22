@@ -43,15 +43,20 @@ accept a _FILE form; for any other OTEL_* name it is an error.
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_SDK_DISABLED` | (none) | true turns telemetry off even when an endpoint is set. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces and /v1/logs below it. Setting it, or a signal endpoint, turns on trace and log export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | (none) | Collector URL for traces only, used as-is; wins over the base URL. |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | (none) | Collector URL for logs only, used as-is; wins over the base URL. |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | (none) | Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL and _LOGS_PROTOCOL. |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | (none) | Collector URL for metrics only, used as-is; wins over the base URL. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | (none) | Only http/protobuf is supported, and it is the default. Also _TRACES_PROTOCOL, _LOGS_PROTOCOL and _METRICS_PROTOCOL. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | (none) | Secret: set it with OTEL_EXPORTER_OTLP_HEADERS_FILE. Collector request headers as key=value pairs, for example an API token. |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | (none) | Secret: set it with OTEL_EXPORTER_OTLP_TRACES_HEADERS_FILE. Collector request headers for traces only, as key=value pairs; wins over OTEL_EXPORTER_OTLP_HEADERS. |
 | `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | (none) | Secret: set it with OTEL_EXPORTER_OTLP_LOGS_HEADERS_FILE. Collector request headers for logs only, as key=value pairs; wins over OTEL_EXPORTER_OTLP_HEADERS. |
+| `OTEL_EXPORTER_OTLP_METRICS_HEADERS` | (none) | Secret: set it with OTEL_EXPORTER_OTLP_METRICS_HEADERS_FILE. Collector request headers for metrics only, as key=value pairs; wins over OTEL_EXPORTER_OTLP_HEADERS. |
 | `OTEL_TRACES_EXPORTER` | (none) | otlp or none. none turns off trace export. |
 | `OTEL_LOGS_EXPORTER` | (none) | otlp or none. none turns off log export. |
+| `OTEL_METRICS_EXPORTER` | (none) | otlp or none. none turns off metrics export. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | Milliseconds between metric exports, a positive integer; anything else fails startup. |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `cumulative` | cumulative, delta or lowmemory (delta for counters and histograms, cumulative for up-down counters). |
 | `OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT` | `1024` | Maximum length of a span attribute value; longer values are truncated. Server spans copy request data such as the user agent and path, so a higher value lets clients grow the spans held in memory. Falls back to OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT. A value that is not a non-negative integer fails startup. |
 | `OTEL_TRACES_SAMPLER` | `parentbased_always_on` | Trace sampler: always_on, always_off, traceidratio or their parentbased_ forms. |
 | `OTEL_TRACES_SAMPLER_ARG` | `1` | Sampling ratio from 0 to 1, for the traceidratio samplers. |
