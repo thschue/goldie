@@ -36,7 +36,8 @@ func CheckToken(token string) error {
 // "Authorization: Bearer <token>". Anything else is a 401 in the error
 // envelope. The comparison takes the same time for every presented token,
 // whatever its length or content, and the presented value is never logged or
-// echoed. An empty token rejects every request.
+// echoed. A token that fails CheckToken, empty or too short included, rejects
+// every request, even one that presents it.
 func RequireToken(token string, next http.Handler) http.Handler {
 	want := sha256.Sum256([]byte(token))
 	valid := CheckToken(token) == nil
