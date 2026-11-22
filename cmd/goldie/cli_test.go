@@ -135,6 +135,8 @@ func TestCLIErrors(t *testing.T) {
 		{"bad addr", []string{"search", "agent", "--addr", "ftp://x", "--token", cliToken}, []string{"http"}},
 		{"unreachable", []string{"search", "agent", "--addr", "http://127.0.0.1:1", "--token", cliToken}, []string{"cannot reach"}},
 		{"no words", []string{"search", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
+		{"status spec not served", []string{"status", "--addr", statusStub(t, http.StatusServiceUnavailable, http.StatusOK).URL}, []string{"503"}},
+		{"status token check fails", []string{"status", "--addr", statusStub(t, http.StatusOK, http.StatusInternalServerError).URL, "--token", cliToken}, []string{"500"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -162,6 +164,46 @@ func TestCLIStatusRejectedToken(t *testing.T) {
 	}
 	if !strings.Contains(out, "token rejected") {
 		t.Errorf("status = %q, want it to say the token was rejected", out)
+	}
+}
+
+// statusStub answers /openapi.json with specCode (a minimal document when 200)
+// and every other path, the token check, with searchCode.
+func statusStub(t *testing.T, specCode, searchCode int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/openapi.json" {
+			w.WriteHeader(specCode)
+			if specCode == http.StatusOK {
+				_, _ = w.Write([]byte(`{"info":{"title":"Stub","version":"1"}}`))
+			} else {
+				_, _ = w.Write([]byte(`{}`))
+			}
+			return
+		}
+		w.WriteHeader(searchCode)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestCLIStatusWithoutToken(t *testing.T) {
+	srv := cliServer(t)
+	out, err := runCLI(t, "status", "--addr", srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "no token given") {
+		t.Errorf("status = %q, want it to say no token was given", out)
+	}
+	out, err = runCLI(t, "status", "--addr", srv.URL, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"tokenAccepted": false`) && !strings.Contains(out, `"tokenAccepted":false`) {
+		t.Errorf("status --json = %q, want tokenAccepted false", out)
 	}
 }
 
