@@ -21,7 +21,7 @@ const maxGoldieClientHeader = 256
 // (#102). A nil gate lets every request through.
 type clientGate struct {
 	min     platform.Semver
-	minText string // the setting as written, for the hint
+	minText string // the setting without build metadata, for the hint
 }
 
 // newClientGate builds the gate from GOLDIE_MIN_CLIENT_VERSION; "" is no gate.
@@ -34,7 +34,10 @@ func newClientGate(minimum string) (*clientGate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvMinClientVersion, err)
 	}
-	return &clientGate{min: v, minText: minimum}, nil
+	// Build metadata takes no part in precedence, and clients need not see
+	// what an operator writes there.
+	text, _, _ := strings.Cut(minimum, "+")
+	return &clientGate{min: v, minText: text}, nil
 }
 
 // require answers 426 in the error envelope when the request names a goldie
