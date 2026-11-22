@@ -130,17 +130,17 @@ func (a *Activity) Dropped() uint64 {
 	return a.dropped.Load()
 }
 
-// truncateQuery cuts q to maxQueryBytes without ending in half a rune.
+// truncateQuery cuts q to at most maxQueryBytes without splitting a rune:
+// when the cut lands inside one it drops that rune's leading bytes too. Bytes
+// that are not valid UTF-8 are cut as they are, after at most three bytes of
+// back-off.
 func truncateQuery(q string) string {
 	if len(q) <= maxQueryBytes {
 		return q
 	}
-	q = q[:maxQueryBytes]
-	for i := 0; i < utf8.UTFMax && len(q) > 0; i++ {
-		if r, size := utf8.DecodeLastRuneInString(q); r != utf8.RuneError || size != 1 {
-			break
-		}
-		q = q[:len(q)-1]
+	cut := maxQueryBytes
+	for i := 0; i < utf8.UTFMax-1 && !utf8.RuneStart(q[cut]); i++ {
+		cut--
 	}
-	return q
+	return q[:cut]
 }
