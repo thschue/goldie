@@ -2,16 +2,15 @@
 // and the MCP stdio role both use it, so that one parser reads the untrusted
 // .git/config and .goldie/config.yaml of a checkout.
 //
-// Resolve applies the override order: the --project flag, the GOLDIE_PROJECT
-// environment variable, .goldie/config.yaml, then the git remotes upstream and
-// origin. The package owns detection only. It words nothing for the user:
-// callers map a Source to their own text. It imports no other goldie module
-// except contract.
+// Resolve applies the override order: the flag value, the environment value,
+// .goldie/config.yaml, then the git remotes upstream and origin. The package
+// owns detection only and words nothing for the user: callers map a Source,
+// and the Source of a SourceError, to their own text. It imports no other
+// goldie module except contract.
 package project
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -36,17 +35,17 @@ const (
 	SourceOrigin   Source = "origin"
 )
 
-// label names a Source in an error, as the user typed or wrote it.
-func (s Source) label() string {
-	switch s {
-	case SourceFlag:
-		return "--project"
-	case SourceEnv:
-		return "GOLDIE_PROJECT"
-	default:
-		return ".goldie/config.yaml"
-	}
+// SourceError says that the Project a user gave through Source is unusable.
+// Err is the domain reason and holds no part of the value, which may carry a
+// credential. The caller words the Source, for example as a prefix.
+type SourceError struct {
+	Source Source
+	Err    error
 }
+
+func (e *SourceError) Error() string { return e.Err.Error() }
+
+func (e *SourceError) Unwrap() error { return e.Err }
 
 // maxProjectFile bounds every file the detection reads. Both .git/config and
 // .goldie/config.yaml are untrusted input from the checked-out repository.
@@ -79,7 +78,7 @@ func Resolve(dir, flagValue, envValue string) (Detected, error) {
 		if v := strings.TrimSpace(c.v); v != "" {
 			id, err := normaliseConfigured(v)
 			if err != nil {
-				return Detected{}, fmt.Errorf("%s: %w", c.source.label(), err)
+				return Detected{}, &SourceError{Source: c.source, Err: err}
 			}
 			return Detected{ID: id, Source: c.source}, nil
 		}
@@ -157,7 +156,7 @@ func projectFromConfigFile(dir, root string) (string, error) {
 		}
 		id, err := normaliseConfigured(strings.TrimSpace(cfg.Project))
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", SourceConfig.label(), err)
+			return "", &SourceError{Source: SourceConfig, Err: err}
 		}
 		return id, nil
 	}

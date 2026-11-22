@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -38,9 +39,14 @@ type detectedProject struct {
 }
 
 // resolveProject detects the Project of dir with project.Resolve and words
-// where it came from.
+// where it came from. A Project the user gave but that is unusable is
+// reported with the words of its source as a prefix.
 func resolveProject(dir, flagValue, envValue string) (detectedProject, error) {
 	d, err := project.Resolve(dir, flagValue, envValue)
+	var se *project.SourceError
+	if errors.As(err, &se) {
+		return detectedProject{}, fmt.Errorf("%s: %w", sourceWords[se.Source], se.Err)
+	}
 	if err != nil {
 		return detectedProject{}, err
 	}
