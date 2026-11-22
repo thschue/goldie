@@ -60,16 +60,16 @@ func TestProjectSegmentRules(t *testing.T) {
 	}
 	// Detection skips a nested-group upstream and moves on to origin.
 	nested := repo(t, "[remote \"upstream\"]\n\turl = https://gitlab.com/g/sub/app.git\n[remote \"origin\"]\n\turl = https://github.com/a/b\n")
-	if got, err := Resolve(nested, "", ""); err != nil || got.ID != "github.com/a/b" || got.Source != SourceOrigin {
+	if got, err := Detect(nested, "", ""); err != nil || got.ID != "github.com/a/b" || got.Source != SourceOrigin {
 		t.Errorf("nested-group upstream: got %+v, %v; want origin", got, err)
 	}
 	// A config file of the wrong shape is an error; one without `project:` defers to detection.
 	write(t, filepath.Join(nested, ".goldie", "config.yaml"), "project: gitlab.com/g/sub/app\n")
-	if _, err := Resolve(nested, "", ""); err == nil || strings.Contains(err.Error(), "sub/app") {
+	if _, err := Detect(nested, "", ""); err == nil || strings.Contains(err.Error(), "sub/app") {
 		t.Errorf("nested-group config: err = %v, want a non-echoing error", err)
 	}
 	write(t, filepath.Join(nested, ".goldie", "config.yaml"), "other: 1\n")
-	if got, err := Resolve(nested, "", ""); err != nil || got.Source != SourceOrigin {
+	if got, err := Detect(nested, "", ""); err != nil || got.Source != SourceOrigin {
 		t.Errorf("config without project: got %+v, %v; want detection", got, err)
 	}
 	for in, want := range map[string]string{"Ex.com/Org_1/re-po.v2": "ex.com/org_1/re-po.v2"} {
@@ -106,7 +106,7 @@ const forkConfig = `[core]
 	url = https://GitHub.com/Acme/Widgets.git
 `
 
-func TestResolveProjectFromGit(t *testing.T) {
+func TestDetectProjectFromGit(t *testing.T) {
 	cases := []struct {
 		name, cfg, want string
 		source          Source
@@ -124,7 +124,7 @@ func TestResolveProjectFromGit(t *testing.T) {
 			if err := os.MkdirAll(sub, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			got, err := Resolve(sub, "", "")
+			got, err := Detect(sub, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,20 +135,20 @@ func TestResolveProjectFromGit(t *testing.T) {
 	}
 }
 
-func TestResolveProjectNotARepository(t *testing.T) {
-	got, err := Resolve(t.TempDir(), "", "")
+func TestDetectProjectNotARepository(t *testing.T) {
+	got, err := Detect(t.TempDir(), "", "")
 	if err != nil || got != (Detected{}) {
 		t.Errorf("got %+v, %v; want no Project and no error", got, err)
 	}
 }
 
-func TestResolveProjectWorktreeAndSubmodule(t *testing.T) {
+func TestDetectProjectWorktreeAndSubmodule(t *testing.T) {
 	main := repo(t, forkConfig)
 	wtGit := filepath.Join(main, ".git", "worktrees", "feature")
 	write(t, filepath.Join(wtGit, "commondir"), "../..\n")
 	wt := t.TempDir()
 	write(t, filepath.Join(wt, ".git"), "gitdir: "+wtGit+"\n")
-	got, err := Resolve(wt, "", "")
+	got, err := Detect(wt, "", "")
 	if err != nil || got.ID != "github.com/acme/widgets" || got.Source != SourceUpstream {
 		t.Errorf("worktree: got %+v, %v", got, err)
 	}
@@ -157,7 +157,7 @@ func TestResolveProjectWorktreeAndSubmodule(t *testing.T) {
 	super := t.TempDir()
 	write(t, filepath.Join(super, ".git", "modules", "sub", "config"), "[remote \"origin\"]\n\turl = git@github.com:acme/sub.git\n")
 	write(t, filepath.Join(super, "sub", ".git"), "gitdir: ../.git/modules/sub\n")
-	got, err = Resolve(filepath.Join(super, "sub"), "", "")
+	got, err = Detect(filepath.Join(super, "sub"), "", "")
 	if err != nil || got.ID != "github.com/acme/sub" || got.Source != SourceOrigin {
 		t.Errorf("submodule: got %+v, %v", got, err)
 	}
@@ -165,12 +165,12 @@ func TestResolveProjectWorktreeAndSubmodule(t *testing.T) {
 	// A .git file that is not a gitdir pointer yields no Project, not an error.
 	bad := t.TempDir()
 	write(t, filepath.Join(bad, ".git"), "garbage")
-	if got, err := Resolve(bad, "", ""); err != nil || got.ID != "" {
+	if got, err := Detect(bad, "", ""); err != nil || got.ID != "" {
 		t.Errorf("garbage .git file: got %+v, %v", got, err)
 	}
 }
 
-func TestResolveProjectOverrideOrder(t *testing.T) {
+func TestDetectProjectOverrideOrder(t *testing.T) {
 	dir := repo(t, forkConfig)
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: gitlab.com/Team/Config.git\n")
 	cases := []struct {
@@ -183,7 +183,7 @@ func TestResolveProjectOverrideOrder(t *testing.T) {
 		{"url form in flag is normalised", "git@GitHub.com:A/B.git", "", "github.com/a/b", SourceFlag},
 	}
 	for _, c := range cases {
-		got, err := Resolve(dir, c.flag, c.env)
+		got, err := Detect(dir, c.flag, c.env)
 		if err != nil || got.ID != c.want || got.Source != c.source {
 			t.Errorf("%s: got %+v, %v; want %q from %q", c.name, got, err, c.want, c.source)
 		}
@@ -191,14 +191,14 @@ func TestResolveProjectOverrideOrder(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, ".goldie", "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := Resolve(dir, "", ""); got.Source != SourceUpstream {
+	if got, _ := Detect(dir, "", ""); got.Source != SourceUpstream {
 		t.Errorf("without config: got %+v, want detection", got)
 	}
 }
 
-// TestResolveProjectConfigFileStopsAtRepositoryRoot checks that a repository
+// TestDetectProjectConfigFileStopsAtRepositoryRoot checks that a repository
 // uses its own .goldie/config.yaml, never one of a checkout it is nested in.
-func TestResolveProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
+func TestDetectProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
 	outer := repo(t, "[remote \"origin\"]\n\turl = https://evil.example/other/outer\n")
 	write(t, filepath.Join(outer, ".goldie", "config.yaml"), "project: evil.example/other/repo\n")
 	inner := filepath.Join(outer, "vendor", "inner")
@@ -207,12 +207,12 @@ func TestResolveProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := Resolve(sub, "", ""); err != nil || got.ID != "github.com/acme/inner" || got.Source != SourceOrigin {
+	if got, err := Detect(sub, "", ""); err != nil || got.ID != "github.com/acme/inner" || got.Source != SourceOrigin {
 		t.Errorf("nested clone: got %+v, %v; want its own origin", got, err)
 	}
 	// The repository's own config is found from a subdirectory.
 	write(t, filepath.Join(inner, ".goldie", "config.yaml"), "project: github.com/acme/configured\n")
-	if got, err := Resolve(sub, "", ""); err != nil || got.ID != "github.com/acme/configured" || got.Source != SourceConfig {
+	if got, err := Detect(sub, "", ""); err != nil || got.ID != "github.com/acme/configured" || got.Source != SourceConfig {
 		t.Errorf("own config from a subdirectory: got %+v, %v", got, err)
 	}
 	// Outside a repository only the working directory's config counts.
@@ -222,48 +222,48 @@ func TestResolveProjectConfigFileStopsAtRepositoryRoot(t *testing.T) {
 	if err := os.MkdirAll(below, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := Resolve(below, "", ""); err != nil || got.ID != "" {
+	if got, err := Detect(below, "", ""); err != nil || got.ID != "" {
 		t.Errorf("outside a repository: got %+v, %v; want none", got, err)
 	}
-	if got, err := Resolve(plain, "", ""); err != nil || got.Source != SourceConfig {
+	if got, err := Detect(plain, "", ""); err != nil || got.Source != SourceConfig {
 		t.Errorf("working directory config outside a repository: got %+v, %v", got, err)
 	}
 }
 
-// TestResolveProjectOversizedFiles checks the maxProjectFile cap: an
+// TestDetectProjectOversizedFiles checks the maxProjectFile cap: an
 // oversized .git/config yields no Project, an oversized .goldie/config.yaml
 // is an error.
-func TestResolveProjectOversizedFiles(t *testing.T) {
+func TestDetectProjectOversizedFiles(t *testing.T) {
 	pad := "# " + strings.Repeat("x", maxProjectFile) + "\n"
 	big := repo(t, "[remote \"origin\"]\n\turl = https://github.com/a/b\n"+pad)
-	if got, err := Resolve(big, "", ""); err != nil || got.ID != "" {
+	if got, err := Detect(big, "", ""); err != nil || got.ID != "" {
 		t.Errorf("oversized .git/config: got %+v, %v; want no Project", got, err)
 	}
 	dir := repo(t, "[remote \"origin\"]\n\turl = https://github.com/a/b\n")
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: github.com/c/d\n"+pad)
-	if _, err := Resolve(dir, "", ""); err == nil || !strings.Contains(err.Error(), "cannot read .goldie/config.yaml") {
+	if _, err := Detect(dir, "", ""); err == nil || !strings.Contains(err.Error(), "cannot read .goldie/config.yaml") {
 		t.Errorf("oversized .goldie/config.yaml: err = %v, want the read error", err)
 	}
 	// Exactly at the cap is still read.
 	cfg := "[remote \"origin\"]\n\turl = https://github.com/a/b\n"
 	exact := repo(t, cfg+strings.Repeat("#", maxProjectFile-len(cfg)))
-	if got, err := Resolve(exact, "", ""); err != nil || got.ID != "github.com/a/b" {
+	if got, err := Detect(exact, "", ""); err != nil || got.ID != "github.com/a/b" {
 		t.Errorf(".git/config at the cap: got %+v, %v", got, err)
 	}
 }
 
-func TestResolveProjectConfigFileErrorsAndUntrustedValues(t *testing.T) {
+func TestDetectProjectConfigFileErrorsAndUntrustedValues(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: [unclosed\n")
-	if _, err := Resolve(dir, "", ""); err == nil {
+	if _, err := Detect(dir, "", ""); err == nil {
 		t.Error("invalid YAML: want an error")
 	}
 	write(t, filepath.Join(dir, ".goldie", "config.yaml"), "project: \"https://user:s3cret-token@\"\n")
-	if _, err := Resolve(dir, "", ""); err == nil || strings.Contains(err.Error(), "s3cret") {
+	if _, err := Detect(dir, "", ""); err == nil || strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("unreadable URL: err = %v, want an error that omits the credential", err)
 	}
 	for _, v := range []string{"user:s3cret-token@host", "a@b"} {
-		if _, err := Resolve(dir, v, ""); err == nil || strings.Contains(err.Error(), "s3cret") {
+		if _, err := Detect(dir, v, ""); err == nil || strings.Contains(err.Error(), "s3cret") {
 			t.Errorf("--project %q: err = %v", v, err)
 		}
 	}

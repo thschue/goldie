@@ -35,22 +35,22 @@ type publicMux struct {
 	routes  []route
 }
 
-// newPublicMux returns the router with the spec's operations over snap
+// newPublicMux returns the router with the spec's operations over the Snapshot provider
 // registered, and nothing else, guarded by token as the GOLDIE_API_TOKEN
 // shorthand and the default rate limit. A token that fails api.CheckToken
 // rejects every request.
-func newPublicMux(snap *engine.Snapshot, token string) (*publicMux, error) {
+func newPublicMux(provider func() *engine.Snapshot, token string) (*publicMux, error) {
 	tokens, err := api.OperatorToken(token)
 	if err != nil {
 		tokens = &api.Tokens{}
 	}
-	return newPublicMuxWith(snap, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
+	return newPublicMuxWith(provider, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
 }
 
 // newPublicMuxWith is newPublicMux guarded by a token set, a minimum client
 // version (nil for none) and a rate limiter.
-func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	srv, err := api.NewServer(snap)
+func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
+	srv, err := api.NewServer(provider)
 	if err != nil {
 		return nil, err
 	}
@@ -62,8 +62,8 @@ func newPublicMuxWith(snap *engine.Snapshot, tokens *api.Tokens, limiter *api.Ra
 // publicRoutes is the table of public endpoints as the generated router
 // registers them. The route-coverage test compares it with the spec, so there
 // is no second list to drift.
-func publicRoutes(snap *engine.Snapshot, token string) ([]route, error) {
-	m, err := newPublicMux(snap, token)
+func publicRoutes(provider func() *engine.Snapshot, token string) ([]route, error) {
+	m, err := newPublicMux(provider, token)
 	if err != nil {
 		return nil, err
 	}
@@ -273,11 +273,13 @@ func PublicHandler(opts Options) (http.Handler, error) {
 	if opts.ContentDir == "" {
 		return nil, &ConfigError{fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)}
 	}
-	snap, err := engine.NewDirSource(opts.ContentDir).Load()
-	if err != nil {
+	// The dir Source goes through the Syncer like every Source. The first poll
+	// runs here so unloadable content still fails at startup.
+	syncer := engine.NewSyncer(engine.NewDirSource(opts.ContentDir))
+	if err := syncer.Poll(); err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: %w", platform.EnvContentDir, err)}
 	}
-	m, err := newPublicMuxWith(snap, tokens, limiter, gate)
+	m, err := newPublicMuxWith(syncer.Current, tokens, limiter, gate)
 	if err != nil {
 		return nil, err
 	}
