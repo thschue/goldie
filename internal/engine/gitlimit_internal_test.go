@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"runtime"
 	"runtime/metrics"
 	"strconv"
@@ -148,32 +151,101 @@ func tinyObjectPack(t *testing.T, n int) ([]byte, int64) {
 	return pack.Bytes(), content
 }
 
-// peakLiveHeap runs f while a sampler forces collections, and returns the
-// largest live heap it saw above the live heap before f, with the number of
-// samples. Each sample is memory that was live at that moment, so the result
-// can understate the peak but never overstate it.
-func peakLiveHeap(f func()) (peak int64, samples int) {
-	live := func() int64 {
-		s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}}
-		metrics.Read(s)
-		return int64(s[0].Value.Uint64())
-	}
+// heapSampler is a context that measures the live heap each time the code
+// under test asks it whether it is done, once enough has been allocated since
+// the last sample. Unpacking checks its Load's context as it reads the pack,
+// so the samples are taken on the goroutine doing the work, while it
+// allocates nothing: runtime.GC then returns with exactly what is reachable,
+// whatever the scheduler or the load on the machine. A sampler on its own
+// goroutine can starve while the unpacking runs, and a collection that
+// overlaps the unpacking counts what it allocates meanwhile as live.
+type heapSampler struct {
+	context.Context
+	step      uint64 // bytes allocated between samples
+	base      int64
+	lastAlloc uint64
+	samples   int
+	peak      int64
+	last      int64
+}
+
+func readHeap() (live int64, allocated uint64) {
+	s := []metrics.Sample{{Name: "/gc/heap/live:bytes"}, {Name: "/gc/heap/allocs:bytes"}}
+	metrics.Read(s)
+	return int64(s[0].Value.Uint64()), s[1].Value.Uint64()
+}
+
+func newHeapSampler(step uint64) *heapSampler {
 	runtime.GC()
-	base := live()
-	var stop atomic.Bool
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for !stop.Load() {
-			runtime.GC()
-			peak = max(peak, live()-base)
-			samples++
+	base, alloc := readHeap()
+	return &heapSampler{Context: context.Background(), step: step, base: base, lastAlloc: alloc}
+}
+
+// sample collects and records the live heap above the heap before the work.
+func (h *heapSampler) sample() {
+	runtime.GC()
+	live, alloc := readHeap()
+	h.peak = max(h.peak, live-h.base)
+	h.last = live
+	h.lastAlloc = alloc
+	h.samples++
+}
+
+func (h *heapSampler) Err() error {
+	if _, alloc := readHeap(); alloc-h.lastAlloc >= h.step {
+		h.sample()
+	}
+	return h.Context.Err()
+}
+
+const (
+	memPeakChildEnv = "GOLDIE_TEST_GIT_MEMORY_PEAK_CHILD"
+	memPeakLine     = "GIT_MEMORY_PEAK "
+	memPeakObjects  = 30000
+)
+
+// TestGitMemoryPeakChild is the measuring half of
+// TestGitMemoryChargeCoversMeasuredPeak. It runs only in the child process
+// that test starts, and prints the peak it measured. In a process of its own
+// nothing else in the package allocates while it measures, which a live-heap
+// reading cannot tell apart from the unpacking.
+func TestGitMemoryPeakChild(t *testing.T) {
+	if os.Getenv(memPeakChildEnv) == "" {
+		t.Skip("runs as a child of TestGitMemoryChargeCoversMeasuredPeak")
+	}
+	pack, _ := tinyObjectPack(t, memPeakObjects)
+	const room = 1 << 30
+	hs := newHeapSampler(1 << 18)
+	s := newLoadStorage(hs, &gitBudget{wire: room, mem: room})
+	err := packfile.UpdateObjectStorage(s, bytes.NewReader(pack))
+	hs.sample() // what stays live once everything is unpacked
+	if err != nil || len(s.Objects) != memPeakObjects {
+		t.Fatalf("err = %v, objects = %d, want %d", err, len(s.Objects), memPeakObjects)
+	}
+	fmt.Printf("%speak=%d samples=%d\n", memPeakLine, hs.peak, hs.samples)
+}
+
+// measurePeakInChild runs TestGitMemoryPeakChild in a new process and returns
+// what it measured. A child that fails, crashes or prints nothing parseable
+// fails the test.
+func measurePeakInChild(t *testing.T) (peak int64, samples int) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGitMemoryPeakChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), memPeakChildEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the measuring child failed: %v\n%s", err, out)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if rest, ok := strings.CutPrefix(line, memPeakLine); ok {
+			if _, err := fmt.Sscanf(rest, "peak=%d samples=%d", &peak, &samples); err != nil {
+				t.Fatalf("the measuring child printed %q: %v", line, err)
+			}
+			return peak, samples
 		}
-	}()
-	f()
-	stop.Store(true)
-	<-done
-	return peak, samples
+	}
+	t.Fatalf("the measuring child printed no measurement:\n%s", out)
+	return 0, 0
 }
 
 // TestGitMemoryChargeCoversMeasuredPeak unpacks a pack of many tiny distinct
@@ -182,21 +254,22 @@ func peakLiveHeap(f func()) (peak int64, samples int) {
 // measured peak must refuse the pack before unpacking it. The charge per
 // object stays within the 1024 bytes the spec allows.
 func TestGitMemoryChargeCoversMeasuredPeak(t *testing.T) {
-	const n = 30000
+	const n = memPeakObjects
 	pack, content := tinyObjectPack(t, n)
+
+	peak, samples := measurePeakInChild(t)
+	if samples < 10 || peak <= 0 {
+		t.Fatalf("%d samples, peak %d: the measurement saw nothing of the unpacking", samples, peak)
+	}
 
 	const room = 1 << 30
 	b := &gitBudget{wire: room, mem: room}
 	s := newLoadStorage(context.Background(), b)
-	var err error
-	peak, samples := peakLiveHeap(func() { err = packfile.UpdateObjectStorage(s, bytes.NewReader(pack)) })
-	if err != nil || len(s.Objects) != n {
+	if err := packfile.UpdateObjectStorage(s, bytes.NewReader(pack)); err != nil || len(s.Objects) != n {
 		t.Fatalf("err = %v, objects = %d, want %d", err, len(s.Objects), n)
 	}
-	if samples < 3 || peak <= 0 {
-		t.Fatalf("%d samples, peak %d: the measurement saw nothing of the unpacking", samples, peak)
-	}
 	charged := room - b.mem
+	t.Logf("%d samples, peak %d bytes (%d per object), charged %d (%d per object)", samples, peak, peak/n, charged, charged/n)
 	if charged < peak {
 		t.Fatalf("charged %d bytes (%d per object) for a pack whose unpacking peaked at %d live bytes (%d per object)",
 			charged, charged/n, peak, peak/n)
