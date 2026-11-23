@@ -168,15 +168,6 @@ func wordError(err error, local bool) error {
 	return withHint(msg, hint)
 }
 
-// transportError is wordError for a transport failure of a remote server.
-func transportError(err error) error { return wordError(err, false) }
-
-// apiError is wordError for an error response of a remote server.
-func apiError(resp *http.Response, body []byte) error {
-	e := contract.DecodeAPIError(resp.StatusCode, resp.Header, body)
-	return wordError(&e, false)
-}
-
 // withHint words an error the agent can act on: what went wrong, then the
 // next step.
 func withHint(msg, hint string) error {

@@ -137,16 +137,15 @@ func (c *commander) status(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
-	switch {
-	case err != nil:
+	// spec stays nil for the document's 401: the server is reachable, and the
+	// API name unknown. Any other answer is read by contract.Answer.
+	var spec *map[string]any
+	raw, err := cl.GetOpenAPIJSON(ctx)
+	if err == nil && raw.StatusCode == http.StatusUnauthorized {
+		_ = raw.Body.Close()
+	} else if spec, err = contract.Answer(raw, err, contract.ParseGetOpenAPIJSONResponse,
+		func(r *contract.GetOpenAPIJSONResponse) *map[string]any { return r.JSON200 }); err != nil {
 		return wordError(err, c.local)
-	case doc.JSON200 != nil, doc.StatusCode() == http.StatusUnauthorized:
-	case doc.StatusCode() == http.StatusOK:
-		return wordError(contract.ErrNotAPIAnswer, c.local)
-	default:
-		e := contract.DecodeAPIError(doc.StatusCode(), doc.HTTPResponse.Header, doc.Body)
-		return wordError(&e, c.local)
 	}
 	// A Project problem is reported on the Project line, not as a failure:
 	// status is how a user finds out what is wrong. Other commands still fail.
@@ -161,8 +160,8 @@ func (c *commander) status(ctx context.Context) error {
 	var title, apiVersion string
 	var hint *string
 	switch {
-	case doc.JSON200 != nil:
-		title, apiVersion = specInfo(*doc.JSON200)
+	case spec != nil:
+		title, apiVersion = specInfo(*spec)
 		if given {
 			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj), c.local); err != nil {
 				return err
@@ -174,7 +173,7 @@ func (c *commander) status(ctx context.Context) error {
 	if c.s.json {
 		out := map[string]any{"reachable": true, "api": nil, "apiVersion": nil,
 			"tokenGiven": given, "tokenAccepted": accepted, "project": nil, "projectSource": nil}
-		if doc.JSON200 != nil {
+		if spec != nil {
 			out["api"], out["apiVersion"] = title, apiVersion
 		}
 		if proj.ID != "" {
@@ -192,7 +191,7 @@ func (c *commander) status(ctx context.Context) error {
 		return c.printJSON(out)
 	}
 	apiLine := "unknown (the API document needs an accepted token)"
-	if doc.JSON200 != nil {
+	if spec != nil {
 		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
