@@ -54,10 +54,12 @@ func claudeLayout(skills []skillBundle, agents []Agent) []BundleFile {
 	return out
 }
 
-// safeElem reports whether s can be one element of a path on every platform
-// goldie pull writes to: not empty, not . or .., and only printable characters
-// without a slash or backslash. Hidden and bidirectional characters are not
-// printable, so they never reach a file name.
+// safeElem reports whether s is a plain path element: not empty, not . or ..,
+// at most 200 bytes, and only printable characters without a slash or
+// backslash. Hidden and bidirectional characters are not printable, so they
+// never reach a file name. It does not reject names or characters reserved on
+// Windows; the writer of the pull, which checks every entry again, is the
+// control.
 func safeElem(s string) bool {
 	if s == "" || s == "." || s == ".." || len(s) > 200 {
 		return false

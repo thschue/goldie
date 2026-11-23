@@ -1085,9 +1085,12 @@ type ClientInterface interface {
 	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
 	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
 	// A script keeps its executable bit in the entry's mode. A skill or agent
-	// whose name, or a skill file whose path, cannot be a safe path is left out.
-	// The `ETag` is the digest of the set, quoted: the same set always gives the
-	// same ETag and the same bytes. `If-None-Match` with that ETag answers 304
+	// whose name, or a skill file whose path, cannot be a safe path is left out
+	// on purpose, and nothing in the response marks the omission. A Project
+	// whose view holds no skill and no agent gets a 200 with an empty archive and
+	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// always gives the same ETag. Compare ETags, not bytes: gzip output can
+	// change between Go toolchains. `If-None-Match` with that ETag answers 304
 	// with no body. `goldie pull` writes the archive into the Goldie namespace.
 	//
 	// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
@@ -1442,9 +1445,12 @@ func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticlePa
 // slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
 // file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
 // A script keeps its executable bit in the entry's mode. A skill or agent
-// whose name, or a skill file whose path, cannot be a safe path is left out.
-// The `ETag` is the digest of the set, quoted: the same set always gives the
-// same ETag and the same bytes. `If-None-Match` with that ETag answers 304
+// whose name, or a skill file whose path, cannot be a safe path is left out
+// on purpose, and nothing in the response marks the omission. A Project
+// whose view holds no skill and no agent gets a 200 with an empty archive and
+// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// always gives the same ETag. Compare ETags, not bytes: gzip output can
+// change between Go toolchains. `If-None-Match` with that ETag answers 304
 // with no body. `goldie pull` writes the archive into the Goldie namespace.
 //
 // Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
@@ -2987,9 +2993,12 @@ type ClientWithResponsesInterface interface {
 	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
 	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
 	// A script keeps its executable bit in the entry's mode. A skill or agent
-	// whose name, or a skill file whose path, cannot be a safe path is left out.
-	// The `ETag` is the digest of the set, quoted: the same set always gives the
-	// same ETag and the same bytes. `If-None-Match` with that ETag answers 304
+	// whose name, or a skill file whose path, cannot be a safe path is left out
+	// on purpose, and nothing in the response marks the omission. A Project
+	// whose view holds no skill and no agent gets a 200 with an empty archive and
+	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// always gives the same ETag. Compare ETags, not bytes: gzip output can
+	// change between Go toolchains. `If-None-Match` with that ETag answers 304
 	// with no body. `goldie pull` writes the archive into the Goldie namespace.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -5103,9 +5112,12 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 // slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
 // file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
 // A script keeps its executable bit in the entry's mode. A skill or agent
-// whose name, or a skill file whose path, cannot be a safe path is left out.
-// The `ETag` is the digest of the set, quoted: the same set always gives the
-// same ETag and the same bytes. `If-None-Match` with that ETag answers 304
+// whose name, or a skill file whose path, cannot be a safe path is left out
+// on purpose, and nothing in the response marks the omission. A Project
+// whose view holds no skill and no agent gets a 200 with an empty archive and
+// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// always gives the same ETag. Compare ETags, not bytes: gzip output can
+// change between Go toolchains. `If-None-Match` with that ETag answers 304
 // with no body. `goldie pull` writes the archive into the Goldie namespace.
 //
 // Returns a wrapper object for the known response body format(s).

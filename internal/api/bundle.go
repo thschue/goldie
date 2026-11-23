@@ -18,7 +18,8 @@ var badBundleTarget = envelope("bad_request", "invalid target",
 
 // GetBundle answers GET /api/v1/bundle: the resolved set of the Project's view
 // as a gzip-compressed tar laid out for the target, with the set digest as its
-// ETag. The same set always gives the same bytes. An If-None-Match that names
+// ETag. The same set always gives the same ETag; gzip bytes can differ between Go
+// toolchains, so clients compare ETags, not bytes. An If-None-Match that names
 // the ETag is a 304 with no body, before the archive is built.
 func (s *Server) GetBundle(_ context.Context, req contract.GetBundleRequestObject) (contract.GetBundleResponseObject, error) {
 	if !engine.ValidBundleTarget(req.Params.Target) {
@@ -62,7 +63,7 @@ func etagMatches(header, etag string) bool {
 }
 
 // tarGz encodes files as a gzip-compressed tar of regular files. Nothing in
-// the headers varies with time or host, so the bytes are a function of files.
+// the headers varies with time or host; the ETag, not the bytes, is the identity.
 func tarGz(files []engine.BundleFile) ([]byte, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
