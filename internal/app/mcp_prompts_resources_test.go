@@ -209,7 +209,7 @@ func TestMCPResourceTemplatesAreAdvertised(t *testing.T) {
 		}
 	}
 	slices.Sort(got)
-	if want := []string{"goldie://agents/{name}", "goldie://skills/{name}/{path}"}; !slices.Equal(got, want) {
+	if want := []string{"goldie://agents/{name}", "goldie://skills/{name}/{+path}"}; !slices.Equal(got, want) {
 		t.Errorf("resource templates = %v, want %v", got, want)
 	}
 	// resources/list answers; whatever it lists lies under the two roots.
