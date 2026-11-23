@@ -35,7 +35,7 @@ function next() {
 </script>
 
 <template>
-  <button type="button" class="icon-button" :aria-label="`Theme: ${theme}`" @click="next">
+  <button type="button" class="icon-button" :aria-label="`Theme: ${theme}`" :title="`Theme: ${theme}`" @click="next">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
       <template v-if="theme === 'light'">
         <circle cx="12" cy="12" r="4" />
