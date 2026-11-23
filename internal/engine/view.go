@@ -19,7 +19,9 @@ func (s *Snapshot) View(proj string) []Article {
 			}
 			seen[key] = true
 			if a := s.winner(proj, key, ReadOptions{}); a != nil {
-				out = append(out, cloneArticle(*a))
+				c := cloneArticle(*a)
+				c.Overrides = s.overridden(proj, key, a)
+				out = append(out, c)
 			}
 		}
 	}

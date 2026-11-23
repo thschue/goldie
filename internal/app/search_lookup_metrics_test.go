@@ -59,14 +59,15 @@ func pbFields(t *testing.T, b []byte, f func(num protowire.Number, n uint64, raw
 	}
 }
 
-// resultCounts is the sum per result value of the data points of the metric
-// called name in an OTLP metrics export, and every attribute key seen on it.
-func resultCounts(t *testing.T, export []byte, name string) (counts map[string]int64, keys []string) {
+// metricCounts is the sum per point key of the data points of the metric called
+// name in an OTLP metrics export, and every attribute key seen on it. pointKey
+// derives a point's key from its string attributes.
+func metricCounts(t *testing.T, export []byte, name string, pointKey func(attrs map[string]string) string) (counts map[string]int64, keys []string) {
 	t.Helper()
 	counts = map[string]int64{}
 	seen := map[string]bool{}
 	point := func(b []byte) {
-		result := ""
+		attrs := map[string]string{}
 		var value int64
 		pbFields(t, b, func(num protowire.Number, n uint64, raw []byte) {
 			switch num {
@@ -87,12 +88,10 @@ func resultCounts(t *testing.T, export []byte, name string) (counts map[string]i
 					}
 				})
 				seen[key] = true
-				if key == "result" {
-					result = str
-				}
+				attrs[key] = str
 			}
 		})
-		counts[result] += value
+		counts[pointKey(attrs)] += value
 	}
 	metric := func(b []byte) {
 		var isNamed bool
@@ -213,7 +212,7 @@ func TestSearchesAndLookupsAreCountedByHitOrMiss(t *testing.T) {
 
 	raw := col.body("/v1/metrics")
 	for _, name := range []string{"goldie.searches", "goldie.lookups"} {
-		counts, keys := resultCounts(t, raw, name)
+		counts, keys := metricCounts(t, raw, name, func(attrs map[string]string) string { return attrs["result"] })
 		if counts["hit"] != 1 || counts["miss"] != 1 || len(counts) != 2 {
 			t.Errorf("%s by result = %v, want one hit and one miss", name, counts)
 		}
