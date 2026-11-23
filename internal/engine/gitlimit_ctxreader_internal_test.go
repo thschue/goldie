@@ -41,9 +41,10 @@ func TestCtxReaderStopsWhenTheContextEnds(t *testing.T) {
 }
 
 // afterErrs is a context that reports no error for its first ok calls to Err
-// and context.Canceled from then on. checkPack asks once per object, so
-// letting it ask exactly that many times puts the end of the context at the
-// first read of the parse, deterministically and with no timing.
+// and context.Canceled from then on. The test counts how often checkPack asks
+// on the pack and lets exactly that many calls succeed, which puts the end of
+// the context at the first read of the parse, deterministically and with no
+// timing, however many times checkPack asks.
 type afterErrs struct {
 	context.Context
 	ok    int
@@ -84,7 +85,20 @@ func TestPackWriterStopsParsingWhenTheContextEnds(t *testing.T) {
 		t.Fatalf("with a live context: err = %v, objects = %d", err, len(s.Objects))
 	}
 
-	s, err = unpack(&afterErrs{Context: context.Background(), ok: objects})
+	// Calibrate: how many Err calls does checkPack make on this pack?
+	counter := &afterErrs{Context: context.Background(), ok: 1 << 30}
+	if err := checkPack(counter, pack, &gitBudget{mem: 1 << 30, wire: 1 << 30}); err != nil {
+		t.Fatalf("checkPack on the whole pack: %v", err)
+	}
+	if counter.calls == 0 {
+		t.Fatal("checkPack never asked the context, so the calibration is meaningless")
+	}
+
+	ctx := &afterErrs{Context: context.Background(), ok: counter.calls}
+	s, err = unpack(ctx)
+	if ctx.calls <= ctx.ok {
+		t.Fatalf("the parse never asked the context: %d calls, %d allowed", ctx.calls, ctx.ok)
+	}
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled from the parse", err)
 	}
