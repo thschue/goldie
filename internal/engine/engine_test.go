@@ -58,7 +58,7 @@ func TestLoad(t *testing.T) {
 		"global/articles/b.md":          "---\r\nname: \"Bee\"\r\nkeywords: [ Honey , '' , WAX ]\r\n---\r\n\r\ntext\r\n",
 		"global/articles/sub/a.md":      article("Ay", "x"),
 		"global/articles/notes.txt":     "ignored",
-		"global/skills/s/SKILL.md":      "not an article",
+		"global/skills/s/SKILL.md":      "---\nname: s\ndescription: not an article\n---\nBody\n",
 		"project/articles/ignored.md":   "no frontmatter",
 		"global/articles/empty-body.md": "---\nname: Empty\n---\n",
 	})
