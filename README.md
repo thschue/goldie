@@ -165,6 +165,8 @@ API token variables, so the same shell can run it again. The token is printed on
 never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
 [configuration reference](docs/reference/configuration.md#goldie-server---dev).
 
+New to writing content? [Writing content](docs/content.md) shows the smallest article that loads.
+
 ```sh
 goldie server --dev examples/knowledge
 # export GOLDIE_ADDR=http://127.0.0.1:41234 GOLDIE_TOKEN=<64 hex characters>
