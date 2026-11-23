@@ -23,7 +23,10 @@ for the UX review. `./run ux` produces it: it needs Node (the version in `web/.n
 Playwright's Chromium on first use. It builds the UI and the binary, serves `examples/knowledge` on
 loopback, and runs the Playwright specs in `web/e2e/`: screenshots at 375, 768 and 1280 px in light
 and dark (`shell-<width>-<theme>[-drawer].png`), axe with zero violations, no horizontal scroll and
-targets of at least 44 px. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
+targets of at least 44 px. The target check exempts only controls that are not rendered or are visually
+hidden (1 px or less, such as a skip link until it is focused) and `display: inline` links inside a
+paragraph (`<p>`), the inline exception of WCAG 2.5.5; every other control must measure 44 px both
+ways. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
 `ux/` as the `ux` artifact. The screenshots stay artifacts: never commit them to
 `docs/design/screenshots/`, which holds the design references.
 
