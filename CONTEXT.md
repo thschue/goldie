@@ -45,7 +45,8 @@ session so it knows what it can ask goldie for.
 
 **Managed block**: the marker-delimited region goldie writes into `CLAUDE.md` or `AGENTS.md` from
 instruction clauses. Content outside it is never touched; a hand-edited block is not overwritten
-without `--force`.
+without `--force`. It opens with `<!-- goldie:begin digest=sha256:<hex> -->` (the digest of the
+body) and closes with `<!-- goldie:end -->`; a digest that no longer matches the body means a hand edit.
 
 **Goldie namespace**: the `goldie-*` paths under `.claude` that `goldie pull` owns and replaces
 wholesale. Nothing outside the namespace is ever written.
