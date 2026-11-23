@@ -40,7 +40,7 @@ onMounted(async () => {
 <template>
   <!-- Copy: handoff §8, lifecycle banners. -->
   <div v-if="article?.status === 'draft'" role="status" class="banner draft">
-    <strong>Draft preview.</strong> Agents and API consumers can’t see this yet. Merge with <code>status: published</code> to release it.
+    <strong>Draft preview.</strong> Agents and API consumers can't see this yet. Merge with <code>status: published</code> to release it.
   </div>
   <div v-else-if="article?.status === 'deprecated'" role="status" class="banner deprecated">
     <strong>Deprecated.</strong> Still served to agents with a warning.
@@ -95,6 +95,9 @@ onMounted(async () => {
   color: var(--miss-ink);
 }
 .deprecated a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
   color: inherit;
   font-weight: 600;
 }
