@@ -64,7 +64,9 @@ exit 0 with zero warnings. Reviewers use the same list.
 
 - [ ] The UI work follows an approved design handoff (§13 of `docs/design/ui-handoff.md`).
 - [ ] **Matches the handoff**: the screen implements the layout, components, states (§5), copy (§8)
-      and breakpoints (§7) of the handoff; component tests cover every state marked for that
-      component; Playwright covers the screen at 375 / 768 / 1280 in light and dark, with an axe run
-      that has zero violations, and CI uploads the screenshots for the UX review.
+      and breakpoints (§7) of `docs/design/ui-handoff.md`; component tests cover every state marked
+      for that component; Playwright covers the screen at 375 / 768 / 1280 in light and dark, with
+      an axe run that has zero violations.
+- [ ] `./run ux` passes, and the PR's `ux` CI artifact holds the screenshots for the UX review
+      (never committed to `docs/design/screenshots/`).
 - [ ] Every changed flow works keyboard-only with visible focus; no state is shown by colour alone.
