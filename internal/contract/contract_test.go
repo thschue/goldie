@@ -38,6 +38,10 @@ func (stub) GetArticle(_ context.Context, req GetArticleRequestObject) (GetArtic
 	return GetArticle200JSONResponse{Id: req.Id, Name: "n", Keywords: []string{}, Content: "c"}, nil
 }
 
+func (stub) GetActivity(context.Context, GetActivityRequestObject) (GetActivityResponseObject, error) {
+	return GetActivity200TexteventStreamResponse{Body: strings.NewReader(": keepalive\n\n")}, nil
+}
+
 func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 	srv := httptest.NewServer(Handler(NewStrictHandler(stub{}, nil)))
 	t.Cleanup(srv.Close)

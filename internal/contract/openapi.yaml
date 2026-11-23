@@ -28,6 +28,8 @@ tags:
     description: Search and look up articles.
   - name: projects
     description: The Projects whose Scope the server holds.
+  - name: activity
+    description: The live view of recent searches and lookups, for operators.
 paths:
   /api/v1/search:
     get:
@@ -186,6 +188,76 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/activity:
+    get:
+      operationId: getActivity
+      tags:
+        - activity
+      summary: Stream recent searches and lookups
+      description: |
+        Streams this server process's recent searches and lookups as
+        server-sent events, for operator tokens only. The stream opens with the
+        retained events in `id` order, oldest first, then sends each new one as
+        it is recorded. It is a live view, not an audit log: the buffer is
+        bounded and shared, so any reader's requests push older events out of
+        it, and a restart empties it.
+
+        Every event is one SSE event whose `data` is one line of JSON:
+        `id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
+        `lookup`), `query` (the search words, or the article id a lookup asked
+        for), `project` (the registered spelling of the Project, an unregistered
+        id lower-cased, or `""`), `token` (the name of the token, never its
+        secret), `client_version` (the `X-Goldie-Client` version, or `""`),
+        `trace_id` (or `""`) and `miss` (a search with no results, or a lookup
+        answering 404). All text is escaped as JSON strings, so no query can
+        end an event or start one.
+
+        A subscriber that cannot keep up loses events and then gets an event
+        of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
+        before the next event. An idle stream sends an SSE comment every 15
+        seconds. The stream costs one rate-limit token when it opens, and ends
+        when the server shuts down. At most 32 streams are open per server
+        process; one more is a 503 whose hint says to retry later.
+      responses:
+        "200":
+          description: |
+            The event stream, not an audit log. Sent with
+            `Cache-Control: no-store`; the headers are sent at once, before the
+            first event.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                data: {"id":1,"time":"2026-11-23T10:00:00Z","kind":"search","query":"deploy","project":"","token":"ci","client_version":"1.5.0","trace_id":"","miss":false}
+        "401":
+          description: The bearer token is missing or not a configured token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The token is valid but its role is not operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: |
+            The server cannot open a stream: it has not loaded its content yet
+            (code `not_ready`), it already serves the most streams it allows
+            (code `too_many_streams`), or it is shutting down (code
+            `shutting_down`). The hint says when to retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
@@ -231,7 +303,9 @@ components:
         "Authorize" button takes it, so "Try it out" sends it. The server
         enforces it on every `/api/` path, where a missing or wrong token is a
         401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
-        token over its limit is a 429 with `Retry-After`. The OpenAPI document and Swagger UI are not yet covered; the auth
+        token over its limit is a 429 with `Retry-After`. An operation for
+        operators only, such as `/api/v1/activity`, answers other tokens with a
+        403. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
   schemas:
     SearchResults:
