@@ -78,7 +78,12 @@ func run(args []string, out io.Writer) error {
 // API call. The caller defers flush, which sends the spans within clientFlush.
 func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error) {
 	env = cli.DefaultEnv(out)
-	env.StartLocal = app.StartLocal
+	env.StartLocal = func(ctx context.Context, dir string) (string, string, func(), error) {
+		return app.StartLocal(ctx, app.LocalOptions{BaseDir: dir})
+	}
+	env.StartLocalScope = func(ctx context.Context, dir, goldieDir string) (string, string, func(), error) {
+		return app.StartLocal(ctx, app.LocalOptions{BaseDir: dir, GoldieDir: goldieDir})
+	}
 	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role)
 	if err != nil {
 		return env, nil, fmt.Errorf("invalid configuration:\n%w", err)

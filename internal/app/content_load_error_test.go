@@ -33,7 +33,7 @@ func TestValidateDirAndStartLocalSayTheSameForBrokenContent(t *testing.T) {
 			if vErr == nil {
 				t.Fatal("ValidateDir succeeded on broken content")
 			}
-			_, _, stop, sErr := StartLocal(context.Background(), dir)
+			_, _, stop, sErr := StartLocal(context.Background(), LocalOptions{BaseDir: dir})
 			if sErr == nil {
 				if stop != nil {
 					stop()
