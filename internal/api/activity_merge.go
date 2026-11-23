@@ -88,9 +88,48 @@ type heldEvent struct {
 	due time.Time
 }
 
+// mergeInputState is what the Merger keeps per input name. The high-water
+// mark is the largest Time and ID taken from this input for events of its own
+// replica (Event.Replica == the input's Name). It makes a re-attached
+// History exact however long the outage was, in O(1) memory per input: an
+// event replayed through Add is skipped when its ID and its Time are both at
+// or below the mark. A peer that restarted and reset its IDs is told apart by
+// Time: its new events are newer than the mark, so they pass even with small
+// IDs. The mark trusts the input's own timestamps, so a peer that sends a far
+// future Time only hides its own older replays, never another replica's.
 type mergeInputState struct {
 	up       bool
 	lastSeen time.Time
+
+	marked   bool
+	markTime time.Time
+	markID   uint64
+}
+
+func (s *mergeInputState) atOrBelowMark(e Event) bool {
+	return s.marked && e.ID <= s.markID && !e.Time.After(s.markTime)
+}
+
+func (s *mergeInputState) raiseMark(e Event) {
+	if !s.marked || e.Time.After(s.markTime) {
+		s.markTime = e.Time
+	}
+	if !s.marked || e.ID > s.markID {
+		s.markID = e.ID
+	}
+	s.marked = true
+}
+
+// normalizeEvent is the one check every event passes, live or history: it
+// rejects an empty Replica or ID 0, cuts the query to maxQueryBytes and
+// clears Late, which only the Merger sets.
+func normalizeEvent(e Event) (Event, bool) {
+	if e.Replica == "" || e.ID == 0 {
+		return Event{}, false
+	}
+	e.Query = truncateQuery(e.Query)
+	e.Late = false
+	return e, true
 }
 
 // compareEvents orders by Time, then Replica, then ID.
@@ -114,12 +153,18 @@ func compareEvents(a, b Event) int {
 }
 
 // MergeHistories merges the given histories sorted by Time, then Replica, then
-// ID, keeping the first copy of each Replica+ID. It does not modify them.
+// ID, keeping the first copy of each Replica+ID. Events pass the same check
+// as live ones (normalizeEvent): invalid ones are left out and queries are cut.
+// It does not modify its arguments.
 func MergeHistories(histories ...[]Event) []Event {
 	seen := map[eventKey]struct{}{}
 	var out []Event
 	for _, h := range histories {
 		for _, e := range h {
+			e, ok := normalizeEvent(e)
+			if !ok {
+				continue
+			}
 			k := eventKey{e.Replica, e.ID}
 			if _, dup := seen[k]; dup {
 				continue
@@ -196,8 +241,24 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 	}
 	m.started = true
 	m.ctx = ctx
+	// A second input with a name already given is ignored whole (its History
+	// and its Live, which is never read) and counted once in Rejected: the
+	// first one wins.
+	var kept []MergeInput
+	names := map[string]bool{}
 	histories := make([][]Event, 0, len(inputs))
 	for _, in := range inputs {
+		if names[in.Name] {
+			m.rejected++
+			continue
+		}
+		names[in.Name] = true
+		kept = append(kept, in)
+		for _, e := range in.History {
+			if _, ok := normalizeEvent(e); !ok {
+				m.rejected++
+			}
+		}
 		histories = append(histories, in.History)
 	}
 	history := MergeHistories(histories...)
@@ -206,10 +267,14 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 	for _, e := range history {
 		m.markSeen(eventKey{e.Replica, e.ID}, now)
 	}
-	for _, in := range inputs {
+	for _, in := range kept {
+		hist := in.History
 		in.History = nil // already merged
-		if _, dup := m.inputs[in.Name]; !dup {
-			m.attachLocked(in, now)
+		m.attachLocked(in, now, false)
+		for _, e := range hist {
+			if e, ok := normalizeEvent(e); ok && e.Replica == in.Name {
+				m.inputs[in.Name].raiseMark(e)
+			}
 		}
 	}
 	m.wg.Add(1)
@@ -229,7 +294,10 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 }
 
 // Add attaches an input, or re-attaches one that is down (one up status).
-// Its History is treated as live events. It returns false, changing nothing,
+// Its History is treated as live events (deduped, late if old), except that
+// events at or below the input's high-water mark are skipped as already taken,
+// however long ago. A brand-new name emits no up status: up is the initial
+// state. It returns false, changing nothing,
 // for an empty Name, an input that is up, a down input given no Live, or a
 // stopped Merger.
 func (m *Merger) Add(in MergeInput) bool {
@@ -241,7 +309,7 @@ func (m *Merger) Add(in MergeInput) bool {
 	if st, ok := m.inputs[in.Name]; ok && (st.up || in.Live == nil) {
 		return false
 	}
-	m.attachLocked(in, m.clock.Now())
+	m.attachLocked(in, m.clock.Now(), true)
 	return true
 }
 
@@ -272,7 +340,7 @@ func (m *Merger) counter(c *uint64) uint64 {
 
 // attachLocked registers in at now. The caller holds mu and has checked that
 // the name is new or down.
-func (m *Merger) attachLocked(in MergeInput, now time.Time) {
+func (m *Merger) attachLocked(in MergeInput, now time.Time, replay bool) {
 	st, existed := m.inputs[in.Name]
 	if !existed {
 		st = &mergeInputState{}
@@ -291,7 +359,7 @@ func (m *Merger) attachLocked(in MergeInput, now time.Time) {
 		go m.read(in.Name, in.Live)
 	}
 	for _, e := range in.History {
-		m.receiveLocked(e, now)
+		m.receiveLocked(in.Name, e, now, replay)
 	}
 }
 
@@ -313,18 +381,29 @@ func (m *Merger) read(name string, live <-chan Event) {
 				return
 			}
 			st.lastSeen = now
-			m.receiveLocked(e, now)
+			m.receiveLocked(name, e, now, false)
 			m.mu.Unlock()
 		}
 	}
 }
 
 // receiveLocked takes one event received at now: reject, dedup, then emit it
-// late, or hold it (pushing the oldest held event out first at the cap).
-func (m *Merger) receiveLocked(e Event, now time.Time) {
-	if e.Replica == "" || e.ID == 0 {
+// late, or hold it (pushing the oldest held event out first at the cap). The
+// per-event cost is O(n) in the held set (slice insert), bounded by MaxBuffered.
+// replay marks an event from a re-attached History, checked against from's
+// high-water mark first.
+func (m *Merger) receiveLocked(from string, e Event, now time.Time, replay bool) {
+	e, ok := normalizeEvent(e)
+	if !ok {
 		m.rejected++
 		return
+	}
+	if st := m.inputs[from]; e.Replica == from {
+		if replay && st.atOrBelowMark(e) {
+			m.duplicates++
+			return
+		}
+		st.raiseMark(e)
 	}
 	k := eventKey{e.Replica, e.ID}
 	if _, dup := m.seen[k]; dup {
@@ -332,8 +411,6 @@ func (m *Merger) receiveLocked(e Event, now time.Time) {
 		return
 	}
 	m.markSeen(k, now)
-	e.Query = truncateQuery(e.Query)
-	e.Late = false
 	if now.Sub(e.Time) > m.window {
 		e.Late = true
 		m.emitLocked(MergedItem{Event: &e})

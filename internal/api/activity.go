@@ -70,6 +70,7 @@ func NewActivity(capacity int, replica string, now func() time.Time) *Activity {
 }
 
 // Record stores e with the next ID, the replica name and the current time,
+// never a caller's Late,
 // keeps at most maxQueryBytes of its query, and offers it to every
 // subscriber without waiting.
 func (a *Activity) Record(e Event) {
@@ -77,6 +78,7 @@ func (a *Activity) Record(e Event) {
 		return
 	}
 	e.Replica = a.replica
+	e.Late = false // only the Merger sets it
 	e.Query = truncateQuery(e.Query)
 	a.mu.Lock()
 	defer a.mu.Unlock()
