@@ -224,7 +224,7 @@ func TestWriteConfigRefusesHostileID(t *testing.T) {
 		}
 		if err != nil {
 			msg := err.Error()
-			if (strings.TrimSpace(id) != "" && strings.Contains(msg, id)) || strings.Contains(msg, "s3cret") || strings.Contains(msg, "evil") || strings.ContainsFunc(msg, contract.UnsafeRune) {
+			if (strings.TrimSpace(id) != "" && strings.Contains(msg, id)) || strings.Contains(msg, "s3cret") || strings.Contains(msg, "evil") || strings.ContainsFunc(msg, contract.HiddenRune) {
 				t.Errorf("WriteConfig(%q) error %q echoes the id", id, msg)
 			}
 		}
