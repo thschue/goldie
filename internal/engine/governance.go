@@ -197,6 +197,22 @@ func (s *Snapshot) checkReplacements() error {
 	return nil
 }
 
+// checkEnforced fails when a Project article shadows a published enforced
+// global Item (ADR 0021). A deprecated enforced Item still enforces; a draft
+// does not, and a draft Project copy is left out of Resolution (#353), so it
+// shadows nothing. Identity ignores case (ADR 0015).
+func (s *Snapshot) checkEnforced() error {
+	for _, a := range s.allArticles() {
+		if a.Scope == ScopeGlobal || !a.published() {
+			continue
+		}
+		if g := s.index[a.key()]; g != nil && g.Enforced && g.published() {
+			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(g))
+		}
+	}
+	return nil
+}
+
 // allArticles lists pointers to every Article in the Snapshot, global first,
 // then each Project's in Project order, so errors are deterministic.
 func (s *Snapshot) allArticles() []*Article {
