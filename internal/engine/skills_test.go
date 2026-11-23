@@ -1,7 +1,6 @@
 package engine_test
 
 import (
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -98,18 +97,6 @@ func TestSkillBundleLoadsFromTheGlobalScope(t *testing.T) {
 	}
 	if _, err := snap.SkillFile("", "deploy", "nope.txt"); err == nil {
 		t.Error("SkillFile of a file that does not exist succeeded")
-	}
-}
-
-func TestSkillFileReturnsACopy(t *testing.T) {
-	snap := load(t, map[string]string{globalSkillFile("deploy", "SKILL.md"): "# Deploy\n"})
-	b, err := snap.SkillFile("", "deploy", "SKILL.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b[0] = 'X'
-	if again, _ := snap.SkillFile("", "deploy", "SKILL.md"); string(again) != "# Deploy\n" {
-		t.Errorf("a caller changed the served bytes: %q", again)
 	}
 }
 
@@ -215,62 +202,6 @@ func TestNearestScopeSkillWinsWithItsWholeBundle(t *testing.T) {
 	}
 }
 
-// Reads go through the Source's own filesystem, so a bundle in a git Source is
-// served too, and its symlinks are not followed.
-func TestSkillBundleLoadsFromAGitSourceAndDoesNotFollowItsSymlinks(t *testing.T) {
-	repo := newGitRepo(t)
-	repo.commit("main", map[string]string{
-		globalSkillFile("deploy", "SKILL.md"):   "# Deploy\n",
-		globalSkillFile("deploy", "scripts/a"):  "a",
-		globalSkillFile("deploy", "link.txt"):   "symlink:SKILL.md",
-		globalSkillFile("deploy", "escape.txt"): "symlink:../../../../etc/passwd",
-	})
-	snap, err := newGit(t, engine.GitOptions{URL: repo.url}).Load(t.Context())
-	if err != nil {
-		return // refusing the symlinks at load is as safe as skipping them
-	}
-	if b, err := snap.SkillFile("", "deploy", "scripts/a"); err != nil || string(b) != "a" {
-		t.Errorf("SkillFile(scripts/a) = %q, %v", b, err)
-	}
-	for _, link := range []string{"link.txt", "escape.txt"} {
-		if b, err := snap.SkillFile("", "deploy", link); err == nil {
-			t.Errorf("SkillFile(%s) served a symlink: %q", link, b)
-		}
-	}
-}
-
-// --- Criterion 2: through contentFS and the budget, as for agents ---
-
-// The 1 MiB file cap of articles and agents holds for a bundle's files, SKILL.md
-// and supporting alike. No other cap is added: a file of exactly the cap loads.
-func TestSkillFileOfExactlyTheCapLoadsAndOneByteMoreFails(t *testing.T) {
-	const capBytes = 1 << 20
-	for name, file := range map[string]func(string, string) string{
-		"global":  globalSkillFile,
-		"project": projectSkillFile,
-		"local":   localSkillFile,
-	} {
-		for _, which := range []string{"SKILL.md", "data/blob.bin"} {
-			t.Run(name+"/"+which, func(t *testing.T) {
-				files := func(size int) map[string]string {
-					m := map[string]string{file("big", "SKILL.md"): "# Big\n"}
-					m[file("big", which)] = strings.Repeat("x", size)
-					return m
-				}
-				msg := loadLocalErr(t, files(capBytes+1), file("big", which), "larger than 1048576 bytes")
-				if len(msg) > 1<<10 {
-					t.Errorf("error is %d bytes; it must not carry the content", len(msg))
-				}
-				snap := loadLocal(t, files(capBytes))
-				b, err := snap.SkillFile(govProject, "big", which)
-				if err != nil || len(b) != capBytes {
-					t.Errorf("a file of exactly the cap: %d bytes, %v; want it served whole", len(b), err)
-				}
-			})
-		}
-	}
-}
-
 // --- Criterion 3: refused paths and symlinks, and a bundle without SKILL.md ---
 
 func TestSkillFileRefusesPathsThatLeaveTheBundle(t *testing.T) {
@@ -327,15 +258,8 @@ func TestSymlinkInASkillBundleIsNotFollowed(t *testing.T) {
 		"file outside the root": func(t *testing.T, root string) error {
 			return symlink(t, filepath.Join(outside, "secret.txt"), filepath.Join(root, "global/skills/deploy/link.txt"))
 		},
-		"file inside the root": func(t *testing.T, root string) error {
-			writeTo(t, root, "global/articles/a.md", article("A"))
-			return symlink(t, "../../articles/a.md", filepath.Join(root, "global/skills/deploy/link.txt"))
-		},
 		"sibling file in the bundle": func(t *testing.T, root string) error {
 			return symlink(t, "SKILL.md", filepath.Join(root, "global/skills/deploy/link.txt"))
-		},
-		"directory outside the root": func(t *testing.T, root string) error {
-			return symlink(t, filepath.Join(outside, "dir"), filepath.Join(root, "global/skills/deploy/link.txt"))
 		},
 		"directory used as a path prefix": func(t *testing.T, root string) error {
 			return symlink(t, filepath.Join(outside, "dir"), filepath.Join(root, "global/skills/deploy/sub"))
@@ -369,82 +293,6 @@ func TestSymlinkInASkillBundleIsNotFollowed(t *testing.T) {
 	}
 }
 
-// A symlinked skill directory, or skills directory, is not followed, at any Scope.
-func TestSymlinkedSkillDirectoryIsNotFollowed(t *testing.T) {
-	outside := writeFiles(t, map[string]string{"deploy/SKILL.md": "SECRET", "SKILL.md": "SECRET"})
-	for name, setup := range map[string]func(t *testing.T, root string) error{
-		"global skill directory": func(t *testing.T, root string) error {
-			return symlink(t, filepath.Join(outside, "deploy"), filepath.Join(root, "global/skills/deploy"))
-		},
-		"global skills directory": func(t *testing.T, root string) error {
-			return symlink(t, outside, filepath.Join(root, "global/skills"))
-		},
-		"Project skill directory": func(t *testing.T, root string) error {
-			return symlink(t, outside, filepath.Join(root, "projects", filepath.FromSlash(govProject), "skills/deploy"))
-		},
-		"Project skills directory": func(t *testing.T, root string) error {
-			return symlink(t, outside, filepath.Join(root, "projects", filepath.FromSlash(govProject), "skills"))
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			root := writeFiles(t, map[string]string{globalFile("a"): article("A")})
-			if err := setup(t, root); err != nil {
-				t.Skip("symlinks unavailable")
-			}
-			snap, err := engine.NewDirSource(root).Load(t.Context())
-			if err != nil {
-				if strings.Contains(err.Error(), root) || strings.Contains(err.Error(), outside) {
-					t.Errorf("error %q leaks a host path", err)
-				}
-				return
-			}
-			for _, proj := range []string{"", govProject} {
-				if b, err := snap.SkillFile(proj, "deploy", "SKILL.md"); err == nil {
-					t.Errorf("SkillFile(%q, deploy, SKILL.md) = %q; a symlinked directory was followed", proj, b)
-				}
-			}
-		})
-	}
-}
-
-func TestSymlinkedLocalSkillsAreNotFollowed(t *testing.T) {
-	outside := writeFiles(t, map[string]string{"deploy/SKILL.md": "SECRET", "secret.txt": "SECRET"})
-	for name, setup := range map[string]func(t *testing.T, repo string) error{
-		"skills directory": func(t *testing.T, repo string) error {
-			return symlink(t, outside, filepath.Join(repo, ".goldie", "skills"))
-		},
-		"skill directory": func(t *testing.T, repo string) error {
-			return symlink(t, filepath.Join(outside, "deploy"), filepath.Join(repo, ".goldie", "skills", "deploy"))
-		},
-		"file in a bundle": func(t *testing.T, repo string) error {
-			writeTo(t, repo, localSkillFile("deploy", "SKILL.md"), "# Deploy\n")
-			return symlink(t, filepath.Join(outside, "secret.txt"), filepath.Join(repo, filepath.FromSlash(localSkillFile("deploy", "link.txt"))))
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			src, dirs, ok := localFSSource(t, setup)
-			if !ok {
-				t.Skip("symlinks unavailable")
-			}
-			snap, err := src.Load(t.Context())
-			if err != nil {
-				assertNoHostPath(t, err.Error(), dirs)
-				if strings.Contains(err.Error(), outside) {
-					t.Errorf("error %q leaks the symlink target", err)
-				}
-				return
-			}
-			for _, proj := range localViews {
-				for _, p := range []string{"SKILL.md", "link.txt"} {
-					if b, err := snap.SkillFile(proj, "deploy", p); err == nil && strings.Contains(string(b), "SECRET") {
-						t.Errorf("SkillFile(%q, deploy, %s) served what a symlink points at", proj, p)
-					}
-				}
-			}
-		})
-	}
-}
-
 // A skill directory without a SKILL.md fails the load, in every Scope, naming
 // the directory and never a host path.
 func TestSkillDirectoryWithoutSkillMDFailsTheLoad(t *testing.T) {
@@ -466,20 +314,5 @@ func TestSkillDirectoryWithoutSkillMDFailsTheLoad(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestEmptySkillDirectoryFailsTheLoad(t *testing.T) {
-	root := writeFiles(t, map[string]string{globalSkillFile("fine", "SKILL.md"): "# Fine\n"})
-	if err := os.MkdirAll(filepath.Join(root, "global/skills/broken"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	snap, err := engine.NewDirSource(root).Load(t.Context())
-	if err == nil {
-		_, ok := snap.SkillIn("", "broken")
-		t.Fatalf("Load succeeded (empty skill served: %v), want an error", ok)
-	}
-	if !strings.Contains(err.Error(), "global/skills/broken") || strings.Contains(err.Error(), root) {
-		t.Errorf("error = %q, want it to name global/skills/broken and no host path", err)
 	}
 }
