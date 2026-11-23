@@ -150,8 +150,7 @@ func TestParseRolesFailsOnAnAliasBomb(t *testing.T) {
 
 // goldie's own header X-Goldie-Client and a schema property named like an
 // extension are names, not extension keys: they stay legal as KEYS of a
-// headers or properties mapping. These cases fail until the narrowed rejection
-// in roles.go lands.
+// headers or properties mapping.
 func TestParseRolesAcceptsXGoldieNamesAsHeaderAndPropertyKeys(t *testing.T) {
 	const op = "paths:\n  /a:\n    get:\n      x-goldie-role: operator\n"
 	for name, tail := range map[string]string{
@@ -184,8 +183,8 @@ func TestParseRolesStillRejectsWhatTheNarrowingMustNotOpen(t *testing.T) {
 		"misspelt key at the root":      {"x-goldie-roles: operator\n", "x-goldie-roles", "(root)"},
 		// The names-mode skip is scoped to a real response headers map or schema
 		// properties map. The cases below name a component, a path or an
-		// extension "headers"/"properties" and must still be checked; they fail
-		// until the implementer's scoping change in roles.go lands.
+		// extension "headers"/"properties" and must still be checked: the skip never
+		// applies to them.
 		"parameter component named headers, upper-case key": {"components:\n  parameters:\n    headers:\n      X-Goldie-Role: operator\n", "X-Goldie-Role", "headers"},
 		"parameter component named headers, misspelt key":   {"components:\n  parameters:\n    headers:\n      x-goldie-roles: operator\n", "x-goldie-roles", "headers"},
 		"request body component named properties":           {"components:\n  requestBodies:\n    properties:\n      x-goldie-role: operator\n", "x-goldie-role", "properties"},
