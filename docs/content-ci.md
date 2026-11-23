@@ -154,7 +154,9 @@ naming the setting: the address would hide the repository's own content.
 relative path that stays inside the repository root, naming a directory, opened through `os.Root`
 (a symlink out of the root is refused; one that stays inside is followed). `dir: .` is the root
 itself, and a null `dir:` is none. Any other value is an error naming `.goldie/config.yaml`, never
-a path or the value. `--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only
+a path or the value. `config.yaml` is read twice: the CLI reads it once to find the content
+directory, and the engine reads it again for the local Scope. Both refuse a symlinked
+`config.yaml`, so the command fails with an error naming `.goldie/config.yaml`. `--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only
 finds these paths; the engine reads the articles.
 
 ## Pipeline snippet

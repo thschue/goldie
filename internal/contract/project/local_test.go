@@ -97,6 +97,19 @@ func TestConfigContentDir(t *testing.T) {
 	}
 }
 
+func TestConfigContentDirRefusesASymlinkedConfig(t *testing.T) {
+	root := localRepo(t, map[string]string{"shared/config.yaml": "dir: .\n"})
+	if err := os.Mkdir(filepath.Join(root, ".goldie"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "shared", "config.yaml"), filepath.Join(root, ".goldie", "config.yaml")); err != nil {
+		t.Skip(err)
+	}
+	if _, err := ConfigContentDir(root); err == nil {
+		t.Error("a symlinked config.yaml was read")
+	}
+}
+
 func TestConfigContentDirRefusesASymlinkOutOfTheRoot(t *testing.T) {
 	outside := t.TempDir()
 	root := localRepo(t, map[string]string{".goldie/config.yaml": "dir: link\n"})

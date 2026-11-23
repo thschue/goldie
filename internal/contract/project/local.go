@@ -93,6 +93,12 @@ func ConfigContentDir(root string) (string, error) {
 // readConfig reads .goldie/config.yaml through r, as a regular file of at most
 // maxProjectFile bytes, opened without blocking.
 func readConfig(r *os.Root) ([]byte, error) {
+	if fi, err := r.Lstat(".goldie/config.yaml"); err != nil || fi.Mode()&fs.ModeSymlink != 0 {
+		if err == nil {
+			err = errNotRegular
+		}
+		return nil, err
+	}
 	f, err := r.OpenFile(".goldie/config.yaml", os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
