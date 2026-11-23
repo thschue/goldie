@@ -573,3 +573,20 @@ func TestMCPGetSkillStillSaysNoSuchSkillForAnUnknownSkill(t *testing.T) {
 		t.Errorf("want no such skill: %v %s", isErr, text)
 	}
 }
+
+// Review of #557: the error for a missing SKILL.md names the skill's files, so
+// the agent has a next step.
+func TestMCPGetSkillMissingSKILLmdNamesTheFiles(t *testing.T) {
+	cs := session(t, stubSkillAPI(t).URL, readerToken)
+	text, isErr := call(t, cs, "get_skill", map[string]any{"name": "ghost"})
+	if !isErr || !strings.Contains(text, "notes.txt") {
+		t.Errorf("want the error to name notes.txt: %v %s", isErr, text)
+	}
+}
+
+func TestMCPGetSkillRefusesPercentWithAReason(t *testing.T) {
+	text, isErr := call(t, connectSkills(t, readerToken), "get_skill", map[string]any{"name": "deployer", "file": "a%2Fb"})
+	if !isErr || !strings.Contains(text, "% is not allowed") {
+		t.Errorf("want the reason for refusing %%: %v %s", isErr, text)
+	}
+}

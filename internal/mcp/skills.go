@@ -141,7 +141,7 @@ func (t *tools) skill(ctx context.Context, name, file, project string) *sdk.Call
 		file = skillDoc
 	}
 	if !skillFileOK(file) {
-		return failure(withHint("the file is not a path inside the skill: it is empty in a segment, has a dot segment, a backslash, a % or a control character",
+		return failure(withHint("the file is not a path inside the skill: it has an empty or dot segment, or a backslash, a control character or a % (a % is not allowed in a file name)",
 			"Pass a path exactly as get_skill lists it, such as scripts/run.sh, or leave file out to read SKILL.md."))
 	}
 	proj, err := t.sessionProject(project)
@@ -158,7 +158,7 @@ func (t *tools) skill(ctx context.Context, name, file, project string) *sdk.Call
 	body, err := contract.Answer(rawFile, err, contract.ParseGetSkillFileResponse,
 		func(r *contract.GetSkillFileResponse) *[]byte { return &r.Body })
 	if err != nil {
-		return failure(t.skillFileError(err, sk.Name, file))
+		return failure(t.skillFileError(err, sk, file))
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Skill %s\nfiles:", contract.CleanLine(sk.Name))
@@ -181,12 +181,17 @@ func quote(text string) string {
 // skillFileError words a failure to read a file of a skill that exists: a
 // miss is a missing SKILL.md or a file the bundle does not have, never "no
 // such skill".
-func (t *tools) skillFileError(err error, skill, file string) error {
+func (t *tools) skillFileError(err error, sk *contract.Skill, file string) error {
+	skill := sk.Name
 	var e *contract.APIError
 	if errors.As(err, &e) && e.Status == http.StatusNotFound {
 		if file == skillDoc {
-			return withHint("the skill "+contract.CleanLine(skill)+" exists but its SKILL.md is missing",
-				"Name another file from the skill's file list with file, or pick another skill with list_skills.")
+			paths := make([]string, 0, len(sk.Files))
+			for _, f := range sk.Files {
+				paths = append(paths, f.Path)
+			}
+			return withHint("the skill "+contract.CleanLine(skill)+" exists but its SKILL.md is missing; its files are: "+contract.CleanList(paths),
+				"Read one of those files with get_skill and file, or pick another skill with list_skills.")
 		}
 		return withHint("the skill "+contract.CleanLine(skill)+" has no such file for this Project",
 			"Call get_skill without file to see the file list, then pass a path from it.")

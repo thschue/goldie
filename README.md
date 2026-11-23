@@ -182,8 +182,8 @@ file of the bundle instead, quoted the same way. A name that is empty, dots only
 separator, and a `file` that leaves the bundle, is refused before any request. A skill without a
 `SKILL.md` is reported as that, not as unknown. `get_article` quotes the article text with `| `
 too; the server's own hint stays a plain line after it. Every tool parameter's description carries
-an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
-description.
+an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent
+with its description.
 
 The server also has one resource, `goldie://instructions` (`resources/list`, `resources/read`): the
 instruction block the API renders for the default Project, or the global block without one, with
