@@ -459,3 +459,85 @@ func TestMultipartTempFileIsRemovedWhenWrappedHandlerNilsTheForm(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// A caller chooses the Host header, so it must reach no attribute of a
+// public-listener span (#429): not as server.address, not as server.port, with
+// client info on or off. The attributes that remain keep working.
+const hostileHost = "attacker-chosen.example.invalid:8443"
+
+func hostRequest(host string) *http.Request {
+	req := spoofedRequest()
+	req.Host = host
+	return req
+}
+
+func TestExportedSpanCarriesNoCallerChosenHost(t *testing.T) {
+	for _, env := range []map[string]string{{}, {envClientInfo: "true"}} {
+		for _, host := range []string{hostileHost, "xn--caf-dma.example", "[2001:db8::bad]:9", strings.Repeat("a", 4000) + ".example"} {
+			body, _, _ := tracedBody(t, env, hostRequest(host))
+			for _, bad := range []string{host, strings.TrimSuffix(host, ":8443"), "server.address", "server.port"} {
+				if strings.Contains(body, bad) {
+					t.Errorf("env %v, Host %.40q: exported span contains %q", env, host, bad)
+				}
+			}
+		}
+	}
+}
+
+// The span still carries what was recorded before: method, status and the
+// redacted path.
+func TestExportedSpanKeepsOtherAttributesWithoutHost(t *testing.T) {
+	body, _, _ := tracedBody(t, nil, hostRequest(hostileHost))
+	for _, want := range []string{"http.request.method", "http.response.status_code", "url.path"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("exported span lost %q", want)
+		}
+	}
+}
+
+// Hiding the Host from the span must not change the request the handler gets.
+func TestHandlerStillSeesCallerHostWhenSpanDropsIt(t *testing.T) {
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), newSpanSink(), &logSink{})
+	var seen string
+	h := tel.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Host
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), hostRequest(hostileHost))
+	if seen != hostileHost {
+		t.Fatalf("handler saw Host %q, want %q", seen, hostileHost)
+	}
+}
+
+// Over a real connection, a Host header set by the caller appears in no span
+// attribute.
+func TestServerSpanOverTheWireHasNoCallerChosenHost(t *testing.T) {
+	spans := newSpanSink()
+	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, &logSink{})
+	app, _, stop := startTraced(t, tel, &syncBuffer{})
+
+	req, _ := http.NewRequest("GET", "http://"+app+"/api/v1/items", nil)
+	req.Host = hostileHost
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	stop()
+
+	got := spans.spans()
+	if len(got) != 1 {
+		t.Fatalf("got %d spans, want 1", len(got))
+	}
+	if len(got[0].Attributes) == 0 {
+		t.Fatal("span has no attributes: the check below would pass vacuously")
+	}
+	for _, kv := range got[0].Attributes {
+		if k := string(kv.Key); k == "server.address" || k == "server.port" {
+			t.Errorf("span carries %s=%q", k, kv.Value.String())
+		}
+		if strings.Contains(kv.Value.String(), "attacker-chosen") {
+			t.Errorf("span attribute %s=%q leaks the Host header", kv.Key, kv.Value.String())
+		}
+	}
+}
