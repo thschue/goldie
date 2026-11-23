@@ -27,7 +27,8 @@ const (
 )
 
 // Event is one search or lookup, as the activity feed shows it. Record
-// assigns ID, Replica and Time; the caller sets the rest.
+// assigns ID, Replica and Time; the caller sets the rest. Late is set only by
+// the Merger, for an event that reached it after its reorder window.
 type Event struct {
 	ID      uint64
 	Replica string
@@ -48,6 +49,9 @@ type Event struct {
 	TraceID string
 	// Miss is a search with zero results, or a lookup answering 404.
 	Miss bool
+	// Late is set only by the Merger: the event reached it after its reorder
+	// window.
+	Late bool
 }
 
 // Activity is a fixed-capacity ring of recent Events with a hub that fans new
@@ -86,6 +90,7 @@ func NewActivity(capacity int, replica string, now func() time.Time) *Activity {
 }
 
 // Record stores e with the next ID, the replica name and the current time,
+// never a caller's Late,
 // keeps at most maxQueryBytes of its query, and offers it to every
 // subscriber without waiting.
 func (a *Activity) Record(e Event) {
@@ -93,6 +98,7 @@ func (a *Activity) Record(e Event) {
 		return
 	}
 	e.Replica = a.replica
+	e.Late = false // only the Merger sets it
 	e.Query = truncateQuery(e.Query)
 	a.mu.Lock()
 	defer a.mu.Unlock()

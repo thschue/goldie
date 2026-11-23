@@ -25,3 +25,4 @@ Consequences.
 - [0019. The SPA's build output is not committed; the binary embeds it when built, otherwise a placeholder](0019-ui-build-output-not-committed.md)
 - [0020. Project identity is exactly host/org/repo, matched case-insensitively](0020-project-identity-is-host-org-repo-matched-case-insensitively.md)
 - [0021. Item references are `<kind>:<name>`, resolved in the referrer's view](0021-item-references-resolve-in-the-referrers-view.md)
+- [0022. Federated activity across replicas](0022-federated-activity-across-replicas.md)
