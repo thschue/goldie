@@ -2,7 +2,7 @@ package engine
 
 // ItemCount is the number of Items of one Kind in one Scope kind. Scope is
 // ScopeGlobal, "project" (every Project together, never a Project id) or
-// ScopeLocal; Kind is KindArticle, KindAgent, KindInstruction or KindSkill.
+// ScopeLocal; Kind is KindArticle, KindAgent, KindLoop, KindInstruction or KindSkill.
 type ItemCount struct {
 	Scope string
 	Kind  string
@@ -13,7 +13,7 @@ type ItemCount struct {
 const scopeProject = "project"
 
 // ItemCounts counts the Items of the Snapshot by Scope kind and Kind. It
-// returns one entry for each of the 12 combinations, 0 for an empty one, in a
+// returns one entry for each of the 15 combinations, 0 for an empty one, in a
 // fixed order. Shadowed Items count too: it counts what is held, not what a
 // view resolves to. It is pure and reads the Snapshot only.
 func (s *Snapshot) ItemCounts() []ItemCount {
@@ -25,7 +25,7 @@ func (s *Snapshot) ItemCounts() []ItemCount {
 	if s.local != nil {
 		local.add(s.local.scopeItems)
 	}
-	out := make([]ItemCount, 0, 12)
+	out := make([]ItemCount, 0, 15)
 	for _, sc := range []struct {
 		name string
 		t    scopeTotals
@@ -33,6 +33,7 @@ func (s *Snapshot) ItemCounts() []ItemCount {
 		out = append(out,
 			ItemCount{sc.name, KindArticle, sc.t.articles},
 			ItemCount{sc.name, KindAgent, sc.t.agents},
+			ItemCount{sc.name, KindLoop, sc.t.loops},
 			ItemCount{sc.name, KindInstruction, sc.t.instructions},
 			ItemCount{sc.name, KindSkill, sc.t.skills},
 		)
@@ -40,11 +41,12 @@ func (s *Snapshot) ItemCounts() []ItemCount {
 	return out
 }
 
-type scopeTotals struct{ articles, agents, instructions, skills int64 }
+type scopeTotals struct{ articles, agents, loops, instructions, skills int64 }
 
 func (t *scopeTotals) add(si scopeItems) {
 	t.articles += int64(len(si.articles))
 	t.agents += int64(len(si.agents))
+	t.loops += int64(len(si.loops))
 	t.instructions += int64(len(si.instructions))
 	t.skills += int64(len(si.skills))
 }

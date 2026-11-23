@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"hash"
 	"slices"
 	"strings"
 	"unicode"
@@ -82,6 +83,27 @@ func safeRel(p string) bool {
 	return true
 }
 
+// lenHash feeds a hash length-prefixed parts, so two sequences of parts hash
+// alike only when they are the same parts.
+type lenHash struct{ hash.Hash }
+
+func newLenHash(h hash.Hash) lenHash { return lenHash{h} }
+
+func (h lenHash) put(b []byte) {
+	var n [8]byte
+	binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+	h.Write(n[:])
+	h.Write(b)
+}
+
+func (h lenHash) putBool(v bool) {
+	if v {
+		h.put([]byte{1})
+	} else {
+		h.put([]byte{0})
+	}
+}
+
 // Bundle returns the files of the resolved set in proj's view, laid out for
 // target (a ValidBundleTarget), sorted by path, and the digest of the set: the
 // hex SHA-256 over the target and every path, executable bit and content. The
@@ -101,22 +123,12 @@ func (s *Snapshot) Bundle(proj, target string) ([]BundleFile, string) {
 	}
 	files := layout(skills, s.Agents(proj))
 	slices.SortFunc(files, func(a, b BundleFile) int { return strings.Compare(a.Path, b.Path) })
-	h := sha256.New()
-	put := func(b []byte) {
-		var n [8]byte
-		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
-		h.Write(n[:])
-		h.Write(b)
-	}
-	put([]byte(target))
+	h := newLenHash(sha256.New())
+	h.put([]byte(target))
 	for _, f := range files {
-		put([]byte(f.Path))
-		if f.Exec {
-			put([]byte{1})
-		} else {
-			put([]byte{0})
-		}
-		put(f.Data)
+		h.put([]byte(f.Path))
+		h.putBool(f.Exec)
+		h.put(f.Data)
 	}
 	return files, hex.EncodeToString(h.Sum(nil))
 }

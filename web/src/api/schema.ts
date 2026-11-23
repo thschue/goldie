@@ -171,6 +171,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/loops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the loops
+         * @description Returns the loops that answer in the Project's view, sorted by name, one per
+         *     name: the nearest Scope wins. Each entry carries its resolved closure, the
+         *     agents and skills it names as they resolve in this view, and the `digest` of
+         *     the loop and its closure. A loop whose agent or skill does not resolve in the
+         *     view (for example one the Project suppresses) is left out.
+         */
+        get: operations["listLoops"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/loops/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one loop
+         * @description Returns one loop by name with its iteration prompt (`content`), its resolved
+         *     closure and its `digest`. A miss is a 404 whose hint points to the list.
+         */
+        get: operations["getLoop"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instructions": {
         parameters: {
             query?: never;
@@ -733,6 +778,127 @@ export interface components {
             /**
              * @description Present when the request named a Project that is not registered: the
              *     agent list answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description One agent or skill a loop names, as it resolves in the view. */
+        LoopRef: {
+            /**
+             * @description The agent or skill name.
+             * @example reviewer
+             */
+            name: string;
+            /**
+             * @description The Scope that answered in the view, `global`, `local` or the Project id.
+             * @example global
+             */
+            scope: string;
+        };
+        /** @description The agents and skills a loop names, resolved in the view. */
+        LoopClosure: {
+            /** @description The agents the loop names, sorted by name. */
+            agents: components["schemas"]["LoopRef"][];
+            /** @description The skills the loop names, sorted by name. */
+            skills: components["schemas"]["LoopRef"][];
+        };
+        /**
+         * @description One loop definition with its resolved closure.
+         * @example {
+         *       "name": "nightly",
+         *       "description": "Keep the nightly build green",
+         *       "interval": "30m",
+         *       "dynamic": false,
+         *       "stop": "when CI is green",
+         *       "content": "Check the build, fix what is red, and report what you changed.\n",
+         *       "closure": {
+         *         "agents": [
+         *           {
+         *             "name": "reviewer",
+         *             "scope": "global"
+         *           }
+         *         ],
+         *         "skills": []
+         *       },
+         *       "digest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+         *     }
+         */
+        Loop: {
+            /**
+             * @description The loop's name, its file name without `.md`.
+             * @example nightly
+             */
+            name: string;
+            /**
+             * @description What the loop is for, from its frontmatter. It comes from a Source and is untrusted.
+             * @example Keep the nightly build green
+             */
+            description: string;
+            /**
+             * @description How often the loop runs, a positive duration such as `30m`. Absent for a
+             *     dynamic loop.
+             * @example 30m
+             */
+            interval?: string;
+            /**
+             * @description True when the loop paces itself instead of running at a fixed `interval`.
+             * @example false
+             */
+            dynamic: boolean;
+            /**
+             * @description When the loop ends. It comes from a Source and is untrusted.
+             * @example when CI is green
+             */
+            stop: string;
+            /**
+             * @description The iteration prompt, the loop file's body. Only a get carries it. It comes
+             *     from a Source and is untrusted.
+             * @example Check the build, fix what is red, and report what you changed.
+             */
+            content?: string;
+            closure: components["schemas"]["LoopClosure"];
+            /**
+             * @description The hex SHA-256 over the loop file and every byte of the agent and skill
+             *     files in the closure, as resolved in the view asked for. It changes when
+             *     any of them changes.
+             * @example 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+             */
+            digest: string;
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description The loops that answer in a view. */
+        LoopList: {
+            /**
+             * @description The loops, sorted by name.
+             * @example [
+             *       {
+             *         "name": "nightly",
+             *         "description": "Keep the nightly build green",
+             *         "interval": "30m",
+             *         "dynamic": false,
+             *         "stop": "when CI is green",
+             *         "closure": {
+             *           "agents": [
+             *             {
+             *               "name": "reviewer",
+             *               "scope": "global"
+             *             }
+             *           ],
+             *           "skills": []
+             *         },
+             *         "digest": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+             *       }
+             *     ]
+             */
+            loops: components["schemas"]["Loop"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     loop list answer is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
              */
             hint?: string;
@@ -1867,6 +2033,157 @@ export interface operations {
                 };
             };
             /** @description No agent has this name; the hint points to the agent list. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listLoops: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the loop list for this Project (ADR 0020): its own entry wins over the
+                 *     global one with the same name, and each closure resolves in this view. Matched
+                 *     ignoring case. An unregistered Project answers the global view with a `hint`;
+                 *     a value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The loops. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoopList"];
+                };
+            };
+            /** @description For the loop list, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the loop list, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the loop list, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getLoop: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the loop named in the path for this Project (ADR 0020): its own entry
+                 *     wins over the global one with the same name, and the closure resolves in this
+                 *     view. Matched ignoring case. An unregistered Project answers the global view
+                 *     with a `hint`; a value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The loop name, one path segment. A name that is not one is a miss.
+                 * @example nightly
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The loop. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Loop"];
+                };
+            };
+            /** @description For the loop read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the loop read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the loop read, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No loop has this name in the view; the hint points to the loop list. */
             404: {
                 headers: {
                     [name: string]: unknown;

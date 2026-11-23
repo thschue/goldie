@@ -14,6 +14,12 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 **Kind**: the type of an Item: `article`, `skill`, `agent`, `loop`, `instruction` (a clause) or
 `decision`. Each Kind has its own layout and frontmatter within a Scope.
 
+**Loop**: an Item of Kind `loop`, the file `loops/<name>.md`: frontmatter `interval` (a positive
+duration such as `30m`) or `dynamic: true`, `agents`, `skills` and `stop`; the body is the iteration
+prompt. Its **closure** is the agents and skills it names, resolved in the view asked for. A name
+that resolves nowhere in the loop's own view fails the load, and the closure digest covers the
+loop file and every byte of the closure's agent and skill files.
+
 **Scope**: where an Item applies. `global` (everyone), `project` (one repository, under
 `projects/<host>/<org>/<repo>/`) or `local` (the repository's own `.goldie/`).
 
