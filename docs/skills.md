@@ -1,0 +1,16 @@
+# Adding a skill to a Source
+
+A skill is a directory `skills/<name>/` in a Scope of one of goldie's Sources:
+
+- `global/skills/<name>/` for every Project;
+- `projects/<host>/<org>/<repo>/skills/<name>/` for one Project.
+
+The directory holds a `SKILL.md` and any other files the skill needs. The `description` and
+`status` (`draft` or `deprecated`) in the frontmatter of `SKILL.md` show on the skill's card in the
+Agent assets page. Agents get the skill as the MCP prompt `goldie-<name>`.
+
+A bundle with a file under `scripts/` is a script skill (`requires_sync`). Agents won't run it from
+text: run `goldie pull` to install it.
+
+The nearest Scope wins by name, with its whole bundle. A Project is registered by adding a
+`projects/<host>/<org>/<repo>/` directory to a Source.

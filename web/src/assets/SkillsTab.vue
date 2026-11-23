@@ -5,6 +5,7 @@ import { useLoad } from '../api/useLoad';
 import ScopeBadge from '../components/ScopeBadge.vue';
 import { projectOf } from '../projects/api';
 import { listSkills, plain, promptName } from './api';
+import { sourceDocsURL } from './links';
 
 // The Skills tab (handoff §3.5, §5.1, §5.2): a card per skill for the Project in the URL,
 // sorted by name. Descriptions are Source text and render as text only.
@@ -12,9 +13,6 @@ const route = useRoute();
 const project = computed(() => projectOf(route.query));
 const { state, data, failure, wait, skeleton, limited, retry } = useLoad(project, listSkills);
 const skills = computed(() => data.value?.skills ?? []);
-// A link the reader follows, never a request the page makes; protocol-relative, so the
-// no-external-URL source check (internal/ui) keeps guarding fetches and assets.
-const sourceDocs = '//github.com/thschue/goldie/blob/main/docs/reference/configuration.md';
 </script>
 
 <template>
@@ -41,10 +39,8 @@ const sourceDocs = '//github.com/thschue/goldie/blob/main/docs/reference/configu
   <template v-else-if="state === 'ready'">
     <p v-if="data?.hint" class="note">{{ plain(data.hint) }}</p>
     <div v-if="!skills.length" role="status" class="box">
-      <p>
-        No skills for <code>{{ project }}</code> yet.
-        <a :href="sourceDocs" target="_blank" rel="noopener noreferrer">Source docs</a>
-      </p>
+      <p>No skills for <code>{{ project }}</code> yet.</p>
+      <a :href="sourceDocsURL" target="_blank" rel="noopener noreferrer">Source docs</a>
     </div>
     <ul v-else class="grid">
       <li v-for="s in skills" :key="s.name" class="card">
@@ -149,6 +145,7 @@ code {
 }
 .box a {
   display: inline-flex;
+  margin-top: var(--space-2);
   align-items: center;
   min-height: var(--target-min);
 }

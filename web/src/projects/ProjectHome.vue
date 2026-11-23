@@ -1,63 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { useRoute } from 'vue-router';
+import { useLoad } from '../api/useLoad';
 import EmptyView from '../views/EmptyView.vue';
-import { ApiError, projectItems, projectOf, type ProjectView } from './api';
+import { projectItems, projectOf } from './api';
 
 // Home with a Project (`/?project=host/org/repo`, handoff §3.2, §5.1, §5.2): its Items, as text only.
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
 
-type State = 'loading' | 'ready' | 'error' | 'notfound';
-const state = ref<State>('loading');
-const view = ref<ProjectView>();
-const failure = ref<ApiError>();
-const wait = ref(0);
-let controller: AbortController | undefined;
-let timer: ReturnType<typeof setInterval> | undefined;
-
-const stopCountdown = () => clearInterval(timer);
-
-function countdown(seconds: number) {
-  stopCountdown();
-  wait.value = seconds;
-  timer = setInterval(() => {
-    if (--wait.value <= 0) stopCountdown();
-  }, 1000);
-}
-
-async function load() {
-  controller?.abort();
-  stopCountdown();
-  wait.value = 0;
-  if (!project.value) return;
-  const mine = (controller = new AbortController());
-  state.value = 'loading';
-  view.value = undefined;
-  try {
-    const v = await projectItems(project.value, mine.signal);
-    if (mine.signal.aborted) return;
-    view.value = v;
-    state.value = 'ready';
-  } catch (e) {
-    if (mine.signal.aborted) return;
-    if (e instanceof ApiError && (e.status === 404 || e.status === 400)) {
-      state.value = 'notfound';
-      return;
-    }
-    failure.value = e instanceof ApiError ? e : new ApiError(0, "Couldn't load this.");
-    if (failure.value.status === 429) countdown(failure.value.retryAfter);
-    state.value = 'error';
-  }
-}
-
-watch(project, load, { immediate: true });
-onBeforeUnmount(() => {
-  controller?.abort();
-  stopCountdown();
-});
-
-const limited = computed(() => failure.value?.status === 429);
+// Delay 0: the skeleton shows as soon as the load starts.
+const { state: loadState, data: view, failure, wait, limited, retry: load } = useLoad(project, projectItems, 0);
+const notFound = computed(() => loadState.value === 'error' && (failure.value?.status === 404 || failure.value?.status === 400));
+const state = computed(() => (notFound.value ? 'notfound' : loadState.value === 'idle' ? 'loading' : loadState.value));
 const items = computed(() => view.value?.items ?? []);
 const heading = computed(() => (state.value === 'notfound' ? 'Project not found' : 'What are you deciding today?'));
 </script>
