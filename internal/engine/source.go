@@ -145,6 +145,9 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		return nil, err
 	}
 	snap.addAgents(globalAgents)
+	if snap.skills, err = loadScopeSkills(fsys, skillsDir, ScopeGlobal, "global skills"); err != nil {
+		return nil, err
+	}
 	dirs, err := projectDirs(fsys)
 	if err != nil {
 		return nil, err
@@ -168,8 +171,13 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
+		skills, err := loadScopeSkills(fsys, d.dir+"/skills", d.scope, "Project skills")
+		if err != nil {
+			return nil, err
+		}
 		snap.addProject(d.scope, articles)
 		snap.addProjectAgents(d.scope, agents)
+		snap.addProjectSkills(d.scope, skills)
 		if err := snap.applySuppressions(d.scope, refs); err != nil {
 			return nil, err
 		}
@@ -373,6 +381,7 @@ type Snapshot struct {
 	articles []Article // global, sorted by ID
 	agents   []Article // global agent records, sorted by ID
 	index    keyIndex  // global articles and agents by itemKey
+	skills   skillSet  // global skills by lower-cased name; not Articles (skills.go)
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
 	// warnings are load findings that do not fail the load, such as a
@@ -387,6 +396,7 @@ type project struct {
 	scope    string
 	articles []Article // sorted by ID
 	agents   []Article // agent records, sorted by ID
+	skills   skillSet
 	index    keyIndex
 	// suppressed holds the global Items the Project hides (its project.yaml),
 	// and suppressions lists them as <kind>:<ID> (article: or agent:), sorted.
@@ -435,6 +445,14 @@ func (s *Snapshot) addProjectAgents(scope string, agents []Article) {
 	sortArticles(agents)
 	p.agents = agents
 	p.index.add(agents)
+	s.projects[strings.ToLower(scope)] = p
+}
+
+// addProjectSkills registers a Project's skills. It is called only while
+// loading, after addProject.
+func (s *Snapshot) addProjectSkills(scope string, skills skillSet) {
+	p, _ := s.lookupProject(scope)
+	p.skills = skills
 	s.projects[strings.ToLower(scope)] = p
 }
 

@@ -8,7 +8,13 @@
 // projects/<host>/<org>/<repo>/articles/** from a directory into an immutable
 // Snapshot. It loads agents/<name>.md (global/agents/, a Project's agents/ and
 // .goldie/agents/) as Items of Kind agent, served by AgentIn and Agents and
-// kept apart from articles. Every Source shares one loader over an fs.FS: DirSource hands it
+// kept apart from articles. A skill is a directory, skills/<name>/ in the same
+// three places, holding SKILL.md and its files: SkillIn and SkillFile serve it
+// local, then Project, then global, whole. A bundle is capped on files and
+// bytes, and a path inside it is exact: a symlink, a FIFO or a device is
+// skipped and never followed, and two paths that differ only in case fail the
+// load. Its Digest follows ADR 0025 and RequiresSync says whether pull must
+// write more than Markdown. Every Source shares one loader over an fs.FS: DirSource hands it
 // the os.Root-confined directory, and a read-only fs.FS over a git tree lets a
 // commit load the same way without a working tree. That tree fs.FS never
 // follows a symlink, rejects entry names that could traverse and trees with

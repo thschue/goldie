@@ -28,3 +28,4 @@ Consequences.
 - [0022. Federated activity across replicas](0022-federated-activity-across-replicas.md)
 - [0023. Git Source URLs are operator-trusted](0023-git-source-urls-are-operator-trusted.md)
 - [0024. API wire names are snake_case](0024-api-wire-names-are-snake-case.md)
+- [0025. Item digests](0025-item-digests.md)
