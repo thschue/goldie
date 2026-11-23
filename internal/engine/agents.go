@@ -52,6 +52,12 @@ func (a Agent) Kind() string { return KindAgent }
 // subdirectory is an error, and a file that is not a regular .md file is
 // skipped, as for articles.
 func loadAgents(fsys fs.FS, dir, scope string) ([]Article, error) {
+	return loadKindFiles(fsys, dir, scope, "agent", parseAgent)
+}
+
+// loadKindFiles is loadAgents for any Kind kept as one flat directory of .md
+// files: what names the Kind in errors, and parse reads one file by its slug.
+func loadKindFiles(fsys fs.FS, dir, scope, what string, parse func(name string, raw []byte) (Article, error)) ([]Article, error) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -59,34 +65,34 @@ func loadAgents(fsys fs.FS, dir, scope string) ([]Article, error) {
 		}
 		return nil, fmt.Errorf("%s: %w", dir, readErr(err))
 	}
-	var agents []Article
+	var items []Article
 	seen := map[string]string{} // lower-cased name -> file path
 	for _, e := range entries {
 		p := dir + "/" + e.Name()
 		if e.IsDir() {
-			return nil, fmt.Errorf("%s: is a directory; agents sit directly in %s", p, dir)
+			return nil, fmt.Errorf("%s: is a directory; %ss sit directly in %s", p, what, dir)
 		}
 		if !e.Type().IsRegular() || path.Ext(p) != ".md" {
 			continue
 		}
-		raw, err := readLimited(fsys, p, "agent")
+		raw, err := readLimited(fsys, p, what)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 		name := strings.TrimSuffix(e.Name(), ".md")
 		if other, dup := seen[strings.ToLower(name)]; dup {
-			return nil, fmt.Errorf("%s and %s: agent names differ only in case", other, p)
+			return nil, fmt.Errorf("%s and %s: %s names differ only in case", other, p, what)
 		}
 		seen[strings.ToLower(name)] = p
-		a, err := parseAgent(name, raw)
+		a, err := parse(name, raw)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 		a.Scope = scope
 		a.file = p
-		agents = append(agents, a)
+		items = append(items, a)
 	}
-	return agents, nil
+	return items, nil
 }
 
 // parseAgent parses one agent file. The name is the file's slug, and the
