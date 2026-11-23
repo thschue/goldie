@@ -2,7 +2,7 @@
 
 Status: accepted
 
-Amended by [24. Managed-block marker format v1](0024-managed-block-marker-format-v1.md): the marker format.
+Amended by [25. Managed-block marker format v1](0025-managed-block-marker-format-v1.md): the marker format.
 
 ## Context
 

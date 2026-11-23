@@ -82,7 +82,7 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
 	seen := map[itemKey]bool{}
-	for _, list := range s.resolutionOrder(proj) {
+	for _, list := range s.resolutionOrder(proj, KindArticle) {
 		for i := range list {
 			key := list[i].key()
 			if seen[key] {

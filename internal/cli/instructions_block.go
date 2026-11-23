@@ -11,10 +11,12 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+
+	"github.com/thschue/goldie/internal/contract/project"
 )
 
 // The managed-block editor behind `goldie instructions apply` and `check`
-// (ADR 0007, marker format in ADR 0024). The byte functions never touch the
+// (ADR 0007, marker format in ADR 0025). The byte functions never touch the
 // disk; the file layer is in the style of project.WriteConfig.
 
 // BlockState is what a file holds, compared with the content the server serves.
@@ -62,7 +64,13 @@ var utf8BOM = []byte("\xef\xbb\xbf")
 // BlockDigest returns "sha256:<hex>" over content with CRLF turned into LF and
 // one trailing LF dropped.
 func BlockDigest(content []byte) string {
-	sum := sha256.Sum256(normaliseBlockContent(content))
+	return digestOf(normaliseBlockContent(content))
+}
+
+// digestOf stamps text exactly as it is: the block body is normalised once, when
+// it is written, and never again when it is read.
+func digestOf(text []byte) string {
+	sum := sha256.Sum256(text)
 	return digestWord + hex.EncodeToString(sum[:])
 }
 
@@ -88,10 +96,9 @@ type marker struct {
 }
 
 // scanMarkers returns the marker lines of b from offset from, skipping lines
-// inside fenced code blocks. Only LF and CRLF end a line.
-func scanMarkers(b []byte, from int) []marker {
-	var out []marker
-	var f fence
+// inside fenced code blocks, and the fence still open at the end. Only LF and
+// CRLF end a line.
+func scanMarkers(b []byte, from int) (out []marker, f fence) {
 	for pos := from; pos < len(b); {
 		lineEnd, next := len(b), len(b)
 		if i := bytes.IndexByte(b[pos:], '\n'); i >= 0 {
@@ -109,7 +116,7 @@ func scanMarkers(b []byte, from int) []marker {
 		}
 		pos = next
 	}
-	return out
+	return out, f
 }
 
 // fence tracks CommonMark fenced code blocks; an unclosed one runs to the end.
@@ -174,33 +181,35 @@ type block struct {
 	begin, end marker
 }
 
-// findBlock returns the block of file, or nil when it holds none, and the
-// offset after a BOM.
-func findBlock(file []byte) (bl *block, from int, err error) {
+// findBlock returns the block of file, or nil when it holds none, the offset
+// after a BOM, and the code fence the file ends inside, if any.
+func findBlock(file []byte) (bl *block, from int, unclosed fence, err error) {
 	if bytes.HasPrefix(file, utf8BOM) {
 		from = len(utf8BOM)
 	}
 	var open *block
 	done := false
-	for _, m := range scanMarkers(file, from) {
+	markers, f := scanMarkers(file, from)
+	unclosed = f
+	for _, m := range markers {
 		switch {
 		case m.kind == markBegin && open != nil:
-			return nil, from, ErrBlockNested
+			return nil, from, fence{}, ErrBlockNested
 		case m.kind == markBegin && done:
-			return nil, from, ErrBlockDuplicate
+			return nil, from, fence{}, ErrBlockDuplicate
 		case m.kind == markBegin:
 			open = &block{begin: m}
 		case open == nil:
-			return nil, from, ErrBlockReversed
+			return nil, from, fence{}, ErrBlockReversed
 		default:
 			open.end = m
 			bl, open, done = open, nil, true
 		}
 	}
 	if open != nil {
-		return nil, from, ErrBlockUnterminated
+		return nil, from, fence{}, ErrBlockUnterminated
 	}
-	return bl, from, nil
+	return bl, from, unclosed, nil
 }
 
 // body is the block content as the file holds it, with LF endings.
@@ -214,14 +223,13 @@ func (bl *block) body(file []byte) []byte {
 // checkContent refuses content that would not read back as one block.
 func checkContent(content []byte) error {
 	norm := normaliseBlockContent(content)
-	if len(scanMarkers(norm, 0)) > 0 {
+	// A bare CR is not a line ending here but becomes part of one when a line
+	// ending is added after it, so it could forge a marker.
+	if bytes.IndexByte(norm, '\r') >= 0 {
 		return ErrBlockContent
 	}
-	var f fence
-	for _, line := range strings.Split(string(norm), "\n") {
-		f.step(line)
-	}
-	if f.n > 0 {
+	markers, f := scanMarkers(norm, 0)
+	if len(markers) > 0 || f.n > 0 {
 		return ErrBlockContent
 	}
 	return nil
@@ -233,14 +241,14 @@ func InspectBlock(file, content []byte) (BlockState, error) {
 	if err := checkContent(content); err != nil {
 		return "", err
 	}
-	bl, _, err := findBlock(file)
+	bl, _, _, err := findBlock(file)
 	if err != nil {
 		return "", err
 	}
 	switch {
 	case bl == nil:
 		return BlockMissing, nil
-	case BlockDigest(bl.body(file)) != bl.begin.digest:
+	case digestOf(bl.body(file)) != bl.begin.digest:
 		return BlockEdited, nil
 	case bl.begin.digest != BlockDigest(content):
 		return BlockOutdated, nil
@@ -258,7 +266,7 @@ func ApplyBlock(file, content []byte) ([]byte, error) {
 	if state == BlockCurrent {
 		return append([]byte{}, file...), nil
 	}
-	bl, from, _ := findBlock(file)
+	bl, from, f, _ := findBlock(file)
 	eol := detectEOL(file, from, bl)
 	var blk bytes.Buffer
 	blk.WriteString(beginPrefix + BlockDigest(content) + beginSuffix + eol)
@@ -268,17 +276,33 @@ func ApplyBlock(file, content []byte) ([]byte, error) {
 	if bl != nil {
 		out := append([]byte{}, file[:bl.begin.lineStart]...)
 		out = append(out, blk.Bytes()...)
-		return append(out, file[bl.end.lineEnd:]...), nil
+		return verifyBlock(append(out, file[bl.end.lineEnd:]...), content)
 	}
 	out := append([]byte{}, file...)
 	if len(file) > from { // anything beyond a BOM
 		if !bytes.HasSuffix(file, []byte("\n")) {
 			out = append(out, eol...)
 		}
+		if f.n > 0 {
+			// An unclosed fence runs to the end of the file and would swallow
+			// the block. Closing it changes no rendering and keeps the file as
+			// the prefix.
+			out = append(out, bytes.Repeat([]byte{f.char}, f.n)...)
+			out = append(out, eol...)
+		}
 		out = append(out, eol...)
 	}
 	out = append(out, blk.Bytes()...)
-	return append(out, eol...), nil
+	return verifyBlock(append(out, eol...), content)
+}
+
+// verifyBlock is the last guard of ApplyBlock: what it returns must read back
+// as the current block, whatever the file and content were.
+func verifyBlock(out, content []byte) ([]byte, error) {
+	if s, err := InspectBlock(out, content); err != nil || s != BlockCurrent {
+		return nil, ErrBlockContent
+	}
+	return out, nil
 }
 
 // detectEOL is CRLF when the begin marker line, or the first line of a file
@@ -320,7 +344,7 @@ func ApplyBlockFile(dir, name string, content []byte) (changed bool, err error) 
 	if file != nil && bytes.Equal(out, file) {
 		return false, nil
 	}
-	if err := replaceBlockFile(dir, name, out, mode); err != nil {
+	if err := replaceBlockFile(dir, name, out, file != nil, mode); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -339,7 +363,7 @@ func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) 
 	}
 	r, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("cannot open the directory: %w", cause(err))
+		return nil, 0, fmt.Errorf("cannot open the directory: %w", project.Cause(err))
 	}
 	defer func() { _ = r.Close() }()
 	fi, err := r.Lstat(name)
@@ -347,15 +371,15 @@ func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) 
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, 0o644, nil
 	case err != nil:
-		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", cause(err))
+		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", project.Cause(err))
 	case fi.Mode()&fs.ModeSymlink != 0:
 		return nil, 0, ErrBlockSymlink
 	case !fi.Mode().IsRegular():
 		return nil, 0, errBlockNotFile
 	}
-	f, err := r.OpenFile(name, os.O_RDONLY|openFlags|noFollow, 0)
+	f, err := r.OpenFile(name, os.O_RDONLY|project.OpenFlags|project.NoFollow, 0)
 	if err != nil {
-		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", cause(err))
+		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", project.Cause(err))
 	}
 	defer func() { _ = f.Close() }()
 	opened, err := f.Stat()
@@ -364,7 +388,7 @@ func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) 
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxBlockFile+1))
 	if err != nil {
-		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", cause(err))
+		return nil, 0, fmt.Errorf("cannot read the instruction file: %w", project.Cause(err))
 	}
 	if len(b) > maxBlockFile {
 		return nil, 0, errBlockSize
@@ -372,20 +396,27 @@ func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) 
 	return append([]byte{}, b...), fi.Mode().Perm(), nil
 }
 
-// replaceBlockFile writes data to a temp file in dir, gives it mode and
-// renames it over name. The temp file is removed on any failure.
-func replaceBlockFile(dir, name string, data []byte, mode fs.FileMode) (err error) {
+// replaceBlockFile writes data to a temp file in dir and renames it over name.
+// An existing file's mode is kept, past the umask; a new file gets 0644 less the
+// umask. The temp file is removed on any failure. Another writer that changes
+// the file between the read and the rename loses its edit: the window is that
+// of one read-modify-write, as for any editor.
+func replaceBlockFile(dir, name string, data []byte, existing bool, mode fs.FileMode) (err error) {
 	r, err := os.OpenRoot(dir)
 	if err != nil {
-		return fmt.Errorf("cannot open the directory: %w", cause(err))
+		return fmt.Errorf("cannot open the directory: %w", project.Cause(err))
 	}
 	defer func() { _ = r.Close() }()
 	suffix := make([]byte, 8)
 	_, _ = rand.Read(suffix)
 	tmp := "." + name + ".goldie-" + hex.EncodeToString(suffix)
-	f, err := r.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|noFollow, 0o644)
+	create := fs.FileMode(0o644)
+	if existing {
+		create = 0o600 // widened to the old mode only after the write
+	}
+	f, err := r.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|project.NoFollow, create)
 	if err != nil {
-		return fmt.Errorf("cannot write the instruction file: %w", cause(err))
+		return fmt.Errorf("cannot write the instruction file: %w", project.Cause(err))
 	}
 	defer func() {
 		if err != nil {
@@ -393,7 +424,7 @@ func replaceBlockFile(dir, name string, data []byte, mode fs.FileMode) (err erro
 		}
 	}()
 	_, werr := f.Write(data)
-	if werr == nil {
+	if werr == nil && existing {
 		werr = f.Chmod(mode)
 	}
 	if werr == nil {
@@ -403,24 +434,10 @@ func replaceBlockFile(dir, name string, data []byte, mode fs.FileMode) (err erro
 		werr = cerr
 	}
 	if werr != nil {
-		return fmt.Errorf("cannot write the instruction file: %w", cause(werr))
+		return fmt.Errorf("cannot write the instruction file: %w", project.Cause(werr))
 	}
 	if err := r.Rename(tmp, name); err != nil {
-		return fmt.Errorf("cannot write the instruction file: %w", cause(err))
+		return fmt.Errorf("cannot write the instruction file: %w", project.Cause(err))
 	}
 	return nil
-}
-
-// cause drops the path an *fs.PathError or *os.LinkError carries and keeps the
-// reason, such as "permission denied".
-func cause(err error) error {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		return pe.Err
-	}
-	var le *os.LinkError
-	if errors.As(err, &le) {
-		return le.Err
-	}
-	return err
 }

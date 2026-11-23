@@ -1,4 +1,4 @@
-# 24. Managed-block marker format v1
+# 25. Managed-block marker format v1
 
 Status: accepted
 
@@ -26,21 +26,25 @@ A block is exactly these lines, with the file's line ending:
   line inside a fenced code block (CommonMark rules; an unclosed fence runs to the end of the file)
   is not a marker, and neither is a marker mentioned inside a longer line, a v2 marker or a begin
   line with a malformed digest. All of these are plain text.
-- The digest covers the content after CRLF is normalised to LF and one trailing LF is dropped.
-- Edited means the content does not match the stamped digest. Outdated means the stamp does not
-  match the server's digest. Edited wins when both hold, so a hand edit is never reported as a safe
+- The digest covers the content with CRLF normalised to LF and one trailing LF dropped. The stored
+  body is digested as it is, never normalised a second time.
+- Edited means the body does not match the stamped digest. Outdated means the stamp does not match
+  the server's digest. Edited wins when both hold, so a hand edit is never reported as a safe
   refresh.
 - Exactly one pair per file is allowed. A begin without an end, a begin inside a block, an end
   without a begin, or a second pair is an error, and nothing is written.
-- Content that holds a marker line, or leaves a code fence open, is refused: it would not read back
-  as one block.
+- Content that holds a marker line, a bare CR, or leaves a code fence open is refused: it would not
+  read back as one block.
+- A file that ends inside an open code fence gets that fence closed, with the same character and
+  length, before the block is appended. Otherwise the block would read as text and every apply
+  would append another.
 - A leading BOM and every byte outside the markers, line endings included, are kept as they are.
-  New blocks use the line ending of the begin marker (or of the file's first line), and LF for a
+  A new block uses the line ending of the begin marker (or of the file's first line), and LF for a
   new file.
-- A symlinked file is refused. Writes go to a temp file beside it with the old mode and are renamed
-  over, and nothing is written when the bytes do not change. Errors hold no content, digest, path
-  or file byte.
 - Readers accept v1 forever. A later format is a v2 that is only ever added.
+
+How the editor writes (symlinks, temp files, size limit, error text) is policy in
+`internal/cli/instructions_block.go`, not part of this decision.
 
 ## Consequences
 
