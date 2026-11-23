@@ -16,6 +16,7 @@ type EventKind string
 const (
 	KindSearch EventKind = "search"
 	KindLookup EventKind = "lookup"
+	KindGet    EventKind = "get"
 )
 
 const (
