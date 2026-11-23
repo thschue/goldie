@@ -76,7 +76,7 @@ func ParseSources(doc string, lookup Lookup, readFile func(string) ([]byte, erro
 		d := json.NewDecoder(bytes.NewReader(raw))
 		d.DisallowUnknownFields()
 		if err := d.Decode(&e); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %s is not an object with known keys of the right types", EnvSources, label))
+			errs = append(errs, fmt.Errorf("%s: %s is not an object: check its key names (only the documented keys are allowed) and that each value has the documented type", EnvSources, label))
 			continue
 		}
 		if IsDNSLabel(e.Name) {

@@ -47,6 +47,9 @@ func serveSource(cfg platform.Config) (source, error) {
 		syncer, err := content(cfg.ContentDir)
 		return source{syncer: syncer, check: sourceDirCheck}, err
 	}
+	if len(cfg.Sources) > 0 {
+		return source{}, fmt.Errorf("%s is valid, but this version cannot serve a list of Sources yet: set %s or %s instead", platform.EnvSources, platform.EnvContentDir, platform.EnvGitURL)
+	}
 	return source{}, fmt.Errorf("%s or %s is not set: the server needs one Source", platform.EnvContentDir, platform.EnvGitURL)
 }
 
