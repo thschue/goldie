@@ -6,7 +6,7 @@
 // /signin?next=. The browser is the seam; the first GET /api/v1/session is
 // stubbed on the load after a reload, the default storageState supplies a valid
 // session, and no error copy is pinned here beyond the Retry control.
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { eachViewport, evidence } from './ux';
 
 const envelope = (code: string, message: string) => JSON.stringify({ error: { code, message, details: { hint: 'Try again in a moment.' } } });
@@ -159,5 +159,54 @@ eachViewport((width, theme) => {
     await page.reload();
     await expect(retry(page)).toBeVisible();
     await evidence(page, width, theme, '-check-failed', 'session-errors');
+  });
+});
+
+// A 401 on a read that is not the session check (#685). A signed-in person
+// whose session expired sees the session-ended banner with its sign-in link on
+// a Project page and on a search, the same as on any other read. A signed-out
+// visitor is never told a session ended.
+const endedCopy = /Your session ended\./;
+const unauthorized = (route: Route) =>
+  route.fulfill({ status: 401, contentType: 'application/json', body: envelope('unauthorized', 'no valid session') });
+const shop = 'github.com/acme/shop';
+const apiProjects = /\/api\/v1\/projects$/;
+const apiItems = /\/api\/v1\/projects\/[^/]+\/items$/;
+const apiSearch = /\/api\/v1\/search(\?|$)/;
+
+test.describe('a 401 on a read ends the session (#685)', () => {
+  test('a Project page read that answers 401 shows the session-ended banner and its sign-in link', async ({ page }) => {
+    await page.route(apiProjects, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [shop] }) }),
+    );
+    await page.route(apiItems, unauthorized);
+    await page.goto(`/?project=${encodeURIComponent(shop)}`);
+
+    const banner = page.getByRole('status').filter({ hasText: 'Your session ended' });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', /^\/signin\?next=/);
+  });
+
+  test('a search that answers 401 shows the session-ended banner and its sign-in link', async ({ page }) => {
+    await page.route(apiSearch, unauthorized);
+    await page.goto('/?q=database');
+
+    const banner = page.getByRole('status').filter({ hasText: 'Your session ended' });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', /^\/signin\?next=/);
+  });
+
+  test.describe('signed out', () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
+
+    test('a 401 on a Project page read or a search does not show the banner', async ({ page }) => {
+      await page.route(apiItems, unauthorized);
+      await page.route(apiSearch, unauthorized);
+      for (const path of [`/?project=${encodeURIComponent(shop)}`, '/?q=database']) {
+        await page.goto(path);
+        await expect(page).toHaveURL((u) => u.pathname === '/signin');
+        await expect(page.getByText(endedCopy)).toHaveCount(0);
+      }
+    });
   });
 });

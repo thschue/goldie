@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { failure } from '../api/client';
 import type { components } from '../api/schema';
 
 // The session store (#495). The browser never holds the token: sign-in
@@ -26,16 +27,6 @@ const keepCSRF = (res: Response) => {
 };
 
 export const role = (): Role => (session.value?.role === 'operator' ? 'operator' : 'reader');
-
-// An error envelope's hint (details.hint), or '' when the body is not one.
-async function hintOf(res: Response): Promise<string> {
-  try {
-    const hint = ((await res.json()) as components['schemas']['ErrorEnvelope']).error?.details?.hint;
-    return typeof hint === 'string' ? hint : '';
-  } catch {
-    return '';
-  }
-}
 
 // api is fetch for the API: a 401 marks a signed-in session as ended, and the
 // caller still gets the response. Sign-in does not use it: a wrong token is
@@ -99,12 +90,9 @@ export async function signIn(token: string): Promise<SignInResult> {
     ended.value = false;
     return { ok: true };
   }
-  const hint = await hintOf(res);
+  const { hint, retryAfter } = await failure(res);
   if (res.status === 401) return { ok: false, kind: 'refused', hint };
-  if (res.status === 429) {
-    const wait = Number.parseInt(res.headers.get('Retry-After') ?? '', 10);
-    return { ok: false, kind: 'limited', seconds: Math.min(Math.max(Number.isFinite(wait) ? wait : 5, 1), 3600), hint };
-  }
+  if (res.status === 429) return { ok: false, kind: 'limited', seconds: retryAfter, hint };
   return { ok: false, kind: 'failed', hint };
 }
 

@@ -1,4 +1,4 @@
-import { csrf } from '../auth/session';
+import { api, csrf } from '../auth/session';
 
 // The shared API fetch (moved from projects/api.ts for #587): an error shrinks to the envelope's
 // message and hint, and a 429 carries its Retry-After.
@@ -29,7 +29,7 @@ export async function post(path: string): Promise<void> {
 async function request(path: string, init: RequestInit): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(path, init);
+    res = await api(path, init);
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
     throw new ApiError(0, "goldie isn't answering right now.", 'Check your connection, then retry.');
