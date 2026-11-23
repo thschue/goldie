@@ -12,7 +12,7 @@ import (
 // to find its peers for GET /api/v1/activity?replicas=all; unset, only the
 // local stream is served. GOLDIE_ACTIVITY_REORDER_WINDOW is how long live
 // events wait so older ones from other replicas can overtake them, as a Go
-// duration (2s by default). Neither is a secret; both have the _FILE form
+// duration (2s by default, at most 1m0s). Neither is a secret; both have the _FILE form
 // every variable has (PC-05), fail startup on a bad value naming the variable
 // and never echoing the value (PC-04), and are reported as written (PC-06).
 // The contract they fix:
@@ -181,7 +181,7 @@ func TestActivityPeersRejectsAnythingButADNSName(t *testing.T) {
 	}
 }
 
-// A positive Go duration is accepted, from the variable or its _FILE form,
+// A positive Go duration up to one minute, inclusive, is accepted, from the variable or its _FILE form,
 // and reported as written.
 func TestActivityReorderWindowAcceptsAPositiveDuration(t *testing.T) {
 	for v, want := range map[string]time.Duration{
@@ -190,6 +190,8 @@ func TestActivityReorderWindowAcceptsAPositiveDuration(t *testing.T) {
 		"1.5s":  1500 * time.Millisecond,
 		"250ms": 250 * time.Millisecond,
 		"1m0s":  time.Minute,
+		"60s":   time.Minute,
+		"59.9s": 59900 * time.Millisecond,
 	} {
 		cfg, err := loadEnv(map[string]string{envActivityReorderWindow: v})
 		if err != nil {
@@ -216,7 +218,8 @@ func TestActivityReorderWindowAcceptsAPositiveDuration(t *testing.T) {
 	}
 }
 
-// Zero, negative, unitless, malformed or overflowing durations fail startup
+// Zero, negative, over one minute, unitless, malformed or overflowing
+// durations fail startup
 // naming the variable, never echoing the value (time.ParseDuration's own
 // error quotes it).
 func TestActivityReorderWindowRejectsABadDuration(t *testing.T) {
@@ -239,6 +242,11 @@ func TestActivityReorderWindowRejectsABadDuration(t *testing.T) {
 		"\u0662s", // Arabic-Indic digit two
 		"\uff12s", // fullwidth digit two
 		"9999999999999999h",
+		"1m1s",
+		"60.001s",
+		"61s",
+		"2m",
+		"1h",
 	} {
 		_, err := loadEnv(map[string]string{envActivityReorderWindow: v})
 		if err == nil || !strings.Contains(err.Error(), envActivityReorderWindow) {

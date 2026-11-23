@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -31,13 +32,19 @@ import (
 //	type activityPeer struct{ Name, URL string }
 //
 //	// resolveActivityPeers resolves the configured DNS name to the peers,
-//	// this replica among them. A variable so tests stand in for DNS; read on
-//	// every federated request, never with a name from the request.
+//	// this replica among them. A variable so tests stand in for DNS (in
+//	// process, every replica is on 127.0.0.1 with its own port); in
+//	// production it is lookupActivityPeers over the system resolver and this
+//	// replica's listen port (activity_peers_lookup_test.go). Called on every
+//	// federated request and on every reconnect, never with a name from the
+//	// request.
 //	var resolveActivityPeers func(ctx context.Context, name string) ([]activityPeer, error)
 //
 //	// activityReplicaName is this replica's own name, the replica of its
-//	// events and how it knows itself among the peers. Read when the public
-//	// handler is built, like activityKeepalive.
+//	// events (with or without peers; NewActivity gets it instead of "") and
+//	// how it knows itself among the peers, by Name equality. Read when the
+//	// public handler is built, like activityKeepalive. It defaults to
+//	// replicaNameFromHostname(os.Hostname()).
 //	var activityReplicaName func() string
 //
 //	// activityPeerIdle is the idle read deadline of a peer stream: with no
@@ -50,15 +57,24 @@ import (
 //	const api.MaxFederatedSubscribers
 //
 // Config.ActivityPeers and Config.ActivityReorderWindow are the settings
-// (internal/platform). The merged stream's wire format, beyond #243's:
-//   - every event's JSON carries "replica", the name of the replica that
-//     recorded it, and "late": true when it reached the merger after its
-//     reorder window (absent or false otherwise);
+// (internal/platform). The wire format, beyond #243's:
+//   - every event's JSON, local or merged, carries "replica", the name of the
+//     replica that recorded it, and "late", true when it reached the merger
+//     after its reorder window, false otherwise and always on the local
+//     stream;
+//   - right after the retained history, even an empty one, the stream sends
+//     one SSE event of type live whose data is {} (ActivityLive); the merged
+//     stream sends it once, after the merged history;
 //   - a peer going down or coming back up is an SSE event of type
 //     replica_status whose data is one line of JSON:
 //     {"replica": <name>, "up": <bool>, "last_seen": <RFC 3339 time>};
 //   - a peer that is up when the stream opens gets no status (the first
-//     attach is silent).
+//     attach is silent);
+//   - a merged subscriber that loses events gets the dropped notice, counted
+//     from the merger's own drops, with no replica field.
+//
+// Revised for the architect's answers on PR #378 (the live marker, replica
+// and late always sent, re-resolving on reconnect).
 //
 // Until these names exist this package's tests do not compile.
 
@@ -237,24 +253,7 @@ func startReplicas(t *testing.T, specs ...nodeSpec) []*replicaNode {
 
 	nodes := make([]*replicaNode, 0, len(specs))
 	for _, s := range specs {
-		stamp := s.name
-		if s.claims != "" {
-			stamp = s.claims
-		}
-		activityReplicaName = func() string { return stamp }
-		cfg := platform.Config{ActivityPeers: peersName, ActivityReorderWindow: testWindow, APITokens: s.tokens}
-		if s.noPeers {
-			cfg.ActivityPeers = ""
-		}
-		if s.window != 0 {
-			cfg.ActivityReorderWindow = s.window
-		}
-		pub := streamHandler(t, cfg)
-		sw := &peerSwitch{next: pub, stop: make(chan struct{})}
-		srv := httptest.NewServer(sw)
-		t.Cleanup(srv.Close)
-		t.Cleanup(func() { close(sw.stop); srv.CloseClientConnections() }) // runs before Close
-		nodes = append(nodes, &replicaNode{name: s.name, pub: pub, sw: sw, srv: srv})
+		nodes = append(nodes, buildReplica(t, s))
 	}
 	useResolver(t, func(_ context.Context, name string) ([]activityPeer, error) {
 		if name != peersName {
@@ -267,6 +266,30 @@ func startReplicas(t *testing.T, specs ...nodeSpec) []*replicaNode {
 		return peers, nil
 	})
 	return nodes
+}
+
+// buildReplica starts one replica. Call it after startReplicas, which set
+// the timings and restore activityReplicaName.
+func buildReplica(t *testing.T, s nodeSpec) *replicaNode {
+	t.Helper()
+	stamp := s.name
+	if s.claims != "" {
+		stamp = s.claims
+	}
+	activityReplicaName = func() string { return stamp }
+	cfg := platform.Config{ActivityPeers: peersName, ActivityReorderWindow: testWindow, APITokens: s.tokens}
+	if s.noPeers {
+		cfg.ActivityPeers = ""
+	}
+	if s.window != 0 {
+		cfg.ActivityReorderWindow = s.window
+	}
+	pub := streamHandler(t, cfg)
+	sw := &peerSwitch{next: pub, stop: make(chan struct{})}
+	srv := httptest.NewServer(sw)
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(sw.stop); srv.CloseClientConnections() }) // runs before Close
+	return &replicaNode{name: s.name, pub: pub, sw: sw, srv: srv}
 }
 
 func useResolver(t *testing.T, f func(context.Context, string) ([]activityPeer, error)) {
@@ -432,6 +455,17 @@ func status(name string, up bool) func(sseEvent) bool {
 	}
 }
 
+// countType counts the events of type typ.
+func countType(events []sseEvent, typ string) int {
+	n := 0
+	for _, e := range events {
+		if e.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
 // statuses are the replica_status events among events.
 func statuses(events []sseEvent) []sseEvent {
 	var out []sseEvent
@@ -514,6 +548,12 @@ func TestFederatedActivityMergesEveryReplicaInTimeOrder(t *testing.T) {
 		}
 	}
 
+	marker := r.until(t, 5*time.Second, "the live marker", func(e sseEvent) bool { return true })
+	if marker.Type != "live" || marker.Data != "{}" {
+		t.Fatalf("after the merged history: %+v, want the live marker (event: live, data: {})", marker)
+	}
+	history := len(r.seen)
+
 	record(t, c, "c-live")
 	time.Sleep(30 * time.Millisecond)
 	record(t, b, "b-live")
@@ -521,7 +561,7 @@ func TestFederatedActivityMergesEveryReplicaInTimeOrder(t *testing.T) {
 	record(t, a, "a-live")
 	r.until(t, 10*time.Second, "a-live", query("a-live"))
 	var live []fedEvent
-	for _, e := range r.seen[len(want):] {
+	for _, e := range r.seen[history:] {
 		live = append(live, mustEvent(t, e))
 	}
 	if len(live) != 3 || live[0].Query != "c-live" || live[1].Query != "b-live" || live[2].Query != "a-live" {
@@ -539,6 +579,9 @@ func TestFederatedActivityMergesEveryReplicaInTimeOrder(t *testing.T) {
 		if e.Type == "dropped" || e.Type == "replica_status" {
 			t.Errorf("a %s event while every replica was up and the subscriber kept up: %s", e.Type, e.Data)
 		}
+	}
+	if n := countType(r.seen, "live"); n != 1 {
+		t.Errorf("%d live markers on the merged stream, want exactly one", n)
 	}
 
 	for _, peer := range []*replicaNode{b, c} {
@@ -560,8 +603,9 @@ func TestFederatedActivityMergesEveryReplicaInTimeOrder(t *testing.T) {
 }
 
 // Criterion 2: a client that does not send replicas=all gets today's stream:
-// only this replica's events, ids consecutive from 1, no status and nothing
-// late, no field beyond #243's but the additive replica and late, and no
+// only this replica's events, ids consecutive from 1, the live marker once
+// after the history, no status, no field beyond #243's but the additive
+// replica (this replica's name) and late (always sent, always false), and no
 // peer is asked.
 func TestActivityWithoutReplicasAllIsTheLocalStreamUnchanged(t *testing.T) {
 	a, b, c := abc(t)
@@ -579,7 +623,11 @@ func TestActivityWithoutReplicasAllIsTheLocalStreamUnchanged(t *testing.T) {
 	r.drain(500 * time.Millisecond)
 	known := map[string]bool{"id": true, "time": true, "kind": true, "query": true, "project": true, "token": true,
 		"client_version": true, "trace_id": true, "miss": true, "replica": true, "late": true}
-	for i, e := range r.seen {
+	if len(r.seen) != 3 || r.seen[1].Type != "live" || r.seen[1].Data != "{}" {
+		t.Fatalf("the local stream: %+v, want a-1, the live marker, a-2", r.seen)
+	}
+	events := []sseEvent{r.seen[0], r.seen[2]}
+	for i, e := range events {
 		if e.Type != "message" {
 			t.Errorf("event %d is of type %q on the local stream: %s", i, e.Type, e.Data)
 			continue
@@ -597,12 +645,12 @@ func TestActivityWithoutReplicasAllIsTheLocalStreamUnchanged(t *testing.T) {
 		if *w.ID != uint64(i+1) || !strings.HasPrefix(w.Query, "a-") {
 			t.Errorf("event %d: id %d query %q, want id %d from this replica only", i, *w.ID, w.Query, i+1)
 		}
-		if late, _ := m["late"].(bool); late {
-			t.Errorf("the local stream marks an event late: %s", e.Data)
+		if late, ok := m["late"].(bool); !ok || late {
+			t.Errorf("the local stream's event has late %v, want it sent and false: %s", m["late"], e.Data)
 		}
-	}
-	if len(r.seen) != 2 {
-		t.Errorf("the local stream has %d events, want this replica's 2: %+v", len(r.seen), r.seen)
+		if m["replica"] != "goldie-a" {
+			t.Errorf("the local stream's event has replica %v, want this replica's name goldie-a: %s", m["replica"], e.Data)
+		}
 	}
 	for _, peer := range []*replicaNode{b, c} {
 		if got := peer.sw.peerRequests(); len(got) != 0 {
@@ -1183,9 +1231,11 @@ func TestAFederatedStreamReleasesEveryPeerWhenItEnds(t *testing.T) {
 }
 
 // Criteria 2 and 6, spec first: the served document declares the replicas
-// query parameter with "all", the replica and late fields of ActivityEvent,
-// and the replica_status event among the stream's data, with replica, up and
-// last_seen; its examples name no address.
+// query parameter (an enum of only "all"), the required replica and late
+// fields of ActivityEvent, and among the stream's data the closed schemas
+// ActivityReplicaStatus {replica, up, last_seen} and ActivityLive {}. Its
+// description says clients dedupe by replica and id, not id alone, and its
+// examples name no address.
 func TestServedSpecDeclaresTheFederatedActivityShape(t *testing.T) {
 	doc := specDoc(t)
 	paths, _ := doc["paths"].(map[string]any)
@@ -1212,13 +1262,8 @@ func TestServedSpecDeclaresTheFederatedActivityShape(t *testing.T) {
 		t.Error("the replicas parameter is required; without it a client gets the local stream")
 	}
 	schema := contracttest.ResolveRef(doc, replicas["schema"])
-	enum, _ := schema["enum"].([]any)
-	hasAll := false
-	for _, v := range enum {
-		hasAll = hasAll || v == "all"
-	}
-	if !hasAll {
-		t.Errorf("the replicas parameter's schema %v does not offer \"all\"", schema)
+	if enum, _ := schema["enum"].([]any); len(enum) != 1 || enum[0] != "all" {
+		t.Errorf("the replicas parameter's schema %v, want an enum of only \"all\"", schema)
 	}
 
 	components, _ := doc["components"].(map[string]any)
@@ -1232,6 +1277,14 @@ func TestServedSpecDeclaresTheFederatedActivityShape(t *testing.T) {
 		}
 	}
 	checkExamples(t, "ActivityEvent.replica", contracttest.ResolveRef(doc, props["replica"]))
+	componentSchema(t, "ActivityEvent", activityEventFields) // closed, every field required
+	for _, f := range []string{"replica", "late"} {
+		if !slices.Contains(activityEventFields, f) {
+			t.Errorf("the wire fields %v do not include %s", activityEventFields, f)
+		}
+	}
+	componentSchema(t, "ActivityReplicaStatus", []string{"last_seen", "replica", "up"})
+	componentSchema(t, "ActivityLive", nil)
 
 	responses, _ := op["responses"].(map[string]any)
 	content, _ := contracttest.ResolveRef(doc, responses["200"])["content"].(map[string]any)
@@ -1239,15 +1292,21 @@ func TestServedSpecDeclaresTheFederatedActivityShape(t *testing.T) {
 	streamSchema, _ := stream["schema"].(map[string]any)
 	cs, _ := streamSchema["contentSchema"].(map[string]any)
 	oneOf, _ := cs["oneOf"].([]any)
-	var status map[string]any
+	refs := map[string]bool{}
 	for _, s := range oneOf {
-		sm := contracttest.ResolveRef(doc, s)
-		if p, _ := sm["properties"].(map[string]any); p != nil && p["up"] != nil {
-			status = sm
+		if m, _ := s.(map[string]any); m != nil {
+			ref, _ := m["$ref"].(string)
+			refs[ref] = true
 		}
 	}
+	for _, name := range []string{"ActivityEvent", "ActivityDropped", "ActivityReplicaStatus", "ActivityLive"} {
+		if !refs["#/components/schemas/"+name] {
+			t.Errorf("the stream's contentSchema oneOf %v does not list %s", oneOf, name)
+		}
+	}
+	status, _ := schemas["ActivityReplicaStatus"].(map[string]any)
 	if status == nil {
-		t.Fatal("the stream's contentSchema has no replica_status schema (with replica, up and last_seen)")
+		t.Fatal("the spec has no components/schemas/ActivityReplicaStatus")
 	}
 	sp, _ := status["properties"].(map[string]any)
 	for field, typ := range map[string]string{"replica": "string", "up": "boolean", "last_seen": "string"} {
@@ -1272,10 +1331,13 @@ func TestServedSpecDeclaresTheFederatedActivityShape(t *testing.T) {
 	checkExamples(t, "replica_status.replica", contracttest.ResolveRef(doc, sp["replica"]))
 
 	desc, _ := op["description"].(string)
-	for _, want := range []string{"replicas=all", "replica_status", "late"} {
+	for _, want := range []string{"replicas=all", "replica_status", "late", "`live`", "`replica` and `id`"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("GET %s's description does not explain %q", activityPath, want)
 		}
+	}
+	if strings.Contains(desc, "dedupe by `id`") {
+		t.Errorf("GET %s's description still says clients dedupe by `id` alone; ids repeat across replicas", activityPath)
 	}
 	if m := leaks["IPv4 address"].FindString(desc); m != "" {
 		t.Errorf("GET %s's description names an address (%q)", activityPath, m)

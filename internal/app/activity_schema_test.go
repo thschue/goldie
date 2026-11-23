@@ -24,7 +24,9 @@ import (
 // payloads are spec components, so the server and the spec cannot drift.
 // Every data line an SSE client reads validates against the component for its
 // event type: a plain event against components/schemas/ActivityEvent, an
-// `event: dropped` notice against components/schemas/ActivityDropped. Both
+// `event: dropped` notice against components/schemas/ActivityDropped, and
+// the `event: live` marker against components/schemas/ActivityLive (#245,
+// which also adds replica and late to every event). Both
 // schemas close their objects (additionalProperties: false) and require every
 // field the wire carries, so an undeclared field or a missing one fails. The
 // field names are the wire format as it is.
@@ -36,7 +38,7 @@ import (
 
 // activityEventFields and activityDroppedFields are the wire format.
 var (
-	activityEventFields   = []string{"client_version", "id", "kind", "miss", "project", "query", "time", "token", "trace_id"}
+	activityEventFields   = []string{"client_version", "id", "kind", "late", "miss", "project", "query", "replica", "time", "token", "trace_id"}
 	activityDroppedFields = []string{"dropped"}
 )
 
@@ -107,6 +109,7 @@ func validateStream(t *testing.T, events []sseEvent) []map[string]any {
 	schemas := map[string]*jsonschema.Schema{
 		"message": componentSchema(t, "ActivityEvent", activityEventFields),
 		"dropped": componentSchema(t, "ActivityDropped", activityDroppedFields),
+		"live":    componentSchema(t, "ActivityLive", nil), // #245: the end of the history
 	}
 	out := make([]map[string]any, len(events))
 	for i, e := range events {
