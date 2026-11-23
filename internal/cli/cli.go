@@ -49,6 +49,7 @@ type Env struct {
 	Lookup   platform.Lookup              // environment variables
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
 	Out      io.Writer                    // results
+	Err      io.Writer                    // warnings, such as a deprecated article's; nil discards them
 	Client   *http.Client                 // nil: contract's client, with a timeout
 	// StartLocal starts an embedded server over the content at dir and returns
 	// its address and token. stop ends it. cmd injects app.StartLocal; nil
@@ -58,7 +59,7 @@ type Env struct {
 
 // DefaultEnv is the process environment.
 func DefaultEnv(out io.Writer) Env {
-	return Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out}
+	return Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out, Err: os.Stderr}
 }
 
 // settings are the flags and variables common to every command.
@@ -246,7 +247,11 @@ func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
 			return nil, err
 		}
 	}
-	return &commander{s: s, out: env.Out, env: env}, nil
+	errOut := env.Err
+	if errOut == nil {
+		errOut = io.Discard
+	}
+	return &commander{s: s, out: env.Out, errOut: errOut, env: env}, nil
 }
 
 // parseInterleaved parses flags that may come before, between or after the
@@ -267,10 +272,11 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // commander holds what the commands share.
 type commander struct {
-	s     settings
-	out   io.Writer
-	env   Env
-	local bool // an embedded server over local content, not a remote one
+	s      settings
+	out    io.Writer // results
+	errOut io.Writer // warnings; env.Err, or io.Discard when it is nil
+	env    Env
+	local  bool // an embedded server over local content, not a remote one
 }
 
 // check reports a missing or invalid address and, with withToken, a missing
