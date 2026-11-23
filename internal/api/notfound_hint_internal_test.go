@@ -131,3 +131,38 @@ func TestUnknownSkillAndAgentHintsAreClientNeutral(t *testing.T) {
 		noAPIOperation(t, target, hint)
 	}
 }
+
+// Acceptance tests for #539: the hint for an unregistered Project is
+// client-neutral too. It names no API operation, so CLI, MCP and UI users read
+// no API wording.
+const missProjectHint = "List the registered Projects, then use one of them. " +
+	"To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team."
+
+func TestUnregisteredProjectHintIsClientNeutral(t *testing.T) {
+	mux := notFoundMux(t)
+	for _, target := range []string{
+		"/api/v1/projects/github.com%2Facme%2Funregistered",
+		"/api/v1/projects/gitlab.com%2Fother%2Frepo",
+	} {
+		msg, hint := notFound(t, mux, target)
+		if msg != "no such Project" {
+			t.Errorf("GET %s: message %q, want %q", target, msg, "no such Project")
+		}
+		if hint != missProjectHint {
+			t.Errorf("GET %s: hint %q, want %q", target, hint, missProjectHint)
+		}
+		noAPIOperation(t, target, hint)
+	}
+}
+
+func TestRegisteredProjectAnswersNoUnregisteredHint(t *testing.T) {
+	mux := notFoundMux(t)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/projects/github.com%2Facme%2Fshop", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "register one") {
+		t.Errorf("a registered Project's answer carries the unregistered hint: %s", rec.Body)
+	}
+}

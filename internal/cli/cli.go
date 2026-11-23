@@ -88,7 +88,7 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	}
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
-		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand")
+		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
 	}
 	if name == "skills" { // only skills have files to read
 		fs.Func("file", "show: print one file of the skill to stdout, as its raw bytes (a `path` from its file list)", func(v string) error {

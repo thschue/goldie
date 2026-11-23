@@ -64,7 +64,8 @@ export interface paths {
          * List the skills
          * @description Returns the skills that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins with its whole bundle. Each carries its
-         *     file list.
+         *     file list. Fetch one of a skill's files with `getSkillFile`
+         *     (`GET /api/v1/skills/{name}/files/{path}`).
          */
         get: operations["listSkills"];
         put?: never;

@@ -308,3 +308,117 @@ func TestSkillDirectoryWithoutSkillMDFailsTheLoad(t *testing.T) {
 		})
 	}
 }
+
+// --- Issue #509: skill names match case-insensitively, as agent names do ---
+//
+// AgentIn finds "reviewer" when asked for "Reviewer" and answers the name as
+// the file spells it. Two agents whose names differ only in case in one Scope
+// fail the load, and the same name in two Scopes, in any case, is shadowing:
+// the nearest Scope wins. Skills do the same, by the bundle's directory name.
+
+func TestSkillLookupIgnoresCase(t *testing.T) {
+	snap := load(t, map[string]string{
+		globalSkillFile("deploy", "SKILL.md"):        "lower",
+		globalSkillFile("deploy", "scripts/run.sh"):  "run",
+		globalSkillFile("Release", "SKILL.md"):       "mixed",
+		globalSkillFile("Release", "notes/Plan.txt"): "plan",
+	})
+	for _, name := range []string{"deploy", "Deploy", "DEPLOY", "dEpLoY"} {
+		s, ok := snap.SkillIn("", name)
+		if !ok || s.Name != "deploy" {
+			t.Errorf("SkillIn(%q) = %+v, %v, want the skill deploy", name, s, ok)
+			continue
+		}
+		if got := skillAnswer(t, snap, "", name); got != engine.ScopeGlobal+"/lower" {
+			t.Errorf("SkillIn(%q) answers %s, want the global bundle", name, got)
+		}
+		if b, err := snap.SkillFile("", name, "scripts/run.sh"); err != nil || string(b) != "run" {
+			t.Errorf("SkillFile(%q, scripts/run.sh) = %q, %v", name, b, err)
+		}
+	}
+	// A bundle whose directory has capitals is found in any case and keeps its
+	// own spelling, as an agent does.
+	for _, name := range []string{"Release", "release", "RELEASE"} {
+		if s, ok := snap.SkillIn("", name); !ok || s.Name != "Release" {
+			t.Errorf("SkillIn(%q) = %+v, %v, want the skill Release", name, s, ok)
+		}
+	}
+	// Only the skill name folds: a path inside the bundle stays exact.
+	for _, file := range []string{"skill.md", "SCRIPTS/run.sh", "notes/plan.txt"} {
+		if b, err := snap.SkillFile("", "DEPLOY", file); err == nil {
+			t.Errorf("SkillFile(DEPLOY, %q) = %q; a file path must stay case-sensitive", file, b)
+		}
+	}
+	if _, ok := snap.SkillIn("", "deploys"); ok {
+		t.Error("SkillIn(deploys) found a skill; folding case is not prefix matching")
+	}
+}
+
+// The same name in different cases in different Scopes is shadowing, as for
+// agents: the nearest Scope wins whole, whichever case each directory uses.
+func TestSkillShadowingIgnoresCaseAcrossScopes(t *testing.T) {
+	snap := loadLocal(t, map[string]string{
+		globalSkillFile("Deploy", "SKILL.md"):        "global",
+		globalSkillFile("Deploy", "global-only.txt"): "g",
+		projectSkillFile("deploy", "SKILL.md"):       "project",
+		globalSkillFile("Tidy", "SKILL.md"):          "global",
+		projectSkillFile("TIDY", "SKILL.md"):         "project",
+		localSkillFile("tidy", "SKILL.md"):           "local",
+	})
+
+	for _, name := range []string{"Deploy", "deploy", "DEPLOY"} {
+		if got := skillAnswer(t, snap, govProject, name); got != govProject+"/project" {
+			t.Errorf("SkillIn(project, %q) = %s, want the Project bundle to shadow the global one", name, got)
+		}
+		if got := skillAnswer(t, snap, "", name); got != engine.ScopeGlobal+"/global" {
+			t.Errorf("SkillIn(\"\", %q) = %s, want the global bundle", name, got)
+		}
+		if b, err := snap.SkillFile(govProject, name, "global-only.txt"); err == nil {
+			t.Errorf("SkillFile(project, %q, global-only.txt) = %q; the shadowed bundle's file leaked", name, b)
+		}
+	}
+	if s, _ := snap.SkillIn(govProject, "DEPLOY"); s.Name != "deploy" {
+		t.Errorf("the Project answer is named %q, want the winning directory's name deploy", s.Name)
+	}
+	for _, proj := range localViews {
+		for _, name := range []string{"tidy", "Tidy", "TIDY"} {
+			if got := skillAnswer(t, snap, proj, name); got != engine.ScopeLocal+"/local" {
+				t.Errorf("SkillIn(%q, %q) = %s, want the local bundle", proj, name, got)
+			}
+		}
+	}
+
+	// One entry per name in a list: a shadowed bundle is not listed again
+	// under its own spelling.
+	var got []string
+	for _, s := range snap.Skills(govProject) {
+		got = append(got, s.Name+"@"+s.Scope)
+	}
+	if want := []string{"deploy@" + govProject, "tidy@" + engine.ScopeLocal}; !slices.Equal(got, want) {
+		t.Errorf("Skills(project) = %v, want %v: one entry per name, whatever its case", got, want)
+	}
+	got = nil
+	for _, s := range snap.Skills("") {
+		got = append(got, s.Name+"@"+s.Scope)
+	}
+	if want := []string{"Deploy@" + engine.ScopeGlobal, "tidy@" + engine.ScopeLocal}; !slices.Equal(got, want) {
+		t.Errorf("Skills(\"\") = %v, want %v", got, want)
+	}
+}
+
+// Two bundles in one Scope whose names differ only in case fail the load and
+// name both directories, as two agent files do.
+func TestSkillNamesDifferingOnlyInCaseFailTheLoad(t *testing.T) {
+	for name, dirs := range map[string][2]string{
+		"global":  {"global/skills/Deploy", "global/skills/deploy"},
+		"project": {"projects/" + govProject + "/skills/Deploy", "projects/" + govProject + "/skills/deploy"},
+		"local":   {".goldie/skills/Deploy", ".goldie/skills/deploy"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			loadLocalErr(t, map[string]string{
+				dirs[0] + "/SKILL.md": "One",
+				dirs[1] + "/SKILL.md": "Two",
+			}, dirs[0], dirs[1], "differ only in case")
+		})
+	}
+}

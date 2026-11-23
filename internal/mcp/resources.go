@@ -27,7 +27,8 @@ const (
 // the client's URI echoed in the error data, quoted so that a control
 // character makes invalid JSON, so nothing falls through: a URI under
 // goldie://skills/ is a skill file read, under goldie://agents/ an agent read,
-// and anything else is resource not found.
+// anything else is resource not found. Only goldie://instructions, a fixed URI
+// with no client text in it, goes on to the SDK.
 func addResources(s *sdk.Server, t *tools) {
 	s.AddResourceTemplate(&sdk.ResourceTemplate{
 		Name:        "skill-file",
@@ -54,6 +55,8 @@ func addResources(s *sdk.Server, t *tools) {
 				uri = rr.Params.URI
 			}
 			switch {
+			case uri == instructionsURI:
+				return next(ctx, method, req)
 			case strings.HasPrefix(uri, "goldie://skills/"):
 				return t.readSkillFile(ctx, rr)
 			case strings.HasPrefix(uri, "goldie://agents/"):

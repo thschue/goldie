@@ -35,10 +35,13 @@ help you ask for goes to stdout and exits 0.
 and file list) and agent definitions (name and description) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. `goldie skills show <name> --file <path>` writes one file of the skill, as
-listed by `show <name>`, to stdout as its raw bytes and nothing else. Redirect it to a file for
-anything binary. An unknown path exits 1 and names `goldie skills show <name>`. `--file` belongs to
-`skills show` only. An empty or dot-only path is refused before any request.
+before any request. Skill and agent names match case-insensitively, and the answer shows the
+name as written. Two skills, or two agents, in one Scope whose names differ only in case fail the
+load; the error names both. File paths inside a skill stay exact. `goldie skills show <name>
+--file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
+bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
+`goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
+refused before any request.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
@@ -102,12 +105,12 @@ between `<!-- goldie:begin digest=sha256:… -->` and `<!-- goldie:end -->` in `
 or `AGENTS.md` at the repository root, creating the file if needed. The block comes from
 `GET /api/v1/instructions` for the detected Project (`--project` overrides it). Text outside the
 markers is never touched, and a block that is already current is not rewritten. `apply` refuses a
-block edited by hand unless you pass `--force`, and refuses a damaged file (a begin marker without an
-end, or two blocks) even with `--force`. It also refuses a block whose text could change how the rest
-of your file renders (an unclosed code fence, raw HTML, a link reference definition), a `CLAUDE.md` or
-`AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes nothing.
-`goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated or
-edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
+block edited by hand unless you pass `--force`, which discards those edits, and refuses a damaged file (a
+begin marker without an end, or two blocks) even with `--force`. It also refuses a block whose text could
+change how the rest of your file renders (an unclosed code fence, raw HTML, a link reference definition),
+a `CLAUDE.md` or `AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes
+nothing. `goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated
+or edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
 between `apply` reading the file and renaming over it, an edit by another process is lost; there is no
 lock, and the window is one local write.
 
@@ -181,12 +184,20 @@ quoted with `| `; a name that is empty, dots only or holds a separator is refuse
 request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
 description.
 
-The server also offers prompts and resources. Each skill is a prompt named `goldie-<skill name>`
+The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
+instruction block the API renders for the default Project, or the global block without one, with
+`{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
+`goldie instructions`; the target changes only the file the block is written into. The text is cleaned
+of hidden characters like any Source content and a failed read is an
+error without the address or token. `current_context` ends with the same clauses, or says they could
+not be read.
+
+The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
 (for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
 the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
 with `| `. The prompt list is read once, the first time your client asks for it, and kept until the
 MCP server restarts. A skill added later appears after you restart your agent or its MCP server.
-The server sends no `list_changed` notification. The resources are two URI templates:
+The server sends no `list_changed` notification. The two other resources are URI templates:
 `goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
 as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
 reads an agent's name and description. The session's default Project picks the bundle, never the
