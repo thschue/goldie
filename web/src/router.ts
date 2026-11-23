@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import HomeView from './search/HomeView.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -18,7 +19,7 @@ const pages: [path: string, title: string][] = [
 ];
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: EmptyView, meta: { title: 'Home', heading: 'What are you deciding today?' } },
+  { path: '/', component: HomeView, meta: { title: 'Home' } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
   { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: 'Page not found' } },
 ];
