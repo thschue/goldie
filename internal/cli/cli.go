@@ -28,19 +28,16 @@ const (
 	EnvProject = platform.EnvProject
 )
 
-// TokenNote goes in the help of the commands that take --token: it recommends
-// the token variables over the flag, whose value shows in the process list.
+// TokenNote goes in the help of the commands that take --token.
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
-// Commands lists the client commands in help order. The dispatcher in
-// cmd/goldie builds its commands from it.
+// Commands lists the client commands in help order.
 var Commands = []string{"search", "lookup", "status", "init", "version"}
 
 // IsCommand reports whether name is one of Commands.
 func IsCommand(name string) bool { return slices.Contains(Commands, name) }
 
-// UsageError is a command used wrongly: a missing or extra positional word.
-// Its text is the one-line usage; the dispatcher exits 2 for it, not 1.
+// UsageError is a command used wrongly; the dispatcher exits 2 for it.
 type UsageError struct {
 	Command string // the command that was misused
 	Msg     string
@@ -93,11 +90,8 @@ func Run(ctx context.Context, args []string, env Env) error {
 	return exec(ctx, pos, env)
 }
 
-// Command registers the flags of the client command name on fs: the client
-// flags, and --project and --json where the command has them. It returns what
-// runs the command, given its positional words once fs is parsed. name must
-// satisfy IsCommand. The dispatcher in cmd/goldie parses with its own flag
-// library and hands the result over; Run does the same with fs.
+// Command registers the flags of the client command name (an IsCommand) on fs
+// and returns what runs it once fs is parsed, by Run or by cmd/goldie.
 func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []string, env Env) error {
 	f := BindClientFlags(fs)
 	if name != "version" { // version has no use for a Project

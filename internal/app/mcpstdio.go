@@ -17,9 +17,7 @@ import (
 	"github.com/thschue/goldie/internal/platform"
 )
 
-// MCPTokenNote goes in the help of goldie mcp. It recommends the token
-// variables over --token: its value shows in the process list (ps), and an MCP
-// client saves it in its config.
+// MCPTokenNote goes in the help of goldie mcp.
 const MCPTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine and is saved in the MCP client's config."
 
 // RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
@@ -41,10 +39,8 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	return run(ctx, fs.Args(), env, in, out)
 }
 
-// BindMCP registers the flags of goldie mcp on fs (--transport and the client
-// flags) and returns what runs it, given the positional words once fs is
-// parsed. The dispatcher in cmd/goldie parses with its own flag library and
-// hands the result over; RunMCP does the same with fs.
+// BindMCP registers the flags of goldie mcp on fs and returns what runs it
+// once fs is parsed, by RunMCP or by the dispatcher in cmd/goldie.
 func BindMCP(fs *flag.FlagSet) func(ctx context.Context, pos []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	transport := fs.String("transport", "", "the MCP transport: stdio")
 	settings := cli.BindClientFlags(fs)

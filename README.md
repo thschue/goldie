@@ -23,8 +23,7 @@ to every request, the page's fetch of `/openapi.json` included.
 `goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
 `validate`, `health`) and Ask a server (`search`, `lookup`, `status`, `init`, `mcp`, `version`).
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
-are GNU style: `--dev`, `--addr`, `--json`, with two dashes. A single-dash long flag such as `-dev`
-is an error. An unknown command or flag prints one error line and `Run 'goldie <command> --help'.`
+are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown command or flag prints one error line and `Run 'goldie <command> --help'.`
 to stderr and exits 2; help you ask for goes to stdout and exits 0.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a

@@ -26,14 +26,11 @@ const (
 )
 
 func init() {
-	// List the commands in the order they are added, which is the order of
-	// the help. Set once, here: cobra reads it from a package variable.
+	// Help lists the commands in the order they are added.
 	cobra.EnableCommandSorting = false
 }
 
-// usageErr is a command used wrongly: an unknown command or flag, or a wrong
-// number of arguments. main prints the message and the next step to stderr and
-// exits 2.
+// usageErr is a command used wrongly; main prints it to stderr and exits 2.
 type usageErr struct {
 	path string // "goldie server", or "goldie" for the root
 	msg  string
@@ -41,8 +38,7 @@ type usageErr struct {
 
 func (e *usageErr) Error() string { return e.msg }
 
-// newUsageErr cleans msg, which may echo an argument that holds control
-// characters, so the error stays one line.
+// newUsageErr cleans msg, which may echo control characters, to one line.
 func newUsageErr(path, msg string) *usageErr {
 	return &usageErr{path: path, msg: contract.CleanLine(msg)}
 }
@@ -96,9 +92,8 @@ Flags:
 Run '{{.CommandPath}} <command> --help' for a command's flags and examples.
 `
 
-// newRoot builds the command tree. The composition of the roles stays here:
-// the server roles are run from this package, the client roles from
-// internal/cli and internal/app. Help goes to out.
+// newRoot builds the command tree: the server roles run from this package, the
+// client roles from internal/cli and internal/app. Help goes to out.
 func newRoot(out io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:               "goldie",
@@ -151,8 +146,7 @@ func firstWord(args []string) string {
 	return ""
 }
 
-// helpCmd is `goldie help [command]`: the same text as `goldie <command> --help`.
-// An unknown command is misuse, not help.
+// helpCmd is `goldie help [command]`, the text of `goldie <command> --help`.
 func helpCmd(root *cobra.Command) *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
@@ -183,11 +177,10 @@ func serverCmd(out io.Writer) *cobra.Command {
 		Use:     "server [--dev [dir]]",
 		Short:   "Serve the API, UI and MCP over HTTP",
 		GroupID: groupRun,
-		Long: "Run the goldie server: API, UI and MCP over HTTP. It is configured by\n" +
-			"GOLDIE_* environment variables only, see docs/reference/configuration.md.\n\n" +
+		Long: "Run the goldie server, configured by GOLDIE_* variables (docs/reference/configuration.md).\n" +
 			"With --dev it serves dir (else " + platform.EnvContentDir + ", else the working directory)\n" +
-			"on 127.0.0.1 with a random token and prints the export line for the client\n" +
-			"commands. It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.",
+			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
+			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.",
 		Example: "  goldie server\n" +
 			"  eval \"$(goldie server --dev ./content)\"",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -212,8 +205,7 @@ func validateCmd() *cobra.Command {
 		Use:     "validate [dir]",
 		Short:   "Check a content directory for errors and warnings",
 		GroupID: groupRun,
-		Long: "Validate the content in dir (else " + platform.EnvContentDir + "): every article and\n" +
-			"its front matter. Warnings go to stderr; it exits 1 on an error.",
+		Long:    "Validate the content in dir (else " + platform.EnvContentDir + "). Warnings go to stderr; it exits 1 on an error.",
 		Example: "  goldie validate ./content",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
@@ -241,9 +233,7 @@ func healthCmd() *cobra.Command {
 		Use:     "health [--ready]",
 		Short:   "Probe the local admin port",
 		GroupID: groupRun,
-		Long: "Probe the admin port of a server on this machine: /livez, or /readyz with\n" +
-			"--ready. It exits 0 when the answer is 200, so a container can use it as its\n" +
-			"health check.",
+		Long:    "Probe /livez, or /readyz with --ready, on this machine's admin port. It exits 0 on a 200.",
 		Example: "  goldie health\n" +
 			"  goldie health --ready",
 		Args: noArgs,
@@ -284,8 +274,8 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 	},
 }
 
-// clientCmds builds the commands of the Ask a server group that internal/cli
-// owns. Its stdlib flags are handed to pflag, which parses them GNU style.
+// clientCmds builds the client commands of internal/cli; pflag parses their
+// stdlib flags GNU style.
 func clientCmds(out io.Writer) []*cobra.Command {
 	var cmds []*cobra.Command
 	for _, name := range cli.Commands {
@@ -322,8 +312,7 @@ func mcpCmd() *cobra.Command {
 		Use:     "mcp --transport stdio [flags]",
 		Short:   "Serve MCP on stdin and stdout for an agent",
 		GroupID: groupAsk,
-		Long: "Serve MCP over stdin and stdout, for an agent that starts goldie itself. It\n" +
-			"reaches the API as a client, so it takes the client flags.\n\n" + app.MCPTokenNote,
+		Long:    "Serve MCP over stdin and stdout, for an agent that starts goldie. It takes the client flags.\n\n" + app.MCPTokenNote,
 		Example: "  goldie mcp --transport stdio --addr http://127.0.0.1:8080",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Until the client closes stdin or a SIGTERM or SIGINT arrives.

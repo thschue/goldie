@@ -26,8 +26,7 @@ func main() {
 }
 
 // exitCode reports err to w and returns the exit code: 0 for none, 2 for a
-// command used wrongly (an error line and the next step, never the whole
-// usage), 1 for any other failure.
+// command used wrongly (an error line and the next step), 1 for other failures.
 func exitCode(err error, w io.Writer) int {
 	var u *usageErr
 	switch {
@@ -45,12 +44,10 @@ func exitCode(err error, w io.Writer) int {
 	return 1
 }
 
-// run is the testable entry point: it runs the command in args and writes
-// its results, and asked-for help, to out.
+// run is the testable entry point: results and asked-for help go to out.
 func run(args []string, out io.Writer) error {
 	root := newRoot(out)
-	// An unknown command is found before flags are parsed, so it is misuse
-	// even when --help comes with it.
+	// An unknown command is misuse even with --help.
 	if _, _, err := root.Find(args); err != nil {
 		return newUsageErr(root.CommandPath(), fmt.Sprintf("unknown command %q", firstWord(args)))
 	}
