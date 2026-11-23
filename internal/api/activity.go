@@ -22,10 +22,14 @@ const (
 	// ActivitySubscriberBuffer is the capacity of every subscriber's live channel.
 	ActivitySubscriberBuffer = 64
 	// MaxActivityCapacity is the most events one Activity keeps; NewActivity
-	// clamps a larger capacity to it. Every string field of an Event is cut to
+	// clamps a larger capacity to it. Every bounded string field of an Event
+	// (Kind, Query, Token, ClientVersion, Project, TraceID) is cut to
 	// maxQueryBytes (1,024), so a full ring of events with 1,024-byte queries
-	// is a worst case of about 12 to 15 MiB (10,000 events of 1.2 to 1.5 KiB);
-	// 10,000 short events are about 2 MiB.
+	// is a worst case of about 12 to 15 MiB (10,000 events of 1.2 to 1.5 KiB).
+	// That figure assumes the other fields stay short, as a token name, a
+	// semver, a checked project id and a trace id do for a locally recorded
+	// event; six full 1,024-byte fields would be about 60 MiB. 10,000 short
+	// events are about 2 MiB.
 	MaxActivityCapacity = 10_000
 )
 
