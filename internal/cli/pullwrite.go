@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // stampName is the digest stamp, in .claude beside the namespace: the digest of
@@ -153,7 +155,7 @@ func applyPull(root *os.Root, files []pulledFile, digest string) (err error) {
 		}
 		if err := root.Rename(o, aside); err != nil {
 			undo()
-			return errors.New("cannot replace " + o)
+			return errors.New("cannot replace " + contract.CleanLine(o))
 		}
 		moved = append(moved, [2]string{o, aside})
 	}
