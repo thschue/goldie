@@ -27,7 +27,7 @@ func (c *commander) printJSON(v any) error {
 	var out strings.Builder
 	for _, r := range string(b) {
 		switch {
-		case r < 0x7f || !contract.UnsafeRune(r):
+		case r < 0x7f || !contract.HiddenRune(r):
 			out.WriteRune(r)
 		case r > 0xffff:
 			hi, lo := utf16.EncodeRune(r)
@@ -51,10 +51,10 @@ func (c *commander) search(ctx context.Context, q string) error {
 	}
 	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: projectParam(proj)})
 	if err != nil {
-		return transportError(err)
+		return transportError(err, c.local)
 	}
 	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
-	if err := answerError(e, err); err != nil {
+	if err := answerError(e, err, c.local); err != nil {
 		return err
 	}
 	if resp.JSON200 == nil {
@@ -100,10 +100,10 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	}
 	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: projectParam(proj)})
 	if err != nil {
-		return transportError(err)
+		return transportError(err, c.local)
 	}
 	resp, e, err := contract.ParseOK(raw, contract.ParseGetArticleResponse)
-	if err := answerError(e, err); err != nil {
+	if err := answerError(e, err, c.local); err != nil {
 		return err
 	}
 	if resp.JSON200 == nil {
@@ -145,7 +145,7 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
 	if err != nil {
-		return transportError(err)
+		return transportError(err, c.local)
 	}
 	if doc.JSON200 == nil && doc.StatusCode() != http.StatusUnauthorized {
 		return apiError(doc.HTTPResponse, doc.Body)
@@ -166,7 +166,7 @@ func (c *commander) status(ctx context.Context) error {
 	case doc.JSON200 != nil:
 		title, apiVersion = specInfo(*doc.JSON200)
 		if given {
-			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj)); err != nil {
+			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj), c.local); err != nil {
 				return err
 			}
 		}
@@ -211,17 +211,17 @@ func (c *commander) status(ctx context.Context) error {
 // the token as accepted only where the API answers it, and passes on the
 // server's hint for an unregistered Project. Any answer other than 200 or 401
 // is read by contract.ParseOK, so a 429 stays a rate-limit error.
-func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId) (auth string, accepted bool, hint *string, err error) {
+func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId, local bool) (auth string, accepted bool, hint *string, err error) {
 	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
 	if err != nil {
-		return "", false, nil, transportError(err)
+		return "", false, nil, transportError(err, local)
 	}
 	if raw.StatusCode == http.StatusUnauthorized {
 		_ = raw.Body.Close()
 		return "token rejected", false, nil, nil
 	}
 	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
-	if err := answerError(e, err); err != nil {
+	if err := answerError(e, err, local); err != nil {
 		return "", false, nil, err
 	}
 	if resp.JSON200 == nil {
@@ -318,13 +318,20 @@ func specInfo(doc map[string]any) (title, version string) {
 }
 
 // transportError words a transport failure. The cause is dropped: it can
-// carry the address, and the user already knows what they typed.
-func transportError(err error) error {
+// carry the address, and the user already knows what they typed. In local mode
+// there is no address or token to check: the embedded server is the cause.
+func transportError(err error, local bool) error {
 	if errors.Is(err, contract.ErrTooLarge) {
 		return fmt.Errorf("the server's answer is larger than %d MiB", contract.MaxResponseBytes>>20)
 	}
 	if errors.Is(err, contract.ErrRedirect) {
+		if local {
+			return errors.New("the embedded server answered with a redirect, which the CLI does not follow")
+		}
 		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
+	}
+	if local {
+		return errors.New("cannot reach the embedded server over the local content: it stopped or could not be reached")
 	}
 	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 }
@@ -343,10 +350,10 @@ func apiError(resp *http.Response, body []byte) error {
 // answerError words what contract.ParseOK found wrong with an answer: an
 // unreadable or unparsable body as transportError, an error status as
 // apiError. It is nil for a 200.
-func answerError(e *contract.APIError, err error) error {
+func answerError(e *contract.APIError, err error, local bool) error {
 	switch {
 	case err != nil:
-		return transportError(err)
+		return transportError(err, local)
 	case e != nil:
 		return wordAPIError(*e)
 	}

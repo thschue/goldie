@@ -183,7 +183,7 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	if err != nil {
 		return nil, nil, err
 	}
-	c.s.addr, c.s.token = addr, token
+	c.s.addr, c.s.token, c.local = addr, token, true
 	return c, stop, nil
 }
 
@@ -245,9 +245,10 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // commander holds what the commands share.
 type commander struct {
-	s   settings
-	out io.Writer
-	env Env
+	s     settings
+	out   io.Writer
+	env   Env
+	local bool // an embedded server over local content, not a remote one
 }
 
 // check reports a missing or invalid address and, with withToken, a missing
