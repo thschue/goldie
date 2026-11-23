@@ -32,28 +32,38 @@ type route struct {
 // puts every path behind the tokens; and it answers each path's other methods
 // with the 405 envelope.
 type publicMux struct {
-	mux     *http.ServeMux
-	tokens  *api.Tokens
-	limiter *api.RateLimiter
-	gate    *api.ClientVersionGate
-	routes  []route
+	mux      *http.ServeMux
+	tokens   *api.Tokens
+	limiter  *api.RateLimiter
+	gate     *api.ClientVersionGate
+	activity *api.Activity
+	routes   []route
 }
+
+// activityCapacity is how many recent searches and lookups the server keeps
+// in its Activity.
+const activityCapacity = 1000
 
 // newPublicMuxWith returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
-// set, a minimum client version (nil for none) and a rate limiter.
-// PublicHandler builds the public listener with it, and the tests build the
-// bare router with it, so the route table they check is the one the server
-// serves.
+// set, a minimum client version (nil for none) and a rate limiter, and
+// recording every search and lookup in a bounded Activity. PublicHandler
+// builds the public listener with it, and the tests build the bare router
+// with it, so the route table they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(provider)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
+		activity: api.NewActivity(activityCapacity, "", nil)}
+	srv.RecordInto(m.activity)
 	srv.Register(m)
 	return m, nil
 }
+
+// Activity is the Activity the router records every search and lookup into.
+func (m *publicMux) Activity() *api.Activity { return m.activity }
 
 // HandleFunc registers one generated operation; its pattern is "METHOD path".
 // A pattern without a method is a programming error and panics at startup, as
