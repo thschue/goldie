@@ -51,7 +51,11 @@ func newUsageErr(path, msg string) *usageErr {
 func misuse(err error) error {
 	var ue *cli.UsageError
 	if errors.As(err, &ue) {
-		return newUsageErr("goldie "+ue.Command, "wrong arguments: "+strings.TrimPrefix(ue.Msg, "usage: "))
+		msg := ue.Msg
+		if rest, ok := strings.CutPrefix(msg, "usage: "); ok {
+			msg = "wrong arguments: " + rest
+		}
+		return newUsageErr("goldie "+ue.Command, msg)
 	}
 	return err
 }
@@ -127,6 +131,17 @@ func newRoot(out io.Writer) *cobra.Command {
 	return root
 }
 
+// dashedWord returns the first single-dash word of more than one letter, such
+// as -dev, which someone used for a long flag.
+func dashedWord(args []string) string {
+	for _, a := range args {
+		if len(a) > 2 && a[0] == '-' && a[1] != '-' && !strings.ContainsAny(a, "= ") {
+			return a
+		}
+	}
+	return ""
+}
+
 func firstWord(args []string) string {
 	for _, a := range args {
 		if !strings.HasPrefix(a, "-") {
@@ -145,6 +160,7 @@ func helpCmd(root *cobra.Command) *cobra.Command {
 		Long:  "Show the usage, flags and examples of a command.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
+				root.InitDefaultHelpFlag() // so the flag list matches `goldie --help`
 				return root.Help()
 			}
 			if len(args) > 1 {
@@ -272,7 +288,7 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 // owns. Its stdlib flags are handed to pflag, which parses them GNU style.
 func clientCmds(out io.Writer) []*cobra.Command {
 	var cmds []*cobra.Command
-	for _, name := range []string{"search", "lookup", "status", "init", "version"} {
+	for _, name := range cli.Commands {
 		h := clientHelp[name]
 		fs := flag.NewFlagSet(name, flag.ContinueOnError)
 		exec := cli.Command(name, fs)

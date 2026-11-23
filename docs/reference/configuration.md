@@ -7,7 +7,7 @@ a `NAME_FILE` form that reads the value from a file; setting both is an error (P
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GOLDIE_ACTIVITY_PEERS` | (none) | The DNS name of the headless Service in front of every goldie replica, such as goldie-headless.goldie.svc, so that GET /api/v1/activity?replicas=all merges the activity of all of them (ADR 0022). Federation needs a StatefulSet whose serviceName is that headless Service: a replica finds its peers by the Service's address records and names each by the first label of its PTR record, its pod name. An address without one is skipped, so a Deployment gets only the local stream; one warning per process gives the count of skipped peers. A peer's stream is opened at its resolved address on this server's listen port with the caller's own bearer token, so every peer checks the operator role itself. That token crosses the network between replicas, so protect it with mutual TLS in front of each pod or a NetworkPolicy that lets only goldie pods reach the port. Unset, there are no peers. This release validates the value but does not serve ?replicas=all yet. A value that is not a DNS name (an IP address, a scheme, port, path or anything but letters, digits, hyphens and dots) stops the server and goldie health. |
+| `GOLDIE_ACTIVITY_PEERS` | (none) | The DNS name of the headless Service in front of every goldie replica, such as goldie-headless.goldie.svc, so that GET /api/v1/activity?replicas=all merges the activity of all of them (ADR 0022). Federation needs a StatefulSet whose serviceName is that headless Service: a replica finds its peers by the Service's address records and names each by the first label of its PTR record, its pod name. An address without one is skipped, so a Deployment gets only the local stream; one warning per process gives the count of skipped peers. A peer's stream is opened at its resolved address on this server's listen port with the caller's own bearer token, so every peer checks the operator role itself. That token crosses the network between replicas, so protect it with mutual TLS in front of each pod or a NetworkPolicy that lets only goldie pods reach the port. A merged stream (?replicas=all) is for operator tokens, holds at most 8 per replica, merges at most 16 peers (the rest are ignored), and an unreachable peer shows as down without ever naming its address. Unset, there are no peers and ?replicas=all is the local stream. A value that is not a DNS name (an IP address, a scheme, port, path or anything but letters, digits, hyphens and dots) stops the server and goldie health. |
 | `GOLDIE_ACTIVITY_REORDER_WINDOW` | `2s` | How long a live event of a merged activity stream (?replicas=all) waits so that older events from other replicas can overtake it: a Go duration such as 2s or 500ms, above 0 and at most 1m. An event that reaches the merge later than this after it was recorded is sent at once and marked late. A value that is not such a duration stops the server and goldie health. |
 | `GOLDIE_ADDR` | `:8080` | Public (app) listener. |
 | `GOLDIE_ADMIN_ADDR` | `:8081` | Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR. |
@@ -39,6 +39,11 @@ request and response at 10 seconds. Shutdown does not wait on these timeouts: it
 `GOLDIE_DRAIN_SECONDS`.
 
 ## goldie server --dev
+
+A first run of plain `goldie server`, with neither a Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`)
+nor an API token (`GOLDIE_API_TOKENS` or `GOLDIE_API_TOKEN`) set, stops with the two errors and
+ends with the line "To try goldie on this machine: goldie server --dev .". When only one is missing, or
+a value is invalid, there is no hint.
 
 `goldie server --dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
 In this mode log records go to stderr, so only the export line goes to stdout. The server runs

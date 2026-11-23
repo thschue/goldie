@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -29,17 +30,14 @@ const (
 
 // TokenNote goes in the help of the commands that take --token: it recommends
 // the token variables over the flag, whose value shows in the process list.
-const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine"
+const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
-// IsCommand reports whether name is a client command, for the dispatcher in
-// cmd/goldie.
-func IsCommand(name string) bool {
-	switch name {
-	case "search", "lookup", "status", "init", "version":
-		return true
-	}
-	return false
-}
+// Commands lists the client commands in help order. The dispatcher in
+// cmd/goldie builds its commands from it.
+var Commands = []string{"search", "lookup", "status", "init", "version"}
+
+// IsCommand reports whether name is one of Commands.
+func IsCommand(name string) bool { return slices.Contains(Commands, name) }
 
 // UsageError is a command used wrongly: a missing or extra positional word.
 // Its text is the one-line usage; the dispatcher exits 2 for it, not 1.

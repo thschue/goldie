@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -57,7 +58,12 @@ func run(args []string, out io.Writer) error {
 		args = []string{} // nil would make cobra read os.Args
 	}
 	root.SetArgs(args)
-	return root.Execute()
+	err := root.Execute()
+	var ue *usageErr
+	if w := dashedWord(args); w != "" && errors.As(err, &ue) && strings.Contains(ue.msg, "shorthand flag") {
+		ue.msg += "; did you mean -" + w + "?"
+	}
+	return err
 }
 
 // clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
@@ -102,7 +108,7 @@ func runServer(out io.Writer) error {
 	// reaches the operator's log.
 	public, err := app.PublicHandler(cfg, logger)
 	if err != nil {
-		return handlerError(err)
+		return withDevHint(cfg, handlerError(err))
 	}
 	ready := platform.NewRegistry(0)
 	public.Start(ctx, ready)
@@ -221,6 +227,19 @@ func handlerError(err error) error {
 		return fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	return fmt.Errorf("build public handler: %w", err)
+}
+
+// firstRunHint is the next step for someone who ran goldie server with nothing set.
+const firstRunHint = "To try goldie on this machine: goldie server --dev ."
+
+// withDevHint ends err with firstRunHint when cfg names neither a Source nor an
+// API token: a first run, not an operator mid-setup. A value that is set but
+// invalid, or only one of the two missing, keeps the error as it is.
+func withDevHint(cfg platform.Config, err error) error {
+	if cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
+		return err
+	}
+	return fmt.Errorf("%w\n%s", err, firstRunHint)
 }
 
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz
