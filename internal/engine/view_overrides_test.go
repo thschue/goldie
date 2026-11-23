@@ -1,7 +1,6 @@
 package engine_test
 
 import (
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -30,25 +29,9 @@ func viewItem(t *testing.T, snap *engine.Snapshot, proj, id string) engine.Artic
 	return engine.Article{}
 }
 
-// overridesOf reads the exported field Article.Overrides ([]string). It goes
-// through reflection only so this file compiles before the field exists; the
-// field name and type are the contract.
-func overridesOf(t *testing.T, a engine.Article) []string {
-	t.Helper()
-	f := reflect.ValueOf(a).FieldByName("Overrides")
-	if !f.IsValid() {
-		t.Fatal("engine.Article has no Overrides field")
-	}
-	got, ok := f.Interface().([]string)
-	if !ok {
-		t.Fatalf("Article.Overrides is %s, want []string", f.Type())
-	}
-	return got
-}
-
 func wantOverrides(t *testing.T, a engine.Article, want ...string) {
 	t.Helper()
-	got := overridesOf(t, a)
+	got := a.Overrides
 	if len(want) == 0 && len(got) == 0 {
 		return
 	}
@@ -179,7 +162,7 @@ func TestViewOverridesIsACopy(t *testing.T) {
 		projectFile("db"): article("Shop db"),
 	})
 	a := viewItem(t, snap, govProject, "db")
-	got := overridesOf(t, a)
+	got := a.Overrides
 	if len(got) == 0 {
 		t.Fatal("Overrides is empty")
 	}
