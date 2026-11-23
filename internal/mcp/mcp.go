@@ -89,10 +89,12 @@ func WithRejectedRemote(name string) Option {
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
 //
-// The tool set and the one resource, goldie://instructions, are fixed, so the
-// server advertises tools and resources without listChanged: a client cannot
-// park a request waiting for list changes that never come, and hold up a
-// drain with it.
+// The tool set is fixed, so the server advertises tools without listChanged:
+// a client cannot park a request waiting for tool-list changes that never
+// come, and hold up a drain with it. The same goes for prompts and resources:
+// the prompt list is fixed once a session has asked for it, and the resources
+// (goldie://instructions and the two templates) never change, so no
+// list_changed notification is ever sent.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
 	for _, o := range opts {
@@ -100,7 +102,7 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
 		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{
-			Tools: &sdk.ToolCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
+			Tools: &sdk.ToolCapabilities{}, Prompts: &sdk.PromptCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return t.search(ctx, in.Query, in.Project), nil, nil
@@ -118,7 +120,9 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 			return t.currentContext(ctx), nil, nil
 		})
 	addSkillTools(s, t)
+	addPrompts(s, t)
 	addInstructionsResource(s, t)
+	addResources(s, t)
 	return s
 }
 

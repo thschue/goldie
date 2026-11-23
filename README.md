@@ -188,13 +188,26 @@ too; the server's own hint stays a plain line after it. Every tool parameter's d
 an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent
 with its description.
 
-The server also has one resource, `goldie://instructions` (`resources/list`, `resources/read`): the
+The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
 instruction block the API renders for the default Project, or the global block without one, with
 `{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
 `goldie instructions`; the target changes only the file the block is written into. The text is cleaned
-of hidden characters like any Source content, no other URI is a resource, and a failed read is an
+of hidden characters like any Source content and a failed read is an
 error without the address or token. `current_context` ends with the same clauses, or says they could
-not be read. Resources are advertised without `listChanged`.
+not be read.
+
+The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
+(for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
+the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
+with `| `. The prompt list is read once, the first time your client asks for it, and kept until the
+MCP server restarts. A skill added later appears after you restart your agent or its MCP server.
+The server sends no `list_changed` notification. The two other resources are URI templates:
+`goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
+as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
+reads an agent's name and description. The session's default Project picks the bundle, never the
+URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
+is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
+step.
 
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or
