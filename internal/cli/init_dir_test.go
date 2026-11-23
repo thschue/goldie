@@ -82,7 +82,7 @@ func TestInitIgnoresLocalMode(t *testing.T) {
 				Lookup:   func(k string) (string, bool) { v, ok := c.env[k]; return v, ok },
 				ReadFile: os.ReadFile,
 				Out:      &out,
-				StartLocal: func(context.Context, string) (string, string, func(), error) {
+				StartLocal: func(context.Context, *os.Root) (string, string, func(), error) {
 					t.Error("init started the embedded server")
 					return "", "", func() {}, context.Canceled
 				},
