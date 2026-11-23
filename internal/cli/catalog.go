@@ -27,12 +27,50 @@ func catalogUsage(kind string, pos []string) (verb, name string, err error) {
 		if len(pos) != 2 {
 			return "", "", &UsageError{kind, kind + " show takes one <name>"}
 		}
-		if contract.CheckArticleID(pos[1]) != nil {
-			return "", "", &UsageError{kind, kind + " show needs a name, not an empty or dot-only one"}
+		if contract.CheckArticleID(pos[1]) != nil || strings.Contains(pos[1], "/") {
+			return "", "", &UsageError{kind, kind + " show needs a name of one path segment, not an empty or dot-only one"}
 		}
 		return "show", pos[1], nil
 	}
 	return "", "", &UsageError{kind, kind + " needs list or show <name>"}
+}
+
+// checkFileUsage refuses --file anywhere but skills show, and an empty or
+// dot-only path, before any server, token or request is involved.
+func (s *settings) checkFileUsage(kind, verb string) error {
+	if !s.fileSet {
+		return nil
+	}
+	if verb != "show" {
+		return &UsageError{kind, "--file belongs to skills show <name>"}
+	}
+	if contract.CheckArticleID(s.file) != nil {
+		return &UsageError{kind, "--file needs a path, not an empty or dot-only one"}
+	}
+	return nil
+}
+
+// skillFile prints one file of a skill as its raw bytes: no cleaning, no added
+// newline. The path travels as one escaped segment through the client.
+func (c *commander) skillFile(ctx context.Context, cl *contract.ClientWithResponses, name string, proj *string) error {
+	path := c.s.file
+	raw, err := cl.GetSkillFile(ctx, name, path, &contract.GetSkillFileParams{Project: proj})
+	b, err := contract.Answer(raw, err, contract.ParseGetSkillFileResponse,
+		func(r *contract.GetSkillFileResponse) *[]byte {
+			if !strings.HasPrefix(r.HTTPResponse.Header.Get("Content-Type"), "application/octet-stream") {
+				return nil // not an API answer, such as a proxy's login page
+			}
+			return &r.Body
+		})
+	if err != nil {
+		var ae *contract.APIError
+		if errors.As(err, &ae) && ae.Code == "not_found" {
+			ae.Hint = "List the skill's files with: goldie skills show " + contract.CleanLine(name) + ", then use a path from its files."
+		}
+		return wordError(err, c.local)
+	}
+	_, err = c.out.Write(*b)
+	return err
 }
 
 // skills runs goldie skills list|show. Pattern: search and lookup.
@@ -44,6 +82,9 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 	cl, err := c.client(true)
 	if err != nil {
 		return err
+	}
+	if verb == "show" && c.s.fileSet {
+		return c.skillFile(ctx, cl, name, projectParam(proj))
 	}
 	if verb == "show" {
 		raw, err := cl.GetSkill(ctx, name, &contract.GetSkillParams{Project: projectParam(proj)})
