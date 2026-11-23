@@ -32,7 +32,7 @@ const (
 
 	// uiCSP is the Content-Security-Policy of every UI path, character for character.
 	uiCSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
 
 	immutable = "public, max-age=31536000, immutable"
 	secret    = "TOPSECRET-OUTSIDE-THE-FS"
@@ -522,5 +522,85 @@ func TestTheHandlerKeepsNoStateBetweenRequests(t *testing.T) {
 	_ = serve(t, h, http.MethodPost, "/")
 	if again := get(t, h, "/assets/app.js").Body.String(); again != first || again != appJS {
 		t.Errorf("a later request got %q, want %q", again, appJS)
+	}
+}
+
+// --- hardening headers on every UI response ---------------------------------
+
+// wantHardening checks the headers every UI response carries, whatever its status.
+func wantHardening(t *testing.T, what string, h http.Header) {
+	t.Helper()
+	if csp := h.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'none'") {
+		t.Errorf("%s: CSP %q lacks form-action 'none'", what, csp)
+	}
+	for name, want := range map[string]string{
+		"Referrer-Policy":            "no-referrer",
+		"Cross-Origin-Opener-Policy": "same-origin",
+		"X-Content-Type-Options":     "nosniff",
+	} {
+		if got := h.Get(name); got != want {
+			t.Errorf("%s: %s = %q, want %q", what, name, got, want)
+		}
+	}
+	wantDenyAllPermissions(t, what, h.Get("Permissions-Policy"))
+}
+
+// wantDenyAllPermissions requires every directive to have an empty allowlist
+// and the powerful features a browser would otherwise grant to be named.
+func wantDenyAllPermissions(t *testing.T, what, pp string) {
+	t.Helper()
+	if strings.TrimSpace(pp) == "" {
+		t.Errorf("%s: no Permissions-Policy", what)
+		return
+	}
+	seen := map[string]bool{}
+	for _, d := range strings.Split(pp, ",") {
+		feature, list, ok := strings.Cut(strings.TrimSpace(d), "=")
+		if !ok || strings.TrimSpace(list) != "()" {
+			t.Errorf("%s: Permissions-Policy directive %q does not deny the feature with ()", what, d)
+		}
+		seen[strings.TrimSpace(feature)] = true
+	}
+	for _, f := range []string{"camera", "microphone", "geolocation", "payment", "usb"} {
+		if !seen[f] {
+			t.Errorf("%s: Permissions-Policy %q does not deny %s", what, pp, f)
+		}
+	}
+}
+
+func TestEveryUIResponseCarriesTheHardeningHeaders(t *testing.T) {
+	h := mustHandler(t, spaFS())
+	paths := []string{
+		"/", "/index.html", "/projects", "/projects/github.com/acme/shop", // index and SPA fallback
+		"/assets/app.js", "/assets/app.css", "/assets/logo.svg", "/favicon.ico", // files
+		"/assets/missing.js", "/robots.txt", "/.env", // 404
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, p := range paths {
+			rec := serve(t, h, method, p)
+			wantHardening(t, method+" "+p, rec.Header())
+		}
+	}
+}
+
+func TestRefusedUIRequestsCarryTheHardeningHeadersToo(t *testing.T) {
+	h := mustHandler(t, spaFS())
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions} {
+		for _, p := range []string{"/", "/assets/app.js", "/assets/missing.js"} {
+			rec := serve(t, h, method, p)
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Errorf("%s %s: status %d, want 405", method, p, rec.Code)
+			}
+			wantHardening(t, method+" "+p, rec.Header())
+		}
+	}
+	for _, p := range []string{"/../secret.txt", "/%2e%2e/secret.txt", "/assets%2fapp.js", "/a%00b"} {
+		for _, method := range []string{http.MethodGet, http.MethodHead} {
+			rec := serve(t, h, method, p)
+			if rec.Code != http.StatusBadRequest && rec.Code != http.StatusNotFound {
+				t.Errorf("%s %s: status %d, want a rejection", method, p, rec.Code)
+			}
+			wantHardening(t, method+" "+p, rec.Header())
+		}
 	}
 }

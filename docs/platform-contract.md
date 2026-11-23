@@ -65,7 +65,9 @@ and running `./run regen`.
   of PC-11 has its own issue.
 - The public listener serves the embedded UI at `/` and for any other extensionless GET or HEAD path
   (not the PC-01 probe paths; the SPA's client-side routes), with `index.html` as `no-cache`, `/assets/*` as immutable, a fixed
-  `Content-Type` per file, `nosniff` and a strict Content-Security-Policy on UI responses only. A
+  `Content-Type` per file, `nosniff`, `Referrer-Policy: no-referrer`,
+  `Cross-Origin-Opener-Policy: same-origin`, a deny-all `Permissions-Policy` and a strict Content-Security-Policy
+  (with `form-action 'none'`) on every UI response, 404s and errors included, and on no other response. A
   missing file with an extension is a 404 envelope, never HTML; other methods get the 405 envelope.
   The UI is public: the API behind it still needs the token. Without `./run ui` the binary serves a
   placeholder page and logs one warning at startup ([ADR 0019](adr/0019-ui-build-output-not-committed.md)).

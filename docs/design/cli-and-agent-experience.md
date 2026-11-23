@@ -93,13 +93,9 @@ the `ux` CI artifact) holds a transcript of the changed help, errors or first-ru
 built binary. For MCP changes, the tool list and one call's result as an MCP client sees them.
 Missing evidence for a changed surface is blocking, as screenshots are for the UI.
 
-## 5. Open decisions
+## 5. Decisions
 
-- Text logs when stderr is a terminal, JSON otherwise (touches the platform contract's logging
-  clause).
-
-Decided:
-
+- Text logs when stderr is a terminal, JSON otherwise (#454, PC-07).
 - Built-in example content for `goldie server --dev` in an empty directory (#451, #458). The
   binary embeds `examples/knowledge` through the `examples` package, which only `cmd/goldie`
   imports.

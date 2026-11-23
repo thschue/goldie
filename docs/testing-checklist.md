@@ -38,7 +38,8 @@ exit 0 with zero warnings. Reviewers use the same list.
       and no addresses, paths or stack traces.
 - [ ] The change is additive for `/api/v1` and the MCP contract (see CONTRIBUTING.md); `./run gate`
       reports no breaking contract change.
-- [ ] `./run regen` produces no diff.
+- [ ] `./run regen` produces no diff (it writes the TypeScript types only when Node is installed; with
+      Node, `./run regen-ts-check` also passes).
 
 ## Auth and security
 
