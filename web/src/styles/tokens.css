@@ -12,6 +12,7 @@
   /* §6.5: display 36 / 28 / 22 / 18, UI and body 16 / 15 / 14 / 13 / 12. */
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --text-display-xl: 36px;
   --text-display-lg: 28px;
   --text-display-md: 22px;
