@@ -53,15 +53,17 @@ when any is set. `GOLDIE_DRAIN_SECONDS` defaults to 0 here; every other setting 
 Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
 endpoint is set. These variables keep their standard names and are read as defined by
 OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request
-headers and query strings are not recorded. goldie reads every variable listed here through
+headers and query strings are not recorded, and a lookup's path is recorded as the route
+template /api/v1/articles/{id}, without the id. goldie reads every variable listed here through
 its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as
 OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own
 handling: goldie neither validates nor documents them, but a value the SDK rejects is never
 printed; goldie logs one fixed warning instead. Only the OTLP headers variables
 accept a _FILE form; for any other OTEL_* name it is an error.
 
-The client commands and `goldie mcp --transport stdio` export traces only, with `goldie.mode`
-`cli` or `mcp`: one client span per API call, sent to the server as a W3C `traceparent`. The
+The client commands and `goldie mcp --transport stdio` export traces only, with the resource
+attribute `goldie.role` `cli` or `mcp` (the server's is `server`; `goldie.mode` stays a server
+mode and is not set on them): one client span per API call, sent to the server as a W3C `traceparent`. The
 server starts its own trace and links its span to the client span. A client span records no
 query string or header, and an article lookup's path only as /api/v1/articles/{id}, which
 appears percent-encoded in `url.full` as /api/v1/articles/%7Bid%7D. The logs and metrics
@@ -72,7 +74,7 @@ spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_SDK_DISABLED` | (none) | true turns telemetry off even when an endpoint is set. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export: a generic endpoint also turns metrics on, and OTEL_METRICS_EXPORTER=none opts out of them. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | (none) | Collector URL for traces only, used as-is; wins over the base URL. |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | (none) | Collector URL for logs only, used as-is; wins over the base URL. |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | (none) | Collector URL for metrics only, used as-is; wins over the base URL. |
@@ -91,7 +93,7 @@ spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
 | `OTEL_TRACES_SAMPLER_ARG` | `1` | Sampling ratio from 0 to 1, for the traceidratio samplers. |
 | `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` | `128` | Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup. |
 | `OTEL_SERVICE_NAME` | `goldie` | Overrides the service.name resource attribute. |
-| `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override. |
+| `OTEL_RESOURCE_ATTRIBUTES` | (none) | Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (all), which this cannot override. |
 
 ## Client commands
 

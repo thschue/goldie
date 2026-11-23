@@ -32,39 +32,66 @@ type Hit struct {
 	// Matched lists the keywords that matched, and "name" when the name did,
 	// in first-match order without duplicates.
 	Matched []string
+	// Status and ReplacedBy are the Item's lifecycle, copied from the Article.
+	// Status is "published" for an Item without status frontmatter.
+	Status     string
+	ReplacedBy string
 }
+
+// ReadOptions widens what a read returns. The zero value is the default view:
+// drafts are left out (CONTEXT: Status). A read takes it as a variadic
+// argument and uses only the first value; any further values are ignored.
+type ReadOptions struct {
+	// Drafts includes draft Items. A draft then shadows like any other Item.
+	Drafts bool
+}
+
+func readOpts(opts []ReadOptions) ReadOptions {
+	if len(opts) == 0 {
+		return ReadOptions{}
+	}
+	return opts[0]
+}
+
+// visible reports whether an Item takes part in a read under o.
+func (o ReadOptions) visible(a Article) bool { return o.Drafts || a.published() }
 
 // Search scores every global article against each whitespace-separated,
 // lower-cased query word. Per word and keyword, an exact match scores +4 and a
 // word that is a substring of the keyword +1. A word that is a substring of the
 // name scores +2. Hits sort by score, highest first, then by ID.
-func (s *Snapshot) Search(query string) []Hit {
-	return s.SearchIn("", query)
+func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
+	return s.SearchIn("", query, opts...)
 }
 
 // SearchIn is Search for a Project ("host/org/repo", case-insensitive). The
 // Project's articles take part together with the global ones; when both have an
 // ID, the Project's article wins and the global one is dropped. On equal score
 // Project hits sort before global ones, then by ID. An empty or unregistered
-// Project searches the global articles only.
-func (s *Snapshot) SearchIn(proj, query string) []Hit {
+// Project searches the global articles only. Draft Items are left out unless
+// opts asks for them; a draft left out never shadows, so the published Item
+// with the same identity answers. Deprecated Items are served and shadow. The
+// global Items the Project suppresses are left out, drafts asked for or not.
+func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
+	o := readOpts(opts)
+	hidden := s.suppressedIn(proj)
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
-	taken := map[string]bool{}
+	taken := map[itemKey]bool{}
 	for _, list := range s.resolutionOrder(proj) {
-		var layer []string
+		var layer []itemKey
 		for _, a := range list {
-			id := strings.ToLower(a.ID)
-			if taken[id] {
+			key := a.key()
+			if taken[key] || !o.visible(a) || (a.Scope == ScopeGlobal && hidden[key]) {
 				continue
 			}
-			layer = append(layer, id)
+			layer = append(layer, key)
 			if h := scoreArticle(a, words); h.Score > 0 {
 				hits = append(hits, h)
 			}
 		}
-		for _, id := range layer {
-			taken[id] = true
+		for _, key := range layer {
+			taken[key] = true
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
@@ -80,7 +107,7 @@ func (s *Snapshot) SearchIn(proj, query string) []Hit {
 }
 
 func scoreArticle(a Article, words []string) Hit {
-	h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...)}
+	h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy}
 	name := strings.ToLower(a.Name)
 	for _, w := range words {
 		for _, k := range a.Keywords {

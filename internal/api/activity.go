@@ -21,16 +21,38 @@ const (
 	MaxActivitySubscribers = 32
 	// ActivitySubscriberBuffer is the capacity of every subscriber's live channel.
 	ActivitySubscriberBuffer = 64
+	// MaxActivityCapacity is the most events one Activity keeps; NewActivity
+	// clamps a larger capacity to it. 10,000 events are about 2 MiB.
+	MaxActivityCapacity = 10_000
 )
 
 // Event is one search or lookup, as the activity feed shows it. Record
-// assigns ID, Replica and Time; the caller sets Kind and Query.
+// assigns ID, Replica and Time; the caller sets the rest. Late is set only by
+// the Merger, for an event that reached it after its reorder window.
 type Event struct {
 	ID      uint64
 	Replica string
 	Time    time.Time
 	Kind    EventKind
-	Query   string
+	// Query is a search's words, or the article id a lookup asked for.
+	Query string
+	// Token is the name of the token that authenticated the request, never
+	// its secret.
+	Token string
+	// ClientVersion is the X-Goldie-Client version in Semver.String form
+	// ("1.5.0" for goldie/v1.5.0), or "" when the header is not exactly one
+	// goldie/<semver> value.
+	ClientVersion string
+	// Project is the registered spelling of the project parameter, an
+	// unregistered one lower-cased, or "" without one.
+	Project string
+	// TraceID is the trace id of the request's span, or "" without one.
+	TraceID string
+	// Miss is a search with zero results, or a lookup answering 404.
+	Miss bool
+	// Late is set only by the Merger: the event reached it after its reorder
+	// window.
+	Late bool
 }
 
 // Activity is a fixed-capacity ring of recent Events with a hub that fans new
@@ -54,20 +76,22 @@ type activitySub struct {
 	once sync.Once
 }
 
-// NewActivity keeps the last capacity events (at least one), stamping each
-// with replica and the time from now. A nil now means time.Now.
+// NewActivity keeps the last capacity events (at least one, at most
+// MaxActivityCapacity), stamping each with replica and the time from now. A
+// nil now means time.Now.
 func NewActivity(capacity int, replica string, now func() time.Time) *Activity {
 	if now == nil {
 		now = time.Now
 	}
 	return &Activity{
 		replica: replica, now: now,
-		ring: make([]Event, max(capacity, 1)),
+		ring: make([]Event, min(max(capacity, 1), MaxActivityCapacity)),
 		next: 1, subs: map[*activitySub]struct{}{},
 	}
 }
 
 // Record stores e with the next ID, the replica name and the current time,
+// never a caller's Late,
 // keeps at most maxQueryBytes of its query, and offers it to every
 // subscriber without waiting.
 func (a *Activity) Record(e Event) {
@@ -75,6 +99,7 @@ func (a *Activity) Record(e Event) {
 		return
 	}
 	e.Replica = a.replica
+	e.Late = false // only the Merger sets it
 	e.Query = truncateQuery(e.Query)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -95,15 +120,24 @@ func (a *Activity) Record(e Event) {
 // events recorded after them, with no gap and no duplicate. cancel closes
 // the channel and frees the slot; it is idempotent. When the hub is disabled
 // or at MaxActivitySubscribers, history and live are nil and cancel does
-// nothing.
+// nothing. TrySubscribe says so explicitly.
 func (a *Activity) Subscribe() (history []Event, live <-chan Event, cancel func()) {
+	history, live, cancel, _ = a.TrySubscribe()
+	return history, live, cancel
+}
+
+// TrySubscribe is Subscribe with an explicit answer: ok is false when the hub
+// is disabled or at MaxActivitySubscribers, and then history and live are nil
+// and cancel is a non-nil no-op. It shares the cap and the slots with
+// Subscribe.
+func (a *Activity) TrySubscribe() (history []Event, live <-chan Event, cancel func(), ok bool) {
 	if a == nil || len(a.ring) == 0 {
-		return nil, nil, func() {}
+		return nil, nil, func() {}, false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(a.subs) >= MaxActivitySubscribers {
-		return nil, nil, func() {}
+		return nil, nil, func() {}, false
 	}
 	n := min(a.next-1, uint64(len(a.ring)))
 	history = make([]Event, 0, n)
@@ -119,7 +153,7 @@ func (a *Activity) Subscribe() (history []Event, live <-chan Event, cancel func(
 			delete(a.subs, s)
 			close(s.ch) // Record sends under the same lock, so never on a closed channel
 		})
-	}
+	}, true
 }
 
 // Dropped counts events a full subscriber channel refused.

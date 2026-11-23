@@ -664,6 +664,9 @@ func TestMetricsResourceHonoursServiceNameOverride(t *testing.T) {
 // The provider has an explicit cardinality limit, so a caller-controlled
 // attribute cannot grow memory without bound. Overflow is aggregated, not lost.
 func TestMetricsCardinalityIsLimited(t *testing.T) {
+	// The SDK's own variable says "no limit"; the explicit limit of 2000 must
+	// win, so deleting it fails this test. Overflow adds one data point.
+	t.Setenv("OTEL_GO_X_CARDINALITY_LIMIT", "0")
 	reader := sdkmetric.NewManualReader()
 	tel := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), nil, nil, withMetricReader(reader))
 	t.Cleanup(func() { shutdownQuietly(tel) })
@@ -688,8 +691,8 @@ func TestMetricsCardinalityIsLimited(t *testing.T) {
 			}
 		}
 	}
-	if points == 0 || points > 5000 {
-		t.Errorf("%d data points for %d distinct attribute sets, want a bounded number (at most 5000)", points, distinct)
+	if points == 0 || points > 2001 {
+		t.Errorf("%d data points for %d distinct attribute sets, want a bounded number (at most 2001)", points, distinct)
 	}
 	if total != distinct {
 		t.Errorf("recorded total = %d, want %d: overflow must be aggregated, not dropped", total, distinct)

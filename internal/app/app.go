@@ -16,6 +16,7 @@ import (
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
+	"github.com/thschue/goldie/internal/ui"
 )
 
 // route is one public endpoint: a path and the methods it answers. HEAD is
@@ -32,28 +33,48 @@ type route struct {
 // puts every path behind the tokens; and it answers each path's other methods
 // with the 405 envelope.
 type publicMux struct {
-	mux     *http.ServeMux
-	tokens  *api.Tokens
-	limiter *api.RateLimiter
-	gate    *api.ClientVersionGate
-	routes  []route
+	mux      *http.ServeMux
+	tokens   *api.Tokens
+	limiter  *api.RateLimiter
+	gate     *api.ClientVersionGate
+	activity *api.Activity
+	routes   []route
+	// endStreams ends the open activity streams; Public.Start calls it when
+	// its context ends.
+	endStreams func()
 }
+
+// activityCapacity is how many recent searches and lookups the server keeps
+// in its Activity.
+const activityCapacity = 1000
+
+// activityKeepalive is how often an open activity stream with nothing to send
+// writes a keepalive comment. A variable so tests can shorten it; the router
+// reads it when it is built.
+var activityKeepalive = api.DefaultActivityKeepalive
 
 // newPublicMuxWith returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
-// set, a minimum client version (nil for none) and a rate limiter.
-// PublicHandler builds the public listener with it, and the tests build the
-// bare router with it, so the route table they check is the one the server
-// serves.
+// set, a minimum client version (nil for none) and a rate limiter, and
+// recording every search and lookup in a bounded Activity. PublicHandler
+// builds the public listener with it, and the tests build the bare router
+// with it, so the route table they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(provider)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
+		activity: api.NewActivity(activityCapacity, "", nil)}
+	srv.RecordInto(m.activity)
+	srv.KeepStreamsAlive(activityKeepalive)
+	m.endStreams = srv.EndStreams
 	srv.Register(m)
 	return m, nil
 }
+
+// Activity is the Activity the router records every search and lookup into.
+func (m *publicMux) Activity() *api.Activity { return m.activity }
 
 // HandleFunc registers one generated operation; its pattern is "METHOD path".
 // A pattern without a method is a programming error and panics at startup, as
@@ -81,13 +102,17 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 // bucket can still read what the API offers.
 var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
+// operatorPaths are the operations for operator tokens only. The token check
+// comes before the gate and the rate limit, so a reader's 403 costs no token.
+var operatorPaths = map[string]bool{"/api/v1/activity": true}
+
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
 // documents and the Swagger UI (#101). A new route fails closed. API paths are
 // then behind the minimum client version and then the per-token rate limit, so
 // a request the tokens reject learns nothing of the gate, and neither a 401 nor
-// a 426 counts against a bucket. Every operation today is open to readers; an
-// operator-only one (sync, activity) passes api.RoleOperator when it lands.
+// a 426 counts against a bucket. The paths in operatorPaths need
+// api.RoleOperator instead; their other methods' 405 does too.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -96,6 +121,8 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 		return withCSP(m.tokens.Require(api.RoleReader, h))
 	case docPaths[path]:
 		return m.tokens.Require(api.RoleReader, h)
+	case operatorPaths[path]:
+		return m.tokens.Require(api.RoleOperator, m.gate.Require(m.limiter.Limit(h)))
 	}
 	return m.tokens.Require(api.RoleReader, m.gate.Require(m.limiter.Limit(h)))
 }
@@ -255,6 +282,27 @@ func addSwaggerUI(m *publicMux) error {
 	return nil
 }
 
+// addUI mounts the embedded UI as the catch-all at "/". It is not registered
+// through m.handle: it is no API operation, so it stays out of the route table
+// and the spec. Paths that must never fall back to the UI are claimed first:
+// the Swagger UI prefix (unknown paths, or every path when it is switched off,
+// keep the token and the 404 envelope) and the probe paths, which only the
+// admin listener serves (PC-01), so a monitor pointed at this port never reads
+// a UI page as "ready". Matching is exact and case-sensitive.
+func addUI(m *publicMux, notFound http.Handler, logger *slog.Logger) {
+	if !ui.Built() {
+		logger.Warn("ui not built: serving the placeholder page; run ./run ui")
+	}
+	if len(m.methods("/swagger-ui")) == 0 {
+		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
+	}
+	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
+	for _, p := range []string{"/livez", "/readyz", "/version"} {
+		m.mux.Handle(p, notFound)
+	}
+	m.mux.Handle("/", ui.Handler(ui.Assets()))
+}
+
 // swaggerUICSP is the Content-Security-Policy of the Swagger UI paths. The
 // page takes bearer tokens, so scripts and requests stay on this origin, eval
 // and framing are off, and <base> cannot move relative URLs. Styles allow
@@ -300,7 +348,8 @@ type Public struct {
 	loops   sync.WaitGroup // the poll loop Start runs
 }
 
-// Start runs the dir Source's poll loop until ctx ends and registers its
+// Start runs the dir Source's poll loop until ctx ends, ends the open activity
+// streams when it does, and registers its
 // readiness check, "source:dir", with reg. It does not block. The check is
 // ready while the Syncer holds a Snapshot, so a stale Source stays ready and
 // no error reaches /readyz (PC-02). Only the first call with a live context
@@ -320,6 +369,10 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 	}
 	p.started = true
 	p.loops.Go(func() { p.syncer.Run(ctx, dirPollInterval, nil) })
+	// The first stop signal ends the activity streams: Shutdown waits for
+	// open requests and never cancels them, so a stream would hold it for
+	// the whole grace period (PC-08).
+	context.AfterFunc(ctx, p.endStreams)
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
@@ -328,7 +381,9 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 // /api/, every path of which requires a configured token; the OpenAPI document
 // at /openapi.yaml and /openapi.json and, unless switched off, Swagger UI at
 // /swagger-ui, which take the same token; and MCP over streamable HTTP at
-// /mcp, which needs a token too. Anything else is the not-found envelope. A
+// /mcp, which needs a token too. Anything else is the embedded UI (a placeholder
+// page until ./run ui has built it), except /livez, /readyz and /version, which
+// are the not-found envelope here (PC-01). A
 // missing or bad token, a rate limit that limits nothing and unloadable
 // content are reported together in one *ConfigError, each naming its variable
 // and none its value, so the server fails at startup (PC-04) and the operator
@@ -378,6 +433,6 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, l
 	// Unknown /api/ paths need the token too, so they reveal nothing.
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
-	m.mux.Handle("/", notFound)
+	addUI(m, notFound, logger)
 	return &Public{publicMux: m, syncer: syncer}, nil
 }

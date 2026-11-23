@@ -14,6 +14,49 @@ separate admin port and are not part of this document.
 
 ## Endpoints
 
+### `GET /api/v1/activity`
+
+Stream recent searches and lookups
+
+Streams this server process's recent searches and lookups as
+server-sent events, for operator tokens only. The stream opens with the
+retained events in `id` order, oldest first, then sends each new one as
+it is recorded. It is a live view, not an audit log: the buffer is
+bounded and shared, so any reader's requests push older events out of
+it, and a restart empties it.
+
+Every event is one SSE event whose `data` is one line of JSON, an
+`ActivityEvent`. Its `id` increases per server process (per replica)
+and starts again at 1 when the process restarts. All text is escaped
+as JSON strings, so no query can end an event or start one. A
+subscriber that cannot keep up loses events and then gets an event of
+type `dropped`, an `ActivityDropped` with the number lost, before the
+next event. Clients must ignore SSE event types and JSON fields they
+do not know.
+
+Events carry no SSE `id:` field and the server does not resume from
+`Last-Event-ID`: a reconnect replays the retained history, so clients
+dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+seconds. The stream costs one rate-limit token when it opens, and ends
+at the server's first stop signal. At most 32 streams are open per
+server process; one more is a 503 whose hint says to retry later.
+
+Go clients use the raw `Client.GetActivity` and read the body as it
+arrives: `GetActivityWithResponse` reads the whole body, so it does
+not return until the stream ends.
+
+Operation ID: `getActivity`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The event stream, not an audit log. Sent with 'Cache-Control: no-store'; the headers are sent at once, before the first event. | `text/event-stream` (`string`) |
+| `401` | The bearer token is missing or not a configured token. | `application/json` (`ErrorEnvelope`) |
+| `403` | The token is valid but its role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server cannot open a stream: it has not loaded its content yet (code 'not_ready'), it already serves the most streams it allows (code 'too_many_streams'), or it is shutting down (code 'shutting_down'). The hint says when to retry. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/articles/{id}`
 
 Look up one article
@@ -31,7 +74,7 @@ Operation ID: `getArticle`
 | `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
-| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server has loaded its content it never answers this again, even if a later load fails. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/projects`
@@ -50,7 +93,7 @@ Operation ID: `listProjects`
 | `401` | No bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
-| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server has loaded its content it never answers this again, even if a later load fails. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/search`
@@ -71,7 +114,7 @@ Operation ID: `searchArticles`
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
-| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server has loaded its content it never answers this again, even if a later load fails. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /openapi.json`
@@ -101,6 +144,34 @@ Operation ID: `getOpenAPIYAML`
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ## Schemas
+
+### `ActivityDropped`
+
+The `data` of an SSE event of type `dropped`: this subscriber lost
+events because it did not keep up. Clients ignore fields they do not
+know.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `dropped` | `integer` | yes | How many events were lost before the next one. |
+
+### `ActivityEvent`
+
+One search or lookup on the activity stream, the `data` of an SSE
+event without a type. Every field is always sent; text fields are `""`
+when empty. Clients ignore fields they do not know.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `client_version` | `string` | yes | The version in 'X-Goldie-Client: goldie/&lt;version&gt;', or '""'. |
+| `id` | `integer` | yes | Increases per server process (per replica); starts again at 1 on restart. |
+| `kind` | `string` | yes | A search or a lookup. |
+| `miss` | `boolean` | yes | A search with no results, or a lookup answering 404. |
+| `project` | `string` | yes | The registered spelling of the Project, an unregistered id lower-cased, or '""'. |
+| `query` | `string` | yes | The search words, or the article id a lookup asked for, as text. |
+| `time` | `string` | yes | When the server recorded the request. |
+| `token` | `string` | yes | The name of the token that sent the request, never its secret. |
+| `trace_id` | `string` | yes | The request's trace id, or '""' without a span. |
 
 ### `Article`
 

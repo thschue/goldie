@@ -51,6 +51,17 @@ type Article struct {
 	Keywords []string
 	// Content is the Markdown body after the frontmatter.
 	Content string
+	// Status is StatusDraft, StatusPublished (the default) or StatusDeprecated.
+	Status string
+	// Enforced is the frontmatter enforced: true (CONTEXT: Enforced Item).
+	Enforced bool
+	// ReplacedBy is the frontmatter replaced_by as written, a reference
+	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
+	ReplacedBy string
+
+	// file is the article's path relative to the Source root, as
+	// loadArticles walked it, for error messages.
+	file string
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
@@ -98,9 +109,10 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 	return loadFS(root.FS())
 }
 
-// loadFS is the loader every Source shares: it reads global/articles/** and
-// projects/<host>/<org>/<repo>/articles/** from fsys into a Snapshot, and names
-// an invalid file relative to the root of fsys.
+// loadFS is the loader every Source shares: it reads global/articles/**,
+// projects/<host>/<org>/<repo>/articles/** and each Project's project.yaml
+// from fsys into a Snapshot, and names an invalid file relative to the root of
+// fsys.
 func loadFS(fsys fs.FS) (*Snapshot, error) {
 	global, err := loadArticles(fsys, articlesDir, ScopeGlobal)
 	if err != nil {
@@ -122,7 +134,23 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
+		refs, err := readProjectFile(fsys, d.dir)
+		if err != nil {
+			return nil, err
+		}
 		snap.addProject(d.scope, articles)
+		if err := snap.applySuppressions(d.scope, refs); err != nil {
+			return nil, err
+		}
+	}
+	if err := snap.checkEnforced(); err != nil {
+		return nil, err
+	}
+	if err := snap.checkReplacements(); err != nil {
+		return nil, err
+	}
+	if err := snap.checkLookups(); err != nil {
+		return nil, err
 	}
 	return snap, nil
 }
@@ -209,7 +237,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
 		}
-		raw, err := readLimited(fsys, p)
+		raw, err := readLimited(fsys, p, "article")
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
@@ -223,14 +251,16 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		a.Scope = scope
+		a.file = p
 		articles = append(articles, a)
 		return nil
 	})
 	return articles, err
 }
 
-// readLimited reads at most maxArticleBytes of a file and fails if it is larger.
-func readLimited(fsys fs.FS, p string) ([]byte, error) {
+// readLimited reads at most maxArticleBytes of a file and fails if it is larger;
+// what names the file in that error, such as "article".
+func readLimited(fsys fs.FS, p, what string) ([]byte, error) {
 	f, err := fsys.Open(p)
 	if err != nil {
 		return nil, readErr(err)
@@ -241,7 +271,7 @@ func readLimited(fsys fs.FS, p string) ([]byte, error) {
 		return nil, readErr(err)
 	}
 	if len(raw) > maxArticleBytes {
-		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
+		return nil, fmt.Errorf("%s is larger than %d bytes", what, maxArticleBytes)
 	}
 	return raw, nil
 }
@@ -275,8 +305,9 @@ func parseArticle(id string, raw []byte) (Article, error) {
 		return Article{}, errors.New("frontmatter not closed with ---")
 	}
 	var meta struct {
-		Name     string   `yaml:"name"`
-		Keywords []string `yaml:"keywords"`
+		Name          string   `yaml:"name"`
+		Keywords      []string `yaml:"keywords"`
+		lifecycleMeta `yaml:",inline"`
 	}
 	if err := yaml.Unmarshal(front, &meta); err != nil {
 		return Article{}, fmt.Errorf("malformed frontmatter: %s", strings.TrimPrefix(err.Error(), "yaml: "))
@@ -285,6 +316,9 @@ func parseArticle(id string, raw []byte) (Article, error) {
 		return Article{}, errors.New("frontmatter has no name")
 	}
 	a := Article{ID: id, Name: strings.TrimSpace(meta.Name), Content: strings.TrimLeft(string(body), "\n")}
+	if err := meta.apply(&a); err != nil {
+		return Article{}, err
+	}
 	for _, k := range meta.Keywords {
 		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
 			a.Keywords = append(a.Keywords, k)
@@ -297,18 +331,39 @@ func parseArticle(id string, raw []byte) (Article, error) {
 // copies, so callers cannot change it.
 type Snapshot struct {
 	articles []Article // global, sorted by ID
+	index    keyIndex  // global articles by itemKey
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
+	// warnings are load findings that do not fail the load, such as a
+	// suppress reference that names nothing. Each is safe to show.
+	warnings []string
 }
 
 type project struct {
 	scope    string
 	articles []Article // sorted by ID
+	index    keyIndex
+	// suppressed holds the global Items the Project hides (its project.yaml),
+	// and suppressions lists them as article:<ID>, sorted.
+	suppressed   map[itemKey]bool
+	suppressions []string
+}
+
+// keyIndex maps an itemKey to its Article within one Scope. Keys are unique
+// per Scope because loadArticles rejects IDs that differ only in case.
+type keyIndex map[itemKey]*Article
+
+func indexArticles(articles []Article) keyIndex {
+	idx := make(keyIndex, len(articles))
+	for i := range articles {
+		idx[articles[i].key()] = &articles[i]
+	}
+	return idx
 }
 
 func newSnapshot(articles []Article) *Snapshot {
 	sortArticles(articles)
-	return &Snapshot{articles: articles, projects: map[string]project{}}
+	return &Snapshot{articles: articles, index: indexArticles(articles), projects: map[string]project{}}
 }
 
 func sortArticles(a []Article) {
@@ -318,7 +373,7 @@ func sortArticles(a []Article) {
 // addProject registers a Project. It is called only while loading.
 func (s *Snapshot) addProject(scope string, articles []Article) {
 	sortArticles(articles)
-	s.projects[strings.ToLower(scope)] = project{scope: scope, articles: articles}
+	s.projects[strings.ToLower(scope)] = project{scope: scope, articles: articles, index: indexArticles(articles)}
 }
 
 // Projects lists the registered Projects as "host/org/repo", sorted. A Project
@@ -351,7 +406,9 @@ func (s *Snapshot) lookupProject(id string) (project, bool) {
 	return p, ok
 }
 
-// Articles returns every global article, sorted by ID.
+// Articles returns every global article, sorted by ID, drafts included. It is
+// not a reader view: it takes no ReadOptions and applies no Resolution, so a
+// caller that serves readers uses Search, Article or their In forms instead.
 func (s *Snapshot) Articles() []Article {
 	out := make([]Article, len(s.articles))
 	for i, a := range s.articles {
@@ -361,26 +418,57 @@ func (s *Snapshot) Articles() []Article {
 }
 
 // Article looks a global article up by ID, case-insensitively.
-func (s *Snapshot) Article(id string) (Article, bool) {
-	return s.ArticleIn("", id)
+func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
+	return s.ArticleIn("", id, opts...)
 }
 
 // ArticleIn resolves an article for a Project ("host/org/repo", matched
 // case-insensitively): the Project's article wins over the global one with the
-// same ID. An empty or unregistered Project resolves globally.
-func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
-	id = strings.ToLower(id)
-	for _, list := range s.resolutionOrder(proj) {
-		for _, a := range list {
-			if strings.ToLower(a.ID) == id {
-				return cloneArticle(a), true
-			}
-		}
+// same ID. An empty or unregistered Project resolves globally. Drafts are left
+// out unless opts asks for them, and a draft left out never shadows. A global
+// article the Project suppresses is not found, drafts asked for or not.
+func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
+	o := readOpts(opts)
+	key := keyOf(KindArticle, id)
+	p, _ := s.lookupProject(proj)
+	if a := p.index[key]; a != nil && o.visible(*a) {
+		return cloneArticle(*a), true
+	}
+	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {
+		return cloneArticle(*a), true
 	}
 	return Article{}, false
 }
 
+// resolve returns the Item that wins for key in proj's view, Project before
+// global, or nil. The pointer is into the Snapshot, so callers must not change
+// or return it.
+func (s *Snapshot) resolve(proj string, key itemKey) *Article {
+	if p, ok := s.lookupProject(proj); ok {
+		if a := p.index[key]; a != nil {
+			return a
+		}
+	}
+	return s.index[key]
+}
+
+// resolvePublished is resolve in the default Resolution view: a draft is left
+// out (#353), so a draft Project copy does not shadow and a draft-only Item
+// resolves to nil.
+func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
+	if p, ok := s.lookupProject(proj); ok {
+		if a := p.index[key]; a != nil && a.published() {
+			return a
+		}
+	}
+	if a := s.index[key]; a != nil && a.published() {
+		return a
+	}
+	return nil
+}
+
 // resolutionOrder returns the article lists to consult, Project before global.
+// An Item in an earlier list shadows one with the same itemKey in a later one.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
 	if p, ok := s.lookupProject(proj); ok {
 		return [][]Article{p.articles, s.articles}

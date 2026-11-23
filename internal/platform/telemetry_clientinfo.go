@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -37,10 +38,13 @@ type originalKey struct{}
 // forge, and adds the peer address and port and the user agent. A span
 // processor cannot delete attributes, so the view never carries them: the
 // forwarding and user agent headers are removed, and RemoteAddr is emptied, or
-// with clientInfo reduced to the peer IP (no port). The view is only for the
-// span: restoreRequest gives the handler the original request.
+// with clientInfo reduced to the peer IP (no port). otelhttp also records the
+// path as url.path, so an article id in it is replaced by the route template
+// (templatePath). The view is only for the span: restoreRequest gives the
+// handler the original request.
 func spanView(r *http.Request, clientInfo bool) *http.Request {
 	v := r.WithContext(context.WithValue(r.Context(), originalKey{}, r))
+	v.URL = redactedURL(r.URL)
 	v.Header = r.Header.Clone()
 	v.Header.Del("X-Forwarded-For")
 	v.RemoteAddr = ""
@@ -57,6 +61,16 @@ func spanView(r *http.Request, clientInfo bool) *http.Request {
 		}
 	}
 	return v
+}
+
+// redactedURL is a copy of u whose path is templatePath of it, so an article
+// id never reaches a span. The query string is dropped too: otelhttp does not
+// record it, and the view has no use for search words.
+func redactedURL(u *url.URL) *url.URL {
+	c := *u
+	c.RawQuery, c.ForceQuery = "", false
+	c.Path, c.RawPath = templatePath(c.Path), ""
+	return &c
 }
 
 // restoreRequest runs h with the original request that spanView hid, keeping

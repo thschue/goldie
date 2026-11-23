@@ -13,14 +13,14 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 )
 
-// The goldie.mode of each client role's telemetry, for SetupClientTelemetry.
+// The goldie.role of each client role's telemetry, for SetupClientTelemetry.
 const (
 	ModeCLI = "cli" // the client commands
 	ModeMCP = "mcp" // goldie mcp over stdio
 )
 
 // SetupClientTelemetry is SetupTelemetry for a client role: traces only, with
-// goldie.mode set to mode (ModeCLI or ModeMCP). Logs and metrics are never
+// goldie.role set to mode (ModeCLI or ModeMCP), and no goldie.mode. Logs and metrics are never
 // exported, whatever their variables say, and GOLDIE_TELEMETRY_CLIENT_INFO
 // does not apply. It is off unless an endpoint or OTEL_TRACES_EXPORTER
 // selects traces. mode is a plain string because callers range over the

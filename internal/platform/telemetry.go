@@ -30,10 +30,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Telemetry is the OpenTelemetry setup: server traces on the public listener,
-// a bridge that copies log records to OTLP and a metrics provider (Meter). It is configured by the
-// standard OTEL_* variables and is a no-op when none selects an exporter. All
-// methods are safe on a nil or disabled Telemetry.
+// Telemetry is the OpenTelemetry setup: server traces on the public listener, a bridge that
+// copies log records to OTLP and a metrics provider (Meter). It is configured by the standard
+// OTEL_* variables and is a no-op when none selects an exporter. All methods are safe on a nil or
+// disabled Telemetry.
 //
 // Only OTLP over http/protobuf is built in: it is the SDK default, needs no
 // separate gRPC exporter modules, and works through plain HTTP proxies.
@@ -55,21 +55,26 @@ type Telemetry struct {
 	err  error
 }
 
-// telemetryResource returns the resource attributes every signal carries.
-// extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and serviceName the
-// OTEL_SERVICE_NAME value (empty when unset). goldie owns service.version and
-// goldie.mode, so extra cannot override them; service.name may be overridden.
-// goldie.mode is "all" for the server until server roles are split (#24).
+// telemetryResource returns the resource attributes every signal of the
+// server carries. extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and
+// serviceName the OTEL_SERVICE_NAME value (empty when unset). goldie owns
+// service.version, goldie.role and goldie.mode, so extra cannot override them;
+// service.name may be overridden. goldie.mode is "all" for the server until
+// server roles are split (#24); goldie.mode is a server concept only.
 func telemetryResource(serviceName string, extra map[string]string) *resource.Resource {
-	return modeResource(serverMode, serviceName, extra)
+	return roleResource(RoleServer, serviceName, extra)
 }
 
-// serverMode is the server's goldie.mode; the client roles have their own
-// (ModeCLI, ModeMCP).
+// RoleServer is the goldie.role of the server. The client roles are ModeCLI
+// and ModeMCP (telemetry_client.go).
+const RoleServer = "server"
+
+// serverMode is the server's goldie.mode; client roles carry no goldie.mode.
 const serverMode = "all"
 
-// modeResource is telemetryResource with goldie.mode set to mode.
-func modeResource(mode, serviceName string, extra map[string]string) *resource.Resource {
+// roleResource is telemetryResource for the process whose goldie.role is
+// role. Only the server (RoleServer) carries goldie.mode.
+func roleResource(role, serviceName string, extra map[string]string) *resource.Resource {
 	name := defaultServiceName
 	if v := extra["service.name"]; v != "" {
 		name = v
@@ -77,10 +82,10 @@ func modeResource(mode, serviceName string, extra map[string]string) *resource.R
 	if serviceName != "" {
 		name = serviceName
 	}
-	attrs := make([]attribute.KeyValue, 0, len(extra)+3)
+	attrs := make([]attribute.KeyValue, 0, len(extra)+4)
 	for k, v := range extra {
 		switch k {
-		case "service.name", "service.version", "goldie.mode":
+		case "service.name", "service.version", "goldie.mode", "goldie.role":
 		default:
 			attrs = append(attrs, attribute.String(k, v))
 		}
@@ -88,8 +93,11 @@ func modeResource(mode, serviceName string, extra map[string]string) *resource.R
 	attrs = append(attrs,
 		attribute.String("service.name", name),
 		attribute.String("service.version", CurrentVersion().Version),
-		attribute.String("goldie.mode", mode),
+		attribute.String("goldie.role", role),
 	)
+	if role == RoleServer {
+		attrs = append(attrs, attribute.String("goldie.mode", serverMode))
+	}
 	return resource.NewSchemaless(attrs...)
 }
 
@@ -205,18 +213,40 @@ func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanE
 		o(&cfg)
 	}
 	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
-	if cfg.metricReader != nil {
-		t.mp = newMeterProvider(res, cfg.metricReader)
-	}
-	if spans != nil {
-		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
-			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
-	}
-	if logs != nil {
-		t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
-			sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)))
-	}
+	withoutProcessResourceEnv(func() {
+		if cfg.metricReader != nil {
+			t.mp = newMeterProvider(res, cfg.metricReader)
+		}
+		if spans != nil {
+			t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
+				sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
+		}
+		if logs != nil {
+			t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
+				sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)))
+		}
+	})
 	return t
+}
+
+// resourceEnvMu serialises withoutProcessResourceEnv.
+var resourceEnvMu sync.Mutex
+
+// withoutProcessResourceEnv runs build with OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+// removed from the process environment, then restores them. Each SDK provider's WithResource
+// merges resource.Environment() into the resource it is given and offers no way to opt out, so
+// without this the process environment would add attributes the injected lookup never carried
+// (PC-04). It runs once at startup, before any request is served.
+func withoutProcessResourceEnv(build func()) {
+	resourceEnvMu.Lock()
+	defer resourceEnvMu.Unlock()
+	for _, name := range []string{envOTelService, envOTelResAttrs} {
+		if v, ok := os.LookupEnv(name); ok {
+			_ = os.Unsetenv(name)
+			defer os.Setenv(name, v) //nolint:errcheck // restoring a value that was just read
+		}
+	}
+	build()
 }
 
 // Signal selection and validation names (standard OpenTelemetry variables).
@@ -248,12 +278,12 @@ var secretOTelNames = secretSet(TelemetrySettings)
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
 func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
-	return setupTelemetry(ctx, lookup, serverMode, false)
+	return setupTelemetry(ctx, lookup, RoleServer, false)
 }
 
-// setupTelemetry is SetupTelemetry for the role whose goldie.mode is mode. A
+// setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
 // client role (client true) reads and exports traces only.
-func setupTelemetry(ctx context.Context, lookup Lookup, mode string, client bool) (*Telemetry, error) {
+func setupTelemetry(ctx context.Context, lookup Lookup, role string, client bool) (*Telemetry, error) {
 	server := !client
 	var errs []error
 	get := func(name string) string {
@@ -400,7 +430,7 @@ func setupTelemetry(ctx context.Context, lookup Lookup, mode string, client bool
 		}
 		opts = append(opts, withMetricReader(reader))
 	}
-	t := newTelemetry(modeResource(mode, serviceName, resAttrs), traceCfg, spans, logs, opts...)
+	t := newTelemetry(roleResource(role, serviceName, resAttrs), traceCfg, spans, logs, opts...)
 	t.notice = notice
 	t.clientInfo = clientInfo
 	for _, name := range t.signals() {

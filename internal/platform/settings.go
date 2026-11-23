@@ -51,7 +51,7 @@ var Settings = []SettingSpec{
 // part of Config; SetupTelemetry validates them. Unset, telemetry is off.
 var TelemetrySettings = []SettingSpec{
 	{Name: "OTEL_SDK_DISABLED", Meaning: "true turns telemetry off even when an endpoint is set."},
-	{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Meaning: "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect."},
+	{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Meaning: "OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export: a generic endpoint also turns metrics on, and OTEL_METRICS_EXPORTER=none opts out of them. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect."},
 	{Name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Meaning: "Collector URL for traces only, used as-is; wins over the base URL."},
 	{Name: "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", Meaning: "Collector URL for logs only, used as-is; wins over the base URL."},
 	{Name: "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", Meaning: "Collector URL for metrics only, used as-is; wins over the base URL."},
@@ -70,7 +70,7 @@ var TelemetrySettings = []SettingSpec{
 	{Name: "OTEL_TRACES_SAMPLER_ARG", Default: "1", Meaning: "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{Name: "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Default: "128", Meaning: "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{Name: "OTEL_SERVICE_NAME", Default: defaultServiceName, Meaning: "Overrides the service.name resource attribute."},
-	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
+	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (all), which this cannot override."},
 }
 
 // EnvToken is the API token the client commands send. It is a secret, so it
@@ -146,14 +146,16 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
-	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
+	b.WriteString("headers and query strings are not recorded, and a lookup's path is recorded as the route\n")
+	b.WriteString("template /api/v1/articles/{id}, without the id. goldie reads every variable listed here through\n")
 	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
 	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
 	b.WriteString("printed; goldie logs one fixed warning instead. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
-	b.WriteString("The client commands and `goldie mcp --transport stdio` export traces only, with `goldie.mode`\n")
-	b.WriteString("`cli` or `mcp`: one client span per API call, sent to the server as a W3C `traceparent`. The\n")
+	b.WriteString("The client commands and `goldie mcp --transport stdio` export traces only, with the resource\n")
+	b.WriteString("attribute `goldie.role` `cli` or `mcp` (the server's is `server`; `goldie.mode` stays a server\n")
+	b.WriteString("mode and is not set on them): one client span per API call, sent to the server as a W3C `traceparent`. The\n")
 	b.WriteString("server starts its own trace and links its span to the client span. A client span records no\n")
 	b.WriteString("query string or header, and an article lookup's path only as /api/v1/articles/{id}, which\n")
 	b.WriteString("appears percent-encoded in `url.full` as /api/v1/articles/%7Bid%7D. The logs and metrics\n")

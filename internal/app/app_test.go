@@ -195,7 +195,7 @@ func TestSpecEndpointsOnlyAnswerGet(t *testing.T) {
 
 func TestUnknownPathIsTheNotFoundEnvelope(t *testing.T) {
 	srv := newServer(t)
-	resp, body := get(t, srv.URL+"/nope")
+	resp, body := apiGet(t, srv.URL+"/api/nope")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", resp.StatusCode)
 	}
@@ -268,9 +268,17 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 			}
 			path = concrete
 		}
-		resp, _ := do(t, method, srv.URL+path, bearer(testToken))
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-			t.Errorf("%s answers %d at %s: the operation is in the spec but the router does not serve it", o, resp.StatusCode, path)
+		var status int
+		if method == http.MethodGet && streamsEvents(t, o) {
+			// An event stream never ends on its own: read its status only.
+			resp, _, _ := openStream(t, t.Context(), http.DefaultClient, srv.URL+path, bearer(testToken))
+			status = resp.StatusCode
+		} else {
+			resp, _ := do(t, method, srv.URL+path, bearer(testToken))
+			status = resp.StatusCode
+		}
+		if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+			t.Errorf("%s answers %d at %s: the operation is in the spec but the router does not serve it", o, status, path)
 		}
 	}
 }
@@ -344,12 +352,13 @@ func TestErrorEnvelopesDoNotLeak(t *testing.T) {
 	}
 	hostile := func(r *http.Request) { r.Host = "internal.example.test:8443" }
 	attempts := []attempt{
-		{http.MethodGet, "/nope", nil},
-		{http.MethodGet, "/etc/passwd", nil},
-		{http.MethodGet, "/..%2f..%2fetc/passwd", nil},
-		{http.MethodGet, "/C:/Windows/System32", nil},
-		{http.MethodGet, "/10.0.0.1:8080/x.go", nil},
-		{http.MethodGet, "/nope", hostile},
+		{http.MethodGet, "/api/nope", bearer(testToken)},
+		{http.MethodGet, "/api/etc/passwd", bearer(testToken)},
+		{http.MethodGet, "/api/..%2f..%2fetc/passwd", bearer(testToken)},
+		{http.MethodGet, "/api/C:/Windows/System32", bearer(testToken)},
+		{http.MethodGet, "/api/10.0.0.1:8080/x.go", bearer(testToken)},
+		{http.MethodGet, "/api/nope", func(r *http.Request) { hostile(r); bearer(testToken)(r) }},
+		{http.MethodPost, "/", hostile},
 		{http.MethodPost, "/openapi.yaml", bearer(testToken)},
 		{http.MethodDelete, "/openapi.json", func(r *http.Request) { hostile(r); bearer(testToken)(r) }},
 	}
@@ -379,7 +388,7 @@ func TestEveryErrorCarriesAHint(t *testing.T) {
 		method, path string
 		code         string
 	}{
-		{http.MethodGet, "/nope", "not_found"},
+		{http.MethodGet, "/api/nope", "not_found"},
 		{http.MethodPost, "/openapi.json", "method_not_allowed"},
 	} {
 		_, body := do(t, c.method, srv.URL+c.path, bearer(testToken))

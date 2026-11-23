@@ -28,6 +28,8 @@ tags:
     description: Search and look up articles.
   - name: projects
     description: The Projects whose Scope the server holds.
+  - name: activity
+    description: The live view of recent searches and lookups, for operators.
 paths:
   /api/v1/search:
     get:
@@ -186,6 +188,87 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/activity:
+    get:
+      operationId: getActivity
+      tags:
+        - activity
+      summary: Stream recent searches and lookups
+      description: |
+        Streams this server process's recent searches and lookups as
+        server-sent events, for operator tokens only. The stream opens with the
+        retained events in `id` order, oldest first, then sends each new one as
+        it is recorded. It is a live view, not an audit log: the buffer is
+        bounded and shared, so any reader's requests push older events out of
+        it, and a restart empties it.
+
+        Every event is one SSE event whose `data` is one line of JSON, an
+        `ActivityEvent`. Its `id` increases per server process (per replica)
+        and starts again at 1 when the process restarts. All text is escaped
+        as JSON strings, so no query can end an event or start one. A
+        subscriber that cannot keep up loses events and then gets an event of
+        type `dropped`, an `ActivityDropped` with the number lost, before the
+        next event. Clients must ignore SSE event types and JSON fields they
+        do not know.
+
+        Events carry no SSE `id:` field and the server does not resume from
+        `Last-Event-ID`: a reconnect replays the retained history, so clients
+        dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+        seconds. The stream costs one rate-limit token when it opens, and ends
+        at the server's first stop signal. At most 32 streams are open per
+        server process; one more is a 503 whose hint says to retry later.
+
+        Go clients use the raw `Client.GetActivity` and read the body as it
+        arrives: `GetActivityWithResponse` reads the whole body, so it does
+        not return until the stream ends.
+      responses:
+        "200":
+          description: |
+            The event stream, not an audit log. Sent with
+            `Cache-Control: no-store`; the headers are sent at once, before the
+            first event.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE events. The `data` of each is one line of JSON, one of
+                  `contentSchema`: an `ActivityEvent`, or an `ActivityDropped`
+                  for an event of type `dropped`.
+                contentSchema:
+                  oneOf:
+                    - $ref: "#/components/schemas/ActivityEvent"
+                    - $ref: "#/components/schemas/ActivityDropped"
+              example: |
+                data: {"id":1,"time":"2026-11-23T10:00:00Z","kind":"search","query":"deploy","project":"","token":"ci","client_version":"1.5.0","trace_id":"","miss":false}
+        "401":
+          description: The bearer token is missing or not a configured token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The token is valid but its role is not operator.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: |
+            The server cannot open a stream: it has not loaded its content yet
+            (code `not_ready`), it already serves the most streams it allows
+            (code `too_many_streams`), or it is shutting down (code
+            `shutting_down`). The hint says when to retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
   /openapi.yaml:
     get:
       operationId: getOpenAPIYAML
@@ -231,7 +314,9 @@ components:
         "Authorize" button takes it, so "Try it out" sends it. The server
         enforces it on every `/api/` path, where a missing or wrong token is a
         401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
-        token over its limit is a 429 with `Retry-After`. The OpenAPI document and Swagger UI are not yet covered; the auth
+        token over its limit is a 429 with `Retry-After`. An operation for
+        operators only, such as `/api/v1/activity`, answers other tokens with a
+        403. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
   schemas:
     SearchResults:
@@ -405,6 +490,97 @@ components:
             article is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    ActivityEvent:
+      type: object
+      description: |
+        One search or lookup on the activity stream, the `data` of an SSE
+        event without a type. Every field is always sent; text fields are `""`
+        when empty. Clients ignore fields they do not know.
+      additionalProperties: false
+      required:
+        - id
+        - time
+        - kind
+        - query
+        - project
+        - token
+        - client_version
+        - trace_id
+        - miss
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Increases per server process (per replica); starts again at 1 on restart.
+          examples:
+            - 42
+        time:
+          type: string
+          format: date-time
+          description: When the server recorded the request.
+          examples:
+            - "2026-11-23T10:00:00Z"
+        kind:
+          type: string
+          enum:
+            - search
+            - lookup
+          x-enum-varnames:
+            - ActivityKindSearch
+            - ActivityKindLookup
+          description: A search or a lookup.
+          examples:
+            - search
+        query:
+          type: string
+          description: The search words, or the article id a lookup asked for, as text.
+          examples:
+            - deploy kubernetes
+        project:
+          type: string
+          description: The registered spelling of the Project, an unregistered id lower-cased, or `""`.
+          examples:
+            - github.com/acme/shop
+        token:
+          type: string
+          description: The name of the token that sent the request, never its secret.
+          examples:
+            - ci-reader
+        client_version:
+          x-lint-ignore: camel-case-properties
+          type: string
+          description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`.'
+          examples:
+            - 1.5.0
+        trace_id:
+          x-lint-ignore: camel-case-properties
+          type: string
+          description: The request's trace id, or `""` without a span.
+          examples:
+            - 4bf92f3577b34da6a3ce929d0e0e4736
+        miss:
+          type: boolean
+          description: A search with no results, or a lookup answering 404.
+          examples:
+            - false
+    ActivityDropped:
+      type: object
+      description: |
+        The `data` of an SSE event of type `dropped`: this subscriber lost
+        events because it did not keep up. Clients ignore fields they do not
+        know.
+      additionalProperties: false
+      required:
+        - dropped
+      properties:
+        dropped:
+          type: integer
+          format: int64
+          minimum: 1
+          description: How many events were lost before the next one.
+          examples:
+            - 3
     ErrorEnvelope:
       type: object
       description: The body of every error response.
@@ -475,8 +651,9 @@ components:
     NotReady:
       description: |
         The server has not loaded its content yet, so it cannot answer; the
-        error code is `not_ready`. Retry shortly. Once this server has loaded
-        its content it never answers this again, even if a later load fails.
+        error code is `not_ready`. Retry shortly. Once this server process has
+        loaded its content it never answers this again, even if a later load
+        fails; a restarted or new process starts unloaded.
       content:
         application/json:
           schema:

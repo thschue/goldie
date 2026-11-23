@@ -10,11 +10,17 @@ import (
 
 // SyncStatus reports how the Syncer is doing. LastError is redacted: it holds
 // no paths, URLs or credentials, and is empty after a successful poll.
+// Warnings are the findings of the last successful load that did not fail it,
+// such as a suppress reference that names nothing. Each names a file relative
+// to the Source root, is printable ASCII and at most 1 KiB. A warning is not
+// redacted: what the Source wrote (a well-formed reference) is escaped to
+// ASCII and cut, not stripped.
 type SyncStatus struct {
 	Revision    string
 	LastPoll    time.Time
 	LastSuccess time.Time
 	LastError   string
+	Warnings    []string
 }
 
 // Syncer polls one Source and serves the latest good Snapshot. Current is safe
@@ -55,7 +61,14 @@ func (s *Syncer) Current() *Snapshot { return s.current.Load() }
 func (s *Syncer) Status() SyncStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.status
+	return s.statusCopy()
+}
+
+// statusCopy returns status with its own Warnings slice. Callers hold mu.
+func (s *Syncer) statusCopy() SyncStatus {
+	st := s.status
+	st.Warnings = append([]string(nil), st.Warnings...)
+	return st
 }
 
 // Poll loads the Source once, handing it ctx, so cancelling ctx stops the
@@ -80,13 +93,14 @@ func (s *Syncer) poll(ctx context.Context) (SyncStatus, error) {
 	s.status.LastPoll = now
 	if err != nil {
 		s.status.LastError = redact(err.Error())
-		return s.status, err
+		return s.statusCopy(), err
 	}
 	s.current.Store(snap)
 	s.status.LastSuccess = now
 	s.status.LastError = ""
 	s.status.Revision = rev
-	return s.status, nil
+	s.status.Warnings = append([]string(nil), snap.warnings...)
+	return s.statusCopy(), nil
 }
 
 // load calls the Source. A panic in Load or Revision becomes errLoadPanicked,

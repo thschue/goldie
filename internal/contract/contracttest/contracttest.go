@@ -204,9 +204,10 @@ func examplePath(doc map[string]any, method, template string) (string, error) {
 // unquoteMeta matches one backslash-quoted character of regexp.QuoteMeta output.
 var unquoteMeta = regexp.MustCompile(`\\(.)`)
 
-// ResolveRef follows a local $ref ("#/a/b") in doc if node is one. It returns the
-// referenced node, node itself when it has no $ref, and nil when node is not an
-// object or the reference dangles.
+// ResolveRef follows a local $ref ("#/a/b") in doc if node is one. It returns
+// the referenced node, and node itself when it has no local $ref (none, or one
+// that does not start with "#/"). It returns nil when node is not an object or
+// when a local reference dangles.
 func ResolveRef(doc map[string]any, node any) map[string]any {
 	m, _ := node.(map[string]any)
 	out, _ := resolve(doc, m, "")
