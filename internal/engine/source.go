@@ -587,6 +587,9 @@ func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
 // winning copy w in Resolution order (local, Project, global), nearest first.
 // Only readable copies count: a draft is never served, so nothing is
 // overridden by it.
+//
+// idxs lists the per-Scope indexes in the same order as resolutionOrder and
+// winner read them (local, Project, global); change all three together.
 func (s *Snapshot) overridden(proj string, key itemKey, w *Article) []string {
 	p, _ := s.lookupProject(proj)
 	idxs := []map[itemKey]*Article{p.index, s.index}
