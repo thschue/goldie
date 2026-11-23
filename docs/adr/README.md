@@ -27,4 +27,5 @@ Consequences.
 - [0021. Item references are `<kind>:<name>`, resolved in the referrer's view](0021-item-references-resolve-in-the-referrers-view.md)
 - [0022. Federated activity across replicas](0022-federated-activity-across-replicas.md)
 - [0023. Git Source URLs are operator-trusted](0023-git-source-urls-are-operator-trusted.md)
+- [0024. API wire names are snake_case](0024-api-wire-names-are-snake-case.md)
 - [0025. Role rules are marked once in the spec, with `x-goldie-role`](0025-role-rules-are-marked-once-in-the-spec.md)

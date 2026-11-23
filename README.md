@@ -51,7 +51,10 @@ when there is one; stdout, `--json` included, carries only the article.
 `GOLDIE_DIR`) starts an embedded server over a directory of content (`global/articles` under it) on
 loopback, with its own random token, and stops it when the command ends. Output is the same as
 against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, and also a
-`GOLDIE_ADDR` from the environment; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
+`GOLDIE_ADDR` from the environment; a repository with `.goldie/articles/` starts the same embedded
+server with its local Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or empty
+content (see [the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr` or
+`GOLDIE_ADDR` is an error; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
 `--addr`, or `GOLDIE_DIR` and `GOLDIE_ADDR` both set in the environment, is an error naming both.
 Content that does not load stops the command with `content does not load: <reason>`. When
 `search`, `lookup`, `status` or an `mcp` tool cannot reach the embedded server, the error says so and

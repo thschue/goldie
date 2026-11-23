@@ -89,6 +89,20 @@ type DirSource struct {
 // root from configuration is the caller's job.
 func NewDirSource(root string) DirSource { return DirSource{root: root} }
 
+// EmptySource is a Source with no content: every Load returns an empty
+// Snapshot. It is the base of a local Scope over no content directory.
+type EmptySource struct{}
+
+var _ Source = EmptySource{}
+
+// Load returns an empty Snapshot, or an error once ctx has ended.
+func (EmptySource) Load(ctx context.Context) (*Snapshot, error) {
+	if ctx.Err() != nil {
+		return nil, errLoadCancelled
+	}
+	return newSnapshot(nil), nil
+}
+
 // Load reads global/articles/** and projects/<host>/<org>/<repo>/articles/**
 // under the root into a Snapshot. It fails on the first invalid file or Project
 // path, and the error names it relative to the root. A root without either

@@ -37,7 +37,7 @@ unknown role value or a misspelt one fails startup with the location, the extens
 sits under. A misspelt key fails too: any key that matches `x-goldie-` case-insensitively but is not
 exactly `x-goldie-role` (`x-goldie-roles`, `X-Goldie-Role`) is rejected with its location, because it
 would be ignored and leave the operation open. A document with so many nested aliases that the walk
-exceeds its step limit also fails startup. The failures include the root, `info`, `webhooks`, security schemes, and a component an operation
+exceeds its step limit also fails startup. The `x-goldie-` prefix is reserved for goldie's extensions: a key under it other than `x-goldie-role` fails startup, so a new extension is added to `internal/contract/roles.go` and recorded in an ADR. HTTP header names in a `headers` map, such as `X-Goldie-Client`, and schema property names are not extensions and are not checked. The failures include the root, `info`, `webhooks`, security schemes, and a component an operation
 reaches through `$ref` or an alias, such as `components/responses/X` or `components/requestBodies/X`:
 the mark does not apply through the reference, so accepting it would leave the rule open while the
 author believes it closed.
@@ -59,8 +59,7 @@ A `$ref` inside an operation's responses, request body or parameters stays legal
 
 ## Consequences
 
-One mechanism covers both kinds of rule. The guard cannot drift from the spec, and the generated
-server is unchanged: the extension is additive (ADR 0011), and clients ignore it. The mark on a
+One mechanism covers both kinds of rule. The guard cannot drift from the spec, and the wire format and handler signatures (the generated code gains only a `Drafts` alias for the shared parameter): the extension is additive (ADR 0011), and clients ignore it. The mark on a
 parameter does not change its wire shape.
 
 Tools that read only standard OpenAPI (Swagger UI's lock icons, outside generators) do not see the

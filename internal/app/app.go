@@ -232,7 +232,12 @@ func content(dir string) (*engine.Syncer, error) {
 // The error is the loader's reason, which names a file relative to dir and
 // never dir itself; callers say which setting or argument it came from.
 func loadDir(ctx context.Context, dir string) (*engine.Syncer, error) {
-	syncer := engine.NewSyncer(engine.NewDirSource(dir))
+	return loadSource(ctx, engine.NewDirSource(dir))
+}
+
+// loadSource puts src behind a Syncer and runs its first poll.
+func loadSource(ctx context.Context, src engine.Source) (*engine.Syncer, error) {
+	syncer := engine.NewSyncer(src)
 	if err := syncer.Poll(ctx); err != nil {
 		return nil, err
 	}

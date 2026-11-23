@@ -120,8 +120,8 @@ a host or an org directory is a layout error; one deeper inside a Project is ign
 ## The local Scope: `.goldie/`
 
 A repository's own `.goldie/` is the local Scope (CONTEXT: Scope), read by the engine's local
-Source (`engine.NewLocalSource`). The server does not serve it yet; the embedded server of #390
-will.
+Source (`engine.NewLocalSource`). The server does not serve it; the embedded server of the client
+commands does (see below).
 
 - `.goldie/articles/**/*.md` are local articles, written like global ones. Resolution is local,
   then project, then global, for `ArticleIn` and `SearchIn`. A local article answers in every
@@ -139,6 +139,25 @@ will.
 - `.goldie`, `articles` and `config.yaml` are read through `os.Root`. A symlink, a FIFO or the
   wrong file type fails the load, with the same size caps and case-insensitive ids as elsewhere.
   Errors name `.goldie/...` paths only. A missing `.goldie` is an empty local Scope.
+
+### The client commands start the embedded server with it
+
+When `.goldie/articles/` is a directory at the repository root (found from the working directory,
+up to the nearest `.git`), `search`, `lookup`, `status` and `goldie mcp --transport stdio` start the
+embedded server with the local Scope, which answers every request. The base content is, first
+found wins: `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml`, or empty content. A `.goldie/`
+without `articles/`, such as the one `goldie init` writes, does not switch to local mode, so
+`GOLDIE_ADDR` keeps working. `GOLDIE_ADDR` or `--addr` set next to `.goldie/articles/` is an error
+naming the setting: the address would hide the repository's own content.
+
+`dir:` in `config.yaml` is untrusted. It must be a non-empty string without control characters, a
+relative path that stays inside the repository root, naming a directory, opened through `os.Root`
+(a symlink out of the root is refused; one that stays inside is followed). `dir: .` is the root
+itself, and a null `dir:` is none. Any other value is an error naming `.goldie/config.yaml`, never
+a path or the value. `config.yaml` is read twice: the CLI reads it once to find the content
+directory, and the engine reads it again for the local Scope. Both refuse a symlinked
+`config.yaml`, so the command fails with an error naming `.goldie/config.yaml`. `--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only
+finds these paths; the engine reads the articles.
 
 ## Pipeline snippet
 

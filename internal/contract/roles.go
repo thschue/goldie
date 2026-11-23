@@ -47,8 +47,11 @@ const maxWalkSteps = 1_000_000
 // walkKeys calls visit with the location of every mapping key named key under
 // n. An alias is followed at each place it is used, so a mark reached through
 // an alias is reported where it is reached, not where it is anchored; stack
-// guards against alias cycles.
-func walkKeys(n *yaml.Node, key string, path []string, stack map[*yaml.Node]bool, steps *int, visit func(loc string)) error {
+// guards against alias cycles. When names is set, n is a headers or schema
+// properties mapping: its keys are HTTP header or property names, not
+// extensions, so they are neither checked nor reported, but its values are
+// walked.
+func walkKeys(n *yaml.Node, key string, path []string, names bool, stack map[*yaml.Node]bool, steps *int, visit func(loc string)) error {
 	if n == nil || stack[n] {
 		return nil
 	}
@@ -59,29 +62,43 @@ func walkKeys(n *yaml.Node, key string, path []string, stack map[*yaml.Node]bool
 	defer delete(stack, n)
 	switch n.Kind {
 	case yaml.AliasNode:
-		return walkKeys(n.Alias, key, path, stack, steps, visit)
+		return walkKeys(n.Alias, key, path, names, stack, steps, visit)
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k := n.Content[i].Value
+			if names {
+				if err := walkKeys(n.Content[i+1], key, append(path[:len(path):len(path)], k), false, stack, steps, visit); err != nil {
+					return err
+				}
+				continue
+			}
 			if k != key && strings.HasPrefix(strings.ToLower(k), "x-goldie-") {
-				return fmt.Errorf("openapi.yaml: %s: unknown key %q, want exactly %s", strings.Join(path, " > "), k, key)
+				return fmt.Errorf("openapi.yaml: %s: unknown key %q, want exactly %s", location(path), k, key)
 			}
 			child := append(path[:len(path):len(path)], k)
 			if k == key {
 				visit(strings.Join(child, " > "))
 			}
-			if err := walkKeys(n.Content[i+1], key, child, stack, steps, visit); err != nil {
+			if err := walkKeys(n.Content[i+1], key, child, k == "headers" || k == "properties", stack, steps, visit); err != nil {
 				return err
 			}
 		}
 	case yaml.DocumentNode, yaml.SequenceNode:
 		for i, c := range n.Content {
-			if err := walkKeys(c, key, append(path[:len(path):len(path)], strconv.Itoa(i)), stack, steps, visit); err != nil {
+			if err := walkKeys(c, key, append(path[:len(path):len(path)], strconv.Itoa(i)), false, stack, steps, visit); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// location renders a path for an error, "(root)" for the document root.
+func location(path []string) string {
+	if len(path) == 0 {
+		return "(root)"
+	}
+	return strings.Join(path, " > ")
 }
 
 func deref(n *yaml.Node) *yaml.Node {
@@ -189,7 +206,7 @@ func parseRoles(spec []byte) (paths, params map[string]bool, err error) {
 	if err == nil {
 		steps := 0
 		var misplaced error
-		err = walkKeys(doc, RoleExtension, nil, map[*yaml.Node]bool{}, &steps, func(loc string) {
+		err = walkKeys(doc, RoleExtension, nil, false, map[*yaml.Node]bool{}, &steps, func(loc string) {
 			if !accepted[loc] && misplaced == nil {
 				misplaced = fmt.Errorf("openapi.yaml: %s at %s, want it directly on an operation or on a components/parameters entry", RoleExtension, loc)
 			}
