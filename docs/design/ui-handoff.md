@@ -200,7 +200,7 @@ From top to bottom:
 | `AppShell` | role: reader \| operator | Top bar + side nav. The nav collapses below 1024 px (see §7). |
 | `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. |
 | `ThemeToggle` | light \| dark \| system | Persists the choice. `system` follows `prefers-color-scheme`. |
-| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. |
+| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see Forms below). |
 | `SuggestionChip` | on-hero \| on-surface | A button. Sets the query. |
 | `KindTile` | per Kind | Icon, name, purpose, count. A button. |
 | `ResultCard` | default · enforced · draft · deprecated · shadowing | The whole card is one link. Score bar is `aria-hidden`; the score text stays readable. |
@@ -225,6 +225,8 @@ From top to bottom:
 | `EventDetail` | hit \| miss | — |
 | `SourceCard` | healthy · failing · syncing | Resync is CSRF-protected and operator only. |
 | `Alert` | info · warning (gold) · danger | `role="alert"` only for new errors; otherwise `role="status"`. |
+
+**Forms.** The SPA runs under `form-action 'none'` in its Content-Security-Policy (see `docs/platform-contract.md`, the UI paragraph under PC-01), so the browser silently blocks a native form submit. Handle every form in JavaScript: `@submit.prevent`, then `fetch` for the API call and the router for navigation. This covers the sign-in access-token form and `SearchField`. GitHub sign-in is a link or a `location` navigation to the sign-in route, never a form post.
 
 ---
 
