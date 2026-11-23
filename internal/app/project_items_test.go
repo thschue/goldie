@@ -2,12 +2,14 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -24,7 +26,10 @@ import (
 // The response shape these tests fix, where the issue names fields only:
 // {"items": [...], "suppressions": ["article:..."], "hint": "..."}; hint is
 // present only for a Project the server does not hold, as in search and
-// lookup. A published Item carries no status or "published" (ADR 0011).
+// lookup. status is always present ("published" for a published Item) and
+// items is sorted by id ascending (PM decision on #388). A view over
+// contract.MaxResponseBytes is refused whole: 422, code view_too_large, a hint
+// and no partial body.
 //
 // The content (testdata/items-content) has global Items platform/deploy,
 // platform/policy (enforced), platform/notes, old-deploy (deprecated,
@@ -176,12 +181,49 @@ func TestProjectItemsKeepTheLifecycleOfPublishedAndDeprecatedItems(t *testing.T)
 	}
 	for _, id := range []string{"platform/deploy", "platform/policy", "style", "runbook"} {
 		it := items[id]
-		if it.Status != nil && *it.Status != "published" {
-			t.Errorf("%s status = %q, want absent or published", id, *it.Status)
+		if it.Status == nil || *it.Status != "published" {
+			t.Errorf("%s status = %v, want published (always present)", id, it.Status)
 		}
 		if it.ReplacedBy != nil {
 			t.Errorf("%s replaced_by = %q, want none", id, *it.ReplacedBy)
 		}
+	}
+}
+
+func TestProjectItemsAreSortedByIDAscending(t *testing.T) {
+	v, _ := getView(t, itemsServer(t).URL, shopItems)
+	got := make([]string, 0, len(v.Items))
+	for _, it := range v.Items {
+		got = append(got, it.ID)
+	}
+	if !sort.StringsAreSorted(got) || len(got) < 2 {
+		t.Errorf("item ids = %q, want sorted ascending", got)
+	}
+}
+
+// A view over the response cap is refused whole, never truncated: a partial
+// view would hide enforced Items from upstream checks.
+func TestProjectItemsOverTheResponseCapAreRefusedWholeWith422(t *testing.T) {
+	dir := t.TempDir()
+	// Each article is under the 1 MiB per-article limit; together they exceed the cap.
+	filler := strings.Repeat("x", 1_000_000)
+	n := contract.MaxResponseBytes/len(filler) + 2
+	for i := 0; i < n; i++ {
+		writeArticle(t, dir, fmt.Sprintf("big/item-%02d", i), "Big", filler)
+	}
+	writeArticle(t, dir, "small", "Small", "small-body")
+	srv := newServerWith(t, platform.Config{ContentDir: dir})
+
+	resp, body := apiGet(t, srv.URL+"/api/v1/projects/github.com%2Facme%2Fshop/items")
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422: %.200s", resp.StatusCode, body)
+	}
+	code, hint := errorHint(t, body)
+	if code != "view_too_large" || !strings.Contains(hint, "over the export limit") {
+		t.Errorf("code %q hint %q, want view_too_large with the export-limit hint", code, hint)
+	}
+	if len(body) > 4096 || strings.Contains(string(body), "small-body") || strings.Contains(string(body), "xxxxxxxx") {
+		t.Errorf("the refusal carries part of the view (%d bytes)", len(body))
 	}
 }
 
@@ -409,6 +451,9 @@ func TestSpecMarksProjectItemsContentUntrusted(t *testing.T) {
 	}
 	if _, ok := props["suppressions"]; !ok {
 		t.Error("the 200 schema has no suppressions property")
+	}
+	if _, ok := get["responses"].(map[string]any)["422"]; !ok {
+		t.Error("the spec has no 422 response for a view over the export limit")
 	}
 }
 
