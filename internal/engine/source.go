@@ -105,9 +105,10 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 	return loadFS(root.FS())
 }
 
-// loadFS is the loader every Source shares: it reads global/articles/** and
-// projects/<host>/<org>/<repo>/articles/** from fsys into a Snapshot, and names
-// an invalid file relative to the root of fsys.
+// loadFS is the loader every Source shares: it reads global/articles/**,
+// projects/<host>/<org>/<repo>/articles/** and each Project's project.yaml
+// from fsys into a Snapshot, and names an invalid file relative to the root of
+// fsys.
 func loadFS(fsys fs.FS) (*Snapshot, error) {
 	global, err := loadArticles(fsys, articlesDir, ScopeGlobal)
 	if err != nil {
@@ -129,7 +130,14 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
+		refs, err := readProjectFile(fsys, d.dir)
+		if err != nil {
+			return nil, err
+		}
 		snap.addProject(d.scope, articles)
+		if err := snap.applySuppressions(d.scope, refs); err != nil {
+			return nil, err
+		}
 	}
 	if err := snap.checkEnforced(); err != nil {
 		return nil, err
@@ -225,7 +233,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
 		}
-		raw, err := readLimited(fsys, p)
+		raw, err := readLimited(fsys, p, "article")
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
@@ -245,8 +253,9 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 	return articles, err
 }
 
-// readLimited reads at most maxArticleBytes of a file and fails if it is larger.
-func readLimited(fsys fs.FS, p string) ([]byte, error) {
+// readLimited reads at most maxArticleBytes of a file and fails if it is larger;
+// what names the file in that error, such as "article".
+func readLimited(fsys fs.FS, p, what string) ([]byte, error) {
 	f, err := fsys.Open(p)
 	if err != nil {
 		return nil, readErr(err)
@@ -257,7 +266,7 @@ func readLimited(fsys fs.FS, p string) ([]byte, error) {
 		return nil, readErr(err)
 	}
 	if len(raw) > maxArticleBytes {
-		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
+		return nil, fmt.Errorf("%s is larger than %d bytes", what, maxArticleBytes)
 	}
 	return raw, nil
 }
@@ -320,12 +329,19 @@ type Snapshot struct {
 	index    keyIndex  // global articles by itemKey
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
+	// warnings are load findings that do not fail the load, such as a
+	// suppress reference that names nothing. Each is safe to show.
+	warnings []string
 }
 
 type project struct {
 	scope    string
 	articles []Article // sorted by ID
 	index    keyIndex
+	// suppressed holds the global Items the Project hides (its project.yaml),
+	// and suppressions lists them as article:<ID>, sorted.
+	suppressed   map[itemKey]bool
+	suppressions []string
 }
 
 // keyIndex maps an itemKey to its Article within one Scope. Keys are unique
@@ -402,16 +418,16 @@ func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
 // ArticleIn resolves an article for a Project ("host/org/repo", matched
 // case-insensitively): the Project's article wins over the global one with the
 // same ID. An empty or unregistered Project resolves globally. Drafts are left
-// out unless opts asks for them, and a draft left out never shadows.
+// out unless opts asks for them, and a draft left out never shadows. A global
+// article the Project suppresses is not found, drafts asked for or not.
 func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
 	o := readOpts(opts)
 	key := keyOf(KindArticle, id)
-	if p, ok := s.lookupProject(proj); ok {
-		if a := p.index[key]; a != nil && o.visible(*a) {
-			return cloneArticle(*a), true
-		}
+	p, _ := s.lookupProject(proj)
+	if a := p.index[key]; a != nil && o.visible(*a) {
+		return cloneArticle(*a), true
 	}
-	if a := s.index[key]; a != nil && o.visible(*a) {
+	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {
 		return cloneArticle(*a), true
 	}
 	return Article{}, false
@@ -427,6 +443,21 @@ func (s *Snapshot) resolve(proj string, key itemKey) *Article {
 		}
 	}
 	return s.index[key]
+}
+
+// resolvePublished is resolve in the default Resolution view: a draft is left
+// out (#353), so a draft Project copy does not shadow and a draft-only Item
+// resolves to nil.
+func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
+	if p, ok := s.lookupProject(proj); ok {
+		if a := p.index[key]; a != nil && a.published() {
+			return a
+		}
+	}
+	if a := s.index[key]; a != nil && a.published() {
+		return a
+	}
+	return nil
 }
 
 // resolutionOrder returns the article lists to consult, Project before global.

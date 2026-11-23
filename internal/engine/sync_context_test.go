@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -259,7 +260,7 @@ func TestSyncerRunReportsEachPoll(t *testing.T) {
 			t.Fatalf("reported LastError %q leaks %q", failed.LastError, leak)
 		}
 	}
-	if failed != s.Status() {
+	if !reflect.DeepEqual(failed, s.Status()) {
 		t.Fatalf("report %+v is not the Status the poll left, %+v", failed, s.Status())
 	}
 

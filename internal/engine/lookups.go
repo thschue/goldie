@@ -48,13 +48,7 @@ func (s *Snapshot) lookupResolves(a *Article, id string) bool {
 	if view == ScopeGlobal {
 		view = ""
 	}
-	if p, ok := s.lookupProject(view); ok {
-		if t := p.index[key]; t != nil && t.published() {
-			return true
-		}
-	}
-	t := s.index[key]
-	return t != nil && t.published()
+	return s.resolvePublished(view, key) != nil
 }
 
 // lookupIDs returns the id of every lookup line in a Markdown body: a line of a

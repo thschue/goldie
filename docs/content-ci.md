@@ -49,8 +49,41 @@ Two more checks fail the load:
   draft does not resolve. A lookup line is a fenced code block line or a one-line inline code span
   whose whole content is `goldie lookup <id>`. A line with extra words or `--project` is skipped.
 
-`status: draft` does not hide an article yet: it is served like any other. Do not rely on it to keep
-content private until the enforcement slice lands.
+An article with `status: draft` is left out of search and lookup, and a draft project article does
+not shadow the global article with the same id.
+
+## Suppression in project.yaml
+
+A Project can hide global articles that do not apply to it (CONTEXT: Suppression) in
+`projects/<host>/<org>/<repo>/project.yaml`:
+
+```yaml
+suppress:
+  - article:platform/deploy
+  - article:style
+```
+
+The suppressed articles are left out of that Project's search and lookup, drafts included. Other
+Projects and the global view still see them. A reference is the same `<kind>:<name>` as
+`replaced_by`, compared ignoring case, and it resolves in the Project's view: its own published
+articles, then published global ones.
+
+These fail the load, and the reason names `project.yaml`:
+
+- a reference to an `enforced: true` global article that is published or deprecated, or to an
+  article of the Project itself (including one that shadows a global article);
+- a malformed reference, or an entry that is not a string;
+- a `suppress` that is not a list, more than 1000 entries, or a file larger than 1 MiB;
+- an unknown key (such as `supress:`), a duplicate key, more than one YAML document, or invalid YAML;
+- a `project.yaml` that is a symlink or a directory.
+
+A reference that names nothing the Project can see (a deleted article, a draft, or another Project's
+article) does not fail the load, and the article is suppressed once it exists and is published. The
+engine records a warning in its sync status, one per reference and file, but no API, CLI command or
+`goldie validate` shows it yet (#367).
+
+Only the file directly in a Project directory counts. A `project.yaml` directly under `projects/`,
+a host or an org directory is a layout error; one deeper inside a Project is ignored.
 
 ## Pipeline snippet
 
