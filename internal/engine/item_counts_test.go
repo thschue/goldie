@@ -20,7 +20,7 @@ import (
 //	}
 //	func (s *Snapshot) ItemCounts() []ItemCount
 //
-// It returns one entry for each of the 12 combinations, with Count 0 for an
+// It returns one entry for each of the 15 combinations, with Count 0 for an
 // empty one, so an operator sees every series from the first Snapshot on.
 
 // itemKinds is every Kind an Item can have; ItemCounts has one series per Scope
@@ -110,7 +110,7 @@ func TestItemCountsCountTheLocalScope(t *testing.T) {
 	})
 }
 
-// Criterion: from the first Snapshot on, all 12 series appear, with 0 for an
+// Criterion: from the first Snapshot on, all 15 series appear, with 0 for an
 // empty one.
 func TestItemCountsOfAnEmptySnapshotAreAllZero(t *testing.T) {
 	snap := load(t, map[string]string{"global/articles/only.md": article("Only")})
