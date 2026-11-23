@@ -59,7 +59,7 @@ func secretNames(t *testing.T, rows []SettingSpec) []string {
 func TestRegistryMarksExactlyTheSecretSettings(t *testing.T) {
 	server := secretNames(t, Settings)
 	sort.Strings(server)
-	want := []string{EnvAPIToken, EnvAPITokens, "GOLDIE_SESSION_KEY", envGitSSHKey, envGitSSHKnownHosts, envGitToken}
+	want := []string{EnvAPIToken, EnvAPITokens, "GOLDIE_SESSION_KEY", EnvGitHubClientSecret, envGitSSHKey, envGitSSHKnownHosts, envGitToken}
 	sort.Strings(want)
 	if !reflect.DeepEqual(server, want) {
 		t.Errorf("Settings rows marked Secret = %v, want %v", server, want)
@@ -157,6 +157,13 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		// The federated activity settings (#398).
 		envActivityPeers:         "goldie-headless.goldie.svc",
 		envActivityReorderWindow: "750ms",
+
+		// The GitHub sign-in settings (#642), valid only together.
+		EnvGitHubClientID: "Iv1.sample",
+		EnvGitHubURL:      "https://ghe.example.com",
+		EnvGitHubOrgs:     "acme",
+		EnvGitHubTeams:    "acme/ops",
+		EnvPublicURL:      "https://goldie.example.com",
 	}
 	for source, other := range map[string]string{EnvContentDir: envGitURL, envGitURL: EnvContentDir} {
 		t.Run(source, func(t *testing.T) {
@@ -167,6 +174,12 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 				// GOLDIE_SOURCES conflicts with both single-Source variables
 				// this test loads; it reports as unset here and is covered by
 				// the Sources tests.
+				if s.Name == EnvGitHubClientSecret {
+					// GitHub sign-in is valid only as a whole (#642), so its
+					// secret is set; the report must still redact it.
+					env[s.Name] = "gh-sample-secret-" + canaryCore
+					continue
+				}
 				if secretOf(t, s) || s.Name == other || s.Name == EnvSources {
 					continue
 				}
@@ -189,6 +202,10 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 			}
 			for _, s := range Settings {
 				switch {
+				case s.Name == EnvGitHubClientSecret:
+					if rec[s.Name] != "(redacted)" {
+						t.Errorf("%s is set: report shows %v, want (redacted)", s.Name, rec[s.Name])
+					}
 				case secretOf(t, s):
 					if rec[s.Name] != "(unset)" {
 						t.Errorf("%s is unset: report shows %v, want (unset)", s.Name, rec[s.Name])
@@ -228,6 +245,11 @@ func reportLeaks(t *testing.T, name string) []string {
 		"plain":     {name: canary},
 		"file":      {name + "_FILE": path},
 		"injection": {name: canary + "\n\"}{\"level\":\"ERROR\",\"" + name + "\":\"" + canaryCore + "\"}"},
+	}
+	if name == EnvGitHubClientSecret { // a lone client secret is a partial configuration
+		for _, env := range cases {
+			env[EnvGitHubClientID], env[EnvGitHubOrgs], env[EnvPublicURL] = "Iv1.sample", "acme", "https://goldie.example.com"
+		}
 	}
 	var leaks []string
 	for form, env := range cases {
