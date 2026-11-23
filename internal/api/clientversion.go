@@ -82,7 +82,7 @@ const (
 // an oversized or foreign one. It returns one of three constants, never a value
 // derived from the request (PC-12).
 func clientVia(h http.Header) string {
-	if v := h.Values(contract.ViaHeader); len(v) == 1 && len(v[0]) <= maxClientHeader && v[0] == contract.ViaMCP {
+	if v := h.Values(contract.ViaHeader); len(v) == 1 && v[0] == contract.ViaMCP {
 		return viaMCP
 	}
 	if _, ok := goldieClient(h.Values(contract.ClientHeader)); ok {

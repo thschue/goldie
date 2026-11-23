@@ -133,7 +133,7 @@ other instruments: there are no HTTP server duration or runtime metrics.
 A skill get that answers 404 is not counted, so a name a caller makes up never becomes a `name` label; `name` is the skill's own spelling, whatever case the caller used.
 `scope` is `global` for a skill every Project gets and `project` for a skill one Project defines; a skill from the local `.goldie/` Scope counts as `project`.
 `via` is `cli` for the goldie CLI (dev builds included), `mcp` for an agent through `goldie mcp` or the server's `/mcp`, and `other` for curl, the web UI, any other client or no header.
-It is read from `X-Goldie-Client` and `X-Goldie-Via`, and is the same surface as the client version the activity feed's Via column shows.
+It is read from `X-Goldie-Client` and `X-Goldie-Via`. The client declares it and nothing authenticates it, a courtesy and not a credential: any caller with a token can claim `mcp` or `cli`, so use the metric for trends, not for audit.
 
 ## Client commands
 
