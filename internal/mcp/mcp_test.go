@@ -39,7 +39,8 @@ func TestLineTurnsUnicodeLineSeparatorsIntoSpaces(t *testing.T) {
 }
 
 func TestAPIErrorWithoutAnEnvelopeNamesOnlyTheStatus(t *testing.T) {
-	err := apiError(&http.Response{StatusCode: http.StatusBadGateway}, []byte("<html>http://10.0.0.1/internal</html>"))
+	e := contract.DecodeAPIError(http.StatusBadGateway, http.Header{}, []byte("<html>http://10.0.0.1/internal</html>"))
+	err := wordError(&e, false)
 	if got := err.Error(); got != "the knowledge server answered 502 Bad Gateway" {
 		t.Errorf("error = %q", got)
 	}
@@ -47,7 +48,7 @@ func TestAPIErrorWithoutAnEnvelopeNamesOnlyTheStatus(t *testing.T) {
 
 func TestTransportErrorNamesCancellationAndTimeout(t *testing.T) {
 	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
-		err := transportError(fmt.Errorf("Get \"http://10.0.0.1:8080/api/v1/search\": %w", cause))
+		err := wordError(fmt.Errorf("Get \"http://10.0.0.1:8080/api/v1/search\": %w", cause), false)
 		if got := err.Error(); got != "the request to the knowledge server was cancelled or timed out" {
 			t.Errorf("%v: error = %q", cause, got)
 		}
@@ -55,8 +56,10 @@ func TestTransportErrorNamesCancellationAndTimeout(t *testing.T) {
 }
 
 func TestTransportErrorDropsTheCause(t *testing.T) {
-	err := transportError(errors.New("dial tcp 10.0.0.1:8080: connection refused"))
-	if strings.Contains(err.Error(), "10.0.0.1") {
-		t.Errorf("error leaks the address: %v", err)
+	for _, local := range []bool{false, true} {
+		err := wordError(errors.New("dial tcp 10.0.0.1:8080: connection refused"), local)
+		if strings.Contains(err.Error(), "10.0.0.1") {
+			t.Errorf("local %v: error leaks the address: %v", local, err)
+		}
 	}
 }
