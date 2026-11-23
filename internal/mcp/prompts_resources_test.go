@@ -149,7 +149,7 @@ func TestPromptGetCleansWhatASourceSays(t *testing.T) {
 	if strings.ContainsAny(text, "\u202e\u200b\x1b") || strings.ContainsRune(text, '\U000E0049') {
 		t.Errorf("the prompt keeps a hidden or control character: %q", text)
 	}
-	if !strings.Contains(text, "body") {
+	if !strings.Contains(text, "forged") {
 		t.Errorf("the prompt lacks the SKILL.md text: %q", text)
 	}
 }
