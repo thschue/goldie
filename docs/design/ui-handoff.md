@@ -290,6 +290,8 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 | "Who" in Activity | — | only with `GOLDIE_ACTIVITY_SHOW_IDENTITY=true` |
 | Account chip | `reader` (outline) | `operator` (blue fill) |
 
+The account chip shows a decorative caret (hidden from assistive technology) after the role, so it reads as a button that opens a menu.
+
 ---
 
 ## 6. Tokens
@@ -493,6 +495,8 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Wrong token | That token wasn't accepted. Check it and try again, or ask your platform team for a new one. (A danger `Alert` with `role="alert"`, followed by the error envelope's `details.hint`, tied to the token field with `aria-describedby`.) |
 | Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
 | Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
+| Sign out failed | Could not sign you out. You are still signed in. **Retry** (a `role="alert"` above the page; the user stays on the page and signed in until the DELETE succeeds.) |
+| First load | Loading… (a `main` landmark holding a `role="status"` region with an `h1` (so the page always has one main and one h1; the shell, with its own `main`, replaces it) shown by the app until the first session check settles; no shell, view or chip yet.) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |
