@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -46,6 +47,13 @@ func run(args []string, out io.Writer) error {
 	root := newRoot(out)
 	// An unknown command is misuse even with --help.
 	if _, _, err := root.Find(args); err != nil {
+		// A flag before the command is what is wrong, not the word after it.
+		if len(args) > 0 && strings.HasPrefix(args[0], "-") {
+			root.InitDefaultHelpFlag()
+			if ferr := root.ParseFlags(args); ferr != nil {
+				return root.FlagErrorFunc()(root, ferr)
+			}
+		}
 		return newUsageErr(root.CommandPath(), fmt.Sprintf("unknown command %q", firstWord(args)))
 	}
 	if args == nil {
@@ -218,17 +226,14 @@ func handlerError(err error) error {
 	return fmt.Errorf("build public handler: %w", err)
 }
 
-// firstRunHint is the next step for someone who ran goldie server with nothing set.
-const firstRunHint = "To try goldie on this machine: goldie server --dev ."
-
-// withDevHint ends err with firstRunHint when cfg names neither a Source nor an
+// withDevHint ends err with platform.FirstRunHint when cfg names neither a Source nor an
 // API token: a first run, not an operator mid-setup. A value that is set but
 // invalid, or only one of the two missing, keeps the error as it is.
 func withDevHint(cfg platform.Config, err error) error {
 	if cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
 		return err
 	}
-	return fmt.Errorf("%w\n%s", err, firstRunHint)
+	return fmt.Errorf("%w\n%s", err, platform.FirstRunHint)
 }
 
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz
