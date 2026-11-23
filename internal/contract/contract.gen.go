@@ -857,6 +857,20 @@ type GetArticleParams struct {
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
+// GetBundleParams defines parameters for GetBundle.
+type GetBundleParams struct {
+	// Target The layout of the archive. `claude` is the only target. Anything else, or none, is a 400.
+	Target string `form:"target" json:"target"`
+
+	// Project Resolve for this Project (ADR 0020). Matched ignoring case. An
+	// unregistered Project answers the global set; a value that is not a
+	// `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// IfNoneMatch The `ETag` of the archive the client already has.
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
+}
+
 // GetInstructionsParams defines parameters for GetInstructions.
 type GetInstructionsParams struct {
 	// Target The file the block is written into: `claude` (CLAUDE.md) or `agents`
@@ -1102,6 +1116,26 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBundle Download the resolved set as an archive
+	//
+	// Returns the skills and agents that resolve in the Project's view (the
+	// view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+	// wins, drafts are left out) as a gzip-compressed tar, laid out for the
+	// target. For `claude` the entries are regular files with clean relative
+	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+	// A script keeps its executable bit in the entry's mode. A skill or agent
+	// whose name, or a skill file whose path, cannot be a safe path is left out
+	// on purpose, and nothing in the response marks the omission. A Project
+	// whose view holds no skill and no agent gets a 200 with an empty archive and
+	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// always gives the same ETag. Compare ETags, not bytes: gzip output can
+	// change between Go toolchains. `If-None-Match` with that ETag answers 304
+	// with no body. `goldie pull` writes the archive into the Goldie namespace.
+	//
+	// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
+	GetBundle(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInstructions Read the instruction block
 	//
@@ -1436,6 +1470,36 @@ func (c *Client) GetAgent(ctx context.Context, name string, params *GetAgentPara
 // Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetArticleRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetBundle Download the resolved set as an archive
+//
+// Returns the skills and agents that resolve in the Project's view (the
+// view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+// wins, drafts are left out) as a gzip-compressed tar, laid out for the
+// target. For `claude` the entries are regular files with clean relative
+// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+// A script keeps its executable bit in the entry's mode. A skill or agent
+// whose name, or a skill file whose path, cannot be a safe path is left out
+// on purpose, and nothing in the response marks the omission. A Project
+// whose view holds no skill and no agent gets a 200 with an empty archive and
+// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// always gives the same ETag. Compare ETags, not bytes: gzip output can
+// change between Go toolchains. `If-None-Match` with that ETag answers 304
+// with no body. `goldie pull` writes the archive into the Goldie namespace.
+//
+// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
+func (c *Client) GetBundle(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBundleRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2091,6 +2155,83 @@ func NewGetArticleRequest(server string, id string, params *GetArticleParams) (*
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBundleRequest constructs an http.Request for the GetBundle method
+func NewGetBundleRequest(server string, params *GetBundleParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/bundle"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target", params.Target, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IfNoneMatch != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-None-Match", *params.IfNoneMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("If-None-Match", headerParam0)
+		}
+
 	}
 
 	return req, nil
@@ -2890,6 +3031,28 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticleWithResponse(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
 
+	// GetBundleWithResponse Download the resolved set as an archive
+	//
+	// Returns the skills and agents that resolve in the Project's view (the
+	// view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+	// wins, drafts are left out) as a gzip-compressed tar, laid out for the
+	// target. For `claude` the entries are regular files with clean relative
+	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+	// A script keeps its executable bit in the entry's mode. A skill or agent
+	// whose name, or a skill file whose path, cannot be a safe path is left out
+	// on purpose, and nothing in the response marks the omission. A Project
+	// whose view holds no skill and no agent gets a 200 with an empty archive and
+	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// always gives the same ETag. Compare ETags, not bytes: gzip output can
+	// change between Go toolchains. `If-None-Match` with that ETag answers 304
+	// with no body. `goldie pull` writes the archive into the Goldie namespace.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
+	GetBundleWithResponse(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*GetBundleResponse, error)
+
 	// GetInstructionsWithResponse Read the instruction block
 	//
 	// Returns the instruction block for the Project and target: the clauses that
@@ -3532,6 +3695,103 @@ func (r GetArticleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetArticleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetBundleResponse200Headers the declared response headers of an HTTP 200 response for GetBundle
+type GetBundleResponse200Headers struct {
+	ETag string
+}
+
+// GetBundleResponse304Headers the declared response headers of an HTTP 304 response for GetBundle
+type GetBundleResponse304Headers struct {
+	ETag string
+}
+
+// GetBundleResponse429Headers the declared response headers of an HTTP 429 response for GetBundle
+type GetBundleResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetBundleResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetBundleResponse200Headers
+	// Headers304 the parsed response headers for an HTTP 304 response
+	Headers304 *GetBundleResponse304Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetBundleResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetBundleResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetBundleResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetBundleResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetBundleResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetBundleResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetBundleResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetBundleResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBundleResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBundleResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBundleResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4893,6 +5153,34 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 	return ParseGetArticleResponse(rsp)
 }
 
+// GetBundleWithResponse Download the resolved set as an archive
+//
+// Returns the skills and agents that resolve in the Project's view (the
+// view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+// wins, drafts are left out) as a gzip-compressed tar, laid out for the
+// target. For `claude` the entries are regular files with clean relative
+// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+// A script keeps its executable bit in the entry's mode. A skill or agent
+// whose name, or a skill file whose path, cannot be a safe path is left out
+// on purpose, and nothing in the response marks the omission. A Project
+// whose view holds no skill and no agent gets a 200 with an empty archive and
+// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// always gives the same ETag. Compare ETags, not bytes: gzip output can
+// change between Go toolchains. `If-None-Match` with that ETag answers 304
+// with no body. `goldie pull` writes the archive into the Goldie namespace.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
+func (c *ClientWithResponses) GetBundleWithResponse(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*GetBundleResponse, error) {
+	rsp, err := c.GetBundle(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBundleResponse(rsp)
+}
+
 // GetInstructionsWithResponse Read the instruction block
 //
 // Returns the instruction block for the Project and target: the clauses that
@@ -5587,6 +5875,103 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetArticleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetBundleResponse parses an HTTP response from a GetBundleWithResponse call
+func ParseGetBundleResponse(rsp *http.Response) (*GetBundleResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBundleResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 304:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetBundleResponse200Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 304:
+		var headers GetBundleResponse304Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = value
+		}
+		response.Headers304 = &headers
+	case rsp.StatusCode == 429:
+		var headers GetBundleResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -6709,6 +7094,9 @@ type ServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
+	// GetBundle Download the resolved set as an archive
+	// (GET /api/v1/bundle)
+	GetBundle(w http.ResponseWriter, r *http.Request, params GetBundleParams)
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(w http.ResponseWriter, r *http.Request, params GetInstructionsParams)
@@ -6945,6 +7333,73 @@ func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetArticle(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBundle operation middleware
+func (siw *ServerInterfaceWrapper) GetBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetBundleParams
+
+	// ------------- Required query parameter "target" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "target", r.URL.Query(), &params.Target, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBundle(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7529,6 +7984,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents", wrapper.ListAgents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bundle", wrapper.GetBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}/items", wrapper.GetProjectItems)
@@ -8135,6 +8591,162 @@ type GetArticledefaultJSONResponse struct {
 }
 
 func (response GetArticledefaultJSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundleRequestObject struct {
+	Params GetBundleParams
+}
+
+type GetBundleResponseObject interface {
+	VisitGetBundleResponse(w http.ResponseWriter) error
+}
+
+type GetBundle200ResponseHeaders struct {
+	ETag string
+}
+
+type GetBundle200ApplicationgzipResponse struct {
+	Body          io.Reader
+	Headers       GetBundle200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetBundle200ApplicationgzipResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/gzip")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	{
+		v, err := runtime.StyleParamWithOptions("simple", false, "ETag", response.Headers.ETag, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return fmt.Errorf("error styling response header ETag: %w", err)
+		}
+		w.Header().Set("ETag", v)
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetBundle304ResponseHeaders struct {
+	ETag string
+}
+
+type GetBundle304Response struct {
+	Headers GetBundle304ResponseHeaders
+}
+
+func (response GetBundle304Response) VisitGetBundleResponse(w http.ResponseWriter) error {
+	{
+		v, err := runtime.StyleParamWithOptions("simple", false, "ETag", response.Headers.ETag, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return fmt.Errorf("error styling response header ETag: %w", err)
+		}
+		w.Header().Set("ETag", v)
+	}
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetBundle400JSONResponse ErrorEnvelope
+
+func (response GetBundle400JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle401JSONResponse ErrorEnvelope
+
+func (response GetBundle401JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetBundle426JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetBundle429JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetBundle503JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundledefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetBundledefaultJSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -9779,6 +10391,9 @@ type StrictServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
+	// GetBundle Download the resolved set as an archive
+	// (GET /api/v1/bundle)
+	GetBundle(ctx context.Context, request GetBundleRequestObject) (GetBundleResponseObject, error)
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(ctx context.Context, request GetInstructionsRequestObject) (GetInstructionsResponseObject, error)
@@ -9967,6 +10582,32 @@ func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetArticleResponseObject); ok {
 		if err := validResponse.VisitGetArticleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBundle operation middleware
+func (sh *strictHandler) GetBundle(w http.ResponseWriter, r *http.Request, params GetBundleParams) {
+	var request GetBundleRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetBundle(ctx, request.(GetBundleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBundle")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBundleResponseObject); ok {
+		if err := validResponse.VisitGetBundleResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

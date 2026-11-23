@@ -49,6 +49,8 @@ type skillBundle struct {
 	name  string
 	scope string
 	files map[string][]byte
+	// exec marks the files with an executable bit, keyed as files is.
+	exec map[string]bool
 	// keywords are the keywords in the frontmatter of SKILL.md, lower case.
 	keywords []string
 	// status and description are the frontmatter's ("" if absent).
@@ -146,7 +148,8 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 		}
 		seen[key] = p
 		files := map[string][]byte{}
-		if err := readBundle(fsys, p, "", files); err != nil {
+		exec := map[string]bool{}
+		if err := readBundle(fsys, p, "", files, exec); err != nil {
 			return nil, err
 		}
 		skill, ok := files[skillFileName]
@@ -154,14 +157,14 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 			return nil, fmt.Errorf("%s: has no %s", p, skillFileName)
 		}
 		status, description := skillMeta(skill)
-		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, keywords: skillKeywords(skill), status: status, description: description}
+		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, exec: exec, keywords: skillKeywords(skill), status: status, description: description}
 	}
 	return bundles, nil
 }
 
 // readBundle reads the regular files under dir/rel into files, keyed by their
 // path relative to the bundle.
-func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte) error {
+func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte, exec map[string]bool) error {
 	cur := dir
 	if rel != "" {
 		cur = dir + "/" + rel
@@ -177,7 +180,7 @@ func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte) error {
 		}
 		switch {
 		case e.IsDir():
-			if err := readBundle(fsys, dir, name, files); err != nil {
+			if err := readBundle(fsys, dir, name, files, exec); err != nil {
 				return err
 			}
 		case e.Type().IsRegular():
@@ -187,6 +190,9 @@ func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte) error {
 				return fmt.Errorf("%s: %w", p, err)
 			}
 			files[name] = raw
+			if info, err := e.Info(); err == nil && info.Mode().Perm()&0o111 != 0 {
+				exec[name] = true
+			}
 		}
 	}
 	return nil

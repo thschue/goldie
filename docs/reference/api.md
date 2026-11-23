@@ -142,6 +142,38 @@ Operation ID: `getArticle`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/bundle`
+
+Download the resolved set as an archive
+
+Returns the skills and agents that resolve in the Project's view (the
+view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+wins, drafts are left out) as a gzip-compressed tar, laid out for the
+target. For `claude` the entries are regular files with clean relative
+slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+A script keeps its executable bit in the entry's mode. A skill or agent
+whose name, or a skill file whose path, cannot be a safe path is left out
+on purpose, and nothing in the response marks the omission. A Project
+whose view holds no skill and no agent gets a 200 with an empty archive and
+a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+always gives the same ETag. Compare ETags, not bytes: gzip output can
+change between Go toolchains. `If-None-Match` with that ETag answers 304
+with no body. `goldie pull` writes the archive into the Goldie namespace.
+
+Operation ID: `getBundle`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The archive. | `application/gzip` (`string`) |
+| `304` | The set is the one 'If-None-Match' names. No body. | none |
+| `400` | For the bundle, 'target' is missing or not a known target, or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the bundle, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/instructions`
 
 Read the instruction block

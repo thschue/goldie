@@ -194,6 +194,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the resolved set as an archive
+         * @description Returns the skills and agents that resolve in the Project's view (the
+         *     view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+         *     wins, drafts are left out) as a gzip-compressed tar, laid out for the
+         *     target. For `claude` the entries are regular files with clean relative
+         *     slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+         *     file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+         *     A script keeps its executable bit in the entry's mode. A skill or agent
+         *     whose name, or a skill file whose path, cannot be a safe path is left out
+         *     on purpose, and nothing in the response marks the omission. A Project
+         *     whose view holds no skill and no agent gets a 200 with an empty archive and
+         *     a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+         *     always gives the same ETag. Compare ETags, not bytes: gzip output can
+         *     change between Go toolchains. `If-None-Match` with that ETag answers 304
+         *     with no body. `goldie pull` writes the archive into the Goldie namespace.
+         */
+        get: operations["getBundle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -1872,6 +1905,71 @@ export interface operations {
                 };
             };
             /** @description For the instruction block, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getBundle: {
+        parameters: {
+            query: {
+                /** @description The layout of the archive. `claude` is the only target. Anything else, or none, is a 400. */
+                target: string;
+                /**
+                 * @description Resolve for this Project (ADR 0020). Matched ignoring case. An
+                 *     unregistered Project answers the global set; a value that is not a
+                 *     `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: {
+                /** @description The `ETag` of the archive the client already has. */
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive. */
+            200: {
+                headers: {
+                    /** @description The digest of the set, in double quotes. */
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            /** @description The set is the one `If-None-Match` names. No body. */
+            304: {
+                headers: {
+                    /** @description The digest of the set, unchanged, in double quotes. */
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description For the bundle, `target` is missing or not a known target, or `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the bundle, no bearer token was sent, or it is wrong. */
             401: {
                 headers: {
                     [name: string]: unknown;
