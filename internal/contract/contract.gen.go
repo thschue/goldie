@@ -1209,7 +1209,8 @@ type ClientInterface interface {
 	//
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
-	// file list.
+	// file list. Fetch one of a skill's files with `getSkillFile`
+	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
 	ListSkills(ctx context.Context, params *ListSkillsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1638,7 +1639,8 @@ func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBod
 //
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
-// file list.
+// file list. Fetch one of a skill's files with `getSkillFile`
+// (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
 func (c *Client) ListSkills(ctx context.Context, params *ListSkillsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3002,7 +3004,8 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
-	// file list.
+	// file list. Fetch one of a skill's files with `getSkillFile`
+	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5055,7 +5058,8 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 //
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
-// file list.
+// file list. Fetch one of a skill's files with `getSkillFile`
+// (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Returns a wrapper object for the known response body format(s).
 //
