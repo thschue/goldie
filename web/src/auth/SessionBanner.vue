@@ -8,7 +8,7 @@ const route = useRoute();
 </script>
 
 <template>
-  <div v-if="ended" role="status" class="banner">
+  <div v-if="ended && !route.meta.public" role="status" class="banner">
     Your session ended.
     <RouterLink :to="{ path: '/signin', query: { next: route.fullPath } }">Sign in again</RouterLink>
     to keep going.

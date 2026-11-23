@@ -1,8 +1,6 @@
 // The UX evidence run (`./run ux`): screenshots and axe against a goldie
 // server that ./run ux starts and stops. Everything goes to UX_DIR, the `ux`
 // CI artifact.
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 const baseURL = process.env.GOLDIE_UX_URL;
@@ -14,7 +12,11 @@ const out = process.env.UX_DIR ?? '../ux';
 // The signed-in session cookie the setup project saves. It lives with the
 // server's temporary files (./run ux sets GOLDIE_UX_STATE), never in the ux/
 // artifact.
-export const statePath = process.env.GOLDIE_UX_STATE ?? join(tmpdir(), 'goldie-ux-state.json');
+const state = process.env.GOLDIE_UX_STATE;
+if (!state) {
+  throw new Error('GOLDIE_UX_STATE is not set: run the specs with ./run ux, which keeps the session state in its own temporary directory');
+}
+export const statePath = state;
 
 export default defineConfig({
   testDir: './e2e',
