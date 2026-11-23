@@ -8,7 +8,7 @@ import (
 )
 
 // ItemCount is the number of Items of one Kind in one Scope kind. Scope is
-// global, project or local, and Kind is article, agent, instruction or skill.
+// global, project or local, and Kind is article, agent, loop, instruction or skill.
 // It mirrors engine.ItemCount, so this package imports nothing from engine.
 type ItemCount struct {
 	Scope string
