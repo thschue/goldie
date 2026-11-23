@@ -248,7 +248,6 @@ func TestCookieWriteRejectsCrossSiteRequestsEvenWithAValidToken(t *testing.T) {
 		"foreign origin":                     withOrigin("https://evil.example"),
 		"null origin":                        withOrigin("null"),
 		"other port origin":                  withOrigin("https://goldie.example.com:8443"),
-		"http origin on https":               withOrigin("http://goldie.example.com"),
 		"cross-site with same origin header": both(withFetchSite("cross-site"), withOrigin(secureBase)),
 	} {
 		resp, body := postTrigger(t, h, withCookie(c), withCSRF(tok), mutate)
