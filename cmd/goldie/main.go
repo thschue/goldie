@@ -35,7 +35,12 @@ func run(args []string, out io.Writer) error {
 	if cli.IsCommand(args[0]) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		return cli.Run(ctx, args, clientEnv(out))
+		env, flush, err := clientEnv(out, platform.RoleCLI)
+		if err != nil {
+			return err
+		}
+		defer flush()
+		return cli.Run(ctx, args, env)
 	}
 	switch args[0] {
 	case "server":
@@ -63,13 +68,24 @@ func run(args []string, out io.Writer) error {
 	return usageError()
 }
 
-// clientEnv is the process environment for the client commands, with the
+// clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
 // embedded server of --dir and GOLDIE_DIR wired in from app, so cli imports
-// neither engine nor app.
-func clientEnv(out io.Writer) cli.Env {
-	env := cli.DefaultEnv(out)
+// neither engine nor app. When OTEL_* selects traces, its client traces every
+// API call. The caller defers flush, which sends the spans within clientFlush.
+func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error) {
+	env = cli.DefaultEnv(out)
 	env.StartLocal = app.StartLocal
-	return env
+	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role)
+	if err != nil {
+		return env, nil, fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	if tel.Enabled() {
+		// The SDK's notices go to stderr: stdout carries the command's
+		// output, or for goldie mcp only MCP messages.
+		tel.RouteNoticesTo(platform.NewLogger(os.Stderr, slog.LevelInfo, role))
+		env.Client = &http.Client{Transport: tel.WrapTransport(http.DefaultTransport)}
+	}
+	return env, func() { flushTelemetry(tel, clientFlush) }, nil
 }
 
 func usageError() error {
@@ -88,7 +104,12 @@ const devNote = "server -dev serves dir (else GOLDIE_CONTENT_DIR, else the worki
 func runMCP(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return app.RunMCP(ctx, args, clientEnv(io.Discard), os.Stdin, os.Stdout)
+	env, flush, err := clientEnv(io.Discard, platform.RoleMCP)
+	if err != nil {
+		return err
+	}
+	defer flush()
+	return app.RunMCP(ctx, args, env, os.Stdin, os.Stdout)
 }
 
 // runServer starts the server and blocks until it stops. The first SIGTERM or
@@ -98,7 +119,7 @@ func runServer(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer flushTelemetry(tel)
+	defer flushTelemetry(tel, serverFlush)
 	cfg.Report(logger)
 	tel.Report(logger)
 	ctx, force, stop := stopSignals(logger)
@@ -128,7 +149,7 @@ func runDev(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer flushTelemetry(tel)
+	defer flushTelemetry(tel, serverFlush)
 	dir := cfg.ContentDir
 	if len(args) == 1 {
 		dir = args[0]
@@ -183,10 +204,17 @@ func serverSetup(lookup platform.Lookup, logOut io.Writer) (platform.Config, *sl
 	return cfg, tel.WrapLogger(logger, "server"), tel, nil
 }
 
-// flushTelemetry flushes and stops telemetry. Serve flushes it in the drain;
-// this covers early returns.
-func flushTelemetry(tel *platform.Telemetry) {
-	fctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// How long flushTelemetry may take. A client role flushes on its way out, so
+// an unreachable collector delays its exit by at most clientFlush.
+const (
+	serverFlush = 5 * time.Second
+	clientFlush = 2 * time.Second
+)
+
+// flushTelemetry flushes and stops telemetry within timeout. For the server,
+// Serve flushes it in the drain; this covers early returns.
+func flushTelemetry(tel *platform.Telemetry, timeout time.Duration) {
+	fctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	_ = tel.Shutdown(fctx)
 }

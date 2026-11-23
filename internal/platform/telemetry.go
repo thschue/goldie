@@ -55,12 +55,26 @@ type Telemetry struct {
 	err  error
 }
 
-// telemetryResource returns the resource attributes every signal carries.
-// extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and serviceName the
-// OTEL_SERVICE_NAME value (empty when unset). goldie owns service.version and
-// goldie.mode, so extra cannot override them; service.name may be overridden.
-// goldie.mode is "all" until server roles are split (#24).
+// telemetryResource returns the resource attributes every signal of the
+// server carries. extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and
+// serviceName the OTEL_SERVICE_NAME value (empty when unset). goldie owns
+// service.version, goldie.role and goldie.mode, so extra cannot override them;
+// service.name may be overridden. goldie.mode is "all" for the server until
+// server roles are split (#24); goldie.mode is a server concept only.
 func telemetryResource(serviceName string, extra map[string]string) *resource.Resource {
+	return roleResource(RoleServer, serviceName, extra)
+}
+
+// RoleServer is the goldie.role of the server. The client roles are RoleCLI
+// and RoleMCP (telemetry_client.go).
+const RoleServer = "server"
+
+// serverMode is the server's goldie.mode; client roles carry no goldie.mode.
+const serverMode = "all"
+
+// roleResource is telemetryResource for the process whose goldie.role is
+// role. Only the server (RoleServer) carries goldie.mode.
+func roleResource(role, serviceName string, extra map[string]string) *resource.Resource {
 	name := defaultServiceName
 	if v := extra["service.name"]; v != "" {
 		name = v
@@ -68,10 +82,10 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 	if serviceName != "" {
 		name = serviceName
 	}
-	attrs := make([]attribute.KeyValue, 0, len(extra)+3)
+	attrs := make([]attribute.KeyValue, 0, len(extra)+4)
 	for k, v := range extra {
 		switch k {
-		case "service.name", "service.version", "goldie.mode":
+		case "service.name", "service.version", "goldie.mode", "goldie.role":
 		default:
 			attrs = append(attrs, attribute.String(k, v))
 		}
@@ -79,8 +93,11 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 	attrs = append(attrs,
 		attribute.String("service.name", name),
 		attribute.String("service.version", CurrentVersion().Version),
-		attribute.String("goldie.mode", "all"),
+		attribute.String("goldie.role", role),
 	)
+	if role == RoleServer {
+		attrs = append(attrs, attribute.String("goldie.mode", serverMode))
+	}
 	return resource.NewSchemaless(attrs...)
 }
 
@@ -261,6 +278,13 @@ var secretOTelNames = secretSet(TelemetrySettings)
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
 func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
+	return setupTelemetry(ctx, lookup, RoleServer)
+}
+
+// setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
+// client role (any role but RoleServer) reads and exports traces only.
+func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+	server := role == RoleServer
 	var errs []error
 	get := func(name string) string {
 		var v string
@@ -280,9 +304,12 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		}
 		return strings.TrimSpace(v)
 	}
-	clientInfo, err := clientInfoEnabled(lookup)
-	if err != nil {
-		errs = append(errs, err)
+	var clientInfo bool
+	if server {
+		var err error
+		if clientInfo, err = clientInfoEnabled(lookup); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if v := strings.ToLower(get(envOTelDisabled)); v != "" && v != "true" && v != "false" {
 		errs = append(errs, fmt.Errorf("%s: must be true or false", envOTelDisabled))
@@ -298,15 +325,19 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
-	metricCfg, err := parseMetricSettings(get)
-	if err != nil {
-		errs = append(errs, err)
-	}
 	type signal struct{ name, exporter, prefix string }
 	signals := []signal{
 		{"traces", "OTEL_TRACES_EXPORTER", "OTEL_EXPORTER_OTLP_TRACES_"},
 		{"logs", "OTEL_LOGS_EXPORTER", "OTEL_EXPORTER_OTLP_LOGS_"},
 		{"metrics", "OTEL_METRICS_EXPORTER", "OTEL_EXPORTER_OTLP_METRICS_"},
+	}
+	var metricCfg metricSettings
+	if server {
+		if metricCfg, err = parseMetricSettings(get); err != nil {
+			errs = append(errs, err)
+		}
+	} else {
+		signals = signals[:1]
 	}
 	on := map[string]bool{}
 	headers := map[string]map[string]string{}
@@ -399,7 +430,7 @@ func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
 		}
 		opts = append(opts, withMetricReader(reader))
 	}
-	t := newTelemetry(telemetryResource(serviceName, resAttrs), traceCfg, spans, logs, opts...)
+	t := newTelemetry(roleResource(role, serviceName, resAttrs), traceCfg, spans, logs, opts...)
 	t.notice = notice
 	t.clientInfo = clientInfo
 	for _, name := range t.signals() {
@@ -626,8 +657,7 @@ func (t *Telemetry) WrapLogger(l *slog.Logger, component string) *slog.Logger {
 	if !t.Enabled() {
 		return l
 	}
-	t.notice.install()
-	t.notice.attach(l)
+	t.RouteNoticesTo(l)
 	if t.lp == nil {
 		return l
 	}
