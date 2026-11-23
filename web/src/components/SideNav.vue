@@ -2,14 +2,11 @@
 // The side nav (handoff §2.1): every entry links to its §2.2 route, and the
 // router marks the current one with aria-current="page". Operator-only entries
 // are absent for readers, who get the Reader nav note (§8) instead.
+import { assetTabs } from '../assets/tabs';
+
 defineProps<{ role: 'reader' | 'operator' }>();
 
-const assets = [
-  ['Skills', '/assets/skills'],
-  ['Agents', '/assets/agents'],
-  ['Loops', '/assets/loops'],
-  ['Instructions', '/assets/instructions'],
-];
+const assets = assetTabs.map((t) => [t.name, `/assets/${t.slug}`]);
 const operate = [
   ['Activity', '/ops/activity'],
   ['Sources', '/ops/sources'],
