@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+// FirstRunHint is the next step for someone who ran a goldie command with
+// nothing set up: the server or a client with no server to ask.
+const FirstRunHint = "To try goldie on this machine: goldie server --dev ."
+
 // Environment variable names. The GOLDIE_ prefix is mandatory (PC-04).
 const (
 	EnvAddr         = "GOLDIE_ADDR"

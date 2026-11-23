@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/cli"
@@ -28,6 +29,25 @@ const (
 func init() {
 	// Help lists the commands in the order they are added.
 	cobra.EnableCommandSorting = false
+	cobra.AddTemplateFunc("flagUsages", flagUsages)
+}
+
+// plainBool hides IsBoolFlag from pflag's help, which lists a bool flag that
+// has it as --name[=true|false]. Embedding the interface drops the method;
+// the type stays "bool" so pflag adds no other [=...] suffix.
+type plainBool struct{ pflag.Value }
+
+// flagUsages is fs's help text with each bool flag shown without a value.
+func flagUsages(fs *pflag.FlagSet) string {
+	plain := pflag.NewFlagSet("help", pflag.ContinueOnError)
+	fs.VisitAll(func(f *pflag.Flag) {
+		c := *f
+		if f.Value.Type() == "bool" {
+			c.Value = plainBool{f.Value}
+		}
+		plain.AddFlag(&c)
+	})
+	return strings.TrimRight(plain.FlagUsages(), " \n")
 }
 
 // usageErr is a command used wrongly; main prints it to stderr and exits 2.
@@ -47,11 +67,7 @@ func newUsageErr(path, msg string) *usageErr {
 func misuse(err error) error {
 	var ue *cli.UsageError
 	if errors.As(err, &ue) {
-		msg := ue.Msg // the usage text names goldie again, so drop its prefix
-		if rest, ok := strings.CutPrefix(msg, "usage: "); ok {
-			msg = "wrong arguments: " + rest
-		}
-		return newUsageErr("goldie "+ue.Command, msg)
+		return newUsageErr("goldie "+ue.Command, ue.Msg)
 	}
 	return err
 }
@@ -73,7 +89,7 @@ Examples:
 {{.Example}}
 {{end}}{{if .HasAvailableLocalFlags}}
 Flags:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+{{flagUsages .LocalFlags}}
 {{end}}`
 
 // rootHelpTemplate lists the commands in the two groups.
@@ -86,7 +102,7 @@ Usage:
   {{rpad .Name .NamePadding}} {{.Short}}{{end}}{{end}}
 {{end}}
 Flags:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+{{flagUsages .LocalFlags}}
 
 Run '{{.CommandPath}} <command> --help' for a command's flags and examples.
 `

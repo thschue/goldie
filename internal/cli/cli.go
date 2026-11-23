@@ -40,7 +40,7 @@ func isCommand(name string) bool { return slices.Contains(Commands, name) }
 // UsageError is a command used wrongly; the dispatcher exits 2 for it.
 type UsageError struct {
 	Command string // the command that was misused
-	Msg     string
+	Msg     string // the reason only: the dispatcher adds the program name
 }
 
 func (e *UsageError) Error() string { return e.Msg }
@@ -74,24 +74,8 @@ type settings struct {
 	json                 bool
 }
 
-// Run runs one client command. args[0] is the command name. Its flags may
-// come before, between or after the positional words.
-func Run(ctx context.Context, args []string, env Env) error {
-	if len(args) == 0 || !isCommand(args[0]) {
-		return errors.New("usage: goldie " + strings.Join(Commands, " | "))
-	}
-	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	exec := Command(args[0], fs)
-	pos, err := parseInterleaved(fs, args[1:])
-	if err != nil {
-		return fmt.Errorf("%w\nusage: goldie %s [flags]\n%s", err, args[0], TokenNote)
-	}
-	return exec(ctx, pos, env)
-}
-
 // Command registers the flags of the client command name (an isCommand) on fs
-// and returns what runs it once fs is parsed, by Run or by cmd/goldie.
+// and returns what runs it once fs is parsed, which cmd/goldie does.
 func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []string, env Env) error {
 	f := BindClientFlags(fs)
 	if name != "version" { // version has no use for a Project
@@ -131,27 +115,27 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	switch name {
 	case "search":
 		if len(pos) == 0 {
-			return &UsageError{name, "usage: goldie search <words>"}
+			return &UsageError{name, "search needs <words>"}
 		}
 		return c.search(ctx, strings.Join(pos, " "))
 	case "lookup":
 		if len(pos) != 1 {
-			return &UsageError{name, "usage: goldie lookup <id>"}
+			return &UsageError{name, "lookup takes one <id>"}
 		}
 		return c.lookup(ctx, pos[0])
 	case "status":
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie status"}
+			return &UsageError{name, "status takes no arguments"}
 		}
 		return c.status(ctx)
 	case "init":
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie init [--project ID]"}
+			return &UsageError{name, "init takes no arguments"}
 		}
 		return c.initProject(ctx)
 	default:
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie version"}
+			return &UsageError{name, "version takes no arguments"}
 		}
 		return c.version(ctx)
 	}
@@ -317,22 +301,6 @@ func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
 		errOut = io.Discard
 	}
 	return &commander{s: s, out: env.Out, errOut: errOut, env: env}, nil
-}
-
-// parseInterleaved parses flags that may come before, between or after the
-// positional arguments, and returns the positional ones.
-func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
-	var pos []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return nil, err
-		}
-		if fs.NArg() == 0 {
-			return pos, nil
-		}
-		pos = append(pos, fs.Arg(0))
-		args = fs.Args()[1:]
-	}
 }
 
 // commander holds what the commands share.

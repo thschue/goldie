@@ -258,3 +258,54 @@ func TestSingleDashLongFlagsAreMisuse(t *testing.T) {
 		wantMisuse(t, args, stdout, stderr, code, "", nextStep)
 	}
 }
+
+// A flag before the command is the flag that is wrong: the error names --json,
+// not the command that follows it (#459).
+func TestFlagBeforeTheCommandIsNamedNotTheCommand(t *testing.T) {
+	args := []string{"--json", "search", "x"}
+	stdout, stderr, code := runHelp(t, args...)
+	wantMisuse(t, args, stdout, stderr, code, "json", nextStep)
+	if strings.Contains(stderr, "unknown command") || strings.Contains(strings.SplitN(stderr, "\n", 2)[0], "search") {
+		t.Errorf("goldie %v: stderr blames the command, want the flag:\n%s", args, stderr)
+	}
+}
+
+// The error line says "goldie" once, as the program prefix (#459).
+func TestMisuseErrorNamesGoldieOnce(t *testing.T) {
+	for _, args := range [][]string{{"search"}, {"lookup", "a", "b"}} {
+		stdout, stderr, code := runHelp(t, args...)
+		wantMisuse(t, args, stdout, stderr, code, "", nextStep)
+		if first := strings.SplitN(stderr, "\n", 2)[0]; strings.Count(first, "goldie") != 1 {
+			t.Errorf("goldie %v: error line %q names goldie %d times, want once", args, first, strings.Count(first, "goldie"))
+		}
+	}
+}
+
+// A bool flag takes no value in help: no [=true|false] (#459).
+func TestHelpShowsBoolFlagsWithoutAValueSuffix(t *testing.T) {
+	for _, args := range [][]string{{"search", "--help"}, {"server", "--help"}, {"--help"}} {
+		stdout, stderr, code := runHelp(t, args...)
+		if code != 0 || stderr != "" {
+			t.Errorf("goldie %v: exit %d, stderr %q, want 0 and empty", args, code, stderr)
+		}
+		if strings.Contains(stdout, "[=true|false]") {
+			t.Errorf("goldie %v: help shows [=true|false] on a bool flag:\n%s", args, stdout)
+		}
+		if !strings.Contains(stdout, "--help") {
+			t.Errorf("goldie %v: help lacks the --help flag:\n%s", args, stdout)
+		}
+	}
+}
+
+// No help text carries any [= value suffix on a flag (#459).
+func TestHelpShowsNoValueSuffixOnAnyFlag(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"search", "--help"}, {"status", "--help"}, {"server", "--help"}} {
+		stdout, _, code := runHelp(t, args...)
+		if code != 0 {
+			t.Errorf("goldie %v: exit %d, want 0", args, code)
+		}
+		if strings.Contains(stdout, "[=") {
+			t.Errorf("goldie %v: help shows a [= suffix:\n%s", args, stdout)
+		}
+	}
+}
