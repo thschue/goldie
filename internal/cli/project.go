@@ -34,11 +34,20 @@ var sourceWords = map[project.Source]string{
 // prefix.
 func detectProject(dir, flagValue, envValue string) (project.Detected, error) {
 	d, err := project.Detect(dir, flagValue, envValue)
+	if err != nil {
+		return project.Detected{}, withSourceWords(err)
+	}
+	return d, nil
+}
+
+// withSourceWords prefixes the error of an unusable Project with the words of
+// its source, and passes any other error, or nil, on as it is.
+func withSourceWords(err error) error {
 	var se *project.SourceError
 	if errors.As(err, &se) {
-		return project.Detected{}, fmt.Errorf("%s: %w", sourceWords[se.Source], se.Err)
+		return fmt.Errorf("%s: %w", sourceWords[se.Source], se.Err)
 	}
-	return d, err
+	return err
 }
 
 // describeProject is the text of the Project line: the problem when there is
@@ -68,10 +77,7 @@ func workingProject(lookup platform.Lookup, flagValue string) (project.Detected,
 	if err != nil {
 		return project.Detected{}, errors.New("cannot read the working directory")
 	}
-	envValue := ""
-	if lookup != nil {
-		envValue, _ = lookup(EnvProject)
-	}
+	envValue, _ := lookup(EnvProject)
 	return detectProject(dir, flagValue, envValue)
 }
 
@@ -84,15 +90,13 @@ type SessionProject struct {
 	Problem  string // the Project problem as status words it, or ""
 }
 
-// DetectProject detects the Project of the working directory in the order of
-// the client commands, without a --project flag: GOLDIE_PROJECT from env,
-// .goldie/config.yaml, then the git remotes upstream and origin. A problem is
-// returned in the words of status's Project line, not as an error, so the
-// caller can go on without a default. Nothing returned holds a path, a remote
-// URL or file content.
-func DetectProject(env Env) SessionProject {
-	d, err := workingProject(env.Lookup, "")
-	if err != nil {
+// ProjectWords words what project.Detect returned, d and err, as goldie
+// status does: the source in status's words, or the problem of its Project
+// line, with an unusable Project's source as a prefix. It does no I/O and
+// detects nothing; the caller detects. Nothing returned holds a path, a
+// remote URL or file content, because project.Detect's errors hold none.
+func ProjectWords(d project.Detected, err error) SessionProject {
+	if err = withSourceWords(err); err != nil {
 		return SessionProject{Problem: contract.CleanLine(err.Error())}
 	}
 	return SessionProject{ID: d.ID, Source: sourceWords[d.Source], Rejected: d.Rejected}
