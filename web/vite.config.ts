@@ -1,5 +1,5 @@
 import vue from '@vitejs/plugin-vue';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 // ./run ui builds into internal/ui/dist/app, which the Go binary embeds
 // (ADR 0019). Assets are never inlined: the CSP allows fonts only from 'self',
@@ -11,4 +11,6 @@ export default defineConfig({
     emptyOutDir: true,
     assetsInlineLimit: 0,
   },
+  // Component tests render with Vue's server renderer: no DOM library.
+  test: { include: ['src/**/*.test.ts'], environment: 'node' },
 });

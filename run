@@ -19,7 +19,8 @@
 #   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs)
 #   ./run ui         build the SPA (npm ci --ignore-scripts, npm run build in web/) into internal/ui/dist/app;
 #                    needs Node, not part of check
-#   ./run ux         build, serve examples/knowledge and run the Playwright specs in web/e2e
+#   ./run ux         build, type-check and run the component tests, serve examples/knowledge and run the
+#                    Playwright specs in web/e2e
 #                    (screenshots, axe) into ux/, the CI artifact for the UX review; needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
@@ -575,6 +576,9 @@ cmd_ux() {
 	rm -rf "$UX_DIR"
 	mkdir -p "$UX_DIR" || die "cannot create $UX_DIR/"
 	cmd_ui
+	say "ux: type-check and component tests"
+	(cd web && npm run typecheck) || die "ux: the type check failed in web/"
+	(cd web && npm test) || die "ux: the component tests in web/src failed"
 	say "ux: playwright install chromium"
 	# --with-deps installs the browser's system libraries, which needs root:
 	# CI only. --no never downloads an unpinned playwright.

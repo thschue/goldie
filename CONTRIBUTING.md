@@ -20,7 +20,8 @@ Thanks for helping. Agents follow the same rules; the agent-specific mechanics a
 
 A PR that changes the UI (`web/**`, `internal/ui/**`, `docs/design/**`) carries screenshot evidence
 for the UX review. `./run ux` produces it: it needs Node (the version in `web/.nvmrc`) and downloads
-Playwright's Chromium on first use. It builds the UI and the binary, serves `examples/knowledge` on
+Playwright's Chromium on first use. It builds the UI, type-checks it (`vue-tsc`) and runs the
+component tests (`vitest`, Vue's server renderer, no DOM), builds the binary, serves `examples/knowledge` on
 loopback, and runs the Playwright specs in `web/e2e/`: screenshots at 375, 768 and 1280 px in light
 and dark (`shell-<width>-<theme>[-drawer].png`), axe with zero violations, no horizontal scroll and
 targets of at least 44 px. The target check exempts only controls that are not rendered or are visually
