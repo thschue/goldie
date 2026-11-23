@@ -321,7 +321,12 @@ func detectEOL(file []byte, from int, bl *block) string {
 // CheckBlockFile reads dir/name and reports its block state. A missing file is
 // BlockMissing. It never writes.
 func CheckBlockFile(dir, name string, content []byte) (BlockState, error) {
-	file, _, err := readBlockFile(dir, name)
+	r, err := openBlockRoot(dir, name)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = r.Close() }()
+	file, _, err := readBlockFile(r, name)
 	if err != nil {
 		return "", err
 	}
@@ -333,7 +338,12 @@ func CheckBlockFile(dir, name string, content []byte) (BlockState, error) {
 // the old mode and renames it over, and writes nothing when the bytes would
 // not change. A new file gets mode 0644 less the umask.
 func ApplyBlockFile(dir, name string, content []byte) (changed bool, err error) {
-	file, mode, err := readBlockFile(dir, name)
+	r, err := openBlockRoot(dir, name)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = r.Close() }()
+	file, mode, err := readBlockFile(r, name)
 	if err != nil {
 		return false, err
 	}
@@ -344,7 +354,7 @@ func ApplyBlockFile(dir, name string, content []byte) (changed bool, err error) 
 	if file != nil && bytes.Equal(out, file) {
 		return false, nil
 	}
-	if err := replaceBlockFile(dir, name, out, file != nil, mode); err != nil {
+	if err := replaceBlockFile(r, name, out, file != nil, mode); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -355,17 +365,21 @@ func plainBlockName(name string) bool {
 	return name != "" && name != "." && name != ".." && !strings.ContainsAny(name, "/\\\x00")
 }
 
-// readBlockFile returns the bytes and permission bits of dir/name. file is nil
-// when it does not exist; mode is then the one a new file gets.
-func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) {
+// openBlockRoot checks name and opens dir as the root every access goes through.
+func openBlockRoot(dir, name string) (*os.Root, error) {
 	if !plainBlockName(name) {
-		return nil, 0, errBlockName
+		return nil, errBlockName
 	}
 	r, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, 0, fmt.Errorf("cannot open the directory: %w", project.Cause(err))
+		return nil, fmt.Errorf("cannot open the directory: %w", project.Cause(err))
 	}
-	defer func() { _ = r.Close() }()
+	return r, nil
+}
+
+// readBlockFile returns the bytes and permission bits of r/name. file is nil
+// when it does not exist; mode is then the one a new file gets.
+func readBlockFile(r *os.Root, name string) (file []byte, mode fs.FileMode, err error) {
 	fi, err := r.Lstat(name)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -396,17 +410,12 @@ func readBlockFile(dir, name string) (file []byte, mode fs.FileMode, err error) 
 	return append([]byte{}, b...), fi.Mode().Perm(), nil
 }
 
-// replaceBlockFile writes data to a temp file in dir and renames it over name.
+// replaceBlockFile writes data to a temp file in r and renames it over name.
 // An existing file's mode is kept, past the umask; a new file gets 0644 less the
 // umask. The temp file is removed on any failure. Another writer that changes
 // the file between the read and the rename loses its edit: the window is that
 // of one read-modify-write, as for any editor.
-func replaceBlockFile(dir, name string, data []byte, existing bool, mode fs.FileMode) (err error) {
-	r, err := os.OpenRoot(dir)
-	if err != nil {
-		return fmt.Errorf("cannot open the directory: %w", project.Cause(err))
-	}
-	defer func() { _ = r.Close() }()
+func replaceBlockFile(r *os.Root, name string, data []byte, existing bool, mode fs.FileMode) (err error) {
 	suffix := make([]byte, 8)
 	_, _ = rand.Read(suffix)
 	tmp := "." + name + ".goldie-" + hex.EncodeToString(suffix)

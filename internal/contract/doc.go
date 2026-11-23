@@ -9,7 +9,9 @@
 // detects the Project of a working directory for the CLI and MCP, and
 // contract/contracttest (for tests only) checks responses against the document
 // with Conforms, builds example request paths from it with ExamplePath and
-// follows its local $ref pointers with ResolveRef.
+// follows its local $ref pointers with ResolveRef. contract/project also shares
+// its file-opening helpers (Cause, OpenFlags, NoFollow) with the managed-block
+// editor in internal/cli.
 //
 // The hand-written helpers sit beside the generated code: the endpoint
 // reference Markdown is rendered from the document, and CheckArticleID rejects
