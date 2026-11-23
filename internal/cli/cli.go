@@ -40,7 +40,7 @@ func isCommand(name string) bool { return slices.Contains(Commands, name) }
 // UsageError is a command used wrongly; the dispatcher exits 2 for it.
 type UsageError struct {
 	Command string // the command that was misused
-	Msg     string
+	Msg     string // the reason only: the dispatcher adds the program name
 }
 
 func (e *UsageError) Error() string { return e.Msg }
@@ -131,27 +131,27 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	switch name {
 	case "search":
 		if len(pos) == 0 {
-			return &UsageError{name, "usage: goldie search <words>"}
+			return &UsageError{name, "search needs <words>"}
 		}
 		return c.search(ctx, strings.Join(pos, " "))
 	case "lookup":
 		if len(pos) != 1 {
-			return &UsageError{name, "usage: goldie lookup <id>"}
+			return &UsageError{name, "lookup takes one <id>"}
 		}
 		return c.lookup(ctx, pos[0])
 	case "status":
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie status"}
+			return &UsageError{name, "status takes no arguments"}
 		}
 		return c.status(ctx)
 	case "init":
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie init [--project ID]"}
+			return &UsageError{name, "init takes no arguments"}
 		}
 		return c.initProject(ctx)
 	default:
 		if len(pos) != 0 {
-			return &UsageError{name, "usage: goldie version"}
+			return &UsageError{name, "version takes no arguments"}
 		}
 		return c.version(ctx)
 	}

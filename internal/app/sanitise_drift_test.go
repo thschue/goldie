@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 
 	"github.com/thschue/goldie/internal/cli"
 )
@@ -86,7 +90,15 @@ func runCLI(t *testing.T, url string, args ...string) (string, error) {
 		ReadFile: os.ReadFile,
 		Out:      &out,
 	}
-	err := cli.Run(context.Background(), append(args, "--addr", url, "--token", testToken), env)
+	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	exec := cli.Command(args[0], fs)
+	pf := pflag.NewFlagSet(args[0], pflag.ContinueOnError)
+	pf.SetOutput(io.Discard)
+	pf.AddGoFlagSet(fs)
+	if err := pf.Parse(append(args[1:], "--addr", url, "--token", testToken)); err != nil {
+		return "", err
+	}
+	err := exec(context.Background(), pf.Args(), env)
 	return out.String(), err
 }
 

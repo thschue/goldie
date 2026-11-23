@@ -20,27 +20,8 @@ import (
 // MCPTokenNote goes in the help of goldie mcp.
 const MCPTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine and is saved in the MCP client's config."
 
-// RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
-// the API through contract's hardened client, with the CLI's client settings
-// from args and env. It returns nil when the client ends the session by
-// closing in, and when ctx is cancelled. Settings are checked before the first
-// message, so a bad one fails at startup. The default Project is detected
-// once, at startup, as the CLI detects it, and worded by cli.ProjectWords; a
-// Project problem does not stop the session. Nothing but MCP messages is ever
-// written to out.
-func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
-	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	run := BindMCP(fs)
-	if err := fs.Parse(args); err != nil {
-		// flag's message echoes the argument, which may hold control characters.
-		return &cli.UsageError{Command: "mcp", Msg: "unknown flag, or a flag without its value"}
-	}
-	return run(ctx, fs.Args(), env, in, out)
-}
-
 // BindMCP registers the flags of goldie mcp on fs and returns what runs it
-// once fs is parsed, by RunMCP or by the dispatcher in cmd/goldie.
+// once fs is parsed, by the dispatcher in cmd/goldie.
 func BindMCP(fs *flag.FlagSet) func(ctx context.Context, pos []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	transport := fs.String("transport", "", "the MCP transport: stdio")
 	settings := cli.BindClientFlags(fs)
@@ -49,7 +30,7 @@ func BindMCP(fs *flag.FlagSet) func(ctx context.Context, pos []string, env cli.E
 			return &cli.UsageError{Command: "mcp", Msg: "mcp takes no arguments"}
 		}
 		if *transport == "" {
-			return &cli.UsageError{Command: "mcp", Msg: "--transport must be stdio: goldie mcp --transport stdio"}
+			return &cli.UsageError{Command: "mcp", Msg: "--transport must be stdio (pass --transport stdio)"}
 		}
 		if *transport != "stdio" {
 			// The value given is never echoed: it may hold control characters.

@@ -546,8 +546,8 @@ func TestCLIUsageListsInit(t *testing.T) {
 	}
 	root := gitRepo(t, widgetsOrigin)
 	out, err := runInit(t, root, nil, "extra")
-	if err == nil || !strings.Contains(err.Error(), "goldie init") {
-		t.Errorf("init extra: err = %v, want the misuse naming goldie init", err)
+	if err == nil || !strings.Contains(err.Error(), "init takes no arguments") {
+		t.Errorf("init extra: err = %v, want the misuse reason", err)
 	}
 	if out != "" {
 		t.Errorf("init extra printed %q, want nothing", out)

@@ -28,6 +28,21 @@ func statusJSON(t *testing.T, dir string, args ...string) map[string]any {
 	return m
 }
 
+// On a first run, with no address set and no server to ask, status points to
+// goldie server --dev, as the server's first-run hint does (#459).
+func TestCLIStatusWithNoServerPointsToServerDev(t *testing.T) {
+	stdout, stderr, code := runValidate(t, t.TempDir(), validateEnv(), "status")
+	if code == 0 {
+		t.Errorf("exit code = 0, want a failure with no server (stdout %q)", stdout)
+	}
+	if !strings.Contains(stderr, "goldie server --dev") {
+		t.Errorf("stderr = %q, want it to point to goldie server --dev", stderr)
+	}
+	if !strings.Contains(stderr, "GOLDIE_ADDR") {
+		t.Errorf("stderr = %q, want it to keep naming the missing address setting", stderr)
+	}
+}
+
 func TestCLIStatusJSONTokenGiven(t *testing.T) {
 	srv := cliServer(t)
 	cases := []struct {
