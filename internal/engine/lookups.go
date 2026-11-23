@@ -21,7 +21,7 @@ import (
 // global (ADR 0021).
 func (s *Snapshot) checkLookups(all []*Article) error {
 	for _, a := range all {
-		view := viewOf(a)
+		view := s.viewFor(a)
 		for _, id := range lookupIDs(a.Content) {
 			if isPlaceholder(id) {
 				continue
