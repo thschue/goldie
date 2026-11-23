@@ -436,4 +436,4 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 // unreadableContentDir is engine.ErrContentDirUnreadable and its hint. cli may
 // not import engine, so the wording is repeated here; the tests in cmd/goldie
 // hold both to the same text.
-const unreadableContentDir = "content directory is not readable: check that the content directory exists and is readable"
+const unreadableContentDir = "content directory is not readable: check that the path you passed exists and is a readable directory"

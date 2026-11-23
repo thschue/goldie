@@ -100,7 +100,7 @@ var _ Source = DirSource{}
 var ErrContentDirUnreadable = errors.New("content directory is not readable")
 
 // ContentDirUnreadableHint is the next step for ErrContentDirUnreadable.
-const ContentDirUnreadableHint = "check that the content directory exists and is readable"
+const ContentDirUnreadableHint = "check that the path you passed exists and is a readable directory"
 
 // DirSource is a Source backed by a directory on disk.
 type DirSource struct {
