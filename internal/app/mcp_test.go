@@ -238,6 +238,9 @@ func TestMCPGetArticleUnknownIDHintNamesSearchKnowledge(t *testing.T) {
 	if strings.Contains(text, "search operation") {
 		t.Errorf("error still passes on the API's wording: %s", text)
 	}
+	if strings.Contains(text, "Search for the article, then use an id from its results.") {
+		t.Errorf("error still carries the API's unreworded hint: %s", text)
+	}
 }
 
 // #515: a suppressed article keeps the API's suppression hint unchanged.
