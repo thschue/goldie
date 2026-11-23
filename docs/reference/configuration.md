@@ -40,6 +40,11 @@ request and response at 10 seconds. Shutdown does not wait on these timeouts: it
 
 ## goldie server -dev
 
+A first run of plain `goldie server`, with neither a Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`)
+nor an API token (`GOLDIE_API_TOKENS` or `GOLDIE_API_TOKEN`) set, stops with the two errors and
+ends with the line "To try goldie on this machine: goldie server -dev [dir]". When only one is missing, or
+a value is invalid, there is no hint.
+
 `goldie server -dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
 In this mode log records go to stderr, so only the export line goes to stdout. The server runs
 until it is stopped, so run it in the background or redirect stdout to a file and read the
