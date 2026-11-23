@@ -127,6 +127,9 @@ func TestLoadErrors(t *testing.T) {
 			if !strings.HasPrefix(err.Error(), tt.want) {
 				t.Fatalf("error = %q, want prefix %q", err, tt.want)
 			}
+			if tt.name == "no frontmatter" && !strings.Contains(err.Error(), "an article starts with the lines: --- / name: <title> / keywords: [<word>] / ---") {
+				t.Fatalf("error = %q, want the minimal frontmatter block", err)
+			}
 			if strings.Contains(err.Error(), root) {
 				t.Fatalf("error leaks the root path: %q", err)
 			}
