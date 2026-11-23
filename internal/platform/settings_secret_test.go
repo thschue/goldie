@@ -141,6 +141,7 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		EnvAdminAddr:           ":9001",
 		EnvLogLevel:            "debug",
 		EnvDrainSeconds:        "7",
+		EnvMode:                "api",
 		EnvSwaggerUIEnabled:    "false",
 		EnvMCPName:             "acme-golden",
 		EnvContentDir:          "/srv/content-sample",

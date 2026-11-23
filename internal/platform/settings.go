@@ -40,6 +40,7 @@ var Settings = []SettingSpec{
 	{Name: EnvAdminAddr, Value: func(c Config) any { return c.AdminAddr }, Default: ":8081", Meaning: "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
 	{Name: EnvLogLevel, Value: func(c Config) any { return c.LogLevel }, Default: "info", Meaning: "Log level: debug, info, warn or error."},
 	{Name: EnvDrainSeconds, Value: func(c Config) any { return int(c.DrainTimeout / time.Second) }, Default: "25", Meaning: "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
+	{Name: EnvMode, Value: func(c Config) any { return modeOrAll(c.Mode) }, Default: ModeAll, Meaning: "What the server mounts: all (/api, the OpenAPI document, Swagger UI, /mcp and the UI) or api (/api, the OpenAPI document and Swagger UI when enabled; /mcp and / answer the 404 envelope). It is also the goldie.mode resource attribute of the telemetry."},
 	{Name: EnvSwaggerUIEnabled, Value: func(c Config) any { return c.SwaggerUIEnabled }, Default: "true", Meaning: "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
 	{Name: EnvContentDir, Value: func(c Config) any { return c.ContentDir }, Meaning: "goldie server needs this or GOLDIE_GIT_URL, not both; neither set stops the server. goldie validate reads it too, when no directory argument is given. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
 	{Name: EnvAPIToken, Value: func(c Config) any { return c.APIToken }, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKENS, not both; both set stops the server and goldie health. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
@@ -86,7 +87,7 @@ var TelemetrySettings = []SettingSpec{
 	{Name: "OTEL_TRACES_SAMPLER_ARG", Default: "1", Meaning: "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{Name: "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Default: "128", Meaning: "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{Name: "OTEL_SERVICE_NAME", Default: defaultServiceName, Meaning: "Overrides the service.name resource attribute."},
-	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (all), which this cannot override."},
+	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (GOLDIE_MODE), which this cannot override."},
 }
 
 // EnvToken is the API token the client commands send. It is a secret, so it

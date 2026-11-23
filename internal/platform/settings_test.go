@@ -39,6 +39,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	// The session key is a secret with no default: unset means a random per-process key.
 	got[EnvSessionKey] = ""
 	got[EnvMCPName] = cfg.MCPName
+	got[EnvMode] = cfg.Mode
 
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)

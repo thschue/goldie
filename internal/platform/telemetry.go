@@ -62,22 +62,19 @@ type Telemetry struct {
 // server carries. extra holds the parsed OTEL_RESOURCE_ATTRIBUTES and
 // serviceName the OTEL_SERVICE_NAME value (empty when unset). goldie owns
 // service.version, goldie.role and goldie.mode, so extra cannot override them;
-// service.name may be overridden. goldie.mode is "all" for the server until
-// server roles are split (#24); goldie.mode is a server concept only.
+// service.name may be overridden. goldie.mode is "all" here; setupTelemetry
+// passes the GOLDIE_MODE value. goldie.mode is a server concept only.
 func telemetryResource(serviceName string, extra map[string]string) *resource.Resource {
-	return roleResource(RoleServer, serviceName, extra)
+	return roleResource(RoleServer, ModeAll, serviceName, extra)
 }
 
 // RoleServer is the goldie.role of the server. The client roles are RoleCLI
 // and RoleMCP (telemetry_client.go).
 const RoleServer = "server"
 
-// serverMode is the server's goldie.mode; client roles carry no goldie.mode.
-const serverMode = "all"
-
 // roleResource is telemetryResource for the process whose goldie.role is
-// role. Only the server (RoleServer) carries goldie.mode.
-func roleResource(role, serviceName string, extra map[string]string) *resource.Resource {
+// role. Only the server (RoleServer) carries goldie.mode, set to mode.
+func roleResource(role, mode, serviceName string, extra map[string]string) *resource.Resource {
 	name := defaultServiceName
 	if v := extra["service.name"]; v != "" {
 		name = v
@@ -99,7 +96,7 @@ func roleResource(role, serviceName string, extra map[string]string) *resource.R
 		attribute.String("goldie.role", role),
 	)
 	if role == RoleServer {
-		attrs = append(attrs, attribute.String("goldie.mode", serverMode))
+		attrs = append(attrs, attribute.String("goldie.mode", modeOrAll(mode)))
 	}
 	return resource.NewSchemaless(attrs...)
 }
@@ -498,7 +495,10 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string, extra ...te
 		}
 		opts = append(opts, withMetricReader(reader))
 	}
-	t := newTelemetry(roleResource(role, cfg.serviceName, cfg.resAttrs), cfg.trace, spans, logs, opts...)
+	// An invalid GOLDIE_MODE is LoadConfig's startup error; here it reads as all.
+	rawMode, _ := Setting(lookup, os.ReadFile, EnvMode)
+	mode, _ := ParseMode(strings.TrimSpace(rawMode))
+	t := newTelemetry(roleResource(role, mode, cfg.serviceName, cfg.resAttrs), cfg.trace, spans, logs, opts...)
 	t.notice = notice
 	t.clientInfo = cfg.clientInfo
 	for _, name := range t.signals() {
