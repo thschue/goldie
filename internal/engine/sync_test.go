@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -129,17 +128,6 @@ func (c *clockedSource) Load(context.Context) (*Snapshot, error) {
 	return c.snap, c.err
 }
 
-// pollDuration is st.Duration, read by reflection so a missing field fails
-// this test and does not stop the package from compiling.
-func pollDuration(t *testing.T, st SyncStatus) time.Duration {
-	t.Helper()
-	f := reflect.ValueOf(st).FieldByName("Duration")
-	if !f.IsValid() || f.Type() != reflect.TypeOf(time.Duration(0)) {
-		t.Fatal("SyncStatus has no Duration time.Duration field")
-	}
-	return time.Duration(f.Int())
-}
-
 // Criterion (#604): with a fake now, a poll's Duration is the clock delta
 // between before and after the Source load, for a successful and a failed
 // poll, in Status and in the Status handed to onPoll.
@@ -152,17 +140,17 @@ func TestSyncStatusDurationIsTheClockDeltaOfTheLoad(t *testing.T) {
 	if err := s.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := pollDuration(t, s.Status()); got != 3*time.Second {
+	if got := s.Status().Duration; got != 3*time.Second {
 		t.Errorf("Duration after an ok poll = %v, want 3s", got)
 	}
 
 	src.step, src.snap, src.err = 7500*time.Millisecond, nil, errors.New("boom")
 	var handed []SyncStatus
 	s.Run(t.Context(), 0, func(st SyncStatus) { handed = append(handed, st) })
-	if got := pollDuration(t, s.Status()); got != 7500*time.Millisecond {
+	if got := s.Status().Duration; got != 7500*time.Millisecond {
 		t.Errorf("Duration after a failed poll = %v, want 7.5s", got)
 	}
-	if len(handed) != 1 || pollDuration(t, handed[0]) != 7500*time.Millisecond {
+	if len(handed) != 1 || handed[0].Duration != 7500*time.Millisecond {
 		t.Errorf("onPoll got %+v, want one Status with Duration 7.5s", handed)
 	}
 
@@ -170,7 +158,7 @@ func TestSyncStatusDurationIsTheClockDeltaOfTheLoad(t *testing.T) {
 	if err := s.Poll(t.Context()); err == nil {
 		t.Fatal("want error")
 	}
-	if got := pollDuration(t, s.Status()); got != 0 {
+	if got := s.Status().Duration; got != 0 {
 		t.Errorf("Duration of an instant poll = %v, want 0 (not the previous poll's)", got)
 	}
 }
