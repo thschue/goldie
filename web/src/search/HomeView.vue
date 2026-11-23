@@ -50,10 +50,17 @@ async function search(q: string) {
   }
 }
 
+// The query of this view's own navigation in flight. The auth guard asks the
+// session first, so it can land after the user has typed on: then the field
+// keeps the newer words. Any other change of query (back, forward, a link)
+// fills the field.
+let pending: string | undefined;
+
 watch(
   [query, retries],
   ([q], old) => {
-    if (!old || q !== old[0]) draft.value = q;
+    if (q === pending) pending = undefined;
+    else if (!old || q !== old[0]) draft.value = q;
     void search(q);
   },
   { immediate: true },
@@ -69,14 +76,20 @@ const kinds = computed(() => {
 const shown = computed(() => (kindFilter.value === 'all' ? hits.value : hits.value.filter((h) => h.kind === kindFilter.value)));
 
 // Submit in JavaScript, through the router: the UI runs under form-action 'none'.
+function go(q: string) {
+  pending = q === query.value ? undefined : q;
+  return router.push(q ? { path: '/', query: { q } } : { path: '/' }).then((failure) => {
+    if (failure && pending === q) pending = undefined;
+  });
+}
+
 function submit() {
-  const q = draft.value.trim();
-  void router.push(q ? { path: '/', query: { q } } : { path: '/' });
+  void go(draft.value.trim());
 }
 
 async function clear() {
   draft.value = '';
-  await router.push({ path: '/' });
+  await go('');
   input.value?.focus();
 }
 
