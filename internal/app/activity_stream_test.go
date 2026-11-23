@@ -28,11 +28,9 @@ import (
 // or CR, a blank line dispatches, a line starting with ":" is a comment). The
 // contract they fix, beyond the spec:
 //
-//	// activityKeepalive is how often an open stream with nothing to send
-//	// writes a keepalive comment. A package variable so tests can shorten it,
-//	// like platform's connection timeouts; the handler reads it when the
-//	// public handler is built or when a stream opens, never later.
-//	var activityKeepalive time.Duration
+//	// The keepalive is how often an open stream with nothing to send writes
+//	// a keepalive comment. It is a parameter of newPublic and
+//	// newPublicMuxKeepalive (api.DefaultActivityKeepalive in production).
 //
 //	// The guard puts the paths in operatorPaths behind api.RoleOperator,
 //	// mirroring docPaths; /api/v1/activity is the first.
@@ -46,29 +44,21 @@ import (
 //     (`event: dropped`) whose data is one line of JSON;
 //   - the keepalive is an SSE comment line (starting with ":").
 //
-// Until activityKeepalive exists this package's tests do not compile.
 
 const activityPath = "/api/v1/activity"
-
-// shortKeepalive sets activityKeepalive for one test. Set it before building
-// the handler.
-func shortKeepalive(t *testing.T, d time.Duration) {
-	t.Helper()
-	old := activityKeepalive
-	activityKeepalive = d
-	t.Cleanup(func() { activityKeepalive = old })
-}
 
 // roomyRateLimit lets a test send many requests on one token.
 var roomyRateLimit = platform.RateLimit{Requests: 100_000, Per: time.Second, Burst: 100_000}
 
 // streamHandler is activityHandler with a roomy rate limit unless cfg sets one.
-func streamHandler(t *testing.T, cfg platform.Config) *Public {
+// keepalive is how often an open stream with nothing to send writes a
+// keepalive comment; it is passed to the handler, never read from a variable.
+func streamHandler(t *testing.T, cfg platform.Config, keepalive time.Duration) *Public {
 	t.Helper()
 	if cfg.RateLimit == (platform.RateLimit{}) {
 		cfg.RateLimit = roomyRateLimit
 	}
-	return activityHandler(t, cfg)
+	return activityHandlerKeepalive(t, cfg, keepalive)
 }
 
 // sseEvent is one dispatched server-sent event.
@@ -371,7 +361,7 @@ func searchPath(q string) string {
 // that keeps up gets no dropped notice, and the stream is not an event of
 // its own.
 func TestActivityStreamGivesAnOperatorHistoryThenLiveEventsInIDOrder(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	for _, path := range []string{searchPath("kubernetes"), searchPath("cobol"), "/api/v1/articles/agent-loops"} {
@@ -425,11 +415,10 @@ func TestActivityStreamGivesAnOperatorHistoryThenLiveEventsInIDOrder(t *testing.
 }
 
 // Criterion: an open stream with nothing to send writes a keepalive comment
-// every activityKeepalive, and a comment carries no event. The one event an
+// every keepalive interval, and a comment carries no event. The one event an
 // idle stream sends is the live marker after its (empty) history (#245).
 func TestActivityStreamSendsAKeepaliveCommentEveryInterval(t *testing.T) {
-	shortKeepalive(t, 50*time.Millisecond)
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, 50*time.Millisecond)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	resp, s, body := openStream(t, t.Context(), http.DefaultClient, srv.URL+activityPath, bearer(operatorToken))
@@ -464,7 +453,7 @@ func TestActivityStreamSendsAKeepaliveCommentEveryInterval(t *testing.T) {
 // token or an unknown one is a 401, a reader token (plaintext or hashed) a
 // 403, both in the error envelope, with no stream and no secret echoed.
 func TestActivityStreamIsForOperatorsOnly(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	for who, c := range map[string]struct {
@@ -519,7 +508,7 @@ func TestActivityStreamIsForOperatorsOnly(t *testing.T) {
 // is a 403, a 404, a 405 or a redirect, and none, there or outside /api/
 // (the UI's catch-all), is the stream.
 func TestNoSpellingOfTheActivityPathStreamsToAReader(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, activityPath},
 		{http.MethodHead, activityPath},
@@ -574,7 +563,7 @@ var hostileQueries = []string{
 // end one early or inject a dropped notice: an SSE client sees exactly one
 // event per search, each with the query it sent, as text.
 func TestActivityEventsAreOneLineOfJSONSoAQueryCannotForgeAnEvent(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	// Half go into the history, half arrive live.
@@ -689,7 +678,7 @@ func (w *stallWriter) bytes() []byte {
 // again it gets a dropped notice, then the events that still reached it, in
 // id order.
 func TestASlowActivitySubscriberGetsADroppedNoticeAndNeverStallsRequests(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	if rec := serveAs(t, pub, searchPath("before"), func(*http.Request) {}); rec.Code != http.StatusOK {
 		t.Fatalf("fixture: status %d", rec.Code)
 	}
@@ -798,7 +787,7 @@ func TestASlowActivitySubscriberGetsADroppedNoticeAndNeverStallsRequests(t *test
 // refused subscription, and the refusal holds no slot; once a slot frees, an
 // operator gets the stream.
 func TestActivityStreamOverTheSubscriberCapIs503WithAHint(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	cancels := holdAllSlots(t, pub.Activity())
@@ -845,8 +834,7 @@ func TestActivityStreamOverTheSubscriberCapIs503WithAHint(t *testing.T) {
 // per keepalive or per event. Over the limit it is the 429 envelope with
 // Retry-After and takes no slot. A reader's 403 costs the reader nothing.
 func TestAnActivityStreamCostsOneRateLimitToken(t *testing.T) {
-	shortKeepalive(t, 20*time.Millisecond)
-	pub := streamHandler(t, platform.Config{RateLimit: platform.RateLimit{Requests: 1, Per: time.Hour, Burst: 2}})
+	pub := streamHandler(t, platform.Config{RateLimit: platform.RateLimit{Requests: 1, Per: time.Hour, Burst: 2}}, 20*time.Millisecond)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 
@@ -890,8 +878,7 @@ func TestAnActivityStreamCostsOneRateLimitToken(t *testing.T) {
 // subscriber and no goroutine, and requests that are refused (401, 403, 429,
 // 503) never hold a slot.
 func TestActivityStreamEndsWhenTheClientDisconnects(t *testing.T) {
-	shortKeepalive(t, 20*time.Millisecond)
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, 20*time.Millisecond)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	tr := &http.Transport{}
@@ -967,7 +954,7 @@ func TestActivityStreamEndsWhenTheClientDisconnects(t *testing.T) {
 // HEAD is answered wherever GET is: HEAD /api/v1/activity answers with the
 // stream's headers and ends, so the connection is free for the next request.
 func TestHeadActivityEndsAndFreesTheConnection(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	tr := &http.Transport{MaxConnsPerHost: 1}

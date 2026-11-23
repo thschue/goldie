@@ -42,6 +42,36 @@ import (
 // named tokens (ci-reader, ci-operator) unless cfg sets its own.
 func activityHandler(t *testing.T, cfg platform.Config) *Public {
 	t.Helper()
+	pub, err := PublicHandler(activityConfig(cfg), nil)
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	return pub
+}
+
+// activityHandlerKeepalive is activityHandler with the stream keepalive set,
+// built the way PublicHandler builds it (parsed tokens, serve source) but
+// through newPublic, which takes the keepalive as a parameter.
+func activityHandlerKeepalive(t *testing.T, cfg platform.Config, keepalive time.Duration) *Public {
+	t.Helper()
+	cfg = activityConfig(cfg)
+	tokens, err := apiTokens(cfg)
+	if err != nil {
+		t.Fatalf("apiTokens: %v", err)
+	}
+	src, err := serveSource(cfg)
+	if err != nil {
+		t.Fatalf("serveSource: %v", err)
+	}
+	pub, err := newPublic(cfg, tokens, src, nil, keepalive)
+	if err != nil {
+		t.Fatalf("newPublic: %v", err)
+	}
+	return pub
+}
+
+// activityConfig fills a test config's content, tokens and rate limit.
+func activityConfig(cfg platform.Config) platform.Config {
 	if cfg.ContentDir == "" {
 		cfg.ContentDir = testContent
 	}
@@ -49,11 +79,7 @@ func activityHandler(t *testing.T, cfg platform.Config) *Public {
 		cfg.APITokens = namedTokenLines()
 	}
 	cfg.RateLimit = withDefaultRateLimit(cfg.RateLimit)
-	pub, err := PublicHandler(cfg, nil)
-	if err != nil {
-		t.Fatalf("PublicHandler: %v", err)
-	}
-	return pub
+	return cfg
 }
 
 // waitEvents returns the events a holds once it holds at least n, failing
@@ -382,7 +408,7 @@ func TestRejectedRequestsRecordNoQueryText(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m, err := newPublicMuxWith(func() *engine.Snapshot { return nil }, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
+		m, err := newPublicMuxKeepalive(func() *engine.Snapshot { return nil }, tokens, rateLimiter(platform.DefaultRateLimit()), nil, api.DefaultActivityKeepalive)
 		if err != nil {
 			t.Fatal(err)
 		}

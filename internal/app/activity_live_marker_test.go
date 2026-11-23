@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract/contracttest"
 	"github.com/thschue/goldie/internal/platform"
 )
@@ -30,7 +31,7 @@ import (
 //	// activityReplicaName is this replica's own name, the replica of every
 //	// event it records: the public handler passes it to api.NewActivity
 //	// instead of "". Read when the public handler is built, like
-//	// activityKeepalive; it defaults to replicaNameFromHostname(os.Hostname()).
+//	// the keepalive; it defaults to replicaNameFromHostname(os.Hostname()).
 //	var activityReplicaName func() string
 //
 // The wire format, beyond #243's:
@@ -42,12 +43,12 @@ import (
 
 // namedStreamHandler builds the public handler with activityReplicaName set
 // to name, restoring it afterwards.
-func namedStreamHandler(t *testing.T, name string) *Public {
+func namedStreamHandler(t *testing.T, name string, keepalive time.Duration) *Public {
 	t.Helper()
 	old := activityReplicaName
 	t.Cleanup(func() { activityReplicaName = old })
 	activityReplicaName = func() string { return name }
-	return streamHandler(t, platform.Config{})
+	return streamHandler(t, platform.Config{}, keepalive)
 }
 
 // nextOfAny returns the next dispatched event of any type, the live marker
@@ -78,8 +79,7 @@ func isLiveMarker(e sseEvent) bool {
 // The live marker: the local stream sends `event: live` with data {}
 // straight after its retained history, even an empty one, and only once.
 func TestTheLocalStreamMarksTheEndOfItsHistory(t *testing.T) {
-	shortKeepalive(t, 50*time.Millisecond)
-	pub := namedStreamHandler(t, "goldie-a")
+	pub := namedStreamHandler(t, "goldie-a", 50*time.Millisecond)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 
@@ -130,7 +130,7 @@ func TestTheLocalStreamMarksTheEndOfItsHistory(t *testing.T) {
 // are consecutive from 1; and the one non-event is the live marker after the
 // history.
 func TestTheLocalStreamCarriesReplicaAndLateOnEveryEvent(t *testing.T) {
-	pub := namedStreamHandler(t, "goldie-a")
+	pub := namedStreamHandler(t, "goldie-a", api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	if rec := serveAs(t, pub, searchPath("a-1"), func(*http.Request) {}); rec.Code != http.StatusOK {
