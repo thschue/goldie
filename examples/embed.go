@@ -1,5 +1,5 @@
 // Package examples embeds examples/knowledge, the example content goldie
-// server -dev serves from a directory with none of its own. The directory is
+// server --dev serves from a directory with none of its own. The directory is
 // the one source of truth: the binary embeds it as it is.
 package examples
 

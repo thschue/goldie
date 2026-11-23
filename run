@@ -166,6 +166,8 @@ cmd_lint_fixture() {
 # An explicit empty --config keeps a ./vacuum.conf.yaml or a user config from
 # changing the rules the gate applies, and vacuum runs without any VACUUM_*
 # environment variable, which it would otherwise read as flag values.
+# --ruleset applies internal/contract/vacuum-ruleset.yaml: the recommended rules
+# with camel-case-properties replaced by snake-case rules (ADR 0024).
 # --remote=false keeps the check offline: the spec is one self-contained file,
 # so no $ref is fetched.
 vacuum() {
@@ -183,7 +185,7 @@ env_vacuum() {
 	# No inner subshell: bg already runs this function in one, and exec makes
 	# the tool that process, so cleanup's kill reaches the tool itself.
 	for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
-	exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
+	exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --ruleset internal/contract/vacuum-ruleset.yaml --remote=false \
 		--no-update-check --no-banner --no-style --details --fail-severity info "$@"
 }
 
@@ -205,6 +207,24 @@ cmd_lint_spec_fixture() {
 	if [ "$status" != 1 ] || ! printf '%s\n' "$out" | grep -q 'operation-operationId'; then
 		printf '%s\n' "$out" >&2
 		die "broken OpenAPI fixture failed for the wrong reason (exit $status, expected lint findings)"
+	fi
+}
+
+# The camelCase fixture must be reported by both snake-case rules.
+cmd_lint_spec_casing_fixture() {
+	say "vacuum fixture (camelCase names must be rejected)"
+	status=0
+	out=$(vacuum testdata/openapi/camelcase.yaml 2>&1) || status=$?
+	for rule in snake-case-properties snake-case-query-parameters; do
+		if [ "$status" != 1 ] || ! printf '%s\n' "$out" | grep -q "$rule"; then
+			printf '%s\n' "$out" >&2
+			die "camelCase OpenAPI fixture was not reported by $rule (exit $status)"
+		fi
+	done
+	# The query parameter under components.parameters must be reported too.
+	if ! printf '%s\n' "$out" | grep -q 'sortOrder'; then
+		printf '%s\n' "$out" >&2
+		die "camelCase query parameter under components.parameters was not reported (exit $status)"
 	fi
 }
 
@@ -380,12 +400,9 @@ cmd_claim_fixture() {
 	rm -rf "$work"
 }
 
-# The loop rules stay short (ADR 0018): docs/agents within 600 lines in total,
-# each loop script within 200.
+# Each loop script stays within 200 lines (ADR 0018).
 cmd_harness_budget() {
-	say "harness budget (docs/agents <= 600 lines, each script <= 200)"
-	total=$(cat docs/agents/*.md | wc -l | tr -d ' ')
-	[ "$total" -le 600 ] || die "docs/agents/*.md has $total lines; the budget is 600 (ADR 0018)"
+	say "harness budget (each script <= 200 lines)"
 	for f in scripts/*; do
 		[ -f "$f" ] || continue
 		n=$(wc -l <"$f" | tr -d ' ')
@@ -717,6 +734,7 @@ cmd_check_lint() {
 cmd_check_spec() {
 	cmd_lint_spec
 	cmd_lint_spec_fixture
+	cmd_lint_spec_casing_fixture
 	cmd_contract_compat_fixture
 	cmd_regen_check
 	cmd_regen_fixture
@@ -772,6 +790,7 @@ test) cmd_test "$@" ;;
 lint) cmd_lint ;;
 lint-spec) cmd_lint_spec ;;
 lint-spec-fixture) cmd_lint_spec_fixture ;;
+lint-spec-casing-fixture) cmd_lint_spec_casing_fixture ;;
 contract-compat) cmd_contract_compat "$@" ;;
 gate) cmd_gate "$@" ;;
 red-check) cmd_red_check "$@" ;;

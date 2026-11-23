@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// #324: the goldie server -dev example in the configuration reference creates
+// #324: the goldie server --dev example in the configuration reference creates
 // dev.env privately (it holds the API token) and says when to source it. The
 // reference is generated from ConfigReference; the committed file must carry
 // the same words (./run regen).
@@ -68,8 +68,8 @@ func TestServerDevSectionSaysToSourceDevEnvOnceTheServerIsUp(t *testing.T) {
 	}
 }
 
-// Every backticked span that runs goldie server -dev, other than the synopsis
-// `goldie server -dev [dir]`, backgrounds the server or redirects its stdout,
+// Every backticked span that runs goldie server --dev, other than the synopsis
+// `goldie server --dev [dir]`, backgrounds the server or redirects its stdout,
 // wherever it sits in a sentence. The section must show at least one.
 func TestServerDevSectionChecksEveryBacktickedUsage(t *testing.T) {
 	for name, ref := range devReferences(t) {
@@ -77,7 +77,7 @@ func TestServerDevSectionChecksEveryBacktickedUsage(t *testing.T) {
 			sec := devSection(t, ref)
 			examples := 0
 			for _, span := range backtickedSpans(sec) {
-				if !strings.Contains(span, "goldie server -dev") || span == "goldie server -dev [dir]" {
+				if !strings.Contains(span, "goldie server --dev") || span == "goldie server --dev [dir]" {
 					continue
 				}
 				// A stop command names the server, it does not run it. It must be one
@@ -95,7 +95,7 @@ func TestServerDevSectionChecksEveryBacktickedUsage(t *testing.T) {
 				}
 			}
 			if examples == 0 {
-				t.Errorf("section shows no goldie server -dev example:\n%s", sec)
+				t.Errorf("section shows no goldie server --dev example:\n%s", sec)
 			}
 		})
 	}

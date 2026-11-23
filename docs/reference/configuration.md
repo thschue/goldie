@@ -38,24 +38,24 @@ responses keep working; `/mcp` bounds its own requests. The admin listener bound
 request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows
 `GOLDIE_DRAIN_SECONDS`.
 
-## goldie server -dev
+## goldie server --dev
 
 A first run of plain `goldie server`, with neither a Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`)
 nor an API token (`GOLDIE_API_TOKENS` or `GOLDIE_API_TOKEN`) set, stops with the two errors and
-ends with the line "To try goldie on this machine: goldie server -dev .". When only one is missing, or
+ends with the line "To try goldie on this machine: goldie server --dev .". When only one is missing, or
 a value is invalid, there is no hint.
 
-`goldie server -dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
+`goldie server --dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
 When that directory has no content, it serves the example content built into the binary (the same
 as `examples/knowledge`) and says so once on stderr, naming the directory. A directory with content
 is served as it is, never mixed with the examples.
 In this mode log records go to stderr, so only the export line goes to stdout. The server runs
 until it is stopped, so run it in the background or redirect stdout to a file and read the
 export line from there. The file holds the API token, so create it private, and in a subshell so
-your own umask stays as it is: `(umask 077; goldie server -dev examples/knowledge > dev.env &)`.
+your own umask stays as it is: `(umask 077; goldie server --dev examples/knowledge > dev.env &)`.
 The file is empty until the server prints its line, so run `. ./dev.env` once the server is up.
 The subshell leaves the shell no job to bring to the foreground or kill by job number, so stop
-the server by name: `pkill -f 'goldie server -dev'`. This stops every dev server you
+the server by name: `pkill -f 'goldie server --dev'`. This stops every dev server you
 run, not just the one in this directory.
 Both listeners bind to 127.0.0.1 on ports the system picks, and the API takes one random
 token (32 bytes from the system's secure random source, in hex), made for this run. It prints

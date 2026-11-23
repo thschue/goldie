@@ -1,6 +1,6 @@
 # 24. API wire names are snake_case
 
-Status: proposed (the maintainer decides; #365)
+Status: accepted
 
 ## Context
 
@@ -43,8 +43,8 @@ camelCase API field.
 Spec-generated Go types get the wire name from the spec. Hand-written wire structs (MCP tool
 arguments and results) carry it in an explicit `json:` tag.
 
-Until the spec lint uses a snake-case rule, each multi-word property carries
-`x-lint-ignore: camel-case-properties`.
+`./run lint-spec` enforces this for properties and query parameters with the ruleset
+`internal/contract/vacuum-ruleset.yaml`, which replaces vacuum's `camel-case-properties`.
 
 ## Consequences
 
@@ -52,8 +52,9 @@ Until the spec lint uses a snake-case rule, each multi-word property carries
   camelCase, which would give `replaced_by` in an article's frontmatter and `replacedBy` in the API.
 - Go fields keep Go-style names as oapi-codegen generates them (`ClientVersion`, `TraceId`); the JSON
   tags carry the snake_case wire name.
-- Until the lint changes, every multi-word property needs a per-property ignore. Replacing them with
-  one snake-case vacuum rule is a later issue. Disabling a stock rule makes a check less strict, so
-  under ADR 0013 the reviewer holds that change for the maintainer if it is significant.
+- The ruleset (`internal/contract/vacuum-ruleset.yaml`) replaces the per-property ignores:
+  snake-case rules cover every property and query parameter. Disabling a stock rule makes a check
+  less strict, so under ADR 0013 the reviewer holds that change for the maintainer if it is
+  significant.
 - Changing the casing after release would be a breaking change and needs a new API version
   (ADR 0011).

@@ -1,0 +1,23 @@
+# Ruleset for `./run lint-spec` (ADR 0024: wire names are snake_case). It is vacuum's
+# recommended set with its camelCase property rule replaced by a snake_case one.
+extends: [[vacuum:oas, recommended]]
+rules:
+  camel-case-properties: off
+  snake-case-properties:
+    description: Property names are snake_case (ADR 0024).
+    message: "{{error}}"
+    severity: error
+    given: "$..properties[*]~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
+  snake-case-query-parameters:
+    description: Query parameter names are snake_case (ADR 0024).
+    message: "{{error}}"
+    severity: error
+    given: "$..parameters[?(@.in=='query')].name"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"
