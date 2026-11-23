@@ -17,11 +17,11 @@ Run the pipeline from main. Tag the release first.
 ```
 
 - `name` is the title. It is required and may not be blank.
-- `keywords` is a list of words a search matches. An article without keywords loads, but no search
-  finds it.
+- `keywords` is a list of words a search matches, besides the words in `name`. Add the words people
+  will type.
 - Everything after the second `---` is the body, in Markdown.
 
-Check it and find it:
+Check it and find it. No server is needed for this check.
 
 ```sh
 goldie validate .
