@@ -147,10 +147,10 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 	if err := snap.checkEnforced(); err != nil {
 		return nil, err
 	}
-	if err := snap.checkReplacements(); err != nil {
+	if err := snap.checkReplacements(snap.allArticles()); err != nil {
 		return nil, err
 	}
-	if err := snap.checkLookups(); err != nil {
+	if err := snap.checkLookups(snap.allArticles()); err != nil {
 		return nil, err
 	}
 	return snap, nil
@@ -338,6 +338,9 @@ type Snapshot struct {
 	// warnings are load findings that do not fail the load, such as a
 	// suppress reference that names nothing. Each is safe to show.
 	warnings []string
+	// local is the repository's own .goldie/ (NewLocalSource), or nil. It
+	// takes part in every view.
+	local *localScope
 }
 
 type project struct {
@@ -437,22 +440,31 @@ func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, boo
 // winner returns the copy of key that answers in proj's view under o, or nil.
 // It is the one shadowing rule: every read and every load check that resolves
 // an Item goes through it. proj is matched case-insensitively; an empty or
-// unregistered Project is the global view.
+// unregistered Project is the global view. Resolution is local, then Project,
+// then global (CONTEXT: Resolution).
 //
-//   - The Project's copy answers when it exists, is readable under o
-//     (published, or o.Drafts), and the global copy is not published and
-//     enforced (ADR 0021, #359).
+//   - The local copy, which is in every view, answers when it exists, is
+//     readable under o (published, or o.Drafts), and no wider copy in this
+//     view is published and enforced: the global one or the Project's (ADR
+//     0021, #389).
+//   - Otherwise the Project's copy answers when it exists, is readable under
+//     o, and the global copy is not published and enforced (#359).
 //   - Otherwise the global copy answers when it exists, is readable under o,
-//     and the Project does not suppress it (#360).
+//     and neither the Project nor the local Scope suppresses it (#360, #389).
 //
 // A copy that is not readable never shadows (#353). The pointer is into the
 // Snapshot, so callers must not change or return it.
 func (s *Snapshot) winner(proj string, key itemKey, o ReadOptions) *Article {
 	p, _ := s.lookupProject(proj)
+	if l := s.local; l != nil {
+		if a := l.index[key]; a != nil && o.visible(*a) && !s.enforces(key) && !p.enforces(key) {
+			return a
+		}
+	}
 	if a := p.index[key]; a != nil && o.visible(*a) && !s.enforces(key) {
 		return a
 	}
-	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {
+	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] && !s.local.suppresses(key) {
 		return a
 	}
 	return nil
@@ -472,13 +484,18 @@ func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
 	return s.winner(proj, key, ReadOptions{})
 }
 
-// resolutionOrder returns the article lists that hold proj's candidate Items,
-// Project before global. winner decides which copy of each itemKey answers.
+// resolutionOrder returns the article lists that hold proj's candidate Items:
+// local, then Project, then global. winner decides which copy of each itemKey
+// answers.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
-	if p, ok := s.lookupProject(proj); ok {
-		return [][]Article{p.articles, s.articles}
+	var lists [][]Article
+	if s.local != nil {
+		lists = append(lists, s.local.articles)
 	}
-	return [][]Article{s.articles}
+	if p, ok := s.lookupProject(proj); ok {
+		lists = append(lists, p.articles)
+	}
+	return append(lists, s.articles)
 }
 
 func cloneArticle(a Article) Article {
