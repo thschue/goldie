@@ -101,8 +101,9 @@ linters:
           deny:
             - {pkg: github.com/thschue/goldie/internal/contract/project, desc: "the server must not detect a Project from its own working directory: only internal/app/mcpstdio.go (the stdio role) may import contract/project"}
         opentelemetry:
-          # OpenTelemetry is cross-cutting and lives in internal/platform only (#325). Other modules
-          # use the platform helpers, so no transport or module is tied to the SDK.
+          # OpenTelemetry is cross-cutting and lives in internal/platform only, with no global providers
+          # (docs/adr/0017). Other modules use the platform helpers, so no transport or module is tied to
+          # the SDK.
           files: ["$all", "!**/internal/platform/**"]
           deny:
-            - {pkg: go.opentelemetry.io, desc: "OpenTelemetry is confined to internal/platform: use the platform telemetry helpers instead of importing go.opentelemetry.io"}
+            - {pkg: go.opentelemetry.io, desc: "ADR 0017: the SDK is used from internal/platform only, no global providers; use the platform telemetry helpers instead of importing go.opentelemetry.io"}
