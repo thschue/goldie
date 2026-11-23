@@ -56,14 +56,16 @@ eachViewport((width, theme) => {
     expect(await page.getByRole('main').evaluate((el) => !!el.closest('[inert]')), 'main is no longer inert').toBe(false);
   });
 
-  test('activating a link closes the drawer, goes to the route and returns focus to the menu button', async ({ page }) => {
+  // #473: a link is a route change, so focus goes to the new view's h1; the
+  // other ways of closing the drawer return it to the menu button.
+  test('activating a link closes the drawer, goes to the route and moves focus to the new h1', async ({ page }) => {
     await page.goto('/');
     const drawer = await openDrawer(page);
     await drawer.getByRole('link', { name: 'Decisions', exact: true }).click();
     await expect(page).toHaveURL((u) => u.pathname === '/decisions');
     await expect(menuButton(page)).toHaveAttribute('aria-expanded', 'false');
     await expect(drawer).toBeHidden();
-    await expect(menuButton(page)).toBeFocused();
+    await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
   });
 
   test('a click on the scrim closes the drawer and focus returns to the menu button', async ({ page }) => {

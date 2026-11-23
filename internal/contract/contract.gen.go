@@ -1106,8 +1106,17 @@ type ClientInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. Sign-in is not rate
-	// limited. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1127,8 +1136,17 @@ type ClientInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. Sign-in is not rate
-	// limited. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1478,8 +1496,17 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. Sign-in is not rate
-// limited. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -1509,8 +1536,17 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. Sign-in is not rate
-// limited. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2723,8 +2759,17 @@ type ClientWithResponsesInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. Sign-in is not rate
-	// limited. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -2744,8 +2789,17 @@ type ClientWithResponsesInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. Sign-in is not rate
-	// limited. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -3814,6 +3868,11 @@ func (r GetSessionResponse) ContentType() string {
 	return ""
 }
 
+// PostSessionResponse429Headers the declared response headers of an HTTP 429 response for PostSession
+type PostSessionResponse429Headers struct {
+	RetryAfter *int
+}
+
 type PostSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3823,8 +3882,12 @@ type PostSessionResponse struct {
 	JSON401 *ErrorEnvelope
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *ErrorEnvelope
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorEnvelope
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *PostSessionResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -3840,6 +3903,11 @@ func (r PostSessionResponse) GetJSON401() *ErrorEnvelope {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r PostSessionResponse) GetJSON403() *ErrorEnvelope {
 	return r.JSON403
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r PostSessionResponse) GetJSON429() *ErrorEnvelope {
+	return r.JSON429
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -4614,8 +4682,17 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. Sign-in is not rate
-// limited. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -4641,8 +4718,17 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. Sign-in is not rate
-// limited. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -5685,6 +5771,13 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -5692,6 +5785,19 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 		}
 		response.JSONDefault = &dest
 
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers PostSessionResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -8290,6 +8396,36 @@ func (response PostSession403JSONResponse) VisitPostSessionResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSession429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type PostSession429JSONResponse struct {
+	Body    ErrorEnvelope
+	Headers PostSession429ResponseHeaders
+}
+
+func (response PostSession429JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
 }
