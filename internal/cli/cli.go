@@ -91,7 +91,7 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand")
 	}
 	if name == "skills" { // only skills have files to read
-		fs.Func("file", "show: print one file of the skill, as its raw bytes", func(v string) error {
+		fs.Func("file", "show: print one file of the skill to stdout, as its raw bytes (a `path` from its file list)", func(v string) error {
 			f.s.file, f.s.fileSet = v, true
 			return nil
 		})

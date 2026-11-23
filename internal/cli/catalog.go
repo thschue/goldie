@@ -28,7 +28,7 @@ func catalogUsage(kind string, pos []string) (verb, name string, err error) {
 			return "", "", &UsageError{kind, kind + " show takes one <name>"}
 		}
 		if contract.CheckArticleID(pos[1]) != nil || strings.Contains(pos[1], "/") {
-			return "", "", &UsageError{kind, kind + " show needs a name of one path segment, not an empty or dot-only one"}
+			return "", "", &UsageError{kind, kind + " show needs a name without \"/\", not empty or dot-only"}
 		}
 		return "show", pos[1], nil
 	}
@@ -65,7 +65,7 @@ func (c *commander) skillFile(ctx context.Context, cl *contract.ClientWithRespon
 	if err != nil {
 		var ae *contract.APIError
 		if errors.As(err, &ae) && ae.Code == "not_found" {
-			ae.Hint = "List the skill's files with: goldie skills show " + contract.CleanLine(name) + ", then use a path from its files."
+			ae.Hint = "List the skill's files with: goldie skills show " + contract.CleanLine(name) + "; if that fails too, list the skills with: goldie skills list."
 		}
 		return wordError(err, c.local)
 	}

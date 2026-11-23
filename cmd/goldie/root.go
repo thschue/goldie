@@ -277,8 +277,8 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 	},
 	"skills": {
 		"skills list|show <name> [flags]", "List skills or show one with its files",
-		"List the skills, or show one skill and the files in its bundle.",
-		"  goldie skills list\n  goldie skills show deploy",
+		"List the skills, show one skill and the files in its bundle, or read one file with show <name> --file <path>.",
+		"  goldie skills list\n  goldie skills show deploy\n  goldie skills show deploy --file SKILL.md",
 	},
 	"agents": {
 		"agents list|show <name> [flags]", "List agents or show one with its description",
