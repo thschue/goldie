@@ -170,6 +170,12 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 				if secretOf(t, s) || s.Name == other || s.Name == EnvSources {
 					continue
 				}
+				// GOLDIE_UPSTREAM_ADDR is refused outside GOLDIE_MODE=ui (#636),
+				// and this test runs in api mode; the ui settings matrix is
+				// TestUIModeStartupValidation.
+				if s.Name == EnvUpstreamAddr {
+					continue
+				}
 				v, ok := samples[s.Name]
 				if !ok {
 					t.Fatalf("no sample value for %s: add one to this test", s.Name)

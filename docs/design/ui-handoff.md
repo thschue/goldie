@@ -142,6 +142,8 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 ![Activity, dark theme](screenshots/activity.png)
 
+**Built so far (#630, slice 2 of #22):** the page shows the header line (naming the local replica), Pause/Resume, "Misses only", a polite miss-count status and the feed as one `<table>`, read from the local replica's stream (`GET /api/v1/activity` without `replicas`, through `api()`). Rows are newest first and the newest 500 are kept; the selected row is kept by event id; a miss reads "Miss · " and then the §8 copy for what was asked for (#576); the Via cell is empty until an event carries `via`. A 403 shows "This page is for operators.", a 401 ends the session as everywhere, and a 503 shows its hint. The miss count changes for screen readers at most every 30 s. The replica switcher, stage, tiles, Miss board, detail panel and trace links below come with later slices.
+
 From top to bottom:
 
 1. **Header**: a live indicator ("Live · merged from all replicas (2 of 3 answering)"), Pause/Resume, and "Trends in Grafana ↗".
@@ -239,6 +241,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 |---|---|---|---|
 | Unauthenticated | Any route redirects to `/signin?next=<route>` and returns there after sign-in. `next` is honoured only as a same-origin path (a single leading `/`, no scheme, host, `//` or `\`); anything else falls back to `/`. Check the value once it is decoded, wherever the redirect is issued (the client router and the OAuth callback alike): reject control characters and whitespace, and a second character of `/` or `\`; then resolve it against goldie's own origin, require the same origin, and redirect only to the resolved path, query and fragment. `next` travels with the OAuth `state` (#25), never inside GitHub's `redirect_uri`. | — | D |
 | Session expired | Non-blocking banner on the next API 401; the current view stays visible. | "Your session ended. **Sign in again** to keep going." | D |
+| Session check failed | The first session check got a 429, a 5xx or no answer: the URL and the sign-in are kept, the page waits behind a danger alert (an h1, text, Retry; Retry keeps focus while it runs). Only a 401 signs the person out. | Copy in §8. | D |
 | Not a member | The sign-in page shows a danger alert. | "You're signed in to GitHub as `<login>`, but that account isn't in the `<org>` org. Ask your platform team for access." | C |
 | GitHub not configured | Only the access-token form is shown, with no divider. | — | D |
 | Loading (first paint) | Skeletons that match the final layout (cards, rows, tiles) at blue‑50 / surface‑3. No spinners for under 300 ms. | — | D |
@@ -342,6 +345,7 @@ goldie.css          @import './tokens.css'; brand layer only                    
     --miss-surface: #fff6e5;              /* Miss panels, Miss rows, Miss board cards */
     --miss-pressed: #fce7c2;              /* pressed Miss toggle / node */
     --miss-border: #f3ddb0; --miss-ink: #8a4b05; --miss-solid: #f5b455;
+    --miss-solid-ink: #0b1220;            /* text on --miss-solid, 10.29 */
     --miss-line: #e9c88a;                 /* decorative: dashed Miss path in the stream */
     --ok-ink: #147a4b; --ok-bg: #e7f5ee;
     --danger-ink: #b42318; --danger-bg: #fef3f2; --danger-border: #f1c4bf;
@@ -366,7 +370,7 @@ goldie.css          @import './tokens.css'; brand layer only                    
   --focus-ring: #7fa6f5;
   --miss-bg: #2a2112; --miss-surface: #1a1710; --miss-pressed: #3a2d14;
   --miss-border: #4a3a1c; --miss-ink: #f5b455; --miss-solid: #f5b455;
-  --miss-line: #5a4520;
+  --miss-line: #5a4520;                   /* --miss-solid-ink (#0b1220) is the same in dark: inherited */
   --ok-ink: #5fd39a; --ok-bg: #11291f;
   --danger-ink: #ff8a7a; --danger-bg: #2a1513; --danger-border: #6b2e28;
   --stream-stage: #13213f;
@@ -496,6 +500,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
 | Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
 | Sign out failed | Could not sign you out. You are still signed in. **Retry** (a `role="alert"` above the page; the user stays on the page and signed in until the DELETE succeeds.) |
+| Session check failed | **Could not check your session** (the page's h1), then "Your sign-in is not affected." and **Retry** (a `role="alert"` in place of the page, no role chip; shown when the first `GET /api/v1/session` answers 429, 5xx or not at all. Only a 401 leads to `/signin?next=`. Retry asks again.) |
 | First load | Loading… (a `main` landmark holding a `role="status"` region with an `h1` (so the page always has one main and one h1; the shell, with its own `main`, replaces it) shown by the app until the first session check settles; no shell, view or chip yet.) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
@@ -503,6 +508,9 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Miss detail | No Item matched · `<nearest keywords>` · Start this article in the Source repo ↗ |
 | Skill or agent get, Query → Item | `skill:<name>` or `agent:<name>` |
 | Skill or agent miss, result | No skill named `<name>` / No agent named `<name>` |
+| Article miss, result (Activity feed) | No article named `<name>` |
+| Search miss, result (Activity feed) | No results for `<query>` |
+| Bare-name get miss, result (a replica older than the Reference form) | No skill or agent named `<name>` |
 | Skill or agent miss, detail | Add it to the Source repo ↗ |
 | Source failing | Validation failed at `<rev>` — `<n>` error(s). Fix in the Source and merge — or run `goldie validate` locally before pushing. |
 | Sources intro | Failing Sources first. The number is preference order: on a collision within a Scope, the lower number wins. A failing Source keeps serving its last good Snapshot. |

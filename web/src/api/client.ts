@@ -35,6 +35,12 @@ async function request(path: string, init: RequestInit): Promise<Response> {
     throw new ApiError(0, "goldie isn't answering right now.", 'Check your connection, then retry.');
   }
   if (res.ok) return res;
+  throw await failure(res);
+}
+
+// failure turns a non-ok response into an ApiError: the envelope's message and hint, or the
+// generic copy when the body is not an envelope.
+export async function failure(res: Response): Promise<ApiError> {
   let message = '';
   let hint = '';
   try {
@@ -46,5 +52,5 @@ async function request(path: string, init: RequestInit): Promise<Response> {
   }
   const seconds = Number.parseInt(res.headers.get('Retry-After') ?? '', 10);
   const retryAfter = res.status === 429 ? Math.min(Math.max(Number.isFinite(seconds) ? seconds : 5, 1), 3600) : 0;
-  throw new ApiError(res.status, message || fallback, message ? hint : '', retryAfter);
+  return new ApiError(res.status, message || fallback, message ? hint : '', retryAfter);
 }

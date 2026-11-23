@@ -13,6 +13,9 @@ const endpoint = '/api/v1/session';
 export const session = ref<Session | null>(null);
 // True once a session that was signed in has answered 401.
 export const ended = ref(false);
+// True when the first session check got no answer (429, 5xx, offline): who the
+// cookie signs in is unknown, which is not the same as signed out (#673).
+export const checkFailed = ref(false);
 
 // The CSRF token of the session (#490, ADR 0027): GET and POST /api/v1/session return it in
 // X-Goldie-CSRF, and every unsafe request sends it back. Held in memory only.
@@ -45,6 +48,12 @@ export async function api(path: string, init?: RequestInit): Promise<Response> {
 
 // refresh asks who the cookie signs in. True when there is a session to show:
 // a known session that now answers 401 is marked ended and the view stays.
+// Only a 401 means signed out. Any other failure with no known session sets
+// checkFailed and reports true, so the guard keeps the route and the app shows
+// a retryable notice instead of sending the person to /signin.
+//
+// checkFailed changes only once the answer is in, so a notice stays up while a
+// retry is in flight and the unconfirmed page never mounts meanwhile.
 export async function refresh(): Promise<boolean> {
   try {
     const res = await api(endpoint);
@@ -52,12 +61,18 @@ export async function refresh(): Promise<boolean> {
       keepCSRF(res);
       session.value = (await res.json()) as Session;
       ended.value = false;
+      checkFailed.value = false;
       return true;
     }
+    if (res.status === 401) {
+      checkFailed.value = false;
+      return session.value !== null;
+    }
   } catch {
-    // Offline or the server is down: carry on with what is known.
+    // Offline or the server is down: treated like any other failed check.
   }
-  return session.value !== null;
+  checkFailed.value = session.value === null;
+  return true;
 }
 
 export type SignInResult =
