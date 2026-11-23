@@ -81,7 +81,8 @@ func WithRejectedRemote(name string) Option {
 }
 
 // New returns an MCP server with the tools search_knowledge, get_article,
-// list_projects and current_context.
+// list_projects, current_context, find_skills, get_skill, list_skills and
+// list_agents.
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
 //
@@ -111,6 +112,7 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 		func(context.Context, *sdk.CallToolRequest, noInput) (*sdk.CallToolResult, any, error) {
 			return t.currentContext(), nil, nil
 		})
+	addSkillTools(s, t)
 	return s
 }
 

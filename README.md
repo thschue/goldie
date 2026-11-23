@@ -149,8 +149,12 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 ## MCP over stdio
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
-`search_knowledge`, `get_article`, `list_projects` and `current_context`. `search_knowledge` and
-`get_article` take an optional `project` (`host/org/repo`, as `list_projects` names it; case is
+`search_knowledge`, `get_article`, `list_projects`, `current_context`, `find_skills`, `get_skill`,
+`list_skills` and `list_agents`. `find_skills` (skills only, by keyword or name), `get_skill` (a
+skill's file paths and the text of its `SKILL.md`, shown quoted line by line; a name that is empty,
+dots or holds a separator is refused before any request), `list_skills` and `list_agents` (every
+name of the view, sorted, an agent with its description) answer the same way for a Project.
+`search_knowledge` and `get_article` take an optional `project` (`host/org/repo`, as `list_projects` names it; case is
 ignored) that puts that Project's articles first; a value that isn't a Project id, or has any
 non-ASCII character, is refused before any request. For a Project that isn't registered, the answer
 is global and carries the server's hint. At startup, and only then, it finds the default Project
