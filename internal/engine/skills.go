@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
+	"strings"
 )
 
 // skillsDir is where a Source keeps its global skill bundles, relative to its
@@ -25,6 +26,8 @@ type Skill struct {
 	// Files lists the bundle's regular files as slash paths relative to the
 	// bundle, sorted, SKILL.md included.
 	Files []string
+	// Sizes is each file's size in bytes, keyed by the paths in Files.
+	Sizes map[string]int
 }
 
 // skillBundle is a loaded bundle: every file's bytes as written.
@@ -104,21 +107,28 @@ func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte) error {
 	return nil
 }
 
-// skillBundleFor finds the bundle that answers for name in proj's view: local,
-// then Project, then global.
-func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
+// skillScopes lists the bundle maps that can answer in proj's view, nearest
+// Scope first: local, then Project, then global. Both skillBundleFor and
+// Skills walk it, so a get and a list cannot disagree on the order.
+func (s *Snapshot) skillScopes(proj string) []map[string]skillBundle {
+	var scopes []map[string]skillBundle
 	if s.local != nil {
-		if b, ok := s.local.skills[name]; ok {
-			return b, true
-		}
+		scopes = append(scopes, s.local.skills)
 	}
 	if p, ok := s.lookupProject(proj); ok {
-		if b, ok := p.skills[name]; ok {
+		scopes = append(scopes, p.skills)
+	}
+	return append(scopes, s.skills)
+}
+
+// skillBundleFor finds the bundle that answers for name in proj's view.
+func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
+	for _, scope := range s.skillScopes(proj) {
+		if b, ok := scope[name]; ok {
 			return b, true
 		}
 	}
-	b, ok := s.skills[name]
-	return b, ok
+	return skillBundle{}, false
 }
 
 // SkillIn resolves a skill bundle for a Project ("host/org/repo", matched
@@ -130,11 +140,32 @@ func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
 		return Skill{}, false
 	}
 	files := make([]string, 0, len(b.files))
-	for f := range b.files {
+	sizes := make(map[string]int, len(b.files))
+	for f, raw := range b.files {
 		files = append(files, f)
+		sizes[f] = len(raw)
 	}
 	slices.Sort(files)
-	return Skill{Name: name, Scope: b.scope, Files: files}, true
+	return Skill{Name: name, Scope: b.scope, Files: files, Sizes: sizes}, true
+}
+
+// Skills returns the skills that answer in proj's view, sorted by name: one
+// per name, the bundle SkillIn returns.
+func (s *Snapshot) Skills(proj string) []Skill {
+	names := map[string]bool{}
+	for _, scope := range s.skillScopes(proj) {
+		for n := range scope {
+			names[n] = true
+		}
+	}
+	out := make([]Skill, 0, len(names))
+	for n := range names {
+		if sk, ok := s.SkillIn(proj, n); ok {
+			out = append(out, sk)
+		}
+	}
+	slices.SortFunc(out, func(a, b Skill) int { return strings.Compare(a.Name, b.Name) })
+	return out
 }
 
 // SkillFile returns a copy of one file of the bundle that answers for name in

@@ -204,7 +204,7 @@ func TestAnswerAPIErrorCarriesWhatDecodeAPIErrorReads(t *testing.T) {
 	}{
 		{"404 envelope", reply(http.StatusNotFound, map[string]string{"Content-Type": "application/json"},
 			`{"error":{"code":"not_found","message":"no such\narticle","details":{"hint":"search`+"\u202e"+`first"}}}`),
-			contract.APIError{Status: http.StatusNotFound, Message: "no such article", Hint: "searchfirst"}},
+			contract.APIError{Status: http.StatusNotFound, Code: "not_found", Message: "no such article", Hint: "searchfirst"}},
 		{"429 with a wait", reply(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}, ""),
 			contract.APIError{Status: http.StatusTooManyRequests, RetryAfter: 30}},
 		{"429 with a wait that is not an integer", reply(http.StatusTooManyRequests, map[string]string{"Retry-After": "soon"}, ""),

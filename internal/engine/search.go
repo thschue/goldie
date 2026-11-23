@@ -39,6 +39,10 @@ type Hit struct {
 	// Status is "published" for an Item without status frontmatter.
 	Status     string
 	ReplacedBy string
+	// Enforced is the winning Item's frontmatter enforced. Overrides lists the
+	// Scopes it shadows, nearest first; it is empty when it shadows nothing.
+	Enforced  bool
+	Overrides []string
 }
 
 // ReadOptions widens what a read returns. The zero value is the default view:
@@ -91,6 +95,7 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 			seen[key] = true
 			if a := s.winner(proj, key, o); a != nil {
 				if h := scoreArticle(*a, words); h.Score > 0 {
+					h.Overrides = s.overridden(proj, key, a)
 					hits = append(hits, h)
 				}
 			}
@@ -121,7 +126,7 @@ func scopeRank(scope string) int {
 }
 
 func scoreArticle(a Article, words []string) Hit {
-	h := Hit{ID: a.ID, Name: a.Name, Kind: a.Kind(), Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy}
+	h := Hit{ID: a.ID, Name: a.Name, Kind: a.Kind(), Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy, Enforced: a.Enforced}
 	name := strings.ToLower(a.Name)
 	for _, w := range words {
 		for _, k := range a.Keywords {

@@ -49,6 +49,9 @@ func exitCode(err error, w io.Writer) int {
 // run is the testable entry point: results and asked-for help go to out.
 func run(args []string, out io.Writer) error {
 	root := newRoot(out)
+	if len(args) == 1 && args[0] == "--version" {
+		args = []string{"version"}
+	}
 	// An unknown command is misuse even with --help.
 	if _, _, err := root.Find(args); err != nil {
 		// A flag before the command is what is wrong, not the word after it.
@@ -249,6 +252,9 @@ func withDevHint(cfg platform.Config, err error) error {
 	return fmt.Errorf("%w\n%s", err, platform.FirstRunHint)
 }
 
+// healthCheckHint is the line after an unreachable admin port.
+const healthCheckHint = "Check that goldie server is running and that " + platform.EnvAdminAddr + " matches its admin address."
+
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz
 // when ready, and returns an error (exit 1) unless the answer is 200.
 func runHealth(ready bool) error {
@@ -271,7 +277,7 @@ func runHealth(ready bool) error {
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + path)
 	if err != nil {
-		return errors.New("unhealthy: admin port unreachable")
+		return fmt.Errorf("unhealthy: admin port unreachable\n%s", healthCheckHint)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {

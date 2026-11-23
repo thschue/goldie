@@ -26,6 +26,10 @@ tags:
     description: The API contract itself.
   - name: articles
     description: Search and look up articles.
+  - name: skills
+    description: List and read skill bundles.
+  - name: agents
+    description: List and read agent definitions.
   - name: projects
     description: The Projects whose Scope the server holds.
   - name: sync
@@ -163,6 +167,251 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: No article has this id; the hint points to search.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/skills:
+    get:
+      operationId: listSkills
+      tags:
+        - skills
+      summary: List the skills
+      description: |
+        Returns the skills that answer in the Project's view, sorted by name, one
+        per name: the nearest Scope wins with its whole bundle. Each carries its
+        file list.
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve for this Project (ADR 0020): its own entry wins over the
+            global one with the same name. Matched ignoring case. An
+            unregistered Project answers the global view with a `hint`; a value
+            that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The skills.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+        "400":
+          description: 'For the skill list, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the skill list, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the skill list, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{name}:
+    get:
+      operationId: getSkill
+      tags:
+        - skills
+      summary: Read one skill
+      description: |
+        Returns one skill by name with its file list. A miss is a 404 whose hint
+        points to the list. The digest and the executable bit are not part of
+        the answer yet.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The skill name, one path segment. A name that is not one is a miss.
+          schema:
+            type: string
+            minLength: 1
+          example: deploy
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the skill for this Project (ADR 0020): its own entry wins over the
+            global one with the same name. Matched ignoring case. An
+            unregistered Project answers the global view with a `hint`; a value
+            that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The skill.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Skill"
+        "400":
+          description: 'For the skill read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the skill read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the skill read, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No skill has this name; the hint points to the skill list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/agents:
+    get:
+      operationId: listAgents
+      tags:
+        - agents
+      summary: List the agents
+      description: |
+        Returns the agents that answer in the Project's view, sorted by name,
+        one per name: the nearest Scope wins.
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the agent list for this Project (ADR 0020): its own entry wins over the
+            global one with the same name. Matched ignoring case. An
+            unregistered Project answers the global view with a `hint`; a value
+            that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The agents.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentList"
+        "400":
+          description: 'For the agent list, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the agent list, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the agent list, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/agents/{name}:
+    get:
+      operationId: getAgent
+      tags:
+        - agents
+      summary: Read one agent
+      description: |
+        Returns one agent by name. A miss is a 404 whose hint points to the list.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The agent name, one path segment. A name that is not one is a miss.
+          schema:
+            type: string
+            minLength: 1
+          example: reviewer
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the agent for this Project (ADR 0020): its own entry wins over the
+            global one with the same name. Matched ignoring case. An
+            unregistered Project answers the global view with a `hint`; a value
+            that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The agent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          description: 'For the agent read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the agent read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the agent read, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No agent has this name; the hint points to the agent list.
           content:
             application/json:
               schema:
@@ -775,6 +1024,9 @@ components:
               matched:
                 - kubernetes
                 - name
+              overrides:
+                - global
+              enforced: false
       required:
         - query
         - results
@@ -823,6 +1075,123 @@ components:
             $ref: "#/components/schemas/ProjectId"
           examples:
             - - github.com/acme/shop
+    SkillFile:
+      type: object
+      description: One file of a skill bundle.
+      required:
+        - path
+        - size
+      properties:
+        path:
+          type: string
+          description: The slash path relative to the bundle.
+          examples:
+            - scripts/run.sh
+        size:
+          type: integer
+          minimum: 0
+          description: The file's size in bytes.
+          examples:
+            - 18
+    Skill:
+      type: object
+      description: One skill bundle.
+      required:
+        - name
+        - files
+      properties:
+        name:
+          type: string
+          description: The bundle's directory name.
+          examples:
+            - deploy
+        files:
+          type: array
+          description: The bundle's files, sorted by path, SKILL.md included.
+          items:
+            $ref: "#/components/schemas/SkillFile"
+          examples:
+            - - path: SKILL.md
+                size: 16
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            skill answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    SkillList:
+      type: object
+      description: The skills that answer in a view.
+      required:
+        - skills
+      properties:
+        skills:
+          type: array
+          description: The skills, sorted by name.
+          items:
+            $ref: "#/components/schemas/Skill"
+          examples:
+            - - name: deploy
+                files:
+                  - path: SKILL.md
+                    size: 16
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            skill list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    Agent:
+      type: object
+      description: One agent definition.
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          description: The agent's name, its file name without `.md`.
+          examples:
+            - reviewer
+        description:
+          type: string
+          description: The frontmatter description. It comes from a Source and is untrusted.
+          examples:
+            - Reviews code
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            agent answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    AgentList:
+      type: object
+      description: The agents that answer in a view.
+      required:
+        - agents
+      properties:
+        agents:
+          type: array
+          description: The agents, sorted by name.
+          items:
+            $ref: "#/components/schemas/Agent"
+          examples:
+            - - name: reviewer
+                description: Reviews code
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            agent list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     ProjectDetail:
       type: object
       description: One registered Project and what its `project.yaml` suppresses.
@@ -1069,6 +1438,9 @@ components:
           matched:
             - kubernetes
             - name
+          overrides:
+            - global
+          enforced: false
       required:
         - id
         - name
@@ -1131,6 +1503,21 @@ components:
             comes from a Source and is untrusted.
           examples:
             - article:platform/deploy-v2
+        overrides:
+          type: array
+          description: |
+            The Scopes this hit shadows in the requested view, nearest first;
+            `[]` when it shadows nothing. Never null. Always sent by this server;
+            absent from an older server, where it means unknown, not empty.
+          items:
+            type: string
+          examples:
+            - - global
+        enforced:
+          type: boolean
+          description: "Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false."
+          examples:
+            - false
     ItemStatus:
       type: string
       description: |
@@ -1149,6 +1536,16 @@ components:
     Article:
       type: object
       description: One article.
+      examples:
+        - id: platform/deploy
+          name: Deploying to Kubernetes
+          keywords:
+            - kubernetes
+            - deploy
+          content: Use the platform chart.
+          overrides:
+            - global
+          enforced: false
       required:
         - id
         - name
@@ -1198,6 +1595,21 @@ components:
             before printing it.
           examples:
             - article:platform/deploy-v2
+        overrides:
+          type: array
+          description: |
+            The Scopes this article shadows in the requested view, nearest first;
+            `[]` when it shadows nothing. Never null. Always sent by this server;
+            absent from an older server, where it means unknown, not empty.
+          items:
+            type: string
+          examples:
+            - - global
+        enforced:
+          type: boolean
+          description: "Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false."
+          examples:
+            - false
     ActivityEvent:
       type: object
       description: |
@@ -1236,15 +1648,17 @@ components:
           enum:
             - search
             - lookup
+            - get
           x-enum-varnames:
             - ActivityKindSearch
             - ActivityKindLookup
-          description: A search or a lookup.
+            - ActivityKindGet
+          description: A search, an article lookup, or a get of a skill or an agent.
           examples:
             - search
         query:
           type: string
-          description: The search words, or the article id a lookup asked for, as text.
+          description: The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
           examples:
             - deploy kubernetes
         project:

@@ -118,6 +118,8 @@ func newRoot(out io.Writer) *cobra.Command {
 		SilenceErrors:     true,
 		DisableAutoGenTag: true,
 	}
+	// run turns a lone --version into the version command.
+	root.Flags().Bool("version", false, "Print the version, as goldie version does")
 	root.SetOut(out)
 	root.SetErr(io.Discard)
 	root.CompletionOptions.DisableDefaultCmd = true
@@ -197,7 +199,8 @@ func serverCmd(out io.Writer) *cobra.Command {
 			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
 			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.",
 		Example: "  goldie server\n" +
-			"  eval \"$(goldie server --dev ./content)\"",
+			"  # Prints an export line; run that line in another terminal.\n" +
+			"  goldie server --dev ./content",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 || (len(args) == 1 && !dev) {
 				return newUsageErr(cmd.CommandPath(), "server takes a directory only with --dev")

@@ -48,6 +48,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the skills
+         * @description Returns the skills that answer in the Project's view, sorted by name, one
+         *     per name: the nearest Scope wins with its whole bundle. Each carries its
+         *     file list.
+         */
+        get: operations["listSkills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one skill
+         * @description Returns one skill by name with its file list. A miss is a 404 whose hint
+         *     points to the list. The digest and the executable bit are not part of
+         *     the answer yet.
+         */
+        get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the agents
+         * @description Returns the agents that answer in the Project's view, sorted by name,
+         *     one per name: the nearest Scope wins.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one agent
+         * @description Returns one agent by name. A miss is a 404 whose hint points to the list.
+         */
+        get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -340,7 +425,11 @@ export interface components {
          *           "matched": [
          *             "kubernetes",
          *             "name"
-         *           ]
+         *           ],
+         *           "overrides": [
+         *             "global"
+         *           ],
+         *           "enforced": false
          *         }
          *       ]
          *     }
@@ -380,6 +469,105 @@ export interface components {
              *     ]
              */
             projects: components["schemas"]["ProjectId"][];
+        };
+        /** @description One file of a skill bundle. */
+        SkillFile: {
+            /**
+             * @description The slash path relative to the bundle.
+             * @example scripts/run.sh
+             */
+            path: string;
+            /**
+             * @description The file's size in bytes.
+             * @example 18
+             */
+            size: number;
+        };
+        /** @description One skill bundle. */
+        Skill: {
+            /**
+             * @description The bundle's directory name.
+             * @example deploy
+             */
+            name: string;
+            /**
+             * @description The bundle's files, sorted by path, SKILL.md included.
+             * @example [
+             *       {
+             *         "path": "SKILL.md",
+             *         "size": 16
+             *       }
+             *     ]
+             */
+            files: components["schemas"]["SkillFile"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     skill answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description The skills that answer in a view. */
+        SkillList: {
+            /**
+             * @description The skills, sorted by name.
+             * @example [
+             *       {
+             *         "name": "deploy",
+             *         "files": [
+             *           {
+             *             "path": "SKILL.md",
+             *             "size": 16
+             *           }
+             *         ]
+             *       }
+             *     ]
+             */
+            skills: components["schemas"]["Skill"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     skill list answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description One agent definition. */
+        Agent: {
+            /**
+             * @description The agent's name, its file name without `.md`.
+             * @example reviewer
+             */
+            name: string;
+            /**
+             * @description The frontmatter description. It comes from a Source and is untrusted.
+             * @example Reviews code
+             */
+            description: string;
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     agent answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description The agents that answer in a view. */
+        AgentList: {
+            /**
+             * @description The agents, sorted by name.
+             * @example [
+             *       {
+             *         "name": "reviewer",
+             *         "description": "Reviews code"
+             *       }
+             *     ]
+             */
+            agents: components["schemas"]["Agent"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     agent list answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
         };
         /** @description One registered Project and what its `project.yaml` suppresses. */
         ProjectDetail: {
@@ -575,7 +763,11 @@ export interface components {
          *       "matched": [
          *         "kubernetes",
          *         "name"
-         *       ]
+         *       ],
+         *       "overrides": [
+         *         "global"
+         *       ],
+         *       "enforced": false
          *     }
          */
         SearchHit: {
@@ -629,6 +821,20 @@ export interface components {
              * @example article:platform/deploy-v2
              */
             replaced_by?: string;
+            /**
+             * @description The Scopes this hit shadows in the requested view, nearest first;
+             *     `[]` when it shadows nothing. Never null. Always sent by this server;
+             *     absent from an older server, where it means unknown, not empty.
+             * @example [
+             *       "global"
+             *     ]
+             */
+            overrides?: string[];
+            /**
+             * @description Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
+             * @example false
+             */
+            enforced?: boolean;
         };
         /**
          * @description An Item's lifecycle when it is not published: `deprecated` (still
@@ -639,7 +845,22 @@ export interface components {
          * @enum {string}
          */
         ItemStatus: "deprecated" | "draft";
-        /** @description One article. */
+        /**
+         * @description One article.
+         * @example {
+         *       "id": "platform/deploy",
+         *       "name": "Deploying to Kubernetes",
+         *       "keywords": [
+         *         "kubernetes",
+         *         "deploy"
+         *       ],
+         *       "content": "Use the platform chart.",
+         *       "overrides": [
+         *         "global"
+         *       ],
+         *       "enforced": false
+         *     }
+         */
         Article: {
             /**
              * @description The article id, its path under `articles/` without `.md`.
@@ -680,6 +901,20 @@ export interface components {
              * @example article:platform/deploy-v2
              */
             replaced_by?: string;
+            /**
+             * @description The Scopes this article shadows in the requested view, nearest first;
+             *     `[]` when it shadows nothing. Never null. Always sent by this server;
+             *     absent from an older server, where it means unknown, not empty.
+             * @example [
+             *       "global"
+             *     ]
+             */
+            overrides?: string[];
+            /**
+             * @description Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
+             * @example false
+             */
+            enforced?: boolean;
         };
         /**
          * @description One search or lookup on the activity stream, the `data` of an SSE
@@ -700,13 +935,13 @@ export interface components {
              */
             time: string;
             /**
-             * @description A search or a lookup.
+             * @description A search, an article lookup, or a get of a skill or an agent.
              * @example search
              * @enum {string}
              */
-            kind: "search" | "lookup";
+            kind: "search" | "lookup" | "get";
             /**
-             * @description The search words, or the article id a lookup asked for, as text.
+             * @description The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
              * @example deploy kubernetes
              */
             query: string;
@@ -1053,6 +1288,308 @@ export interface operations {
                 };
             };
             /** @description No article has this id; the hint points to search. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listSkills: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve for this Project (ADR 0020): its own entry wins over the
+                 *     global one with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global view with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The skills. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillList"];
+                };
+            };
+            /** @description For the skill list, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill list, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill list, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSkill: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the skill for this Project (ADR 0020): its own entry wins over the
+                 *     global one with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global view with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The skill name, one path segment. A name that is not one is a miss.
+                 * @example deploy
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The skill. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"];
+                };
+            };
+            /** @description For the skill read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill read, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No skill has this name; the hint points to the skill list. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the agent list for this Project (ADR 0020): its own entry wins over the
+                 *     global one with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global view with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agents. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentList"];
+                };
+            };
+            /** @description For the agent list, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the agent list, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the agent list, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the agent for this Project (ADR 0020): its own entry wins over the
+                 *     global one with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global view with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The agent name, one path segment. A name that is not one is a miss.
+                 * @example reviewer
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description For the agent read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the agent read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the agent read, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No agent has this name; the hint points to the agent list. */
             404: {
                 headers: {
                     [name: string]: unknown;

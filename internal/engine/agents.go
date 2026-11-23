@@ -100,8 +100,11 @@ func loadKindFiles(fsys fs.FS, dir, scope, what string, parse func(name string, 
 // is not checked for hidden runes: an agent no reference can spell is still
 // served by its own name, and a reference to it fails the load.
 func parseAgent(name string, raw []byte) (Article, error) {
-	front, _, err := splitFrontmatter(raw)
+	front, body, err := splitFrontmatter(raw)
 	if err != nil {
+		return Article{}, err
+	}
+	if err := checkBody(body); err != nil {
 		return Article{}, err
 	}
 	var meta struct {

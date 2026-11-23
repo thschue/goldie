@@ -200,7 +200,7 @@ From top to bottom:
 | `AppShell` | role: reader \| operator | Top bar + side nav. The nav collapses below 1024 px (see §7). |
 | `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. |
 | `ThemeToggle` | light \| dark \| system | Persists the choice. `system` follows `prefers-color-scheme`. |
-| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. |
+| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see the `Forms` row). |
 | `SuggestionChip` | on-hero \| on-surface | A button. Sets the query. |
 | `KindTile` | per Kind | Icon, name, purpose, count. A button. |
 | `ResultCard` | default · enforced · draft · deprecated · shadowing | The whole card is one link. Score bar is `aria-hidden`; the score text stays readable. |
@@ -225,6 +225,7 @@ From top to bottom:
 | `EventDetail` | hit \| miss | — |
 | `SourceCard` | healthy · failing · syncing | Resync is CSRF-protected and operator only. |
 | `Alert` | info · warning (gold) · danger | `role="alert"` only for new errors; otherwise `role="status"`. |
+| `Forms` | sign-in token form · `SearchField` | The SPA runs under `form-action 'none'` (the UI bullet under "Settings and endpoints" in `docs/platform-contract.md`). A native submit is blocked silently, so Enter would do nothing. Put `@submit.prevent` on the `<form>` so Enter still submits, then use `fetch` and the router. GitHub sign-in is a link or `location` navigation to the server's GitHub OAuth start endpoint (owned by #25), never a form post; leaving the origin by navigation is not blocked by `form-action`. |
 
 ---
 

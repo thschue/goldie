@@ -30,6 +30,22 @@ func (stub) SearchArticles(_ context.Context, req SearchArticlesRequestObject) (
 	return SearchArticles200JSONResponse{Query: req.Params.Q, Results: []SearchHit{}}, nil
 }
 
+func (stub) ListSkills(context.Context, ListSkillsRequestObject) (ListSkillsResponseObject, error) {
+	return ListSkills200JSONResponse{}, nil
+}
+
+func (stub) GetSkill(context.Context, GetSkillRequestObject) (GetSkillResponseObject, error) {
+	return GetSkill200JSONResponse{}, nil
+}
+
+func (stub) ListAgents(context.Context, ListAgentsRequestObject) (ListAgentsResponseObject, error) {
+	return ListAgents200JSONResponse{}, nil
+}
+
+func (stub) GetAgent(context.Context, GetAgentRequestObject) (GetAgentResponseObject, error) {
+	return GetAgent200JSONResponse{}, nil
+}
+
 func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjectsResponseObject, error) {
 	return ListProjects200JSONResponse{Projects: []ProjectId{}}, nil
 }

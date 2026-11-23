@@ -79,6 +79,9 @@ func parseClause(name string, raw []byte) (Article, error) {
 			return Article{}, errors.New("targets must be a list of claude and agents")
 		}
 	}
+	if err := checkBody(body); err != nil {
+		return Article{}, err
+	}
 	if err := checkPlaceholders(string(body)); err != nil {
 		return Article{}, err
 	}
