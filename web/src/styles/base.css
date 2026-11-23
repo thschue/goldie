@@ -75,7 +75,7 @@ a {
   outline-offset: 2px;
 }
 
-/* Text for assistive technology only (the brand name on a phone, a control's label). */
+/* Text for assistive technology only. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -83,4 +83,14 @@ a {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+@media (width >= 480px) {
+  .sr-only-phone {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+  }
 }

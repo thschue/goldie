@@ -1,6 +1,4 @@
-// The Project calls of the API (#496). Ids travel as one percent-encoded path
-// segment (ADR 0016); an error is reduced to the envelope's message and hint,
-// so a stack, a path or an address in a body never reaches the page.
+// Project calls (#496): ids are one encoded path segment (ADR 0016); errors shrink to the envelope's message and hint.
 import type { components } from '../api/schema';
 
 export type ProjectView = components['schemas']['ProjectView'];

@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
   <div class="shell" @click.capture="onShellClick">
     <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
-      <RouterLink to="/" class="brand"><GoldieMark /><span class="brand-name">goldie</span></RouterLink>
+      <RouterLink to="/" class="brand"><GoldieMark /><span class="sr-only sr-only-phone">goldie</span></RouterLink>
       <ProjectSelector />
       <div class="actions">
         <ThemeToggle />
@@ -272,13 +272,6 @@ main:focus-visible {
   .brand {
     justify-content: center;
     min-width: var(--target-min);
-  }
-  .brand-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
   }
 }
 

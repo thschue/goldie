@@ -1,46 +1,49 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { listProjects, projectOf } from './api';
 
-// ProjectSelector (handoff §2.1, §4): a combobox in the top bar, focus on it and
-// options by aria-activedescendant. The choice is the `project` query parameter,
-// never storage. The Project list is read when a Project is named or the list is
-// first opened, so a page without one makes no call.
+// ProjectSelector (handoff §2.1, §4): a combobox, options by aria-activedescendant. The
+// choice is the `project` query parameter. The list is read lazily: no Project, no call.
 const route = useRoute();
 const router = useRouter();
 const current = computed(() => projectOf(route.query));
 const projects = ref<string[]>([]);
-const loaded = ref(false);
+const status = ref<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+const loaded = computed(() => status.value === 'ready');
 const open = ref(false);
 const active = ref(0);
 const narrow = ref(false);
 const root = ref<HTMLElement>();
 let media: MediaQueryList | undefined;
-let loading = false;
 
+const copy = computed(() =>
+  status.value === 'failed'
+    ? "Couldn't load Projects. Close and open the selector to try again."
+    : status.value === 'ready'
+      ? 'No Projects registered yet.'
+      : 'Loading Projects…',
+);
 const key = (id: string) => id.toLowerCase();
 const registered = computed(() => projects.value.some((p) => key(p) === key(current.value)));
-// Full id from 768 px, org/repo below.
 const label = (id: string) => (narrow.value ? id.split('/').slice(-2).join('/') : id);
 
 async function load() {
-  if (loaded.value || loading) return;
-  loading = true;
+  if (status.value === 'ready' || status.value === 'loading') return;
+  status.value = 'loading';
   try {
     projects.value = await listProjects();
-    loaded.value = true;
+    status.value = 'ready';
   } catch {
-    // The selector keeps working without the list: the options say so.
-  } finally {
-    loading = false;
+    status.value = 'failed';
   }
 }
 
-function show() {
+// The active option is set once the list is there, so the current Project is pre-selected.
+async function show() {
   open.value = true;
+  await load();
   active.value = Math.max(projects.value.findIndex((p) => key(p) === key(current.value)), 0);
-  void load();
 }
 
 const close = () => (open.value = false);
@@ -81,6 +84,11 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+watch(active, async () => {
+  await nextTick();
+  document.getElementById(`project-option-${active.value}`)?.scrollIntoView?.({ block: 'nearest' });
+});
+
 const onOutside = (e: MouseEvent) => {
   if (open.value && e.target instanceof Node && !root.value?.contains(e.target)) close();
 };
@@ -115,18 +123,15 @@ watch(current, (id) => {
       aria-haspopup="listbox"
       aria-controls="project-listbox"
       :aria-expanded="open"
-      :aria-activedescendant="open && projects.length ? `project-option-${active}` : undefined"
+      :aria-describedby="current && loaded ? 'project-chip' : undefined"
+      :aria-activedescendant="open && loaded && projects.length ? `project-option-${active}` : undefined"
       @click="open ? close() : show()"
       @keydown="onKeydown"
       @keyup.space.prevent
     >
       <span v-if="current" id="project-value" class="id">{{ label(current) }}</span>
       <span v-else id="project-value" class="id">Choose a Project</span>
-      <span v-if="current && loaded" class="chip" :class="registered ? 'yes' : 'no'">
-        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
-          <path v-if="registered" d="M2.5 6.5l2.5 2.5 4.5-5.5" />
-          <circle v-else cx="6" cy="6" r="4" />
-        </svg>
+      <span v-if="current && loaded" id="project-chip" class="chip" :class="registered ? 'yes' : 'no'">
         {{ registered ? 'registered' : 'unregistered' }}
       </span>
       <svg class="caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
@@ -145,12 +150,10 @@ watch(current, (id) => {
         @click="choose(id)"
       >
         <span class="id">{{ label(id) }}</span>
-        <span class="chip yes">
-          registered
-        </span>
+        <span class="chip yes">registered</span>
       </li>
       <li v-if="!projects.length" role="option" aria-disabled="true" aria-selected="false" class="option">
-        {{ loaded ? 'No Projects registered yet.' : "Couldn't load Projects." }}
+        {{ copy }}
       </li>
     </ul>
   </div>
@@ -204,7 +207,6 @@ watch(current, (id) => {
 .chip.no {
   border-style: dashed;
 }
-.chip svg,
 .caret {
   flex: none;
   fill: none;
@@ -219,6 +221,8 @@ watch(current, (id) => {
   z-index: 15;
   min-width: 100%;
   max-width: min(520px, calc(100vw - 2 * var(--space-4)));
+  max-height: 60vh;
+  overflow-y: auto;
   margin: 0;
   padding: var(--space-1);
   list-style: none;
@@ -239,5 +243,14 @@ watch(current, (id) => {
 }
 .option.active {
   background: var(--brand-tint);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.option[aria-selected='true']::after {
+  content: '✓' / '';
+  font-weight: 700;
+}
+.option .id {
+  flex: 1;
 }
 </style>
