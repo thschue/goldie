@@ -222,9 +222,14 @@ func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *
 //
 // When the version is missing the output says why, with a hint where the user
 // can act, as status does on its Auth line: no token, token rejected, a
-// redirect (check the address), an answer that was too large, or an
+// redirect (check the address), an answer that was too large, an error
+// status, an answer that isn't a goldie API answer (check the address), or an
 // unreachable server (check that the server is running and the address is
-// right). It never prints the address or the token. The JSON key stays
+// right). For an error status the note is the cleaned message of the server's
+// envelope with the status (just the status when there is no message), and the
+// hint is the server's own, or a wait hint when the server sent a valid
+// Retry-After or answered 429 (wordAPIError). It never prints the address or
+// the token. The JSON key stays
 // serverApiVersion (the contract is additive-only) and is null when unknown,
 // with the reason in serverNote.
 func (c *commander) version(ctx context.Context) error {
