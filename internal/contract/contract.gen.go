@@ -390,7 +390,7 @@ type GetArticleParams struct {
 	// value that is not a `ProjectId` is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 
-	// Drafts `true` finds draft Items too, marked `status: draft`; for operator
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
 	// tokens only, and a reader token asking for drafts is a 403. Without
 	// it a draft is left out for every token and never shadows, so the
 	// published Item answers. Even with drafts, a draft Project article

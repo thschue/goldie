@@ -2,15 +2,19 @@ package contract
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 
 	"go.yaml.in/yaml/v3"
 )
 
-// RoleExtension is the operation extension that names the lowest token role
-// allowed to call it. Only "operator" is meaningful: an operation without it
-// is open to every token. The extension is additive (ADR 0011), so clients
-// and generators ignore it.
+// RoleExtension is the extension that names the lowest token role a rule
+// needs. Only "operator" is meaningful. On an operation, the whole operation
+// needs the role; on a components/parameters entry, a true value of the
+// parameter does (enforced where it is bound, in internal/api). Without it
+// the operation or value is open to every token. The extension is additive
+// (ADR 0011), so clients and generators ignore it; ADR 0025 records it.
 const RoleExtension = "x-goldie-role"
 
 var (
@@ -33,80 +37,166 @@ var httpMethods = map[string]bool{
 	"options": true, "head": true, "patch": true, "trace": true,
 }
 
-// containsKey reports whether key is a mapping key anywhere under n,
-// following aliases. A visited set guards against alias cycles.
-func containsKey(n *yaml.Node, key string) bool {
-	return walkKey(n, key, map[*yaml.Node]bool{})
-}
+// operatorRole is the one role value the mark may carry.
+const operatorRole = "operator"
 
-func walkKey(n *yaml.Node, key string, seen map[*yaml.Node]bool) bool {
-	if n == nil || seen[n] {
-		return false
+// maxWalkSteps bounds the whole-document walk, so a document of nested aliases
+// fails startup instead of exhausting memory.
+const maxWalkSteps = 1_000_000
+
+// walkKeys calls visit with the location of every mapping key named key under
+// n. An alias is followed at each place it is used, so a mark reached through
+// an alias is reported where it is reached, not where it is anchored; stack
+// guards against alias cycles.
+func walkKeys(n *yaml.Node, key string, path []string, stack map[*yaml.Node]bool, steps *int, visit func(loc string)) error {
+	if n == nil || stack[n] {
+		return nil
 	}
-	seen[n] = true
+	if *steps++; *steps > maxWalkSteps {
+		return fmt.Errorf("openapi.yaml: more than %d nodes, too many aliases to check for %s", maxWalkSteps, key)
+	}
+	stack[n] = true
+	defer delete(stack, n)
 	switch n.Kind {
 	case yaml.AliasNode:
-		return walkKey(n.Alias, key, seen)
+		return walkKeys(n.Alias, key, path, stack, steps, visit)
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(n.Content); i += 2 {
-			if n.Content[i].Value == key || walkKey(n.Content[i+1], key, seen) {
-				return true
+			k := n.Content[i].Value
+			child := append(path[:len(path):len(path)], k)
+			if k == key {
+				visit(strings.Join(child, " > "))
+			}
+			if err := walkKeys(n.Content[i+1], key, child, stack, steps, visit); err != nil {
+				return err
 			}
 		}
 	case yaml.DocumentNode, yaml.SequenceNode:
-		for _, c := range n.Content {
-			if walkKey(c, key, seen) {
-				return true
+		for i, c := range n.Content {
+			if err := walkKeys(c, key, append(path[:len(path):len(path)], strconv.Itoa(i)), stack, steps, visit); err != nil {
+				return err
 			}
 		}
 	}
-	return false
+	return nil
 }
 
-// parseOperatorPaths reads the operator paths from an OpenAPI document. The
-// mark must sit directly on an operation. Anywhere else it would be ignored
-// and leave the path open, so it fails startup.
+func deref(n *yaml.Node) *yaml.Node {
+	for n != nil && n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	return n
+}
+
+// entries calls fn for each key and value of the mapping n (through aliases).
+func entries(n *yaml.Node, fn func(key string, val *yaml.Node) error) error {
+	n = deref(n)
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if err := fn(n.Content[i].Value, n.Content[i+1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func child(n *yaml.Node, key string) *yaml.Node {
+	var out *yaml.Node
+	_ = entries(n, func(k string, v *yaml.Node) error {
+		if k == key {
+			out = v
+		}
+		return nil
+	})
+	return out
+}
+
+// parseOperatorPaths reads the operator paths from an OpenAPI document. See
+// parseRoles for where the mark may sit.
 func parseOperatorPaths(spec []byte) (map[string]bool, error) {
-	var doc struct {
-		Paths map[string]map[string]yaml.Node `yaml:"paths"`
+	paths, _, err := parseRoles(spec)
+	return paths, err
+}
+
+// parseOperatorParameters returns the components/parameters names whose
+// object carries the mark. The same whole-document rule as
+// parseOperatorPaths applies.
+func parseOperatorParameters(spec []byte) (map[string]bool, error) {
+	_, params, err := parseRoles(spec)
+	return params, err
+}
+
+// parseRoles reads the role marks of an OpenAPI document and is fail-closed
+// for the whole document: a mark is accepted only directly on an operation
+// (it names its path) or directly on a components/parameters entry (it names
+// the parameter). A mark anywhere else, including a component an operation
+// reaches through $ref or an alias, would be ignored and leave the rule open,
+// so it is an error naming the location. An unknown role value is an error.
+func parseRoles(spec []byte) (paths, params map[string]bool, err error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(spec, &root); err != nil {
+		return nil, nil, fmt.Errorf("parse embedded openapi.yaml: %w", err)
 	}
-	if err := yaml.Unmarshal(spec, &doc); err != nil {
-		return nil, fmt.Errorf("parse embedded openapi.yaml: %w", err)
-	}
-	out := map[string]bool{}
-	for path, item := range doc.Paths {
-		if _, ok := item["$ref"]; ok {
-			return nil, fmt.Errorf("openapi.yaml: %s: $ref at path level hides operations from the %s check", path, RoleExtension)
+	accepted := map[string]bool{} // locations of the marks that sit where they apply
+	paths, params = map[string]bool{}, map[string]bool{}
+	role := func(loc string, v *yaml.Node) error {
+		var r any
+		if err := v.Decode(&r); err != nil || r != operatorRole {
+			return fmt.Errorf("openapi.yaml: %s: %s %v, want %s", loc, RoleExtension, r, operatorRole)
 		}
-		for method, node := range item {
+		return nil
+	}
+	doc := &root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	err = entries(child(doc, "paths"), func(path string, item *yaml.Node) error {
+		if child(item, "$ref") != nil {
+			return fmt.Errorf("openapi.yaml: %s: $ref at path level hides operations from the %s check", path, RoleExtension)
+		}
+		return entries(item, func(method string, op *yaml.Node) error {
 			if !httpMethods[method] {
-				if method == RoleExtension || containsKey(&node, RoleExtension) {
-					return nil, fmt.Errorf("openapi.yaml: %s: %s under %q, want it on an operation", path, RoleExtension, method)
+				return nil // "parameters", "summary" and the like are not operations
+			}
+			if mark := child(op, RoleExtension); mark != nil {
+				loc := strings.Join([]string{"paths", path, method, RoleExtension}, " > ")
+				if err := role(method+" "+path, mark); err != nil {
+					return err
 				}
-				continue // "parameters", "summary" and the like are not operations
+				accepted[loc] = true
+				paths[path] = true
 			}
-			op := &node
-			for op.Kind == yaml.AliasNode && op.Alias != nil {
-				op = op.Alias
-			}
-			if op.Kind != yaml.MappingNode {
-				continue
-			}
-			for i := 0; i+1 < len(op.Content); i += 2 {
-				k, v := op.Content[i].Value, op.Content[i+1]
-				if k != RoleExtension {
-					if containsKey(v, RoleExtension) {
-						return nil, fmt.Errorf("openapi.yaml: %s %s: %s under %q, want it on the operation", method, path, RoleExtension, k)
-					}
-					continue
+			return nil
+		})
+	})
+	if err == nil {
+		err = entries(child(child(doc, "components"), "parameters"), func(name string, p *yaml.Node) error {
+			if mark := child(p, RoleExtension); mark != nil {
+				if err := role("parameter "+name, mark); err != nil {
+					return err
 				}
-				var role any
-				if err := v.Decode(&role); err != nil || role != "operator" {
-					return nil, fmt.Errorf("openapi.yaml: %s %s: %s %v, want operator", method, path, RoleExtension, role)
-				}
-				out[path] = true
+				accepted[strings.Join([]string{"components", "parameters", name, RoleExtension}, " > ")] = true
+				params[name] = true
 			}
+			return nil
+		})
+	}
+	if err == nil {
+		steps := 0
+		var misplaced error
+		err = walkKeys(doc, RoleExtension, nil, map[*yaml.Node]bool{}, &steps, func(loc string) {
+			if !accepted[loc] && misplaced == nil {
+				misplaced = fmt.Errorf("openapi.yaml: %s at %s, want it directly on an operation or on a components/parameters entry", RoleExtension, loc)
+			}
+		})
+		if err == nil {
+			err = misplaced
 		}
 	}
-	return out, nil
+	if err != nil {
+		return nil, nil, err
+	}
+	return paths, params, nil
 }
