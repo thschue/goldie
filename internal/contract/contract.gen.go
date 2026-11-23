@@ -1061,12 +1061,14 @@ type ClientInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. After 10 failed sign-ins
-	// from one remote host within a minute, every sign-in from it, a valid
-	// token included, is refused with a 429 until the minute ends. The host
-	// is the connection's remote address (an IPv6 address by its /64);
-	// `X-Forwarded-For` and similar headers are ignored. The limit is per
-	// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1086,12 +1088,14 @@ type ClientInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. After 10 failed sign-ins
-	// from one remote host within a minute, every sign-in from it, a valid
-	// token included, is refused with a 429 until the minute ends. The host
-	// is the connection's remote address (an IPv6 address by its /64);
-	// `X-Forwarded-For` and similar headers are ignored. The limit is per
-	// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1419,12 +1423,14 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. After 10 failed sign-ins
-// from one remote host within a minute, every sign-in from it, a valid
-// token included, is refused with a 429 until the minute ends. The host
-// is the connection's remote address (an IPv6 address by its /64);
-// `X-Forwarded-For` and similar headers are ignored. The limit is per
-// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -1454,12 +1460,14 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. After 10 failed sign-ins
-// from one remote host within a minute, every sign-in from it, a valid
-// token included, is refused with a 429 until the minute ends. The host
-// is the connection's remote address (an IPv6 address by its /64);
-// `X-Forwarded-For` and similar headers are ignored. The limit is per
-// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2596,12 +2604,14 @@ type ClientWithResponsesInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. After 10 failed sign-ins
-	// from one remote host within a minute, every sign-in from it, a valid
-	// token included, is refused with a 429 until the minute ends. The host
-	// is the connection's remote address (an IPv6 address by its /64);
-	// `X-Forwarded-For` and similar headers are ignored. The limit is per
-	// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -2621,12 +2631,14 @@ type ClientWithResponsesInterface interface {
 	// sign-in at the latest, ends when the token is removed or given a new
 	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. After 10 failed sign-ins
-	// from one remote host within a minute, every sign-in from it, a valid
-	// token included, is refused with a 429 until the minute ends. The host
-	// is the connection's remote address (an IPv6 address by its /64);
-	// `X-Forwarded-For` and similar headers are ignored. The limit is per
-	// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Failed sign-ins are
+	// capped per remote address: past the cap within a window, every
+	// sign-in from that address, a valid token included, is refused with a
+	// 429 until the window ends. The key is the connection's remote
+	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+	// headers are ignored, so clients behind a reverse proxy share one key
+	// and one lockout. The cap is per server process, and successful
+	// sign-ins do not count. The response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4399,12 +4411,14 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. After 10 failed sign-ins
-// from one remote host within a minute, every sign-in from it, a valid
-// token included, is refused with a 429 until the minute ends. The host
-// is the connection's remote address (an IPv6 address by its /64);
-// `X-Forwarded-For` and similar headers are ignored. The limit is per
-// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -4430,12 +4444,14 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // sign-in at the latest, ends when the token is removed or given a new
 // value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. After 10 failed sign-ins
-// from one remote host within a minute, every sign-in from it, a valid
-// token included, is refused with a 429 until the minute ends. The host
-// is the connection's remote address (an IPv6 address by its /64);
-// `X-Forwarded-For` and similar headers are ignored. The limit is per
-// server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Failed sign-ins are
+// capped per remote address: past the cap within a window, every
+// sign-in from that address, a valid token included, is refused with a
+// 429 until the window ends. The key is the connection's remote
+// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+// headers are ignored, so clients behind a reverse proxy share one key
+// and one lockout. The cap is per server process, and successful
+// sign-ins do not count. The response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

@@ -42,7 +42,7 @@ type publicMux struct {
 	operatorPaths map[string]bool
 	// anonymous are the operations the spec marks `security: []`, as "METHOD /path".
 	anonymous map[string]bool
-	// signIn caps failed sign-ins per remote host (#489).
+	// signIn caps failed sign-ins per remote address (#489).
 	signIn *api.SignInLimiter
 	// sync serves the sync operations; newPublic binds it to the Source's
 	// Syncer.
