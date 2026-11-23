@@ -95,14 +95,14 @@ func (c *commander) registered(ctx context.Context, id string) (ok bool, why str
 	}
 	raw, err := cl.ListProjects(ctx)
 	if err != nil {
-		return false, transportError(err).Error()
+		return false, transportError(err, c.local).Error()
 	}
 	if raw.StatusCode == http.StatusUnauthorized {
 		_ = raw.Body.Close()
 		return false, "token rejected"
 	}
 	resp, e, err := contract.ParseOK(raw, contract.ParseListProjectsResponse)
-	if err := answerError(e, err); err != nil {
+	if err := answerError(e, err, c.local); err != nil {
 		return false, contract.CleanLine(err.Error())
 	}
 	if resp.JSON200 == nil {
