@@ -391,5 +391,73 @@
    "statusCheckRollup": []
   },
   "want": "parked"
+ },
+ {
+  "name": "held by the gate, then a conflict: fixed before the maintainer sees it",
+  "pr": {
+   "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "labels": [
+    {
+     "name": "needs-maintainer"
+    }
+   ],
+   "comments": [
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "01",
+     "body": "Claimed.\n\n<!-- goldie-loop:claim session=w1 -->"
+    },
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "05",
+     "body": "Review.\n\n<!-- goldie-loop:review sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reason=clean rounds=0 -->"
+    }
+   ],
+   "mergeStateStatus": "DIRTY",
+   "autoMergeRequest": null,
+   "statusCheckRollup": []
+  },
+  "want": "dirty"
+ },
+ {
+  "name": "held by the gate, then a red check: fixed before the maintainer sees it",
+  "pr": {
+   "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "labels": [
+    {
+     "name": "needs-maintainer"
+    }
+   ],
+   "comments": [
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "01",
+     "body": "Claimed.\n\n<!-- goldie-loop:claim session=w1 -->"
+    },
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "05",
+     "body": "Review.\n\n<!-- goldie-loop:review sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reason=clean rounds=0 -->"
+    }
+   ],
+   "mergeStateStatus": "BLOCKED",
+   "autoMergeRequest": null,
+   "statusCheckRollup": [
+    {
+     "name": "ux",
+     "conclusion": "FAILURE",
+     "startedAt": "02"
+    }
+   ]
+  },
+  "want": "red"
  }
 ]

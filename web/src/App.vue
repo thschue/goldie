@@ -22,7 +22,7 @@ async function onSignOut() {
 </script>
 
 <template>
-  <div v-if="!ready" role="status" class="boot-loading"><h1>Loading…</h1></div>
+  <main v-if="!ready" class="boot-loading"><div role="status"><h1>Loading…</h1></div></main>
   <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
   <AppShell v-else :role="role()" :account="!route.meta.public" @signout="onSignOut">
     <SessionBanner />

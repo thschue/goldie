@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
+import ProjectHome from './projects/ProjectHome.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -19,7 +20,7 @@ const pages: [path: string, title: string][] = [
 ];
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: EmptyView, meta: { title: 'Home', heading: 'What are you deciding today?' } },
+  { path: '/', component: ProjectHome, meta: { title: 'Home', heading: 'What are you deciding today?' } },
   // Sign in is public: the guard lets it through, and the shell shows no role chip.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
