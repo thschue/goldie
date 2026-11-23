@@ -41,7 +41,8 @@ You run when the diff touches `web/**`, `internal/ui/**` or `docs/design/**`.
    - never colour alone;
    - touch targets of at least 44 px.
 4. **Pleasant to use** (`design:design-critique`): friction, dead ends, unclear next steps. These are
-   LOW unless a flow is broken.
+   LOW unless a flow is broken; mark each `fix: now` (about 20 lines, in files the PR touches) or
+   `fix: follow-up`. A matter of taste no user would notice isn't a finding.
 
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `changes-requested` or `needs-info` (review), or `refined` (refine);

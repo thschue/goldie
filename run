@@ -265,7 +265,7 @@ cmd_test_lock_fixture() {
 # testdata/frontier/cases.json: each case's issues, ranked by
 # scripts/lib/frontier.jq, must come out in the case's order.
 cmd_frontier_fixture() {
-	say "frontier fixture (claim order: bug and priority, started epic, standalone, new epic)"
+	say "frontier fixture (claim order: P level, then started epic, standalone, new epic)"
 	out=$(jq -L scripts/lib -r 'include "frontier";
 		.[] | (.issues | rank | map(.number)) as $got
 		| select($got != .want) | "\(.name): want \(.want), got \($got)"' testdata/frontier/cases.json) ||

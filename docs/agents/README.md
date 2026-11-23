@@ -57,13 +57,11 @@ A loop never adds a label it doesn't own here. Re-read labels right before every
 ## Order of work
 
 **Finish before starting:** resumed streams before new claims, and the started epic before a new
-one. `scripts/frontier` ranks the claimable issues (never re-rank them):
-1. `bug` and `priority` (at most 2 open: the work that unblocks the most);
-2. issues of a started epic (a sub-issue closed or in progress), the oldest started epic first;
-3. standalone issues;
-4. issues of a new epic, the oldest epic first; only when nothing above is claimable.
-
-Oldest first within each. `security` on a LOW follow-up is a tag, not a rank.
+one. `scripts/frontier` ranks the claimable issues (never re-rank them) by priority level first
+(`bug` counts as P1, no label as P2), then within a level:
+1. issues of a started epic (a sub-issue closed or in progress), the oldest started epic first;
+2. standalone issues;
+3. issues of a new epic, the oldest epic first. Oldest first within each; `security` is a tag.
 
 ## Gates
 
