@@ -119,6 +119,9 @@ func upStart(t *testing.T, repo string, up Upstream) (*upRunning, error) {
 	}
 	cfg.DrainTimeout = 0
 	cfg.PollInterval = 50 * time.Millisecond
+	oldFloor := minPollInterval
+	minPollInterval = time.Millisecond
+	t.Cleanup(func() { minPollInterval = oldFloor })
 	admin := make(chan string, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

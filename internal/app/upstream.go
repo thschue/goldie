@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -179,7 +180,12 @@ func fetchView(ctx context.Context, client *contract.ClientWithResponses, proj s
 		}
 		view.Items = append(view.Items, a)
 	}
-	sum, _ := json.Marshal(view.Items)
+	sup := slices.Clone(view.Suppressions)
+	slices.Sort(sup)
+	sum, _ := json.Marshal(struct {
+		Items        []engine.Article
+		Suppressions []string
+	}{view.Items, sup})
 	digest := sha256.Sum256(sum)
 	return view, hex.EncodeToString(digest[:]), nil
 }

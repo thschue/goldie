@@ -177,11 +177,6 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, err
 	}
 
-	if l.Upstream.Addr != "" && cfg.PollInterval > 0 {
-		// A local server polls at the interval it is given, as LoadConfig
-		// already holds it to its floor.
-		pub.poll = cfg.PollInterval
-	}
 	runCtx, cancel := context.WithCancel(ctx)
 	ready := platform.NewRegistry(0)
 	pub.Start(runCtx, ready)
