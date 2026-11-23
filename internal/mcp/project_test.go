@@ -17,14 +17,14 @@ import (
 // valid ProjectId github.com/acme/kube or github.com/acme/shop: each carries a
 // non-ASCII letter whose lower case is ASCII, or is otherwise non-ASCII.
 var lookAlikeProjects = map[string]string{
-	"Kelvin sign":          "github.com/acme/Kube",
-	"Kelvin sign in host":  "github.com/acme/kubeK",
-	"dotted capital I":     "gİthub.com/acme/shop",
-	"fullwidth letters":    "github.com/acme/ｓhop",
-	"Latin-1 letter":       "github.com/acme/shöp",
+	"Kelvin sign":          "github.com/acme/\u212Aube",
+	"Kelvin sign in host":  "github.com/acme/kube\u212A",
+	"dotted capital I":     "g\u0130thub.com/acme/shop",
+	"fullwidth letters":    "github.com/acme/\uFF53hop",
+	"Latin-1 letter":       "github.com/acme/sh\u00f6p",
 	"invalid UTF-8 byte":   "github.com/acme/sh\xffop",
-	"non-breaking space":   "github.com/acme/shop ",
-	"Cyrillic look-alikes": "github.com/аcme/shop",
+	"non-breaking space":   "github.com/acme/shop\u00a0",
+	"Cyrillic look-alikes": "github.com/\u0430cme/shop",
 }
 
 func TestProjectParamRefusesEveryNonASCIIValue(t *testing.T) {
