@@ -253,7 +253,7 @@ func contentLoadError(err error) error {
 
 // ValidateDir runs the content load the server runs at startup over dir, else
 // the working directory, and returns nil when it succeeds. A failure reads
-// "content does not load: " and the loader's reason, the words server -dev
+// "content does not load: " and the loader's reason, the words server --dev
 // ends with; it never names dir.
 func ValidateDir(ctx context.Context, dir string) error {
 	_, err := ValidateDirWarnings(ctx, dir)

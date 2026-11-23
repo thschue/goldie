@@ -17,16 +17,17 @@ import (
 	"github.com/thschue/goldie/internal/platform"
 )
 
-// MCPUsage is the one-line usage of the mcp role, without the program name.
-const MCPUsage = "mcp --transport stdio [--addr URL | --dir PATH] [--token TOKEN]"
+// mcpUsage is the one-line usage of the mcp role, without the program name.
+const mcpUsage = "mcp --transport stdio [--addr URL | --dir PATH] [--token TOKEN]"
 
-// mcpTokenNote recommends the token variables over --token: its value shows in
-// the process list (ps), and an MCP client saves it in its config.
-const mcpTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE to --token: a --token value shows in the process list (ps) and is saved in the MCP client's config"
+// MCPTokenNote goes in the help of goldie mcp. It recommends the token
+// variables over --token: its value shows in the process list (ps), and an MCP
+// client saves it in its config.
+const MCPTokenNote = "Prefer " + cli.EnvToken + " or " + cli.EnvToken + "_FILE to --token: a --token value shows in the process list (ps) and is saved in the MCP client's config"
 
 // errTransport is the usage error for a missing or unknown --transport. The
 // value given is never echoed: it may hold control characters.
-var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + MCPUsage + "\n" + mcpTokenNote)
+var errTransport = errors.New("--transport must be stdio, the only transport so far\nusage: goldie " + mcpUsage + "\n" + MCPTokenNote)
 
 // RunMCP runs `goldie mcp`: the MCP server over stdio (in and out), reaching
 // the API through contract's hardened client, with the CLI's client settings
@@ -39,18 +40,33 @@ var errTransport = errors.New("--transport must be stdio, the only transport so 
 func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	transport := fs.String("transport", "", "the MCP transport: stdio")
-	settings := cli.BindClientFlags(fs)
+	run := BindMCP(fs)
 	if err := fs.Parse(args); err != nil {
 		// flag's message echoes the argument, which may hold control characters.
-		return errors.New("unknown flag, or a flag without its value\nusage: goldie " + MCPUsage + "\n" + mcpTokenNote)
+		return errors.New("unknown flag, or a flag without its value\nusage: goldie " + mcpUsage + "\n" + MCPTokenNote)
 	}
-	if fs.NArg() != 0 {
-		return errors.New("usage: goldie " + MCPUsage + "\n" + mcpTokenNote)
+	return run(ctx, fs.Args(), env, in, out)
+}
+
+// BindMCP registers the flags of goldie mcp on fs (--transport and the client
+// flags) and returns what runs it, given the positional words once fs is
+// parsed. The dispatcher in cmd/goldie parses with its own flag library and
+// hands the result over; RunMCP does the same with fs.
+func BindMCP(fs *flag.FlagSet) func(ctx context.Context, pos []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
+	transport := fs.String("transport", "", "the MCP transport: stdio")
+	settings := cli.BindClientFlags(fs)
+	return func(ctx context.Context, pos []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
+		if len(pos) != 0 {
+			return &cli.UsageError{Command: "mcp", Msg: "mcp takes no arguments"}
+		}
+		if *transport != "stdio" {
+			return errTransport
+		}
+		return serveMCPStdio(ctx, settings, env, in, out)
 	}
-	if *transport != "stdio" {
-		return errTransport
-	}
+}
+
+func serveMCPStdio(ctx context.Context, settings *cli.ClientFlags, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	addr, token, stop, err := settings.Open(ctx, env)
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)

@@ -20,6 +20,13 @@ to every request, the page's fetch of `/openapi.json` included.
 
 ## CLI
 
+`goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
+`validate`, `health`) and Ask a server (`search`, `lookup`, `status`, `init`, `mcp`, `version`).
+`goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
+are GNU style: `--dev`, `--addr`, `--json`, with two dashes. A single-dash long flag such as `-dev`
+is an error. An unknown command or flag prints one error line and `Run 'goldie <command> --help'.`
+to stderr and exits 2; help you ask for goes to stdout and exits 0.
+
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
 takes `--addr` (or `GOLDIE_ADDR`), `--token` (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it
@@ -84,15 +91,15 @@ goldie lookup platform/deploy
 
 ## Try it on your own content
 
-`goldie server -dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
+`goldie server --dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
 the working directory) with a random token made for this run, and prints the line that points the
 client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
 API token variables, so the same shell can run it again. The token is printed only in that line,
 never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
-[configuration reference](docs/reference/configuration.md#goldie-server--dev).
+[configuration reference](docs/reference/configuration.md#goldie-server---dev).
 
 ```sh
-goldie server -dev examples/knowledge
+goldie server --dev examples/knowledge
 # export GOLDIE_ADDR=http://127.0.0.1:41234 GOLDIE_TOKEN=<64 hex characters>
 ```
 
