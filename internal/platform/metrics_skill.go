@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// SkillGetCounter counts the skill gets that hit, following ResultCounter. Its
+// SkillGetCounter counts the skill gets that hit, following ResultCounter's shape. Its
 // attributes are name (a skill that exists, since only hits are counted, so a
 // name a caller makes up never becomes a label), scope (global or project,
 // never a Project id) and via (cli, mcp or other). No OpenTelemetry type
@@ -27,20 +27,20 @@ func (t *Telemetry) SkillGetCounter(name, description string) *SkillGetCounter {
 	return &SkillGetCounter{c: c}
 }
 
-// SkillScopeLabel is the scope attribute: global, or project.
-func SkillScopeLabel(global bool) string {
-	if global {
-		return "global"
-	}
-	return "project"
-}
-
-// Add counts one skill get that hit. The caller passes the name of a skill
-// that exists and via as one of a fixed few values. It is safe on a nil
-// counter.
-func (sc *SkillGetCounter) Add(ctx context.Context, name, scope, via string) {
+// Add counts one skill get that hit. name is the canonical name of a skill
+// that exists, global says whether it came from the global Scope (any other
+// Scope is "project"), and via is cli, mcp or anything else, which counts as
+// other. It is safe on a nil counter.
+func (sc *SkillGetCounter) Add(ctx context.Context, name string, global bool, via string) {
 	if sc == nil || sc.c == nil {
 		return
+	}
+	scope := "project"
+	if global {
+		scope = "global"
+	}
+	if via != "cli" && via != "mcp" {
+		via = "other"
 	}
 	sc.c.Add(ctx, 1, metric.WithAttributeSet(attribute.NewSet(
 		attribute.String("name", name), attribute.String("scope", scope), attribute.String("via", via))))

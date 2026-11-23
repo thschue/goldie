@@ -50,16 +50,23 @@ func (g *ClientVersionGate) Require(next http.Handler) http.Handler {
 }
 
 // clientVersion reads the version from exactly one X-Goldie-Client value of
-// the form goldie/<semver>, where a leading v (a release tag's) is skipped. A
-// trailing " mcp" (goldie/<semver> mcp, from goldie mcp) is not part of the version.
+// the form goldie/<semver>, where a leading v (a release tag's) is skipped.
 func clientVersion(values []string) (platform.Semver, bool) {
 	raw, ok := goldieClient(values)
 	if !ok {
 		return platform.Semver{}, false
 	}
-	raw = strings.TrimSuffix(raw, " "+contract.ClientViaMCP)
 	v, err := platform.ParseSemver(strings.TrimPrefix(raw, "v"))
 	return v, err == nil
+}
+
+// goldieClient is what follows goldie/ in exactly one X-Goldie-Client value of
+// at most maxClientHeader bytes.
+func goldieClient(values []string) (string, bool) {
+	if len(values) != 1 || len(values[0]) > maxClientHeader {
+		return "", false
+	}
+	return strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
 }
 
 // Client kinds, the via attribute of goldie.skill.gets.
@@ -69,29 +76,17 @@ const (
 	viaOther = "other"
 )
 
-// clientVia is the kind of client the header names: viaMCP for
-// goldie/<version> mcp, viaCLI for goldie/<version>, and viaOther for anything
-// else (no header, several, an oversized or foreign one, any other token). The
-// version is not parsed, so a dev build counts too. It returns one of three
-// constants, never a value derived from the request (PC-12).
-func clientVia(values []string) string {
-	rest, ok := goldieClient(values)
-	switch {
-	case !ok:
-		return viaOther
-	case strings.HasSuffix(rest, " "+contract.ClientViaMCP) && !strings.ContainsRune(strings.TrimSuffix(rest, " "+contract.ClientViaMCP), ' '):
+// clientVia is the surface a request came through: viaMCP when it carries
+// exactly one X-Goldie-Via of mcp, else viaCLI when it names a goldie client
+// (goldie/<anything>, a dev build included), else viaOther: no header, several,
+// an oversized or foreign one. It returns one of three constants, never a value
+// derived from the request (PC-12).
+func clientVia(h http.Header) string {
+	if v := h.Values(contract.ViaHeader); len(v) == 1 && len(v[0]) <= maxClientHeader && v[0] == contract.ViaMCP {
 		return viaMCP
-	case !strings.ContainsRune(rest, ' '):
+	}
+	if _, ok := goldieClient(h.Values(contract.ClientHeader)); ok {
 		return viaCLI
 	}
 	return viaOther
-}
-
-// goldieClient is what follows goldie/ in exactly one header value of at most
-// maxClientHeader bytes.
-func goldieClient(values []string) (string, bool) {
-	if len(values) != 1 || len(values[0]) > maxClientHeader {
-		return "", false
-	}
-	return strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
 }

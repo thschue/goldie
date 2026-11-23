@@ -142,16 +142,16 @@ type ActivityDropped struct {
 	Dropped int64 `json:"dropped"`
 }
 
-// ActivityEvent One search or lookup on the activity stream, the `data` of an SSE
+// ActivityEvent One search, lookup or get on the activity stream, the `data` of an SSE
 // event without a type. Every field is always sent; text fields are `""`
 // when empty. Clients ignore fields they do not know.
 type ActivityEvent struct {
-	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`.
+	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.
 	//
 	// Examples: 1.5.0
 	ClientVersion string `json:"client_version"`
 
-	// Id Increases per server process (per replica); starts again at 1 on restart.
+	// Id Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it.
 	//
 	// Examples: 42
 	Id int64 `json:"id"`
@@ -169,7 +169,7 @@ type ActivityEvent struct {
 	// Examples: false
 	Late bool `json:"late"`
 
-	// Miss A search with no results, or a lookup answering 404.
+	// Miss A search with no results, or a lookup or get answering 404.
 	//
 	// Examples: false
 	Miss bool `json:"miss"`
@@ -179,7 +179,11 @@ type ActivityEvent struct {
 	// Examples: github.com/acme/shop
 	Project string `json:"project"`
 
-	// Query The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
+	// Query The search words, the article id a lookup asked for (bare), or for a
+	// get the Reference `<kind>:<name>` (ADR 0021), such as `skill:review`
+	// or `agent:review`. A replica older than this form shows the bare name
+	// of a get in a federated stream.
+	//
 	//
 	// Examples: deploy kubernetes
 	Query string `json:"query"`

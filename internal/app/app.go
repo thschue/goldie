@@ -497,7 +497,9 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	return p, err
 }
 
-// resultCounters is the option that counts searches, lookups and skill gets through tel.
+// resultCounters is the option that counts searches and lookups by result
+// (goldie.searches, goldie.lookups) and the skill gets that hit
+// (goldie.skill.gets) through tel.
 func resultCounters(tel *platform.Telemetry) api.ServerOption {
 	results := api.CountResults(
 		tel.ResultCounter("goldie.searches", "Searches answered, by result."),

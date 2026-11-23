@@ -1827,7 +1827,7 @@ components:
     ActivityEvent:
       type: object
       description: |
-        One search or lookup on the activity stream, the `data` of an SSE
+        One search, lookup or get on the activity stream, the `data` of an SSE
         event without a type. Every field is always sent; text fields are `""`
         when empty. Clients ignore fields they do not know.
       additionalProperties: false
@@ -1848,7 +1848,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: Increases per server process (per replica); starts again at 1 on restart.
+          description: Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it.
           examples:
             - 42
         time:
@@ -1872,7 +1872,11 @@ components:
             - search
         query:
           type: string
-          description: The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
+          description: |
+            The search words, the article id a lookup asked for (bare), or for a
+            get the Reference `<kind>:<name>` (ADR 0021), such as `skill:review`
+            or `agent:review`. A replica older than this form shows the bare name
+            of a get in a federated stream.
           examples:
             - deploy kubernetes
         project:
@@ -1887,7 +1891,7 @@ components:
             - ci-reader
         client_version:
           type: string
-          description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`.'
+          description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.'
           examples:
             - 1.5.0
         trace_id:
@@ -1897,7 +1901,7 @@ components:
             - 4bf92f3577b34da6a3ce929d0e0e4736
         miss:
           type: boolean
-          description: A search with no results, or a lookup answering 404.
+          description: A search with no results, or a lookup or get answering 404.
           examples:
             - false
         replica:
@@ -2032,7 +2036,8 @@ components:
         minimum version: upgrade goldie, then retry. Requests without the
         header, or whose header is not `goldie/<semver>`, are not refused;
         requests without a valid token are rejected with 401 first, and a
-        refused request does not count against the rate limit.
+        refused request does not count against the rate limit. `goldie mcp` and
+        the server's `/mcp` add `X-Goldie-Via: mcp`, which the gate does not read.
       content:
         application/json:
           schema:
