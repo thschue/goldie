@@ -494,6 +494,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |
 | Miss detail | No Item matched · `<nearest keywords>` · Start this article in the Source repo ↗ |
+| Skill or agent get | The Query → Item column reads `skill:<name>` or `agent:<name>`. A miss reads **No skill named `<name>`** or **No agent named `<name>`**; the detail has no nearest keywords and no "Start this article" link, and offers "Add it to the Source repo ↗" in its place. |
 | Source failing | Validation failed at `<rev>` — `<n>` error(s). Fix in the Source and merge — or run `goldie validate` locally before pushing. |
 | Sources intro | Failing Sources first. The number is preference order: on a collision within a Scope, the lower number wins. A failing Source keeps serving its last good Snapshot. |
 | Grafana links | Trends in Grafana ↗ · Usage over time in Grafana ↗ (hidden without `GOLDIE_GRAFANA_URL`) |
