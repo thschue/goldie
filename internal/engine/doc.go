@@ -6,7 +6,9 @@
 //
 // A DirSource loads global/articles/** and
 // projects/<host>/<org>/<repo>/articles/** from a directory into an immutable
-// Snapshot. Every Source shares one loader over an fs.FS: DirSource hands it
+// Snapshot. It loads agents/<name>.md (global/agents/, a Project's agents/ and
+// .goldie/agents/) as Items of Kind agent, served by AgentIn and Agents and
+// kept apart from articles. Every Source shares one loader over an fs.FS: DirSource hands it
 // the os.Root-confined directory, and a read-only fs.FS over a git tree lets a
 // commit load the same way without a working tree. That tree fs.FS never
 // follows a symlink, rejects entry names that could traverse and trees with

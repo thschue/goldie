@@ -62,6 +62,12 @@ type Article struct {
 	// file is the article's path relative to the Source root, as
 	// loadArticles walked it, for error messages.
 	file string
+
+	// kind is empty for an article. An agent is held as a record of kind
+	// KindAgent, with its description and original bytes (agents.go).
+	kind        string
+	description string
+	raw         []byte
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
@@ -134,6 +140,11 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		return nil, err
 	}
 	snap := newSnapshot(global)
+	globalAgents, err := loadScopeAgents(fsys, agentsDir, ScopeGlobal, "global agents")
+	if err != nil {
+		return nil, err
+	}
+	snap.addAgents(globalAgents)
 	dirs, err := projectDirs(fsys)
 	if err != nil {
 		return nil, err
@@ -153,7 +164,12 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
+		agents, err := loadScopeAgents(fsys, d.dir+"/agents", d.scope, "Project agents")
+		if err != nil {
+			return nil, err
+		}
 		snap.addProject(d.scope, articles)
+		snap.addProjectAgents(d.scope, agents)
 		if err := snap.applySuppressions(d.scope, refs); err != nil {
 			return nil, err
 		}
@@ -161,10 +177,10 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 	if err := snap.checkEnforced(); err != nil {
 		return nil, err
 	}
-	if err := snap.checkReplacements(snap.allArticles()); err != nil {
+	if err := snap.checkReplacements(snap.allItems()); err != nil {
 		return nil, err
 	}
-	if err := snap.checkLookups(snap.allArticles()); err != nil {
+	if err := snap.checkLookups(snap.allItems()); err != nil {
 		return nil, err
 	}
 	return snap, nil
@@ -303,13 +319,14 @@ func readErr(err error) error {
 	return errors.New("cannot read")
 }
 
-func parseArticle(id string, raw []byte) (Article, error) {
+// splitFrontmatter cuts a Markdown file into its frontmatter and body, reading
+// CRLF as LF. raw itself is not changed.
+func splitFrontmatter(raw []byte) (front, body []byte, err error) {
 	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 	rest, ok := bytes.CutPrefix(raw, []byte("---\n"))
 	if !ok {
-		return Article{}, errors.New("missing frontmatter (first line must be ---)")
+		return nil, nil, errors.New("missing frontmatter (first line must be ---)")
 	}
-	var front, body []byte
 	if r, found := bytes.CutPrefix(rest, []byte("---\n")); found {
 		body = r
 	} else if i := bytes.Index(rest, []byte("\n---\n")); i >= 0 {
@@ -317,7 +334,15 @@ func parseArticle(id string, raw []byte) (Article, error) {
 	} else if f, found := bytes.CutSuffix(rest, []byte("\n---")); found {
 		front = f
 	} else {
-		return Article{}, errors.New("frontmatter not closed with ---")
+		return nil, nil, errors.New("frontmatter not closed with ---")
+	}
+	return front, body, nil
+}
+
+func parseArticle(id string, raw []byte) (Article, error) {
+	front, body, err := splitFrontmatter(raw)
+	if err != nil {
+		return Article{}, err
 	}
 	var meta struct {
 		Name          string   `yaml:"name"`
@@ -325,7 +350,7 @@ func parseArticle(id string, raw []byte) (Article, error) {
 		lifecycleMeta `yaml:",inline"`
 	}
 	if err := yaml.Unmarshal(front, &meta); err != nil {
-		return Article{}, fmt.Errorf("malformed frontmatter: %s", strings.TrimPrefix(err.Error(), "yaml: "))
+		return Article{}, yamlErr("frontmatter", err)
 	}
 	if strings.TrimSpace(meta.Name) == "" {
 		return Article{}, errors.New("frontmatter has no name")
@@ -346,7 +371,8 @@ func parseArticle(id string, raw []byte) (Article, error) {
 // copies, so callers cannot change it.
 type Snapshot struct {
 	articles []Article // global, sorted by ID
-	index    keyIndex  // global articles by itemKey
+	agents   []Article // global agent records, sorted by ID
+	index    keyIndex  // global articles and agents by itemKey
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
 	// warnings are load findings that do not fail the load, such as a
@@ -360,6 +386,7 @@ type Snapshot struct {
 type project struct {
 	scope    string
 	articles []Article // sorted by ID
+	agents   []Article // agent records, sorted by ID
 	index    keyIndex
 	// suppressed holds the global Items the Project hides (its project.yaml),
 	// and suppressions lists them as article:<ID>, sorted.
@@ -373,10 +400,42 @@ type keyIndex map[itemKey]*Article
 
 func indexArticles(articles []Article) keyIndex {
 	idx := make(keyIndex, len(articles))
-	for i := range articles {
-		idx[articles[i].key()] = &articles[i]
-	}
+	idx.add(articles)
 	return idx
+}
+
+// add indexes items; an agent and an article of one name have different keys.
+func (idx keyIndex) add(items []Article) {
+	for i := range items {
+		idx[items[i].key()] = &items[i]
+	}
+}
+
+// loadScopeAgents is loadAgents behind the check that dir is not a symlink:
+// fs.ReadDir follows a symlinked directory, and os.Root only stops links out
+// of the root.
+func loadScopeAgents(fsys fs.FS, dir, scope, what string) ([]Article, error) {
+	if exists, err := requireDir(fsys, dir, what); err != nil || !exists {
+		return nil, err
+	}
+	return loadAgents(fsys, dir, scope)
+}
+
+// addAgents registers the global agents. It is called only while loading.
+func (s *Snapshot) addAgents(agents []Article) {
+	sortArticles(agents)
+	s.agents = agents
+	s.index.add(agents)
+}
+
+// addProjectAgents registers a Project's agents. It is called only while
+// loading, after addProject.
+func (s *Snapshot) addProjectAgents(scope string, agents []Article) {
+	p, _ := s.lookupProject(scope)
+	sortArticles(agents)
+	p.agents = agents
+	p.index.add(agents)
+	s.projects[strings.ToLower(scope)] = p
 }
 
 func newSnapshot(articles []Article) *Snapshot {
@@ -501,15 +560,21 @@ func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
 // resolutionOrder returns the article lists that hold proj's candidate Items:
 // local, then Project, then global. winner decides which copy of each itemKey
 // answers.
-func (s *Snapshot) resolutionOrder(proj string) [][]Article {
+func (s *Snapshot) resolutionOrder(proj, kind string) [][]Article {
+	pick := func(articles, agents []Article) []Article {
+		if kind == KindAgent {
+			return agents
+		}
+		return articles
+	}
 	var lists [][]Article
 	if s.local != nil {
-		lists = append(lists, s.local.articles)
+		lists = append(lists, pick(s.local.articles, s.local.agents))
 	}
 	if p, ok := s.lookupProject(proj); ok {
-		lists = append(lists, p.articles)
+		lists = append(lists, pick(p.articles, p.agents))
 	}
-	return append(lists, s.articles)
+	return append(lists, pick(s.articles, s.agents))
 }
 
 func cloneArticle(a Article) Article {
