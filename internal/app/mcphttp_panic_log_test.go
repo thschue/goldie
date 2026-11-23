@@ -189,7 +189,14 @@ func TestPublicHandlerTakesTheServerLogger(t *testing.T) {
 	t.Cleanup(srv.Close)
 	cs := mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport))
 	assertToolsAnswerOverHTTP(t, cs)
-	if got := logs.lines(); len(got) != 0 {
+	// The startup warning that the UI is not built (#164) is not a panic line.
+	var got []string
+	for _, l := range logs.lines() {
+		if !strings.Contains(l, uiNotBuiltMessage) {
+			got = append(got, l)
+		}
+	}
+	if len(got) != 0 {
 		t.Errorf("got %d log lines with no panic, want none:\n%s", len(got), strings.Join(got, "\n"))
 	}
 }
