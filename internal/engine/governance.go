@@ -98,8 +98,9 @@ const maxQuotedRefRunes = 64
 // parseRef parses an Item reference, <kind>:<name> (ADR 0021), of at most
 // maxRefBytes: a known Kind in lower-case letters, then a slash-separated name
 // whose segments are neither empty nor dot segments. The name holds only
-// printable characters other than spaces (no Unicode space, control, format or
-// bidi character), and no colon or backslash.
+// printable characters other than spaces: no Unicode space, no private-use or
+// unassigned code point, no rune HiddenRune names (control, format, bidi and
+// the invisible fillers), and no colon or backslash.
 func parseRef(ref string) (itemKey, error) {
 	if len(ref) > maxRefBytes {
 		return itemKey{}, fmt.Errorf("is longer than %d bytes", maxRefBytes)
@@ -115,8 +116,8 @@ func parseRef(ref string) (itemKey, error) {
 		return itemKey{}, errors.New("has a kind goldie does not know; the known kind is article")
 	}
 	for _, r := range name {
-		if r == ':' || r == '\\' || r == ' ' || r == utf8.RuneError || !unicode.IsPrint(r) {
-			return itemKey{}, errors.New("has a name with a space, control, format, colon or backslash character")
+		if r == ':' || r == '\\' || r == ' ' || r == utf8.RuneError || !unicode.IsPrint(r) || HiddenRune(r) {
+			return itemKey{}, errors.New("has a name with a space, colon, backslash, or hidden or non-printing character")
 		}
 	}
 	for _, seg := range strings.Split(name, "/") {
@@ -129,22 +130,40 @@ func parseRef(ref string) (itemKey, error) {
 
 // quoteRef renders a reference for an error message: at most
 // maxQuotedRefRunes runes, then an ellipsis. Quoting escapes control
-// characters, and redact strips anything that looks like a credential, path or
-// address, since the message reaches sync status and logs.
+// characters and every other rune HiddenRune names, such as a Hangul filler
+// strconv.Quote leaves raw, and redact strips anything that looks like a
+// credential, path or address, since the message reaches sync status and logs.
 func quoteRef(ref string) string {
 	if utf8.RuneCountInString(ref) > maxQuotedRefRunes {
 		ref = string([]rune(ref)[:maxQuotedRefRunes]) + "…"
 	}
-	return redact(strconv.Quote(ref))
+	return redact(escapeHidden(strconv.Quote(ref)))
 }
 
-// articleFile is the path of a's file relative to the Source root.
-func articleFile(a *Article) string {
-	if a.Scope == ScopeGlobal {
-		return articlesDir + "/" + a.ID + ".md"
+// escapeHidden rewrites each rune HiddenRune names in a quoted string as a \u
+// or \U escape. strconv.Quote has escaped everything else that needs it, so
+// the result is still a valid quoted string.
+func escapeHidden(quoted string) string {
+	if !strings.ContainsFunc(quoted, HiddenRune) {
+		return quoted
 	}
-	return projectsDir + "/" + a.Scope + "/articles/" + a.ID + ".md"
+	var b strings.Builder
+	for _, r := range quoted {
+		switch {
+		case !HiddenRune(r):
+			b.WriteRune(r)
+		case r > 0xffff:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		default:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		}
+	}
+	return b.String()
 }
+
+// articleFile is the path of a's file relative to the Source root, as
+// loadArticles found it.
+func articleFile(a *Article) string { return a.file }
 
 // checkReplacements fails when a replaced_by does not resolve in its
 // referrer's view, names the Item itself, names a draft or is part of a cycle.
