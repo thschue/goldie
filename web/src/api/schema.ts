@@ -12,11 +12,16 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search articles by keyword
-         * @description Returns the articles that match the search words, best first. An exact
-         *     keyword match scores 4, a keyword containing the word 1, and a name
-         *     containing the word 2. Ties are ordered by id. No match is an empty
-         *     list, not an error.
+         * Search articles, skills and agents by keyword
+         * @description Returns the Items of one Kind that match the search words, best first.
+         *     Without `kind` only articles are searched, so a client that follows a hit
+         *     with an article lookup keeps working. An exact keyword match scores 4, a
+         *     keyword containing the word 1, and a name containing the word 2. A skill
+         *     or agent matches on its name and keywords only, never on its
+         *     description (ADR 0005); a skill's keywords are the `keywords` in the
+         *     frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+         *     empty list, not an error. A skill or agent hit's `id` is its name: read
+         *     it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
          */
         get: operations["searchArticles"];
         put?: never;
@@ -59,7 +64,11 @@ export interface paths {
          * List the skills
          * @description Returns the skills that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins with its whole bundle. Each carries its
-         *     file list.
+         *     file list, `scope`, `status`, `description` and `requires_sync`. A
+         *     draft skill is listed only with `drafts=true` and the operator role.
+         *
+         *     Fetch one of a skill's files with `getSkillFile`
+         *     (`GET /api/v1/skills/{name}/files/{path}`).
          */
         get: operations["listSkills"];
         put?: never;
@@ -79,11 +88,38 @@ export interface paths {
         };
         /**
          * Read one skill
-         * @description Returns one skill by name with its file list. A miss is a 404 whose hint
-         *     points to the list. The digest and the executable bit are not part of
-         *     the answer yet.
+         * @description Returns one skill by name with its file list. A client reads each listed
+         *     `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+         *     404 whose hint points to the list. The digest and the executable bit
+         *     are not part of the answer yet.
          */
         get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{name}/files/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one file of a skill
+         * @description Returns the bytes of one file of the skill's bundle exactly as written,
+         *     for a path listed in the skill's `files`. Every file is served with the
+         *     one content type `application/octet-stream` and
+         *     `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+         *     client or browser never runs or renders it. A name or path that is not a
+         *     file of the bundle that answers, one that leaves the bundle, and an
+         *     absolute path are all the same 404.
+         */
+        get: operations["getSkillFile"];
         put?: never;
         post?: never;
         delete?: never;
@@ -102,7 +138,9 @@ export interface paths {
         /**
          * List the agents
          * @description Returns the agents that answer in the Project's view, sorted by name,
-         *     one per name: the nearest Scope wins.
+         *     one per name: the nearest Scope wins. Each carries its `scope` and
+         *     `status`. A draft agent is listed only with `drafts=true` and the
+         *     operator role.
          */
         get: operations["listAgents"];
         put?: never;
@@ -125,6 +163,64 @@ export interface paths {
          * @description Returns one agent by name. A miss is a 404 whose hint points to the list.
          */
         get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instructions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the instruction block
+         * @description Returns the instruction block for the Project and target: the clauses that
+         *     resolve in the Project's view and name the target, in order, with the
+         *     variables replaced. `{{mcp_name}}` is the server setting
+         *     `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+         *     clause applies, the block is the built-in default. The `digest` is the
+         *     hex SHA-256 of the block, so a client can tell whether its copy is current.
+         */
+        get: operations["getInstructions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the resolved set as an archive
+         * @description Returns the skills and agents that resolve in the Project's view (the
+         *     view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+         *     wins, drafts are left out) as a gzip-compressed tar, laid out for the
+         *     target. For `claude` the entries are regular files with clean relative
+         *     slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+         *     file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+         *     A script keeps its executable bit in the entry's mode. A skill or agent
+         *     whose name, or a skill file whose path, cannot be a safe path is left out
+         *     on purpose, and nothing in the response marks the omission. A Project
+         *     whose view holds no skill and no agent gets a 200 with an empty archive and
+         *     a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+         *     always gives the same ETag. Compare ETags, not bytes: gzip output can
+         *     change between Go toolchains. `If-None-Match` with that ETag answers 304
+         *     with no body. `goldie pull` writes the archive into the Goldie namespace.
+         */
+        get: operations["getBundle"];
         put?: never;
         post?: never;
         delete?: never;
@@ -450,7 +546,7 @@ export interface components {
              */
             query: string;
             /**
-             * @description The matching articles, best first, then by id.
+             * @description The matching Items, best first, then by id.
              * @example []
              */
             results: components["schemas"]["SearchHit"][];
@@ -510,6 +606,35 @@ export interface components {
              */
             files: components["schemas"]["SkillFile"][];
             /**
+             * @description Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+             *     `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+             *     omits it, and a missing value means unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
+             * @description The `status` in the frontmatter of SKILL.md: `draft` or
+             *     `deprecated`; absent for a published skill. Sent by `listSkills`
+             *     only. Draft skills are hidden unless `drafts=true` is asked for
+             *     with the operator role.
+             * @example draft
+             */
+            status?: string;
+            /**
+             * @description The `description` in the frontmatter of SKILL.md. Sent by
+             *     `listSkills` only; absent when the skill has none.
+             * @example Deploys the app
+             */
+            description?: string;
+            /**
+             * @description True when the bundle holds a script (a file under `scripts/`), so an
+             *     agent must sync it to run it; false for a text-only bundle. Sent by
+             *     `listSkills` only. A missing value on `getSkill` is not false: it
+             *     means unknown.
+             * @example true
+             */
+            requires_sync?: boolean;
+            /**
              * @description Present when the request named a Project that is not registered: the
              *     skill answer is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
@@ -553,8 +678,42 @@ export interface components {
              */
             description: string;
             /**
+             * @description Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+             *     `host/org/repo` or `local`. Sent by `listAgents` only; `getAgent`
+             *     omits it, and a missing value means unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
+             * @description The agent's status: `published`, `draft` or `deprecated`. Sent by
+             *     `listAgents` only; `getAgent` omits it, and a missing value means
+             *     unknown. Draft agents are hidden unless `drafts=true` is asked for
+             *     with the operator role.
+             * @example draft
+             */
+            status?: string;
+            /**
              * @description Present when the request named a Project that is not registered: the
              *     agent answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description The rendered instruction block for a Project and target. */
+        InstructionBlock: {
+            /**
+             * @description The block text, variables replaced. It is derived from Source content and is untrusted.
+             * @example This repository (github.com/acme/shop) uses Goldie for its golden paths.
+             */
+            block: string;
+            /**
+             * @description The hex SHA-256 of `block`.
+             * @example 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+             */
+            digest: string;
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     block is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
              */
             hint?: string;
@@ -653,11 +812,11 @@ export interface components {
              */
             replaced_by?: string;
             /**
-             * @description `global`, or the Project (`host/org/repo`) whose copy won.
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won.
              * @example github.com/acme/shop
              */
             scope: string;
-            /** @description Whether the Item is enforced, as its frontmatter says. */
+            /** @description Whether the Item is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. */
             enforced: boolean;
         };
         /** @description The token to sign in with. */
@@ -758,7 +917,7 @@ export interface components {
             message: string;
         };
         /**
-         * @description One article that matched a search.
+         * @description One Item that matched a search.
          * @example {
          *       "id": "platform/deploy",
          *       "name": "Deploying to Kubernetes",
@@ -781,12 +940,13 @@ export interface components {
          */
         SearchHit: {
             /**
-             * @description The article id, for a lookup.
+             * @description The Item's id, an article id for a lookup or a skill or agent name.
              * @example platform/deploy
              */
             id: string;
             /**
-             * @description The display title from the frontmatter.
+             * @description The display title from the frontmatter of an article. A skill's or
+             *     agent's name is its id.
              * @example Deploying to Kubernetes
              */
             name: string;
@@ -796,12 +956,12 @@ export interface components {
              */
             kind: string;
             /**
-             * @description Where the Item applies, such as `global` (ADR 0005).
+             * @description Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005).
              * @example global
              */
             scope: string;
             /**
-             * @description The article's keywords, lower case.
+             * @description The Item's keywords, lower case.
              * @example [
              *       "kubernetes",
              *       "deploy"
@@ -911,6 +1071,13 @@ export interface components {
              */
             replaced_by?: string;
             /**
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project
+             *     (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+             *     not global.
+             * @example github.com/acme/shop
+             */
+            scope?: string;
+            /**
              * @description The Scopes this article shadows in the requested view, nearest first;
              *     `[]` when it shadows nothing. Never null. Always sent by this server;
              *     absent from an older server, where it means unknown, not empty.
@@ -926,14 +1093,14 @@ export interface components {
             enforced?: boolean;
         };
         /**
-         * @description One search or lookup on the activity stream, the `data` of an SSE
+         * @description One search, lookup or get on the activity stream, the `data` of an SSE
          *     event without a type. Every field is always sent; text fields are `""`
          *     when empty. Clients ignore fields they do not know.
          */
         ActivityEvent: {
             /**
              * Format: int64
-             * @description Increases per server process (per replica); starts again at 1 on restart.
+             * @description Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it.
              * @example 42
              */
             id: number;
@@ -950,7 +1117,10 @@ export interface components {
              */
             kind: "search" | "lookup" | "get";
             /**
-             * @description The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
+             * @description The search words, the article id a lookup asked for (bare), or for a
+             *     get the Reference `<kind>:<name>` (ADR 0021), such as `skill:review`
+             *     or `agent:review`. A replica older than this form shows the bare name
+             *     of a get in a federated stream.
              * @example deploy kubernetes
              */
             query: string;
@@ -965,7 +1135,7 @@ export interface components {
              */
             token: string;
             /**
-             * @description The version in `X-Goldie-Client: goldie/<version>`, or `""`.
+             * @description The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.
              * @example 1.5.0
              */
             client_version: string;
@@ -975,7 +1145,7 @@ export interface components {
              */
             trace_id: string;
             /**
-             * @description A search with no results, or a lookup answering 404.
+             * @description A search with no results, or a lookup or get answering 404.
              * @example false
              */
             miss: boolean;
@@ -1086,7 +1256,8 @@ export interface components {
          *     minimum version: upgrade goldie, then retry. Requests without the
          *     header, or whose header is not `goldie/<semver>`, are not refused;
          *     requests without a valid token are rejected with 401 first, and a
-         *     refused request does not count against the rate limit.
+         *     refused request does not count against the rate limit. `goldie mcp` and
+         *     the server's `/mcp` add `X-Goldie-Via: mcp`, which the gate does not read.
          */
         UpgradeRequired: {
             headers: {
@@ -1158,6 +1329,11 @@ export interface operations {
                  */
                 q: string;
                 /**
+                 * @description The Kind of Item to search: `article` (the default), `skill` or
+                 *     `agent`. Any other value is a 400.
+                 */
+                kind?: "article" | "skill" | "agent";
+                /**
                  * @description Resolve for this Project (ADR 0020): its articles come before the
                  *     global ones and win on an equal id. Matched ignoring case. A Project
                  *     that is not registered answers the global results with a `hint`; a
@@ -1180,7 +1356,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The matching articles, best first. */
+            /** @description The matching Items, best first. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1189,7 +1365,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            /** @description The search words are missing or longer than 1024 bytes, or `project` is not a `ProjectId`. */
+            /** @description The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1462,6 +1638,98 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getSkillFile: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the skill for this Project (ADR 0020): its bundle answers
+                 *     whole, so a file only the global bundle has is a miss. Matched
+                 *     ignoring case. An unregistered Project answers the global bundle; a
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The skill name, one path segment. A name that is not one is a miss, as is one that no skill has.
+                 * @example deploy
+                 */
+                name: string;
+                /**
+                 * @description The file's path relative to the bundle, one path segment (ADR 0016).
+                 *     A `/` inside it is sent percent-encoded as `%2F`: `scripts/run.sh`
+                 *     is requested as `/api/v1/skills/deploy/files/scripts%2Frun.sh`. A
+                 *     bare slash does not match this operation and answers the not-found
+                 *     envelope.
+                 * @example SKILL.md
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description For the skill file, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill file, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill file, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
     listAgents: {
         parameters: {
             query?: {
@@ -1600,6 +1868,126 @@ export interface operations {
             };
             /** @description No agent has this name; the hint points to the agent list. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getInstructions: {
+        parameters: {
+            query: {
+                /**
+                 * @description The file the block is written into: `claude` (CLAUDE.md) or `agents`
+                 *     (AGENTS.md). Anything else, or none, is a 400.
+                 */
+                target: string;
+                /**
+                 * @description Render for this Project (ADR 0020): its own clauses win over the
+                 *     global ones with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global block with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The block and its digest. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstructionBlock"];
+                };
+            };
+            /** @description For the instruction block, `target` is missing or not a known target (the hint names them), or `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the instruction block, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getBundle: {
+        parameters: {
+            query: {
+                /** @description The layout of the archive. `claude` is the only target. Anything else, or none, is a 400. */
+                target: string;
+                /**
+                 * @description Resolve for this Project (ADR 0020). Matched ignoring case. An
+                 *     unregistered Project answers the global set; a value that is not a
+                 *     `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: {
+                /** @description The `ETag` of the archive the client already has. */
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The archive. */
+            200: {
+                headers: {
+                    /** @description The digest of the set, in double quotes. */
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            /** @description The set is the one `If-None-Match` names. No body. */
+            304: {
+                headers: {
+                    /** @description The digest of the set, unchanged, in double quotes. */
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description For the bundle, `target` is missing or not a known target, or `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the bundle, no bearer token was sent, or it is wrong. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

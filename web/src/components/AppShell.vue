@@ -25,6 +25,11 @@ const main = ref<HTMLElement>();
 let wide: MediaQueryList | undefined;
 const router = useRouter();
 let linkClicked = false;
+// Whether the click now being handled asked for a route change. linkClicked is
+// consumed by afterEach, which can run between the router's click handler and
+// the drawer's: the router finishes in microtasks, and the browser runs them
+// between two listeners of one real click.
+let clickRequestedRoute = false;
 let removeAfterEach: (() => void) | undefined;
 
 const focusables = () => Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
@@ -63,7 +68,7 @@ function onKeydown(e: KeyboardEvent) {
 
 // A link in the open drawer closes it once the router has taken the click.
 function onDrawerClick(e: MouseEvent) {
-  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer(!linkClicked);
+  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer(!clickRequestedRoute);
 }
 
 // An unmodified click on an in-app link to another route marks the next route
@@ -83,6 +88,7 @@ function onShellClick(e: MouseEvent) {
     !a.getAttribute('target') &&
     !a.hasAttribute('download') &&
     router.resolve(href).fullPath !== router.currentRoute.value.fullPath;
+  clickRequestedRoute = linkClicked;
 }
 
 // Back and forward are not link clicks: drop a mark a modified click left.
@@ -91,7 +97,10 @@ function onPopState() {
 }
 
 async function focusHeading() {
-  await nextTick(); // the drawer has closed and main is no longer inert
+  // The router can finish before the drawer's own click handler runs: close
+  // the drawer here, so main is no longer inert, and let the new view render.
+  await closeDrawer(false);
+  await nextTick();
   const h1 = main.value?.querySelector('h1');
   if (!h1) return;
   h1.tabIndex = -1;

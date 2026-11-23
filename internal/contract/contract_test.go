@@ -38,12 +38,24 @@ func (stub) GetSkill(context.Context, GetSkillRequestObject) (GetSkillResponseOb
 	return GetSkill200JSONResponse{}, nil
 }
 
+func (stub) GetSkillFile(context.Context, GetSkillFileRequestObject) (GetSkillFileResponseObject, error) {
+	return GetSkillFile200ApplicationoctetStreamResponse{}, nil
+}
+
 func (stub) ListAgents(context.Context, ListAgentsRequestObject) (ListAgentsResponseObject, error) {
 	return ListAgents200JSONResponse{}, nil
 }
 
 func (stub) GetAgent(context.Context, GetAgentRequestObject) (GetAgentResponseObject, error) {
 	return GetAgent200JSONResponse{}, nil
+}
+
+func (stub) GetInstructions(context.Context, GetInstructionsRequestObject) (GetInstructionsResponseObject, error) {
+	return GetInstructions200JSONResponse{}, nil
+}
+
+func (stub) GetBundle(context.Context, GetBundleRequestObject) (GetBundleResponseObject, error) {
+	return GetBundle304Response{}, nil
 }
 
 func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjectsResponseObject, error) {

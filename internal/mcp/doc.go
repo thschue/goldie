@@ -19,6 +19,28 @@
 // starts with the notice goldie lookup prints on stderr, naming the cleaned
 // replacement. MCP never asks for drafts.
 //
+// Prompts and resources follow one pattern for each Kind that gets them. A
+// prompt is one per skill, named goldie-<name>, for the session's default
+// Project; getting it returns the cleaned SKILL.md, not quoted with "| " the
+// way get_skill and the resources are. The list is read on a session's first
+// prompts request and kept for the session, so it is fixed from then on; the
+// SDK's one server-wide prompt table cannot say that, so an unknown prompt is
+// told to call list_skills or to restart the MCP session, and one receiving
+// middleware answers prompts/list and prompts/get. The first later Kind with
+// prompts turns it into per-Kind providers: lists concatenated, gets
+// dispatched by name. The name goldie-<skill> is pinned by #411, so a later
+// Kind must pick a Kind-qualified name.
+// A resource is a goldie://<kind>/{name}[/{path}] template: goldie://skills/
+// {name}/{+path} (reserved expansion, so the path keeps its slashes) for a
+// file of a bundle (quoted like get_skill) and
+// goldie://agents/{name} for an agent. A URI is parsed before any request and
+// never selects a Project; a miss is the protocol's resource-not-found error,
+// which names no address, path or token. A later Kind adds its template and
+// its handler the same way. The server sends no list_changed notification
+// (prompts and resources are advertised without listChanged), for the reason
+// the tools are not: nothing in the component sees a sync, and a client
+// waiting for one could hold up a drain.
+//
 // The integration tests are in internal/app, because this package may not
 // import the API or the composition root, not even in tests.
 package mcp

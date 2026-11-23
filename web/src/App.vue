@@ -17,6 +17,10 @@ async function onSignOut() {
   <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
   <AppShell :role="role()" :account="!route.meta.public" @signout="onSignOut">
     <SessionBanner />
-    <RouterView />
+    <!-- Keyed by path: a route change replaces the view, so the focused h1 of
+         the old one is gone and back or forward leaves focus at the page start. -->
+    <RouterView v-slot="{ Component, route: view }">
+      <component :is="Component" :key="view.path" />
+    </RouterView>
   </AppShell>
 </template>

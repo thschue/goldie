@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -113,6 +114,10 @@ func lifecycle(status, replacedBy string) (*contract.ItemStatus, *string) {
 // operation under; the mux reports it as the request's Pattern.
 const searchPattern = http.MethodGet + " /api/v1/search"
 
+// instructionsPattern is the pattern the generated router registers the
+// instructions operation under, for the same reason.
+const instructionsPattern = http.MethodGet + " /api/v1/instructions"
+
 // notReady is the 503 envelope for a read before the first successful load.
 // Answering it keeps a direct caller from reading an empty result as "no
 // matches" (ADR 0014).
@@ -124,16 +129,19 @@ var notReady = envelope("not_ready", "content is still loading",
 // parameters; these methods return the spec's response types. It carries no
 // auth: the caller wraps /api/ in RequireToken.
 type Server struct {
-	provider func() *engine.Snapshot
-	specJSON []byte
-	activity *Activity               // see RecordInto, nil records nothing
-	searches *platform.ResultCounter // see CountResults, nil counts nothing
-	lookups  *platform.ResultCounter
-	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
-	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
-	fedDown  downSet      // peers already logged as down
-	sync     SyncControl  // see WithSync, nil lists no Source
-	tokens   *Tokens      // see WithSessions, nil: no sign-in
+	provider  func() *engine.Snapshot
+	specJSON  []byte
+	activity  *Activity               // see RecordInto, nil records nothing
+	searches  *platform.ResultCounter // see CountResults, nil counts nothing
+	lookups   *platform.ResultCounter
+	skillGets *platform.SkillGetCounter // see CountSkillGets, nil counts nothing
+	fed       *Federation               // see FederateActivity, nil serves ?replicas=all as the local stream
+	fedOpen   atomic.Int32              // merged streams open, at most MaxFederatedSubscribers
+	fedDown   downSet                   // peers already logged as down
+	sync      SyncControl               // see WithSync, nil lists no Source
+	tokens    *Tokens                   // see WithSessions, nil: no sign-in
+
+	instructionVars engine.InstructionVars // see WithInstructionVars
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -150,7 +158,8 @@ func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server,
 		return nil, err
 	}
 	s := &Server{provider: provider, specJSON: specJSON,
-		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}
+		instructionVars: engine.InstructionVars{MCPName: "goldie", CLI: "goldie"},
+		keepalive:       DefaultActivityKeepalive, streamsDone: make(chan struct{})}
 	for _, o := range opts {
 		o(s)
 	}
@@ -175,6 +184,23 @@ func (s *Server) Register(m contract.ServeMux) {
 	})
 }
 
+// badKind is the 400 envelope for a kind that is none of article, skill or
+// agent. It does not echo the value.
+var badKind = envelope("bad_request", "invalid kind",
+	"Use kind=article, kind=skill or kind=agent, or leave it out to search articles.")
+
+// searchKind is the Kind a search asks for: an article when kind is absent.
+func searchKind(k *contract.SearchArticlesParamsKind) (string, bool) {
+	if k == nil {
+		return engine.KindArticle, true
+	}
+	switch kind := string(*k); kind {
+	case engine.KindArticle, engine.KindSkill, engine.KindAgent:
+		return kind, true
+	}
+	return "", false
+}
+
 // SearchArticles answers GET /api/v1/search.
 func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
 	// A request that can never succeed is a 403 or 400 before and after the
@@ -187,6 +213,10 @@ func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticles
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
 	}
+	kind, ok := searchKind(req.Params.Kind)
+	if !ok {
+		return contract.SearchArticles400JSONResponse(badKind), nil
+	}
 	project, ok := validProject(req.Params.Project)
 	if !ok {
 		return contract.SearchArticles400JSONResponse(badProject), nil
@@ -197,7 +227,7 @@ func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticles
 	}
 	proj, hint := scopeHint(snap, project)
 	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
-	for _, h := range snap.SearchIn(proj, q, opts) {
+	for _, h := range snap.SearchKindIn(proj, kind, q, opts) {
 		status, replacedBy := lifecycle(h.Status, h.ReplacedBy)
 		res.Results = append(res.Results, contract.SearchHit{
 			Id:         h.ID,
@@ -250,6 +280,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		Hint:       hint,
 		Status:     status,
 		ReplacedBy: replacedBy,
+		Scope:      new(a.Scope),
 		Overrides:  new(list(a.Overrides)),
 		Enforced:   new(a.Enforced),
 	}, nil
@@ -279,7 +310,7 @@ func (s *Server) GetProject(_ context.Context, req contract.GetProjectRequestObj
 	scope, registered := snap.Project(req.Id)
 	if !registered {
 		return contract.GetProject404JSONResponse(envelope("not_found", "no such Project",
-			"List the registered Projects with the projects operation. To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team.")), nil
+			"List the registered Projects, then use one of them. To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team.")), nil
 	}
 	return contract.GetProject200JSONResponse{Id: scope, Suppressions: list(snap.Suppressions(scope))}, nil
 }
@@ -351,27 +382,35 @@ func (s *Server) GetProjectItems(_ context.Context, req contract.GetProjectItems
 			return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
 		}
 	}
-	res := contract.GetProjectItems200JSONResponse{Items: make([]contract.ProjectItem, 0, len(view)),
+	res := contract.ProjectView{Items: make([]contract.ProjectItem, 0, len(view)),
 		Suppressions: list(snap.Suppressions(proj)), Hint: hint}
 	for _, a := range view {
+		status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 		item := contract.ProjectItem{Id: a.ID, Name: a.Name, Keywords: list(a.Keywords), Content: a.Content,
-			Status: contract.ProjectItemStatusPublished, Scope: a.Scope, Enforced: a.Enforced}
-		if a.Status == engine.StatusDeprecated {
-			item.Status = contract.ProjectItemStatusDeprecated
-		}
-		if a.ReplacedBy != "" {
-			item.ReplacedBy = &a.ReplacedBy
+			Status: contract.ProjectItemStatusPublished, ReplacedBy: replacedBy, Scope: a.Scope, Enforced: a.Enforced}
+		if status != nil {
+			item.Status = contract.ProjectItemStatus(*status)
 		}
 		res.Items = append(res.Items, item)
 	}
-	body, err := json.Marshal(res)
-	if err != nil {
+	// Encode once, as the response writer would (a trailing newline), so the
+	// size checked is the size sent.
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(res); err != nil {
 		return nil, err
 	}
-	if len(body) > maxViewBytes {
+	if buf.Len() > maxViewBytes {
 		return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
 	}
-	return res, nil
+	return projectViewBody(buf.Bytes()), nil
+}
+
+// projectViewBody is the 200 response with the view already encoded, written
+// as it is (pattern: specDocument).
+type projectViewBody []byte
+
+func (b projectViewBody) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+	return writeFixed(w, "application/json", b, true)
 }
 
 // GetOpenAPIYAML answers GET /openapi.yaml with the embedded document.
@@ -438,6 +477,10 @@ func nosniff(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFu
 func requestError(w http.ResponseWriter, r *http.Request, err error) {
 	if r.Pattern == searchPattern && paramName(err) == "q" {
 		writeJSON(w, http.StatusBadRequest, badSearch)
+		return
+	}
+	if r.Pattern == instructionsPattern && paramName(err) == "target" {
+		writeJSON(w, http.StatusBadRequest, badTarget)
 		return
 	}
 	WriteError(w, http.StatusBadRequest, "bad_request", "invalid request parameters",

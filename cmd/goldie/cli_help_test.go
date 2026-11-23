@@ -119,6 +119,8 @@ var commandHelp = []struct {
 	{"mcp", []string{"--transport", "--addr", "--dir", "--token"}, []string{"stdio", "process list"}},
 	{"search", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"lookup", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
+	{"skills", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"}},
+	{"agents", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"}},
 	{"status", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"init", []string{"--addr", "--dir", "--token", "--project"}, []string{"process list"}},
 	{"version", []string{"--addr", "--dir", "--token", "--json"}, []string{"process list"}},

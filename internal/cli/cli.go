@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "status", "init", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "instructions", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -72,6 +72,10 @@ func DefaultEnv(out io.Writer) Env {
 type settings struct {
 	addr, token, project string
 	dir                  string // content directory of local mode
+	target               string // instructions: claude or agents
+	force                bool   // instructions apply: replace a hand-edited block
+	file                 string // skills show: the file of the skill to print
+	fileSet              bool   // --file was given, even empty
 	json                 bool
 }
 
@@ -82,7 +86,17 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	if name != "version" { // version has no use for a Project
 		fs.StringVar(&f.s.project, "project", "", "Project as host/org/repo")
 	}
-	if name != "init" { // init prints three fixed lines
+	if name == "instructions" {
+		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
+		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
+	}
+	if name == "skills" { // only skills have files to read
+		fs.Func("file", "show: print one file of the skill to stdout, as its raw bytes (a `path` from its file list)", func(v string) error {
+			f.s.file, f.s.fileSet = v, true
+			return nil
+		})
+	}
+	if name != "init" && name != "instructions" { // init prints three fixed lines; instructions has no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")
 	}
 	return func(ctx context.Context, pos []string, env Env) error {
@@ -92,20 +106,39 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 
 func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env Env) error {
 	var err error
+	// skills and agents check their words before any server or token is met.
+	var verb, itemName string
+	if name == "skills" || name == "agents" {
+		if verb, itemName, err = catalogUsage(name, pos); err != nil {
+			return err
+		}
+		if err = f.s.checkFileUsage(name, verb); err != nil {
+			return err
+		}
+	}
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
 	// init checks registration against a running server only: it writes into
 	// the repository and has no use for an embedded server (#282 is silent on
 	// local mode), so like version it ignores --dir and GOLDIE_DIR.
 	var c *commander
+	if name == "instructions" { // usage errors come before any server step
+		if err := f.s.checkInstructionsUsage(pos); err != nil {
+			return err
+		}
+	}
 	switch name {
 	case "version":
 		c, err = f.commander(env, tokenOptional)
 	case "init":
 		c, err = f.commander(env, tokenRequired)
 	default:
+		mode := tokenRequired
+		if name == "status" { // status reports a broken token setting
+			mode = tokenOptional
+		}
 		var stop func()
-		if c, stop, err = f.open(ctx, env); stop != nil {
+		if c, stop, err = f.open(ctx, env, mode); stop != nil {
 			defer stop()
 		}
 	}
@@ -124,6 +157,10 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 			return &UsageError{name, "lookup takes one <id>"}
 		}
 		return c.lookup(ctx, pos[0])
+	case "skills":
+		return c.skills(ctx, verb, itemName)
+	case "agents":
+		return c.agents(ctx, verb, itemName)
 	case "status":
 		if len(pos) != 0 {
 			return &UsageError{name, "status takes no arguments"}
@@ -134,6 +171,8 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 			return &UsageError{name, "init takes no arguments"}
 		}
 		return c.initProject(ctx)
+	case "instructions":
+		return c.instructions(ctx, pos[0])
 	default:
 		if len(pos) != 0 {
 			return &UsageError{name, "version takes no arguments"}
@@ -171,7 +210,7 @@ func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
 // there, with the CLI's wording. contract.NewAPIClient checks the address
 // again, so Open is not what keeps a bad one from the client.
 func (f *ClientFlags) Open(ctx context.Context, env Env) (addr, token string, stop func(), err error) {
-	c, stop, err := f.open(ctx, env)
+	c, stop, err := f.open(ctx, env, tokenRequired)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -190,7 +229,7 @@ func (f *ClientFlags) Local() bool { return f.local }
 
 // open resolves the settings and, in local mode, starts the embedded server
 // and takes its address and token. stop is never nil without an error.
-func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), error) {
+func (f *ClientFlags) open(ctx context.Context, env Env, tm tokenMode) (*commander, func(), error) {
 	dir, err := f.localDir(env)
 	if err != nil {
 		return nil, nil, err
@@ -205,7 +244,7 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 		}
 	}
 	local := dir != "" || goldieDir != ""
-	mode := tokenRequired
+	mode := tm
 	if local {
 		mode = tokenNone
 	}
@@ -222,7 +261,7 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	// The config.yaml directory arrives already open, through the repository root.
 	if dir != "" && content == nil {
 		if content, err = os.OpenRoot(dir); err != nil {
-			return nil, nil, errors.New("content does not load: content directory is not readable")
+			return nil, nil, errors.New("content does not load: " + unreadableContentDir)
 		}
 	}
 	var addr, token string
@@ -314,7 +353,7 @@ type tokenMode int
 const (
 	tokenNone     tokenMode = iota // not read: local mode has no token
 	tokenRequired                  // read; a broken setting is an error
-	tokenOptional                  // read; a broken setting is ignored, so version keeps working
+	tokenOptional                  // read; a broken setting is kept as commander.tokenBroken, so version and status keep working
 )
 
 // commander resolves the settings from the flags and env. --token wins over
@@ -324,20 +363,36 @@ func (f *ClientFlags) commander(env Env, mode tokenMode) (*commander, error) {
 	if s.addr == "" {
 		s.addr, _ = env.Lookup(EnvAddr)
 	}
+	broken := ""
 	if s.token == "" && mode != tokenNone {
-		var err error
-		if s.token, err = platform.Setting(env.Lookup, env.ReadFile, EnvToken); err != nil {
-			if mode == tokenRequired {
-				return nil, err
-			}
-			s.token = ""
+		s.token, broken = readToken(env)
+		if broken != "" && mode == tokenRequired {
+			return nil, errors.New(broken)
 		}
 	}
 	errOut := env.Err
 	if errOut == nil {
 		errOut = io.Discard
 	}
-	return &commander{s: s, out: env.Out, errOut: errOut, env: env}, nil
+	return &commander{s: s, out: env.Out, errOut: errOut, env: env, tokenBroken: broken}, nil
+}
+
+// readToken reads the token from GOLDIE_TOKEN or GOLDIE_TOKEN_FILE. A setting
+// that cannot give a token (both set, or a token file that is unreadable,
+// empty or blank) comes back as broken: words that name the
+// setting and never the path, the error text or the content. The token is then
+// "".
+func readToken(env Env) (token, broken string) {
+	_, hasVal := env.Lookup(EnvToken)
+	_, hasFile := env.Lookup(EnvToken + "_FILE")
+	tok, err := platform.Setting(env.Lookup, env.ReadFile, EnvToken)
+	switch {
+	case hasVal && hasFile:
+		return "", EnvToken + " and " + EnvToken + "_FILE are both set: set only one"
+	case err != nil || (hasFile && strings.TrimSpace(tok) == ""):
+		return "", EnvToken + "_FILE names a token file that can't be used: it is unreadable, empty or blank"
+	}
+	return tok, ""
 }
 
 // ErrNoAddress is the missing address. Its text names the two settings; the
@@ -354,6 +409,9 @@ type commander struct {
 	errOut io.Writer // warnings; env.Err, or io.Discard when it is nil
 	env    Env
 	local  bool // an embedded server over local content, not a remote one
+	// tokenBroken words a token setting that cannot be used (readToken), for
+	// version and status to show instead of "no token given"; "" when fine.
+	tokenBroken string
 }
 
 // check reports a missing or invalid address and, with withToken, a missing
@@ -385,3 +443,8 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 	}
 	return contract.NewAPIClient(c.s.addr, token, platform.Version, c.env.Client)
 }
+
+// unreadableContentDir is engine.ErrContentDirUnreadable and its hint. cli may
+// not import engine, so the wording is repeated here; the tests in cmd/goldie
+// hold both to the same text.
+const unreadableContentDir = "content directory is not readable: check that the path you passed exists and is a readable directory"

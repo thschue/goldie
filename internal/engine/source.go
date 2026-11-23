@@ -15,9 +15,6 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// articlesDir is where a Source keeps its global articles, relative to its root.
-const articlesDir = "global/articles"
-
 // projectsDir holds Project scope: projects/<host>/<org>/<repo>/articles/**.
 const projectsDir = "projects"
 
@@ -93,6 +90,15 @@ type Revisioner interface {
 
 var _ Source = DirSource{}
 
+// ErrContentDirUnreadable is the load error for a content directory that is
+// missing, not a directory or not readable. It never names the path. Callers
+// that print it to a person add ContentDirUnreadableHint; the server's startup
+// line stays as it is.
+var ErrContentDirUnreadable = errors.New("content directory is not readable")
+
+// ContentDirUnreadableHint is the next step for ErrContentDirUnreadable.
+const ContentDirUnreadableHint = "check that the path you passed exists and is a readable directory"
+
 // DirSource is a Source backed by a directory on disk.
 type DirSource struct {
 	root string
@@ -130,7 +136,7 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 	// directory cannot lead the walk out of it.
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
-		return nil, errors.New("content directory is not readable")
+		return nil, ErrContentDirUnreadable
 	}
 	defer func() { _ = root.Close() }()
 	return NewRootSource(root).Load(ctx)
@@ -164,36 +170,17 @@ func (s RootSource) Load(ctx context.Context) (*Snapshot, error) {
 // from fsys into a Snapshot, and names an invalid file relative to the root of
 // fsys.
 func loadFS(fsys fs.FS) (*Snapshot, error) {
-	global, err := loadArticles(fsys, articlesDir, ScopeGlobal)
+	global, err := loadScope(fsys, "global", ScopeGlobal, "global")
 	if err != nil {
 		return nil, err
 	}
-	snap := newSnapshot(global)
-	globalAgents, err := loadScopeAgents(fsys, agentsDir, ScopeGlobal, "global agents")
-	if err != nil {
-		return nil, err
-	}
-	snap.addAgents(globalAgents)
-	globalClauses, err := loadScopeKind(fsys, instructionsDir, ScopeGlobal, "global instructions", "instruction", parseClause)
-	if err != nil {
-		return nil, err
-	}
-	snap.addInstructions(globalClauses)
-	if snap.skills, err = loadSkills(fsys, skillsDir, ScopeGlobal, "global skills"); err != nil {
-		return nil, err
-	}
+	snap := &Snapshot{scopeItems: global, projects: map[string]project{}}
 	dirs, err := projectDirs(fsys)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range dirs {
-		// fs.WalkDir follows a symlinked start directory, and os.Root only
-		// stops links out of the root, so reject a symlinked articles dir here.
-		dir := d.dir + "/articles"
-		if fi, err := fs.Lstat(fsys, dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-			return nil, fmt.Errorf("%s: is a symlink; Project articles must be a directory", dir)
-		}
-		articles, err := loadArticles(fsys, dir, d.scope)
+		items, err := loadScope(fsys, d.dir, d.scope, "Project")
 		if err != nil {
 			return nil, err
 		}
@@ -201,22 +188,7 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
-		agents, err := loadScopeAgents(fsys, d.dir+"/agents", d.scope, "Project agents")
-		if err != nil {
-			return nil, err
-		}
-		clauses, err := loadScopeKind(fsys, d.dir+"/instructions", d.scope, "Project instructions", "instruction", parseClause)
-		if err != nil {
-			return nil, err
-		}
-		skills, err := loadSkills(fsys, d.dir+"/skills", d.scope, "Project skills")
-		if err != nil {
-			return nil, err
-		}
-		snap.addProject(d.scope, articles)
-		snap.addProjectAgents(d.scope, agents)
-		snap.addProjectInstructions(d.scope, clauses)
-		snap.addProjectSkills(d.scope, skills)
+		snap.projects[strings.ToLower(d.scope)] = project{scope: d.scope, scopeItems: items}
 		if err := snap.applySuppressions(d.scope, refs); err != nil {
 			return nil, err
 		}
@@ -406,23 +378,43 @@ func parseArticle(id string, raw []byte) (Article, error) {
 	if err := meta.apply(&a); err != nil {
 		return Article{}, err
 	}
-	for _, k := range meta.Keywords {
-		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
-			a.Keywords = append(a.Keywords, k)
+	a.Keywords = normaliseKeywords(meta.Keywords)
+	return a, nil
+}
+
+// lenientKeywords is the keywords of a skill or agent: the strings of a
+// sequence, normalised. Anything else, a scalar or a map or a non-string
+// entry, gives none, because those files never fail a load over a key the
+// loader does not own.
+func lenientKeywords(n yaml.Node) []string {
+	if n.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var in []string
+	for _, c := range n.Content {
+		if v, ok := scalar(*c, "!!str"); ok {
+			in = append(in, v)
 		}
 	}
-	return a, nil
+	return normaliseKeywords(in)
+}
+
+// normaliseKeywords lower-cases and trims each keyword and drops the empty
+// ones.
+func normaliseKeywords(in []string) []string {
+	var out []string
+	for _, k := range in {
+		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // Snapshot is the validated, immutable view of a Source. Its accessors return
 // copies, so callers cannot change it.
 type Snapshot struct {
-	articles []Article // global, sorted by ID
-	agents   []Article // global agent records, sorted by ID
-	// instructions are the global instruction clauses, sorted by ID.
-	instructions []Article
-	skills       map[string]skillBundle // global skill bundles by name
-	index        keyIndex               // global articles and agents by itemKey
+	scopeItems // the global Scope's Items
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
 	// warnings are load findings that do not fail the load, such as a
@@ -436,17 +428,65 @@ type Snapshot struct {
 }
 
 type project struct {
-	scope    string
-	articles []Article // sorted by ID
-	agents   []Article // agent records, sorted by ID
-	// instructions are the Project's instruction clauses, sorted by ID.
-	instructions []Article
-	skills       map[string]skillBundle
-	index        keyIndex
+	scope string
+	scopeItems
 	// suppressed holds the global Items the Project hides (its project.yaml),
 	// and suppressions lists them as <kind>:<ID> (article: or agent:), sorted.
 	suppressed   map[itemKey]bool
 	suppressions []string
+}
+
+// scopeItems is every Kind one Scope holds, so a Kind added later is wired in
+// here once: Snapshot (global), project and localScope embed it.
+type scopeItems struct {
+	articles     []Article // sorted by ID
+	agents       []Article // agent records, sorted by ID
+	instructions []Article // instruction clauses, sorted by ID
+	skills       map[string]skillBundle
+	index        keyIndex // articles, agents and instructions by itemKey
+}
+
+// items lists pointers to the articles and agents, the Items that carry
+// lookups and can shadow or replace another.
+func (h scopeItems) items() []*Article { return pointers(nil, h.articles, h.agents) }
+
+// first returns the first Item of any Kind (article, agent, instruction) and
+// the directory name of the first skill, as written; each is nil or "" for
+// none. Claims use it, so every Kind is checked.
+func (h scopeItems) first() (*Article, string) {
+	return firstItem(h.articles, h.agents, h.instructions), firstSkill(h.skills)
+}
+
+// loadScope reads every Kind under root, a Scope's directory in fsys. what
+// names the Scope in errors ("global", "Project", "local"). Each directory goes
+// through requireDir, because fs.ReadDir and fs.WalkDir follow a symlinked
+// directory and os.Root only stops links out of the root. A missing directory
+// is empty.
+func loadScope(fsys fs.FS, root, scope, what string) (scopeItems, error) {
+	var h scopeItems
+	var err error
+	if exists, err := requireDir(fsys, root+"/articles", what+" articles"); err != nil {
+		return h, err
+	} else if exists {
+		if h.articles, err = loadArticles(fsys, root+"/articles", scope); err != nil {
+			return h, err
+		}
+	}
+	if h.agents, err = loadScopeAgents(fsys, root+"/agents", scope, what+" agents"); err != nil {
+		return h, err
+	}
+	if h.instructions, err = loadScopeKind(fsys, root+"/instructions", scope, what+" instructions", "instruction", parseClause); err != nil {
+		return h, err
+	}
+	if h.skills, err = loadSkills(fsys, root+"/skills", scope, what+" skills"); err != nil {
+		return h, err
+	}
+	h.index = keyIndex{}
+	for _, l := range [][]Article{h.articles, h.agents, h.instructions} {
+		sortArticles(l)
+		h.index.add(l)
+	}
+	return h, nil
 }
 
 // keyIndex maps an itemKey to its Article within one Scope. Keys are unique
@@ -482,31 +522,6 @@ func loadScopeKind(fsys fs.FS, dir, scope, scopeWhat, what string, parse func(st
 		return nil, err
 	}
 	return loadKindFiles(fsys, dir, scope, what, parse)
-}
-
-// addAgents registers the global agents. It is called only while loading.
-func (s *Snapshot) addAgents(agents []Article) {
-	sortArticles(agents)
-	s.agents = agents
-	s.index.add(agents)
-}
-
-// addProjectAgents registers a Project's agents. It is called only while
-// loading, after addProject.
-func (s *Snapshot) addProjectAgents(scope string, agents []Article) {
-	p, _ := s.lookupProject(scope)
-	sortArticles(agents)
-	p.agents = agents
-	p.index.add(agents)
-	s.projects[strings.ToLower(scope)] = p
-}
-
-// addProjectSkills registers a Project's skill bundles. It is called only
-// while loading, after addProject.
-func (s *Snapshot) addProjectSkills(scope string, skills map[string]skillBundle) {
-	p, _ := s.lookupProject(scope)
-	p.skills = skills
-	s.projects[strings.ToLower(scope)] = p
 }
 
 func newSnapshot(articles []Article) *Snapshot {

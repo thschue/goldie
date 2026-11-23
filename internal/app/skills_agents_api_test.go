@@ -361,13 +361,13 @@ func TestSkillAndAgentOperationsNeedAToken(t *testing.T) {
 func TestGetIsRecordedInActivityWithKindGet(t *testing.T) {
 	for _, base := range []string{"/api/v1/skills/", "/api/v1/agents/"} {
 		pub := activityHandler(t, platform.Config{ContentDir: skillsAgentsContent})
-		name := "deploy"
+		name, query := "deploy", "skill:deploy"
 		if strings.Contains(base, "agents") {
-			name = "reviewer"
+			name, query = "reviewer", "agent:reviewer"
 		}
 		e := lastEvent(t, pub, base+name+"?project="+itemsProject, http.StatusOK, asClient(operatorToken, "goldie/v1.5.0"))
-		if string(e.Kind) != "get" || e.Query != name {
-			t.Errorf("%s: event kind %q query %q, want get %q", base, e.Kind, e.Query, name)
+		if string(e.Kind) != "get" || e.Query != query {
+			t.Errorf("%s: event kind %q query %q, want get %q", base, e.Kind, e.Query, query)
 		}
 		if e.Token != "ci-operator" || e.ClientVersion != "1.5.0" || e.Project != itemsProject {
 			t.Errorf("%s: event token %q client %q project %q, want ci-operator, 1.5.0, %s", base, e.Token, e.ClientVersion, e.Project, itemsProject)
@@ -384,12 +384,12 @@ func TestGetIsRecordedInActivityWithKindGet(t *testing.T) {
 func TestMissingGetIsAMissAndRefusedRequestsAreNotRecorded(t *testing.T) {
 	pub := activityHandler(t, platform.Config{ContentDir: skillsAgentsContent})
 	e := lastEvent(t, pub, "/api/v1/skills/nope", http.StatusNotFound, nil)
-	if string(e.Kind) != "get" || e.Query != "nope" || !e.Miss {
-		t.Errorf("event %+v, want a get of nope flagged as a Miss", e)
+	if string(e.Kind) != "get" || e.Query != "skill:nope" || !e.Miss {
+		t.Errorf("event %+v, want a get of skill:nope flagged as a Miss", e)
 	}
 	e = lastEvent(t, pub, "/api/v1/agents/nope", http.StatusNotFound, nil)
-	if string(e.Kind) != "get" || e.Query != "nope" || !e.Miss {
-		t.Errorf("event %+v, want a get of nope flagged as a Miss", e)
+	if string(e.Kind) != "get" || e.Query != "agent:nope" || !e.Miss {
+		t.Errorf("event %+v, want a get of agent:nope flagged as a Miss", e)
 	}
 	before := len(waitEvents(t, pub.Activity(), 0))
 	for _, p := range []string{"/api/v1/skills/deploy?project=not-a-project", "/api/v1/agents/reviewer?drafts=true"} {

@@ -19,16 +19,15 @@ import (
 // winner serves the enforced one.
 const KindInstruction = "instruction"
 
-// instructionsDir is where a Source keeps its global clauses, relative to its
-// root. A Project's are in <project dir>/instructions and the local Scope's in
-// .goldie/instructions.
-const instructionsDir = "global/instructions"
-
 // The targets a clause may name: the file a block is written into.
 const (
 	TargetClaude = "claude"
 	TargetAgents = "agents"
 )
+
+// ValidTarget reports whether t is a target a clause may name and a block may
+// be rendered for.
+func ValidTarget(t string) bool { return t == TargetClaude || t == TargetAgents }
 
 // InstructionVars are the values of the templated variables of a clause.
 // {{project}} is the Project given to Instructions.
@@ -75,7 +74,7 @@ func parseClause(name string, raw []byte) (Article, error) {
 		return Article{}, errors.New("targets must be a list of claude and agents")
 	}
 	for _, t := range targets {
-		if t != TargetClaude && t != TargetAgents {
+		if !ValidTarget(t) {
 			return Article{}, errors.New("targets must be a list of claude and agents")
 		}
 	}
@@ -162,7 +161,11 @@ func (s *Snapshot) Instructions(proj, target string, vars InstructionVars) (bloc
 		bodies = append(bodies, strings.TrimSpace(string(a.raw)))
 	}
 	if len(bodies) == 0 {
-		bodies = append(bodies, defaultClause)
+		d := defaultClause
+		if proj == "" {
+			d = strings.Replace(d, " ({{project}})", "", 1) // no Project: no empty parentheses
+		}
+		bodies = append(bodies, d)
 	}
 	r := strings.NewReplacer(
 		"{{project}}", cleanValue(proj),
@@ -172,21 +175,4 @@ func (s *Snapshot) Instructions(proj, target string, vars InstructionVars) (bloc
 	block = r.Replace(strings.Join(bodies, "\n\n"))
 	sum := sha256.Sum256([]byte(block))
 	return block, hex.EncodeToString(sum[:])
-}
-
-// addInstructions registers the global clauses. It is called only while loading.
-func (s *Snapshot) addInstructions(items []Article) {
-	sortArticles(items)
-	s.instructions = items
-	s.index.add(items)
-}
-
-// addProjectInstructions registers a Project's clauses. It is called only
-// while loading, after addProject.
-func (s *Snapshot) addProjectInstructions(scope string, items []Article) {
-	p, _ := s.lookupProject(scope)
-	sortArticles(items)
-	p.instructions = items
-	p.index.add(items)
-	s.projects[strings.ToLower(scope)] = p
 }

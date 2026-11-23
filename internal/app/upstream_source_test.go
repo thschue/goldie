@@ -238,6 +238,31 @@ func TestUpstreamConfigAddrOfAnotherOriginIsRefusedAndNeverContacted(t *testing.
 	}
 }
 
+// A config.yaml the strict reader rejects (here an unknown key next to a valid
+// same-origin addr) fails Start naming config.yaml; the upstream is not
+// contacted, so no token goes out on the strength of a file that is not
+// understood.
+func TestUpstreamConfigWithAnUnknownKeyFailsStartAndIsNeverContacted(t *testing.T) {
+	up, requests := tokenSpy(t)
+	repo := upRepo(t, "", map[string]string{
+		".goldie/config.yaml": "addr: " + up.URL + "\nsurprise: true\n",
+	})
+	_, err := upStart(t, repo, Upstream{Addr: up.URL, Token: testToken, Project: shopProject})
+	if err == nil {
+		t.Fatal("Start accepted a config.yaml with an unknown key")
+	}
+	if !strings.Contains(err.Error(), "config.yaml") {
+		t.Errorf("error %q does not name config.yaml", err)
+	}
+	if strings.Contains(err.Error(), testToken) {
+		t.Errorf("error %q leaks the token", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the upstream got %d requests, want none", n)
+	}
+}
+
 // A local Item that shadows an enforced upstream Item stops startup and
 // names the Item and the local file, not a host path, the address or the
 // token.
