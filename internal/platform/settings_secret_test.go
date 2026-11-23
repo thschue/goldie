@@ -151,6 +151,10 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		envGitCABundle:         gitSampleCABundle,
 		envGitAllowFileURL:     "true",
 		envPollInterval:        "90s",
+
+		// The federated activity settings (#398).
+		envActivityPeers:         "goldie-headless.goldie.svc",
+		envActivityReorderWindow: "750ms",
 	}
 	for source, other := range map[string]string{EnvContentDir: envGitURL, envGitURL: EnvContentDir} {
 		t.Run(source, func(t *testing.T) {

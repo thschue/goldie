@@ -35,6 +35,10 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		got[name] = fmt.Sprint(effective(t, cfg, name))
 	}
 	got[envGitCABundle] = "" // reported only as set or unset; it has no default
+
+	// The federated activity settings (#398): Config holds the parsed window.
+	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
+	got[envActivityReorderWindow] = reported(t, cfg, envActivityReorderWindow)
 	if int(cfg.DrainTimeout.Seconds()) != 25 {
 		t.Errorf("drain default = %v", cfg.DrainTimeout)
 	}
