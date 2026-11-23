@@ -100,13 +100,14 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 		return nil, errLoadCancelled
 	}
 	// os.Root confines every Stat, ReadDir and Open to the root, so a symlinked
-	// directory cannot lead the walk out of it.
+	// directory cannot lead the walk out of it. contentFS opens a file without
+	// blocking and refuses one that is not regular.
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
 		return nil, errors.New("content directory is not readable")
 	}
 	defer func() { _ = root.Close() }()
-	return loadFS(root.FS())
+	return loadFS(s.contentFS(root))
 }
 
 // loadFS is the loader every Source shares: it reads global/articles/**,
@@ -280,7 +281,7 @@ func readLimited(fsys fs.FS, p, what string) ([]byte, error) {
 // path. It passes through the path-free errors about the content itself (load
 // limits, invalid trees), which the operator needs to fix the Source.
 func readErr(err error) error {
-	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName} {
+	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName, errNotRegular, errNotDir} {
 		if errors.Is(err, content) {
 			return content
 		}

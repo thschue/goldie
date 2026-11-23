@@ -10,15 +10,27 @@ import (
 
 // checkLookups fails when a lookup line in an article's body names an id that
 // does not resolve in that article's own Scope view: a global article sees
-// global only, a Project article its Project, then global. A draft is left out
-// of Resolution (#353), so a lookup of a draft is dangling too. A placeholder
-// such as <id> or … is skipped (see isPlaceholder). The error names the
-// article and quotes the id, bounded and escaped, never raw.
+// global only, a Project article its Project, then global, less the global
+// Items the Project suppresses (#367). A draft is left out of Resolution
+// (#353), so a lookup of a draft is dangling too. A placeholder such as <id>
+// or … is skipped (see isPlaceholder). The error names the article, and the
+// project.yaml when that is why the id is hidden, and quotes the id, bounded
+// and escaped, never raw.
 func (s *Snapshot) checkLookups() error {
 	for _, a := range s.allArticles() {
+		view := viewOf(a)
 		for _, id := range lookupIDs(a.Content) {
-			if isPlaceholder(id) || s.lookupResolves(a, id) {
+			if isPlaceholder(id) {
 				continue
+			}
+			// An id that is not a valid name is dangling.
+			if key, err := parseRef(KindArticle + ":" + id); err == nil {
+				if file, hidden := s.suppressingFile(view, key); hidden {
+					return fmt.Errorf("%s: goldie lookup %s names an Item %s suppresses", articleFile(a), quoteID(id), file)
+				}
+				if s.resolvePublished(view, key) != nil {
+					continue
+				}
 			}
 			if len(id) > maxRefBytes {
 				return fmt.Errorf("%s: a goldie lookup line has an id longer than %d bytes", articleFile(a), maxRefBytes)
@@ -53,20 +65,6 @@ func quoteID(id string) string {
 		id = string([]rune(id)[:maxQuotedRefRunes]) + "…"
 	}
 	return strconv.QuoteToASCII(id)
-}
-
-// lookupResolves reports whether id names a published Item in a's view. An id
-// that is not a valid name is dangling.
-func (s *Snapshot) lookupResolves(a *Article, id string) bool {
-	key, err := parseRef(KindArticle + ":" + id)
-	if err != nil {
-		return false
-	}
-	view := a.Scope
-	if view == ScopeGlobal {
-		view = ""
-	}
-	return s.resolvePublished(view, key) != nil
 }
 
 // lookupIDs returns the id of every lookup line in a Markdown body: a line of a
