@@ -33,10 +33,11 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
 		resp, err := next(ctx, w, r, req)
 		if e, ok := recorded(req, resp); ok {
-			if e.Kind == KindSearch {
+			switch e.Kind {
+			case KindSearch:
 				s.searches.Add(ctx, e.Miss)
-			} else {
-				s.lookups.Add(ctx, e.Miss)
+			case KindLookup:
+				s.lookups.Add(ctx, e.Miss) // article lookups only; a get of a skill or agent is not one
 			}
 			e.Token, _ = TokenName(ctx)
 			if v, ok := clientVersion(r.Header.Values(contract.ClientHeader)); ok {
@@ -51,9 +52,10 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 }
 
 // recorded is the Event for an answered search, lookup or get: its words, the
-// article id or the skill or agent name asked for, the project as sent (record stores its spelling), and
-// whether it is a Miss (a search with zero results, or a lookup answering
-// 404). Any other answer is not recorded.
+// article id or the skill or agent name asked for, the project as sent
+// (record stores its spelling), and whether it is a Miss (a search with zero
+// results, or a lookup or get answering 404). Any other answer is not
+// recorded.
 func recorded(req, resp any) (Event, bool) {
 	switch resp := resp.(type) {
 	case contract.SearchArticles200JSONResponse:

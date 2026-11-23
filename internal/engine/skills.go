@@ -107,21 +107,28 @@ func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte) error {
 	return nil
 }
 
-// skillBundleFor finds the bundle that answers for name in proj's view: local,
-// then Project, then global.
-func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
+// skillScopes lists the bundle maps that can answer in proj's view, nearest
+// Scope first: local, then Project, then global. Both skillBundleFor and
+// Skills walk it, so a get and a list cannot disagree on the order.
+func (s *Snapshot) skillScopes(proj string) []map[string]skillBundle {
+	var scopes []map[string]skillBundle
 	if s.local != nil {
-		if b, ok := s.local.skills[name]; ok {
-			return b, true
-		}
+		scopes = append(scopes, s.local.skills)
 	}
 	if p, ok := s.lookupProject(proj); ok {
-		if b, ok := p.skills[name]; ok {
+		scopes = append(scopes, p.skills)
+	}
+	return append(scopes, s.skills)
+}
+
+// skillBundleFor finds the bundle that answers for name in proj's view.
+func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
+	for _, scope := range s.skillScopes(proj) {
+		if b, ok := scope[name]; ok {
 			return b, true
 		}
 	}
-	b, ok := s.skills[name]
-	return b, ok
+	return skillBundle{}, false
 }
 
 // SkillIn resolves a skill bundle for a Project ("host/org/repo", matched
@@ -146,16 +153,8 @@ func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
 // per name, the bundle SkillIn returns.
 func (s *Snapshot) Skills(proj string) []Skill {
 	names := map[string]bool{}
-	for n := range s.skills {
-		names[n] = true
-	}
-	if p, ok := s.lookupProject(proj); ok {
-		for n := range p.skills {
-			names[n] = true
-		}
-	}
-	if s.local != nil {
-		for n := range s.local.skills {
+	for _, scope := range s.skillScopes(proj) {
+		for n := range scope {
 			names[n] = true
 		}
 	}
