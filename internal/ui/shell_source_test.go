@@ -11,10 +11,11 @@ import (
 	"testing/fstest"
 )
 
-// Acceptance tests for #166 (the App shell in Vue, ADR 0010): what the web/
-// source and the build wiring must hold. The rendered behaviour (the drawer,
-// the nav, the keyboard path, axe) is in web/e2e and runs in CI's ux job; what
-// a Go test can pin is the source tree and the way the SPA is served.
+// Acceptance tests for #166 slice 1 (the App shell in Vue, ADR 0010): what the
+// web/ source and the build wiring must hold. The rendered behaviour (the top
+// bar, the theme toggle, axe) is in web/e2e and runs in CI's ux job; what a Go
+// test can pin is the source tree and the way the SPA is served. The router,
+// the side nav and the drawer are slice 2.
 //
 // These tests read web/ and run from the repository, like the .gitignore test.
 
@@ -256,24 +257,17 @@ func shellFS() fstest.MapFS {
 	}
 }
 
-func TestEveryRouteOfTheShellGetsTheIndexWith200AndNoLongCache(t *testing.T) {
+func TestTheShellIndexIsServedWith200AndNoLongCache(t *testing.T) {
 	h := mustHandler(t, shellFS())
-	// §2.2 routes, including /assets/:tab, which shares its prefix with the
-	// hashed build output and must not be cached as immutable.
-	for _, p := range []string{
-		"/", "/signin", "/decisions", "/assets/skills", "/assets/agents", "/assets/loops", "/assets/instructions",
-		"/ops/activity", "/ops/sources", "/items/skill/some-name", "/no/such/route",
-	} {
-		rec := get(t, h, p)
-		if rec.Code != http.StatusOK {
-			t.Errorf("GET %s: status %d, want 200 (the shell shows its own not-found view)", p, rec.Code)
-		}
-		if !strings.Contains(rec.Body.String(), `<div id="app">`) {
-			t.Errorf("GET %s: not the index page: %q", p, rec.Body)
-		}
-		wantHeader(t, p, rec, "Cache-Control", "no-cache")
-		wantHeader(t, p, rec, "Content-Security-Policy", uiCSP)
+	rec := get(t, h, "/")
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /: status %d, want 200", rec.Code)
 	}
+	if !strings.Contains(rec.Body.String(), `<div id="app">`) {
+		t.Errorf("GET /: not the index page: %q", rec.Body)
+	}
+	wantHeader(t, "/", rec, "Cache-Control", "no-cache")
+	wantHeader(t, "/", rec, "Content-Security-Policy", uiCSP)
 }
 
 func TestThePrePaintThemeScriptIsServedAsAnExternalScriptUnderTheCSP(t *testing.T) {

@@ -1,9 +1,9 @@
-// The App shell at / (#166, handoff §3.1, §7, §9): the frame every screen
-// renders into. Per width and theme: the shot, axe (with best-practice), the
-// landmarks, the empty state and the top bar. Plus the nav, the routes and
-// the 1024 px change of the shell.
+// The App shell at / (#166 slice 1, handoff §3.1, §7, §9): the frame every
+// screen renders into. Per width and theme: the shot, axe (with best-practice),
+// the landmarks, the empty state and the top bar. The side nav, the drawer, the
+// routes and the 1024 px change are slice 2.
 import { expect, test } from '@playwright/test';
-import { eachViewport, evidence, expectNavCollapsed, menuButton, missingBrandFonts, problems, themeToggle, withNav } from './ux';
+import { eachViewport, evidence, missingBrandFonts, problems, themeToggle } from './ux';
 
 const emptyCopy = /Nothing to show yet\. Content appears here as goldie[’']s pages come online\./;
 
@@ -20,12 +20,11 @@ eachViewport((width, theme) => {
     expect(seen.errors, 'page errors and CSP violations').toEqual([]);
   });
 
-  test('the shell has header, nav and main landmarks and one h1 with the empty state', async ({ page }) => {
+  test('the shell has header and main landmarks and one h1 with the empty state', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('header')).toHaveCount(1);
     await expect(page.getByRole('banner')).toBeVisible();
     await expect(page.getByRole('main')).toBeVisible();
-    await expect(page.locator('nav[aria-label]')).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
     const panel = page.getByRole('main').getByRole('status');
@@ -64,7 +63,7 @@ eachViewport((width, theme) => {
     }
   });
 
-  test('the top bar is 64 px: the goldie mark, then the theme toggle, then the menu button below 1024 px', async ({ page }) => {
+  test('the top bar is 64 px: the goldie mark, then the theme toggle', async ({ page }) => {
     await page.goto('/');
     const header = await page.locator('header').boundingBox();
     expect(Math.round(header!.height)).toBe(64);
@@ -74,143 +73,14 @@ eachViewport((width, theme) => {
     const m = (await mark.first().boundingBox())!;
     const t = (await themeToggle(page).boundingBox())!;
     expect(m.x + m.width, 'mark before the toggle').toBeLessThanOrEqual(t.x);
-    if (width < 1024) {
-      const b = (await menuButton(page).boundingBox())!;
-      expect(t.x + t.width, 'toggle before the menu button').toBeLessThanOrEqual(b.x);
-    } else {
-      await expect(menuButton(page)).toBeHidden();
-    }
   });
 
-  test('the nav collapses below 1024 px and the page has no skip-link-first violation', async ({ page }) => {
+  test('the skip link is the first focusable element', async ({ page }) => {
     await page.goto('/');
-    await expectNavCollapsed(page, width);
     const first = await page.evaluate(
       () => document.querySelector<HTMLElement>('a[href], button, input, [tabindex]:not([tabindex="-1"])')?.textContent?.trim(),
     );
     expect(first).toBe('Skip to content');
-  });
-
-  test('the side nav lists Home, Decisions, the Agent assets group, then the Reader nav note, and no Operate group', async ({ page }) => {
-    await page.goto('/');
-    const nav = await withNav(page);
-    await expect(nav).toHaveAttribute('aria-label', /.+/);
-    const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
-    const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
-    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
-      (s) => text.indexOf(s),
-    );
-    expect(at.every((i) => i >= 0), `all entries present in: ${text}`).toBe(true);
-    expect([...at].sort((a, b) => a - b), 'entries in order').toEqual(at);
-    await expect(nav.getByRole('link', { name: /activity|sources/i })).toHaveCount(0);
-    await expect(nav).not.toContainText('Operate');
-  });
-});
-
-test.describe('nav width', () => {
-  for (const [width, min, max] of [
-    [1280, 240, 260],
-    [1440, 240, 260],
-    [1279, 220, 220],
-    [1024, 220, 220],
-  ] as const) {
-    test(`the nav is ${min}-${max} px at ${width} px`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto('/');
-      const box = (await page.getByRole('navigation').boundingBox())!;
-      expect(box.width).toBeGreaterThanOrEqual(min);
-      expect(box.width).toBeLessThanOrEqual(max);
-    });
-  }
-});
-
-test.describe('the shell changes at 1024 px (§7)', () => {
-  test.use({ viewport: { width: 1024, height: 800 } });
-  test('at 1024 px the nav is inline and axe-clean, with no menu button', async ({ page, baseURL }) => {
-    const seen = await problems(page, baseURL ?? '');
-    expect((await page.goto('/'))?.status()).toBe(200);
-    await expectNavCollapsed(page, 1024);
-    await evidence(page, 1024, 'light', '', 'shell');
-    expect(seen.external).toEqual([]);
-    expect(seen.failed).toEqual([]);
-  });
-});
-
-test.describe('just below 1024 px', () => {
-  test.use({ viewport: { width: 1023, height: 800 } });
-  test('at 1023 px the nav is behind the menu button', async ({ page }) => {
-    await page.goto('/');
-    await expectNavCollapsed(page, 1023);
-  });
-});
-
-test.describe('routes and the current page', () => {
-  const routes: [string, string][] = [
-    ['Home', '/'],
-    ['Decisions', '/decisions'],
-    ['Skills', '/assets/skills'],
-    ['Agents', '/assets/agents'],
-    ['Loops', '/assets/loops'],
-    ['Instructions', '/assets/instructions'],
-  ];
-
-  for (const [name, path] of routes) {
-    test(`${name} links to ${path}, which renders the shell with the empty state and marks the link current`, async ({ page }) => {
-      const res = await page.goto('/');
-      expect(res?.status()).toBe(200);
-      let nav = await withNav(page);
-      const link = nav.getByRole('link', { name, exact: true });
-      await expect(link).toHaveAttribute('href', path);
-      await link.click();
-      await expect(page).toHaveURL((u) => u.pathname === path);
-      await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
-      nav = await withNav(page);
-      const current = nav.getByRole('link', { name, exact: true });
-      await expect(current).toHaveAttribute('aria-current', 'page');
-      await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
-
-      // A cue other than colour: some non-colour style differs from a link that is not current.
-      const other = nav.getByRole('link', { name: name === 'Home' ? 'Decisions' : 'Home', exact: true });
-      const cue = (l: typeof current) =>
-        l.evaluate((el) => {
-          const s = getComputedStyle(el);
-          const b = getComputedStyle(el, '::before');
-          return [s.fontWeight, s.textDecorationLine, s.borderLeftWidth, s.borderBottomWidth, s.boxShadow, b.content, s.fontStyle].join('|');
-        });
-      expect(await cue(current), 'non-colour cue of the current page').not.toBe(await cue(other));
-    });
-  }
-
-  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/loops', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
-    test(`GET ${path} is 200 and renders the shell, not a 404`, async ({ page }) => {
-      const res = await page.goto(path);
-      expect(res?.status()).toBe(200);
-      await expect(page.getByRole('banner')).toBeVisible();
-      await expect(page.getByRole('main')).toBeVisible();
-      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
-    });
-  }
-
-  test('a route outside §2.2 shows the shell with a not-found message and a link Home', async ({ page, baseURL }) => {
-    const seen = await problems(page, baseURL ?? '');
-    const res = await page.goto('/no/such/route');
-    expect(res?.status(), 'the SPA index is served with 200').toBe(200);
-    await expect(page.getByRole('banner')).toBeVisible();
-    const main = page.getByRole('main');
-    await expect(main).toContainText(/not found/i);
-    await expect(main).not.toContainText(emptyCopy);
-    await expect(main.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/');
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
-    expect(seen.errors).toEqual([]);
-    await main.getByRole('link', { name: /home/i }).click();
-    await expect(page).toHaveURL((u) => u.pathname === '/');
-  });
-
-  test('a missing file with an extension is a real 404, never the shell', async ({ request }) => {
-    const res = await request.get('/assets/missing-file.js');
-    expect(res.status()).toBe(404);
-    expect(res.headers()['content-type'] ?? '').not.toContain('text/html');
   });
 });
 
