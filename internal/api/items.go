@@ -68,6 +68,7 @@ func (s *Server) GetSkill(ctx context.Context, req contract.GetSkillRequestObjec
 	if !found {
 		return contract.GetSkill404JSONResponse(noSuchSkill), nil
 	}
+	noteSkillHit(ctx, sk)
 	res := skillAnswer(sk)
 	res.Hint = hint
 	return contract.GetSkill200JSONResponse(res), nil
