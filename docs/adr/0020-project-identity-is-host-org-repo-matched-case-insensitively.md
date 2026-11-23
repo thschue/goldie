@@ -1,6 +1,6 @@
 # 20. Project identity is exactly host/org/repo, matched case-insensitively
 
-Status: proposed
+Status: accepted
 
 ## Context
 

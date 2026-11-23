@@ -1,6 +1,6 @@
 # 14. The error envelope always carries a next-step hint
 
-Status: proposed
+Status: accepted
 
 ## Context
 
