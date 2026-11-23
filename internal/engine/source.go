@@ -389,15 +389,23 @@ func (s *Snapshot) Articles() []Article {
 }
 
 // Article looks a global article up by ID, case-insensitively.
-func (s *Snapshot) Article(id string) (Article, bool) {
-	return s.ArticleIn("", id)
+func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
+	return s.ArticleIn("", id, opts...)
 }
 
 // ArticleIn resolves an article for a Project ("host/org/repo", matched
 // case-insensitively): the Project's article wins over the global one with the
-// same ID. An empty or unregistered Project resolves globally.
-func (s *Snapshot) ArticleIn(proj, id string) (Article, bool) {
-	if a := s.resolve(proj, keyOf(KindArticle, id)); a != nil {
+// same ID. An empty or unregistered Project resolves globally. Drafts are left
+// out unless opts asks for them, and a draft left out never shadows.
+func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
+	o := readOpts(opts)
+	key := keyOf(KindArticle, id)
+	if p, ok := s.lookupProject(proj); ok {
+		if a := p.index[key]; a != nil && o.visible(*a) {
+			return cloneArticle(*a), true
+		}
+	}
+	if a := s.index[key]; a != nil && o.visible(*a) {
 		return cloneArticle(*a), true
 	}
 	return Article{}, false
