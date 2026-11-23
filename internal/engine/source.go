@@ -58,6 +58,10 @@ type Article struct {
 	// ReplacedBy is the frontmatter replaced_by as written, a reference
 	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
 	ReplacedBy string
+	// Overrides is set by Snapshot.View on a winning Item: the Scopes of the
+	// readable, lower-priority copies with the same identity, nearest first
+	// (local, Project, global). Empty when the Item shadows nothing.
+	Overrides []string
 
 	// file is the article's path relative to the Source root, as
 	// loadArticles walked it, for error messages.
@@ -579,6 +583,31 @@ func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
 	return s.winner(proj, key, ReadOptions{})
 }
 
+// overridden returns the Scopes of the copies of key that sit below the
+// winning copy w in Resolution order (local, Project, global), nearest first.
+// Only readable copies count: a draft is never served, so nothing is
+// overridden by it.
+func (s *Snapshot) overridden(proj string, key itemKey, w *Article) []string {
+	p, _ := s.lookupProject(proj)
+	idxs := []map[itemKey]*Article{p.index, s.index}
+	if s.local != nil {
+		idxs = append([]map[itemKey]*Article{s.local.index}, idxs...)
+	}
+	var below []string
+	found := false
+	for _, idx := range idxs {
+		a := idx[key]
+		switch {
+		case a == nil:
+		case a == w:
+			found = true
+		case found && (ReadOptions{}).visible(*a):
+			below = append(below, a.Scope)
+		}
+	}
+	return below
+}
+
 // resolutionOrder returns the article lists that hold proj's candidate Items:
 // local, then Project, then global. winner decides which copy of each itemKey
 // answers.
@@ -601,5 +630,6 @@ func (s *Snapshot) resolutionOrder(proj, kind string) [][]Article {
 
 func cloneArticle(a Article) Article {
 	a.Keywords = append([]string(nil), a.Keywords...)
+	a.Overrides = append([]string(nil), a.Overrides...)
 	return a
 }
