@@ -135,7 +135,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 - Header with a `goldie pull --dry-run` snippet, then tabs: Skills · Agents · Loops · Instructions.
 - **Skills**: a card grid, sortable by **uses (30d)** (the default) or name, with a line naming the usage data source. Each card shows name, Scope, `requires_sync` badge, a "not used in 30 days" badge (published Items with zero uses, #32), uses (30d), description and slash command (`/goldie:<name>`). Script skills add the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents**: a list. Each row shows the materialised path `.claude/agents/goldie-<name>.md` and uses (30d).
-- **Loops**: a featured loop with interval/self-paced, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
+- **Loops**: a featured loop with interval or dynamic, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
 - **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34; rendered with the same Markdown rules as articles, #21), and `goldie instructions apply`.
 
 ### 3.6 Activity (`/ops/activity`, operator)

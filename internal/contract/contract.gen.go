@@ -426,6 +426,100 @@ type InstructionBlock struct {
 // Examples: deprecated
 type ItemStatus string
 
+// Loop One loop definition with its resolved closure.
+//
+// Examples: {"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"content":"Check the build, fix what is red, and report what you changed.\n","description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","stop":"when CI is green"}
+type Loop struct {
+	// Closure The agents and skills a loop names, resolved in the view.
+	Closure LoopClosure `json:"closure"`
+
+	// Content The iteration prompt, the loop file's body. Only a get carries it. It comes
+	// from a Source and is untrusted.
+	//
+	//
+	// Examples: Check the build, fix what is red, and report what you changed.
+	Content *string `json:"content,omitempty"`
+
+	// Description What the loop is for, from its frontmatter. It comes from a Source and is untrusted.
+	//
+	// Examples: Keep the nightly build green
+	Description string `json:"description"`
+
+	// Digest The hex SHA-256 over the loop file and every byte of the agent and skill
+	// files in the closure, as resolved in the view asked for. It changes when
+	// any of them changes.
+	//
+	//
+	// Examples: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+	Digest string `json:"digest"`
+
+	// Dynamic True when the loop paces itself instead of running at a fixed `interval`.
+	//
+	// Examples: false
+	Dynamic bool `json:"dynamic"`
+
+	// Hint Present when the request named a Project that is not registered: the
+	// answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	Hint *string `json:"hint,omitempty"`
+
+	// Interval How often the loop runs, a positive duration such as `30m`. Absent for a
+	// dynamic loop.
+	//
+	//
+	// Examples: 30m
+	Interval *string `json:"interval,omitempty"`
+
+	// Name The loop's name, its file name without `.md`.
+	//
+	// Examples: nightly
+	Name string `json:"name"`
+
+	// Stop When the loop ends. It comes from a Source and is untrusted.
+	//
+	// Examples: when CI is green
+	Stop string `json:"stop"`
+}
+
+// LoopClosure The agents and skills a loop names, resolved in the view.
+type LoopClosure struct {
+	// Agents The agents the loop names, sorted by name.
+	Agents []LoopRef `json:"agents"`
+
+	// Skills The skills the loop names, sorted by name.
+	Skills []LoopRef `json:"skills"`
+}
+
+// LoopList The loops that answer in a view.
+type LoopList struct {
+	// Hint Present when the request named a Project that is not registered: the
+	// loop list answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	Hint *string `json:"hint,omitempty"`
+
+	// Loops The loops, sorted by name.
+	//
+	// Examples: [{"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","stop":"when CI is green"}]
+	Loops []Loop `json:"loops"`
+}
+
+// LoopRef One agent or skill a loop names, as it resolves in the view.
+type LoopRef struct {
+	// Name The agent or skill name.
+	//
+	// Examples: reviewer
+	Name string `json:"name"`
+
+	// Scope The Scope that answered in the view, `global`, `local` or the Project id.
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+}
+
 // ProjectDetail One registered Project and what its `project.yaml` suppresses.
 type ProjectDetail struct {
 	// Id A Project: exactly three segments `host/org/repo` (ADR 0020). The host
@@ -884,6 +978,40 @@ type GetInstructionsParams struct {
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 }
 
+// ListLoopsParams defines parameters for ListLoops.
+type ListLoopsParams struct {
+	// Project Resolve the loop list for this Project (ADR 0020): its own entry wins over the
+	// global one with the same name, and each closure resolves in this view. Matched
+	// ignoring case. An unregistered Project answers the global view with a `hint`;
+	// a value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
+// GetLoopParams defines parameters for GetLoop.
+type GetLoopParams struct {
+	// Project Resolve the loop named in the path for this Project (ADR 0020): its own entry
+	// wins over the global one with the same name, and the closure resolves in this
+	// view. Matched ignoring case. An unregistered Project answers the global view
+	// with a `hint`; a value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
 // SearchArticlesParams defines parameters for SearchArticles.
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
@@ -1148,6 +1276,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
 	GetInstructions(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListLoops List the loops
+	//
+	// Returns the loops that answer in the Project's view, sorted by name, one per
+	// name: the nearest Scope wins. Each entry carries its resolved closure, the
+	// agents and skills it names as they resolve in this view, and the `digest` of
+	// the loop and its closure. A loop whose agent or skill does not resolve in the
+	// view (for example one the Project suppresses) is left out.
+	//
+	// Corresponds with GET /api/v1/loops (the `ListLoops` operationId).
+	ListLoops(ctx context.Context, params *ListLoopsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetLoop Read one loop
+	//
+	// Returns one loop by name with its iteration prompt (`content`), its resolved
+	// closure and its `digest`. A miss is a 404 whose hint points to the list.
+	//
+	// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
+	GetLoop(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListProjects List the registered Projects
 	//
@@ -1522,6 +1669,45 @@ func (c *Client) GetBundle(ctx context.Context, params *GetBundleParams, reqEdit
 // Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
 func (c *Client) GetInstructions(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetInstructionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListLoops List the loops
+//
+// Returns the loops that answer in the Project's view, sorted by name, one per
+// name: the nearest Scope wins. Each entry carries its resolved closure, the
+// agents and skills it names as they resolve in this view, and the `digest` of
+// the loop and its closure. A loop whose agent or skill does not resolve in the
+// view (for example one the Project suppresses) is left out.
+//
+// Corresponds with GET /api/v1/loops (the `ListLoops` operationId).
+func (c *Client) ListLoops(ctx context.Context, params *ListLoopsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLoopsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetLoop Read one loop
+//
+// Returns one loop by name with its iteration prompt (`content`), its resolved
+// closure and its `digest`. A miss is a 404 whose hint points to the list.
+//
+// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
+func (c *Client) GetLoop(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetLoopRequest(c.Server, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2276,6 +2462,145 @@ func NewGetInstructionsRequest(server string, params *GetInstructionsParams) (*h
 		if params.Project != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListLoopsRequest constructs an http.Request for the ListLoops method
+func NewListLoopsRequest(server string, params *ListLoopsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/loops"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetLoopRequest constructs an http.Request for the GetLoop method
+func NewGetLoopRequest(server string, name string, params *GetLoopParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/loops/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3066,6 +3391,29 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
 	GetInstructionsWithResponse(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*GetInstructionsResponse, error)
+
+	// ListLoopsWithResponse List the loops
+	//
+	// Returns the loops that answer in the Project's view, sorted by name, one per
+	// name: the nearest Scope wins. Each entry carries its resolved closure, the
+	// agents and skills it names as they resolve in this view, and the `digest` of
+	// the loop and its closure. A loop whose agent or skill does not resolve in the
+	// view (for example one the Project suppresses) is left out.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/loops (the `ListLoops` operationId).
+	ListLoopsWithResponse(ctx context.Context, params *ListLoopsParams, reqEditors ...RequestEditorFn) (*ListLoopsResponse, error)
+
+	// GetLoopWithResponse Read one loop
+	//
+	// Returns one loop by name with its iteration prompt (`content`), its resolved
+	// closure and its `digest`. A miss is a 404 whose hint points to the list.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
+	GetLoopWithResponse(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*GetLoopResponse, error)
 
 	// ListProjectsWithResponse List the registered Projects
 	//
@@ -3882,6 +4230,207 @@ func (r GetInstructionsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetInstructionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListLoopsResponse429Headers the declared response headers of an HTTP 429 response for ListLoops
+type ListLoopsResponse429Headers struct {
+	RetryAfter *int
+}
+
+type ListLoopsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *LoopList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *ListLoopsResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListLoopsResponse) GetJSON200() *LoopList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListLoopsResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListLoopsResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListLoopsResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r ListLoopsResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r ListLoopsResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListLoopsResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListLoopsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListLoopsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLoopsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLoopsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListLoopsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetLoopResponse429Headers the declared response headers of an HTTP 429 response for GetLoop
+type GetLoopResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetLoopResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Loop
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetLoopResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetLoopResponse) GetJSON200() *Loop {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetLoopResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetLoopResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetLoopResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetLoopResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetLoopResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetLoopResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetLoopResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetLoopResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetLoopResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetLoopResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetLoopResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetLoopResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5201,6 +5750,41 @@ func (c *ClientWithResponses) GetInstructionsWithResponse(ctx context.Context, p
 	return ParseGetInstructionsResponse(rsp)
 }
 
+// ListLoopsWithResponse List the loops
+//
+// Returns the loops that answer in the Project's view, sorted by name, one per
+// name: the nearest Scope wins. Each entry carries its resolved closure, the
+// agents and skills it names as they resolve in this view, and the `digest` of
+// the loop and its closure. A loop whose agent or skill does not resolve in the
+// view (for example one the Project suppresses) is left out.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/loops (the `ListLoops` operationId).
+func (c *ClientWithResponses) ListLoopsWithResponse(ctx context.Context, params *ListLoopsParams, reqEditors ...RequestEditorFn) (*ListLoopsResponse, error) {
+	rsp, err := c.ListLoops(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLoopsResponse(rsp)
+}
+
+// GetLoopWithResponse Read one loop
+//
+// Returns one loop by name with its iteration prompt (`content`), its resolved
+// closure and its `digest`. A miss is a 404 whose hint points to the list.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
+func (c *ClientWithResponses) GetLoopWithResponse(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*GetLoopResponse, error) {
+	rsp, err := c.GetLoop(ctx, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetLoopResponse(rsp)
+}
+
 // ListProjectsWithResponse List the registered Projects
 //
 // Returns the Projects the server holds Scope for, sorted, as
@@ -6053,6 +6637,189 @@ func ParseGetInstructionsResponse(rsp *http.Response) (*GetInstructionsResponse,
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetInstructionsResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListLoopsResponse parses an HTTP response from a ListLoopsWithResponse call
+func ParseListLoopsResponse(rsp *http.Response) (*ListLoopsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLoopsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest LoopList
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers ListLoopsResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetLoopResponse parses an HTTP response from a GetLoopWithResponse call
+func ParseGetLoopResponse(rsp *http.Response) (*GetLoopResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetLoopResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Loop
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetLoopResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -7100,6 +7867,12 @@ type ServerInterface interface {
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(w http.ResponseWriter, r *http.Request, params GetInstructionsParams)
+	// ListLoops List the loops
+	// (GET /api/v1/loops)
+	ListLoops(w http.ResponseWriter, r *http.Request, params ListLoopsParams)
+	// GetLoop Read one loop
+	// (GET /api/v1/loops/{name})
+	GetLoop(w http.ResponseWriter, r *http.Request, name string, params GetLoopParams)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
@@ -7446,6 +8219,107 @@ func (siw *ServerInterfaceWrapper) GetInstructions(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetInstructions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListLoops operation middleware
+func (siw *ServerInterfaceWrapper) ListLoops(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLoopsParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLoops(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLoop operation middleware
+func (siw *ServerInterfaceWrapper) GetLoop(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetLoopParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoop(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7983,6 +8857,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}/files/{path}", wrapper.GetSkillFile)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents", wrapper.ListAgents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops", wrapper.ListLoops)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops/{name}", wrapper.GetLoop)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bundle", wrapper.GetBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
@@ -8865,6 +9741,285 @@ type GetInstructionsdefaultJSONResponse struct {
 }
 
 func (response GetInstructionsdefaultJSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoopsRequestObject struct {
+	Params ListLoopsParams
+}
+
+type ListLoopsResponseObject interface {
+	VisitListLoopsResponse(w http.ResponseWriter) error
+}
+
+type ListLoops200JSONResponse LoopList
+
+func (response ListLoops200JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops400JSONResponse ErrorEnvelope
+
+func (response ListLoops400JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops401JSONResponse ErrorEnvelope
+
+func (response ListLoops401JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops403JSONResponse ErrorEnvelope
+
+func (response ListLoops403JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response ListLoops426JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response ListLoops429JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoops503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response ListLoops503JSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLoopsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response ListLoopsdefaultJSONResponse) VisitListLoopsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopRequestObject struct {
+	Name   string `json:"name"`
+	Params GetLoopParams
+}
+
+type GetLoopResponseObject interface {
+	VisitGetLoopResponse(w http.ResponseWriter) error
+}
+
+type GetLoop200JSONResponse Loop
+
+func (response GetLoop200JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop400JSONResponse ErrorEnvelope
+
+func (response GetLoop400JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop401JSONResponse ErrorEnvelope
+
+func (response GetLoop401JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop403JSONResponse ErrorEnvelope
+
+func (response GetLoop403JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop404JSONResponse ErrorEnvelope
+
+func (response GetLoop404JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetLoop426JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetLoop429JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoop503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetLoop503JSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetLoopdefaultJSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -10397,6 +11552,12 @@ type StrictServerInterface interface {
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(ctx context.Context, request GetInstructionsRequestObject) (GetInstructionsResponseObject, error)
+	// ListLoops List the loops
+	// (GET /api/v1/loops)
+	ListLoops(ctx context.Context, request ListLoopsRequestObject) (ListLoopsResponseObject, error)
+	// GetLoop Read one loop
+	// (GET /api/v1/loops/{name})
+	GetLoop(ctx context.Context, request GetLoopRequestObject) (GetLoopResponseObject, error)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
@@ -10634,6 +11795,59 @@ func (sh *strictHandler) GetInstructions(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetInstructionsResponseObject); ok {
 		if err := validResponse.VisitGetInstructionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListLoops operation middleware
+func (sh *strictHandler) ListLoops(w http.ResponseWriter, r *http.Request, params ListLoopsParams) {
+	var request ListLoopsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListLoops(ctx, request.(ListLoopsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLoops")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLoopsResponseObject); ok {
+		if err := validResponse.VisitListLoopsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLoop operation middleware
+func (sh *strictHandler) GetLoop(w http.ResponseWriter, r *http.Request, name string, params GetLoopParams) {
+	var request GetLoopRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetLoop(ctx, request.(GetLoopRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLoop")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLoopResponseObject); ok {
+		if err := validResponse.VisitGetLoopResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
