@@ -45,6 +45,9 @@ const (
 	EnvGitCABundle      = "GOLDIE_GIT_CA_BUNDLE"       // logged only as set or unset
 	EnvGitAllowFileURL  = "GOLDIE_GIT_ALLOW_FILE_URL"
 	EnvPollInterval     = "GOLDIE_POLL_INTERVAL"
+
+	// The ordered list of Sources (#476): one JSON document.
+	EnvSources = "GOLDIE_SOURCES"
 )
 
 // MinPollInterval is the shortest GOLDIE_POLL_INTERVAL LoadConfig accepts in
@@ -116,6 +119,11 @@ type Config struct {
 	GitSSHKnownHosts string // secret
 	GitCABundle      string // PEM; logged only as set or unset
 	GitAllowFileURL  bool   // accept a file:// GitURL
+
+	// Sources is GOLDIE_SOURCES, parsed and validated, in listed order (which
+	// is preference order); nil when unset. Serving them is a later slice.
+	Sources     []SourceSpec
+	sourcesText string // the names of Sources, for the startup report
 
 	PollInterval     time.Duration // how often every Source is polled; at least PollIntervalFloor
 	pollIntervalText string        // PollInterval as written, for the startup report
@@ -206,8 +214,17 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.GitSSHKey = str(EnvGitSSHKey, def(EnvGitSSHKey))
 	cfg.GitSSHKnownHosts = str(EnvGitSSHKnownHosts, def(EnvGitSSHKnownHosts))
 	cfg.GitCABundle = str(EnvGitCABundle, def(EnvGitCABundle))
-	if err := CheckOneSource(cfg.ContentDir, cfg.GitURL); err != nil {
+	sourcesDoc := str(EnvSources, def(EnvSources))
+	if err := CheckOneSource(cfg.ContentDir, cfg.GitURL, sourcesDoc != ""); err != nil {
 		errs = append(errs, err)
+	}
+	if sourcesDoc != "" {
+		srcs, err := ParseSources(sourcesDoc, lookup, os.ReadFile)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		cfg.Sources = srcs
+		cfg.sourcesText = sourceNames(srcs)
 	}
 	switch strings.ToLower(str(EnvGitAllowFileURL, def(EnvGitAllowFileURL))) {
 	case "true":
@@ -248,14 +265,22 @@ func CheckAPITokenPairing(token, tokens string) error {
 }
 
 // CheckOneSource refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL set together,
-// after their _FILE forms are read: until several Sources are configurable
-// (ADR 0004), a process serves one. Like the token pairing it is part of
-// LoadConfig, so goldie health refuses it too; neither set is the server
-// role's check. The error names both variables and neither value: the URL may
-// hold a password.
-func CheckOneSource(contentDir, gitURL string) error {
+// and either of them together with GOLDIE_SOURCES (sources reports that it is
+// set), after their _FILE forms are read: a process serves the one Source of
+// the single-Source variables, or the list, never a guess between them. Like
+// the token pairing it is part of LoadConfig, so goldie health refuses it too;
+// none set is the server role's check. The error names the variables and no
+// value: the URL may hold a password.
+func CheckOneSource(contentDir, gitURL string, sources bool) error {
+	if sources {
+		for _, v := range []struct{ name, value string }{{EnvContentDir, contentDir}, {EnvGitURL, gitURL}} {
+			if v.value != "" {
+				return fmt.Errorf("%s and %s are both set: %s declares the Sources, so set only one", EnvSources, v.name, EnvSources)
+			}
+		}
+	}
 	if contentDir != "" && gitURL != "" {
-		return fmt.Errorf("%s and %s are both set: for now a process serves one Source, so set only one", EnvContentDir, EnvGitURL)
+		return fmt.Errorf("%s and %s are both set: set only one, or declare the Sources in %s", EnvContentDir, EnvGitURL, EnvSources)
 	}
 	return nil
 }

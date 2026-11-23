@@ -162,7 +162,10 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 			var want []string
 			for _, s := range Settings {
 				want = append(want, s.Name)
-				if secretOf(t, s) || s.Name == other {
+				// GOLDIE_SOURCES conflicts with both single-Source variables
+				// this test loads; it reports as unset here and is covered by
+				// the Sources tests.
+				if secretOf(t, s) || s.Name == other || s.Name == EnvSources {
 					continue
 				}
 				v, ok := samples[s.Name]
@@ -187,6 +190,10 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 				case secretOf(t, s):
 					if rec[s.Name] != "(unset)" {
 						t.Errorf("%s is unset: report shows %v, want (unset)", s.Name, rec[s.Name])
+					}
+				case s.Name == EnvSources:
+					if got := fmt.Sprint(rec[s.Name]); got != "" {
+						t.Errorf("%s is unset: report shows %q, want empty", s.Name, got)
 					}
 				case s.Name == envGitCABundle:
 					if got := fmt.Sprint(rec[s.Name]); got == "" || got == "(unset)" || strings.Contains(got, gitSampleCABundleTag) {
