@@ -56,7 +56,11 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)
 	}
-	err = gmcp.New(client).Run(ctx, &sdk.IOTransport{Reader: in, Writer: out})
+	var opts []gmcp.Option
+	if settings.Local() {
+		opts = append(opts, gmcp.Local())
+	}
+	err = gmcp.New(client, opts...).Run(ctx, &sdk.IOTransport{Reader: in, Writer: out})
 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 		return nil
 	}

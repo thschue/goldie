@@ -142,7 +142,10 @@ func Run(ctx context.Context, args []string, env Env) error {
 // or the content directory of an embedded server.
 // Every client command reads them the same way, and so does any other role
 // that talks to the API as a client (goldie mcp --transport stdio).
-type ClientFlags struct{ s settings }
+type ClientFlags struct {
+	s     settings
+	local bool // Open started an embedded server
+}
 
 // BindClientFlags registers --addr, --dir and --token on fs.
 func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
@@ -172,8 +175,14 @@ func (f *ClientFlags) Open(ctx context.Context, env Env) (addr, token string, st
 		stop()
 		return "", "", nil, err
 	}
+	f.local = c.local
 	return c.s.addr, c.s.token, stop, nil
 }
+
+// Local reports whether Open started an embedded server over local content,
+// so a role words a failure to reach it without pointing at an address the
+// user never gave.
+func (f *ClientFlags) Local() bool { return f.local }
 
 // open resolves the settings and, in local mode, starts the embedded server
 // and takes its address and token. stop is never nil without an error.

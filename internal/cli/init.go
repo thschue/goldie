@@ -93,25 +93,23 @@ func (c *commander) registered(ctx context.Context, id string) (ok bool, why str
 	if err != nil {
 		return false, err.Error()
 	}
+	// A 401 is "token rejected"; contract.Answer reads every other answer, as
+	// probeToken does for status.
 	raw, err := cl.ListProjects(ctx)
-	if err != nil {
-		return false, transportError(err, c.local).Error()
-	}
-	if raw.StatusCode == http.StatusUnauthorized {
+	if err == nil && raw.StatusCode == http.StatusUnauthorized {
 		_ = raw.Body.Close()
 		return false, "token rejected"
 	}
-	resp, e, err := contract.ParseOK(raw, contract.ParseListProjectsResponse)
-	if err := answerError(e, err, c.local); err != nil {
-		return false, contract.CleanLine(err.Error())
+	list, err := contract.Answer(raw, err, contract.ParseListProjectsResponse, projectList)
+	if err != nil {
+		return false, contract.CleanLine(wordError(err, c.local).Error())
 	}
-	if resp.JSON200 == nil {
-		return false, contract.CleanLine(apiError(resp.HTTPResponse, resp.Body).Error())
-	}
-	for _, p := range resp.JSON200.Projects {
+	for _, p := range list.Projects {
 		if strings.EqualFold(p, id) {
 			return true, ""
 		}
 	}
 	return false, ""
 }
+
+func projectList(r *contract.ListProjectsResponse) *contract.ProjectList { return r.JSON200 }

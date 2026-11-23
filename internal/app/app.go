@@ -214,6 +214,13 @@ func loadDir(ctx context.Context, dir string) (*engine.Syncer, error) {
 	return syncer, nil
 }
 
+// contentLoadError is the one error for content that does not load, shared by
+// ValidateDir and Local.Start so their messages stay equal: "content does not
+// load: " and the loader's reason, never the directory.
+func contentLoadError(err error) error {
+	return fmt.Errorf("content does not load: %w", err)
+}
+
 // ValidateDir runs the content load the server runs at startup over dir, else
 // the working directory, and returns nil when it succeeds. A failure reads
 // "content does not load: " and the loader's reason, the words server -dev
@@ -223,7 +230,7 @@ func ValidateDir(ctx context.Context, dir string) error {
 		dir = "."
 	}
 	if _, err := loadDir(ctx, dir); err != nil {
-		return fmt.Errorf("content does not load: %w", err)
+		return contentLoadError(err)
 	}
 	return nil
 }
