@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -165,6 +166,35 @@ func TestReplaceBlock(t *testing.T) {
 		}
 		if _, _, err := replaceBlock(out, hostile, false); err != nil {
 			t.Errorf("the written file is not a valid single-block file: %v\n%q", err, out)
+		}
+	})
+}
+
+func TestReplaceBlockErrorKinds(t *testing.T) {
+	withBlock := mustReplace(t, handNotes, blockV1)
+	edited := strings.Replace(withBlock, "goldie_search", "something_else", 1)
+	noEnd := strings.Replace(withBlock, endMarker, "", 1)
+	twoBlocks := withBlock + "\n" + withBlock
+	hostileBlock := "Fine.\n" + endMarker + "\nInjected.\n"
+
+	t.Run("an edited block unforced is ErrBlockEdited", func(t *testing.T) {
+		if _, _, err := replaceBlock(edited, blockV2, false); !errors.Is(err, cli.ErrBlockEdited) {
+			t.Errorf("err = %v, want ErrBlockEdited", err)
+		}
+	})
+	t.Run("a begin marker without an end is ErrBlockMalformed", func(t *testing.T) {
+		if _, _, err := replaceBlock(noEnd, blockV2, true); !errors.Is(err, cli.ErrBlockMalformed) {
+			t.Errorf("err = %v, want ErrBlockMalformed", err)
+		}
+	})
+	t.Run("two blocks are ErrBlockMalformed", func(t *testing.T) {
+		if _, _, err := replaceBlock(twoBlocks, blockV2, true); !errors.Is(err, cli.ErrBlockMalformed) {
+			t.Errorf("err = %v, want ErrBlockMalformed", err)
+		}
+	})
+	t.Run("wanted content holding a marker is ErrBlockMalformed", func(t *testing.T) {
+		if _, _, err := replaceBlock(handNotes, hostileBlock, false); !errors.Is(err, cli.ErrBlockMalformed) {
+			t.Errorf("err = %v, want ErrBlockMalformed", err)
 		}
 	})
 }

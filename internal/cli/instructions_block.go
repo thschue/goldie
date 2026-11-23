@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"regexp"
 )
 
@@ -44,6 +45,15 @@ var (
 	ErrBlockMalformed = errors.New("the goldie block markers are malformed")
 )
 
+// errDamagedFile and errBadContent wrap ErrBlockMalformed with the cause and
+// the next step; forcing does not help in either case.
+var (
+	errDamagedFile = fmt.Errorf("%w: the goldie block in this file is damaged (a begin marker without an end, or more than one block); "+
+		"fix or delete the lines between `<!-- goldie:begin` and `<!-- goldie:end -->` by hand, then run the command again; --force does not help", ErrBlockMalformed)
+	errBadContent = fmt.Errorf("%w: the block goldie wants to write contains a goldie marker; this is a goldie bug, not a problem in your file, "+
+		"so leave the file as it is and report it", ErrBlockMalformed)
+)
+
 const (
 	beginPrefix = "<!-- goldie:begin"
 	endMarker   = "<!-- goldie:end -->"
@@ -77,11 +87,23 @@ func renderBlock(body []byte) []byte {
 // begin marker to the end marker, or appends the block when the file has none.
 // A hand-edited block is refused (nil bytes, ErrBlockEdited) unless force is
 // set; a begin marker without an end, two blocks, or block content that holds
-// a marker is always ErrBlockMalformed. file is never modified.
+// a marker is always ErrBlockMalformed (wrapped with the cause). file is never
+// modified.
+//
+// The block in a file is the begin marker, the body and the end marker:
+//
+//	<!-- goldie:begin digest=sha256:<hex> -->
+//	...body, on the lines between the markers...
+//	<!-- goldie:end -->
+//
+// <hex> is the lowercase sha256 of the body, with a trailing newline added to
+// the body if it has none. A body that no longer matches its digest counts as
+// hand-edited (BlockEdited). A block with the same digest as the wanted one is
+// BlockCurrent; an intact block with another digest is BlockOutdated.
 func ReplaceBlock(file, block []byte, force bool) ([]byte, BlockStatus, error) {
 	body := blockBody(block)
 	if bytes.Contains(body, []byte(beginPrefix)) || bytes.Contains(body, []byte(endMarker)) {
-		return nil, BlockMissing, ErrBlockMalformed
+		return nil, BlockMissing, errBadContent
 	}
 	wanted := renderBlock(body)
 
@@ -99,17 +121,17 @@ func ReplaceBlock(file, block []byte, force bool) ([]byte, BlockStatus, error) {
 		return append(out, '\n'), BlockMissing, nil
 	}
 	if begins != 1 || ends != 1 {
-		return nil, BlockMissing, ErrBlockMalformed
+		return nil, BlockMissing, errDamagedFile
 	}
 	start := bytes.Index(file, []byte(beginPrefix))
 	end := bytes.Index(file, []byte(endMarker))
 	m := beginMarkerRE.FindSubmatch(file[start:])
 	if m == nil || end < start+len(m[0]) {
-		return nil, BlockMissing, ErrBlockMalformed
+		return nil, BlockMissing, errDamagedFile
 	}
 	inner := file[start+len(m[0]) : end]
 	if len(inner) == 0 || inner[0] != '\n' {
-		return nil, BlockMissing, ErrBlockMalformed
+		return nil, BlockMissing, errDamagedFile
 	}
 	found := inner[1:]
 	status := BlockOutdated
