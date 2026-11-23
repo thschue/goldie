@@ -139,6 +139,9 @@ func TestNotFoundCarriesStaticHint(t *testing.T) {
 		if env.Error.Code != "not_found" || hint == "" {
 			t.Errorf("%s: want not_found with details.hint, got %s", name, body)
 		}
+		if !strings.Contains(hint, "the public listener serves the API and the UI") {
+			t.Errorf("%s: hint = %q, want it to say the public listener serves the API and the UI", name, hint)
+		}
 		for _, leak := range []string{"secret-path-xyz", "abc123", "127.0.0.1"} {
 			if strings.Contains(body, leak) {
 				t.Errorf("%s: body echoes %q: %s", name, leak, body)
