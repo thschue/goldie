@@ -129,18 +129,13 @@ func (s *mergeInputState) raiseMark(e Event) {
 }
 
 // normalizeEvent is the one check every event passes, live or history: it
-// rejects an empty Replica or ID 0, cuts every free-text field a peer
-// controls (Query, Token, ClientVersion, Project, TraceID) to maxQueryBytes
-// and clears Late, which only the Merger sets.
+// rejects an empty Replica or ID 0, cuts every string field a peer controls
+// to maxQueryBytes (boundEvent) and clears Late, which only the Merger sets.
 func normalizeEvent(e Event) (Event, bool) {
 	if e.Replica == "" || e.ID == 0 {
 		return Event{}, false
 	}
-	e.Query = truncateQuery(e.Query)
-	e.Token = truncateQuery(e.Token)
-	e.ClientVersion = truncateQuery(e.ClientVersion)
-	e.Project = truncateQuery(e.Project)
-	e.TraceID = truncateQuery(e.TraceID)
+	e = boundEvent(e)
 	e.Late = false
 	return e, true
 }

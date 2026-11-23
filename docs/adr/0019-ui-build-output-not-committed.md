@@ -1,6 +1,6 @@
 # 19. The SPA's build output is not committed; the binary embeds it when built, otherwise a placeholder
 
-Status: proposed
+Status: accepted
 
 ## Context
 

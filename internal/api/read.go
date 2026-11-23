@@ -124,7 +124,7 @@ var notReady = envelope("not_ready", "content is still loading",
 type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
-	activity *Activity // see RecordInto
+	activity *Activity // see RecordInto, nil records nothing
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -135,20 +135,24 @@ var _ contract.StrictServerInterface = (*Server)(nil)
 
 // NewServer returns the Server that reads provider() on every request. A nil
 // result means no load has succeeded yet, and the read answers 503 not_ready.
-func NewServer(provider func() *engine.Snapshot) (*Server, error) {
+func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server, error) {
 	specJSON, err := contract.SpecJSON()
 	if err != nil {
 		return nil, err
 	}
-	return &Server{provider: provider, specJSON: specJSON,
-		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}, nil
+	s := &Server{provider: provider, specJSON: specJSON,
+		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 // Register registers the spec's operations on m through the generated router,
 // as "METHOD path" patterns. Every response carries
 // X-Content-Type-Options: nosniff, parameters the router cannot decode are the
 // 400 envelope, a response that cannot be written is the 500 envelope, and
-// every answered search and lookup is recorded (RecordInto). HEAD on the
+// every answered search and lookup is recorded when the Server was built with RecordInto. HEAD on the
 // activity stream sends its headers and ends (headOnly).
 func (s *Server) Register(m contract.ServeMux) {
 	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly},

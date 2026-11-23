@@ -70,7 +70,7 @@ var TelemetrySettings = []SettingSpec{
 	{Name: "OTEL_TRACES_SAMPLER_ARG", Default: "1", Meaning: "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{Name: "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Default: "128", Meaning: "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{Name: "OTEL_SERVICE_NAME", Default: defaultServiceName, Meaning: "Overrides the service.name resource attribute."},
-	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
+	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (all), which this cannot override."},
 }
 
 // EnvToken is the API token the client commands send. It is a secret, so it
@@ -153,6 +153,15 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
 	b.WriteString("printed; goldie logs one fixed warning instead. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
+	b.WriteString("The client commands and `goldie mcp --transport stdio` export traces only, with the resource\n")
+	b.WriteString("attribute `goldie.role` `cli` or `mcp` (the server's is `server`; `goldie.mode` stays a server\n")
+	b.WriteString("mode and is not set on them): one client span per API call, sent to the server as a W3C `traceparent`. The\n")
+	b.WriteString("server starts its own trace and links its span to the client span. A client span records no\n")
+	b.WriteString("query string or header, and an article lookup's path only as /api/v1/articles/{id}, which\n")
+	b.WriteString("appears percent-encoded in `url.full` as /api/v1/articles/%7Bid%7D. The logs and metrics\n")
+	b.WriteString("variables do not apply to them, nor does `" + EnvTelemetryClientInfo + "`. An invalid value of a\n")
+	b.WriteString("variable they read makes them fail at start, naming the variable (PC-04). They send their\n")
+	b.WriteString("spans for at most 2 seconds on exit, and the fixed warning goes to stderr.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
 	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")
