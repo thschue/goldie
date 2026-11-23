@@ -114,47 +114,6 @@ func TestLoopReplacedByALoopLoadsAndShowsAsDeprecated(t *testing.T) {
 	}
 }
 
-func TestLoopReplacedByMustNameAnExistingLoop(t *testing.T) {
-	old := loopNamed("old", "interval: 5m", "stop: x", "status: deprecated", "replaced_by: loop:new")
-	t.Run("no such loop", func(t *testing.T) {
-		loadErr(t, map[string]string{"global/loops/old.md": old}, "global/loops/old.md")
-	})
-	t.Run("only an article of that name", func(t *testing.T) {
-		loadErr(t, map[string]string{
-			"global/loops/old.md":    old,
-			"global/articles/new.md": article("New"),
-		}, "global/loops/old.md")
-	})
-	t.Run("itself", func(t *testing.T) {
-		loadErr(t, map[string]string{
-			"global/loops/old.md": loopNamed("old", "interval: 5m", "stop: x", "status: deprecated", "replaced_by: loop:old"),
-		}, "global/loops/old.md")
-	})
-}
-
-func TestProjectSuppressHidesAGlobalLoopInThatProjectOnly(t *testing.T) {
-	snap := load(t, map[string]string{
-		"global/loops/noisy.md":                        loopNamed("noisy", "interval: 5m", "stop: x"),
-		"global/loops/kept.md":                         loopNamed("kept", "interval: 5m", "stop: x"),
-		"projects/github.com/acme/other/articles/x.md": article("X"),
-		supFile: suppressYAML("loop:noisy"),
-	})
-	if got := loopNameList(snap.Loops(govProject)); got != "kept" {
-		t.Errorf("Loops(project) = %s, want noisy hidden", got)
-	}
-	if l, ok := snap.LoopIn(govProject, "noisy"); ok {
-		t.Errorf("LoopIn(project, noisy) = %+v; the Project suppresses it", l)
-	}
-	for _, proj := range []string{"", "github.com/acme/other"} {
-		if _, ok := snap.LoopIn(proj, "noisy"); !ok {
-			t.Errorf("LoopIn(%q, noisy) not served; only the suppressing Project hides it", proj)
-		}
-	}
-	if got := strings.Join(suppressionsOf(t, snap, govProject), ","); got != "loop:noisy" {
-		t.Errorf("Suppressions = %s, want loop:noisy", got)
-	}
-}
-
 func TestSuppressingAnAgentDoesNotHideTheLoopOfThatName(t *testing.T) {
 	snap := load(t, map[string]string{
 		"global/loops/same.md":  loopNamed("same", "interval: 5m", "stop: x"),

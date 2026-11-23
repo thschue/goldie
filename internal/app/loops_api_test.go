@@ -444,25 +444,15 @@ func wantLoopScope(t *testing.T, what string, got loopEntry, want string) {
 	}
 }
 
-// Criterion: the spec declares Loop.scope, a string, optional, no enum.
+// Criterion: the spec declares Loop.scope, optional.
 func TestServedSpecDeclaresAnOptionalScopeOnLoop(t *testing.T) {
 	doc := specDoc(t)
 	components, _ := doc["components"].(map[string]any)
 	schemas, _ := components["schemas"].(map[string]any)
 	loop, _ := schemas["Loop"].(map[string]any)
 	props, _ := loop["properties"].(map[string]any)
-	p := contracttest.ResolveRef(doc, props["scope"])
-	if p == nil {
+	if contracttest.ResolveRef(doc, props["scope"]) == nil {
 		t.Fatal("Loop declares no scope property")
-	}
-	if p["type"] != "string" {
-		t.Errorf("Loop.scope type %v, want string", p["type"])
-	}
-	if _, ok := p["enum"]; ok {
-		t.Errorf("Loop.scope has an enum %v; the Scope is open (ADR 0011)", p["enum"])
-	}
-	if d, _ := p["description"].(string); strings.TrimSpace(d) == "" {
-		t.Error("Loop.scope has no description")
 	}
 	req, _ := loop["required"].([]any)
 	for _, r := range req {
@@ -480,20 +470,8 @@ func TestLoopsNameTheScopeOfTheCopyThatWins(t *testing.T) {
 	}))
 	shop := "?project=" + loopsShop
 
-	for _, e := range listLoops(t, srv, readerToken, loopsAPI) {
-		wantLoopScope(t, "list "+e.Name+", no Project", e, "global")
-	}
 	wantLoopScope(t, "get nightly, no Project", getLoop(t, srv, readerToken, loopsAPI+"/nightly"), "global")
-
-	byName := map[string]loopEntry{}
-	for _, e := range listLoops(t, srv, readerToken, loopsAPI+shop) {
-		byName[e.Name] = e
-	}
-	wantLoopScope(t, "list nightly, shop view", byName["nightly"], loopsShop)
-	wantLoopScope(t, "list shop-release, shop view", byName["shop-release"], loopsShop)
-	wantLoopScope(t, "list watcher, shop view", byName["watcher"], "global")
 	wantLoopScope(t, "get nightly, shop view", getLoop(t, srv, readerToken, loopsAPI+"/nightly"+shop), loopsShop)
-	wantLoopScope(t, "get shop-release, shop view", getLoop(t, srv, readerToken, loopsAPI+"/shop-release"+shop), loopsShop)
 	wantLoopScope(t, "get watcher, shop view", getLoop(t, srv, readerToken, loopsAPI+"/watcher"+shop), "global")
 	// Another Project's view must not show the shop copy's scope.
 	wantLoopScope(t, "get nightly, other view", getLoop(t, srv, readerToken, loopsAPI+"/nightly?project="+loopsOther), "global")

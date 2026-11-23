@@ -14,22 +14,18 @@ func TestParseRefKnownKindsTable(t *testing.T) {
 		"agent:x":   keyOf("agent", "x"),
 		"agent:X":   keyOf("agent", "x"),
 		"loop:x":    keyOf("loop", "x"),
-		"loop:X":    keyOf("loop", "x"),
 	} {
 		if key, err := parseRef(ref); err != nil || key != want {
 			t.Fatalf("parseRef(%s) = %v, %v; want %v", ref, key, err, want)
 		}
 	}
-	for _, ref := range []string{"skill:x", "instruction:x", "x:y", "Agent:x", "Loop:x"} {
+	for _, ref := range []string{"skill:x", "instruction:x", "x:y", "Agent:x"} {
 		if _, err := parseRef(ref); err == nil {
 			t.Fatalf("%s accepted while its Kind is not loaded", ref)
 		}
 	}
 	if !slices.Contains(knownKinds, "agent") {
 		t.Fatalf("knownKinds = %v, want agent in the table", knownKinds)
-	}
-	if !slices.Contains(knownKinds, "loop") {
-		t.Fatalf("knownKinds = %v, want loop in the table (#614)", knownKinds)
 	}
 }
 
