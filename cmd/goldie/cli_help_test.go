@@ -296,3 +296,16 @@ func TestHelpShowsBoolFlagsWithoutAValueSuffix(t *testing.T) {
 		}
 	}
 }
+
+// No help text carries any [= value suffix on a flag (#459).
+func TestHelpShowsNoValueSuffixOnAnyFlag(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"search", "--help"}, {"status", "--help"}, {"server", "--help"}} {
+		stdout, _, code := runHelp(t, args...)
+		if code != 0 {
+			t.Errorf("goldie %v: exit %d, want 0", args, code)
+		}
+		if strings.Contains(stdout, "[=") {
+			t.Errorf("goldie %v: help shows a [= suffix:\n%s", args, stdout)
+		}
+	}
+}

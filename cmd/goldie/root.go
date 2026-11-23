@@ -32,12 +32,10 @@ func init() {
 	cobra.AddTemplateFunc("flagUsages", flagUsages)
 }
 
-// plainBool is a bool flag that pflag's help lists as --name, not
-// --name[=true|false]: a goldie flag is given bare.
+// plainBool hides IsBoolFlag from pflag's help, which lists a bool flag that
+// has it as --name[=true|false]. Embedding the interface drops the method;
+// the type stays "bool" so pflag adds no other [=...] suffix.
 type plainBool struct{ pflag.Value }
-
-func (plainBool) Type() string     { return "boolean" }
-func (plainBool) IsBoolFlag() bool { return true }
 
 // flagUsages is fs's help text with each bool flag shown without a value.
 func flagUsages(fs *pflag.FlagSet) string {
