@@ -21,6 +21,7 @@ const main = ref<HTMLElement>();
 let wide: MediaQueryList | undefined;
 const router = useRouter();
 let linkClicked = false;
+let leaving: Element | null = null; // the h1 of the view a link click leaves
 let removeAfterEach: (() => void) | undefined;
 
 const focusables = () => Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
@@ -70,6 +71,7 @@ function onDrawerClick(e: MouseEvent) {
 function onShellClick(e: MouseEvent) {
   const a = e.target instanceof Element ? e.target.closest('a[href^="/"]') : null;
   const href = a?.getAttribute('href') ?? '';
+  leaving = main.value?.querySelector('h1') ?? null;
   linkClicked =
     !!a &&
     !href.startsWith('//') &&
@@ -86,15 +88,25 @@ function onPopState() {
   linkClicked = false;
 }
 
-// Focus the new view's h1 once it is mounted and can take focus: the keyed
-// view has been replaced, the drawer has closed and main is no longer inert.
-// A focus() call before that is dropped by the browser, so check that it held
-// and try again on the next frame, a few times at most.
-async function focusHeading() {
+// Focus the new view's h1 once it is mounted and can take focus. A focus()
+// call on an element inside an inert main is silently dropped by the browser,
+// and main stays inert until the drawer's render has run, which can be after
+// the route's. So check that the focus held and retry on the next frame, a few
+// times at most. The h1 of the view being left is skipped: it can pass every
+// check just before the keyed view replaces it (from the second frame on it may
+// be the same element, for a route change that keeps the view). A newer call (token) stops an
+// older loop, and so does focus the user moved to something that is not the
+// page start, a link or the drawer.
+let focusRun = 0;
+async function focusHeading(previous: Element | null) {
+  const run = ++focusRun;
   await nextTick();
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (let attempt = 0; attempt < 10 && run === focusRun; attempt++) {
+    const active = document.activeElement;
+    const chosen = active && active !== document.body && !active.closest('a[href]') && !drawer.value?.contains(active);
+    if (chosen) return;
     const h1 = main.value?.querySelector('h1');
-    if (h1 && !open.value && !h1.closest('[inert]')) {
+    if (h1 && (h1 !== previous || attempt > 0) && h1.isConnected && !open.value && !h1.closest('[inert]')) {
       h1.tabIndex = -1;
       h1.focus();
       if (document.activeElement === h1) return;
@@ -120,7 +132,7 @@ onMounted(() => {
   removeAfterEach = router.afterEach(() => {
     const requested = linkClicked;
     linkClicked = false;
-    if (requested) void focusHeading();
+    if (requested) void focusHeading(leaving);
   });
 });
 
