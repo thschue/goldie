@@ -25,6 +25,9 @@ const streamBuffer = 64
 // server, or not a goldie server.
 var errNoLiveMarker = errors.New("the server's activity stream sent no live marker")
 
+// ErrNoLiveMarker is errNoLiveMarker, for a caller that tells why a stream failed.
+var ErrNoLiveMarker = errNoLiveMarker
+
 // errNotStreamable is StreamActivity on a client NewAPIClient did not build.
 var errNotStreamable = errors.New("the activity stream needs a client built by NewAPIClient")
 

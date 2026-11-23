@@ -369,7 +369,8 @@ paths:
         its own events only, and checks the operator role itself. A peer is
         down when its stream ends or falls silent, or sends no `live` marker.
         An event that reached the merge after its reorder window carries
-        `late: true`, and `dropped` counts the merge's own losses.
+        `late: true`, and `dropped` counts the merge's own losses. At most 16
+        peers are merged; the rest are ignored.
 
         Every event is one SSE event whose `data` is one line of JSON, an
         `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -403,8 +404,9 @@ paths:
         "200":
           description: |
             The event stream, not an audit log. Sent with
-            `Cache-Control: no-store`; the headers are sent at once, before the
-            first event.
+            `Cache-Control: no-store`; the headers are sent before the first
+            event, at once, except with `replicas=all`, which first waits up to
+            a few seconds for its peers.
           content:
             text/event-stream:
               schema:

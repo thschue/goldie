@@ -562,7 +562,8 @@ type ClientInterface interface {
 	// its own events only, and checks the operator role itself. A peer is
 	// down when its stream ends or falls silent, or sends no `live` marker.
 	// An event that reached the merge after its reorder window carries
-	// `late: true`, and `dropped` counts the merge's own losses.
+	// `late: true`, and `dropped` counts the merge's own losses. At most 16
+	// peers are merged; the rest are ignored.
 	//
 	// Every event is one SSE event whose `data` is one line of JSON, an
 	// `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -682,7 +683,8 @@ type ClientInterface interface {
 // its own events only, and checks the operator role itself. A peer is
 // down when its stream ends or falls silent, or sends no `live` marker.
 // An event that reached the merge after its reorder window carries
-// `late: true`, and `dropped` counts the merge's own losses.
+// `late: true`, and `dropped` counts the merge's own losses. At most 16
+// peers are merged; the rest are ignored.
 //
 // Every event is one SSE event whose `data` is one line of JSON, an
 // `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -1268,7 +1270,8 @@ type ClientWithResponsesInterface interface {
 	// its own events only, and checks the operator role itself. A peer is
 	// down when its stream ends or falls silent, or sends no `live` marker.
 	// An event that reached the merge after its reorder window carries
-	// `late: true`, and `dropped` counts the merge's own losses.
+	// `late: true`, and `dropped` counts the merge's own losses. At most 16
+	// peers are merged; the rest are ignored.
 	//
 	// Every event is one SSE event whose `data` is one line of JSON, an
 	// `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -2061,7 +2064,8 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // its own events only, and checks the operator role itself. A peer is
 // down when its stream ends or falls silent, or sends no `live` marker.
 // An event that reached the merge after its reorder window carries
-// `late: true`, and `dropped` counts the merge's own losses.
+// `late: true`, and `dropped` counts the merge's own losses. At most 16
+// peers are merged; the rest are ignored.
 //
 // Every event is one SSE event whose `data` is one line of JSON, an
 // `ActivityEvent`. Its `id` increases per server process (per replica)

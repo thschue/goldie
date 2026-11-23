@@ -159,10 +159,33 @@ type activityPeerFinder struct {
 	logger     *slog.Logger
 	name, port string
 	warn       sync.Once
+
+	// ttl, when above zero, shares one lookup between the callers within it:
+	// every reconnect of every merged stream asks for the peers, and each
+	// lookup is an A query and up to maxActivityPeers PTR queries.
+	ttl     time.Duration
+	mu      sync.Mutex
+	at      time.Time
+	cached  []activityPeer
+	cachedE error
 }
 
 // find resolves the peers; err is lookupActivityPeers'.
 func (f *activityPeerFinder) find(ctx context.Context) ([]activityPeer, error) {
+	if f.ttl <= 0 {
+		return f.lookup(ctx)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.at.IsZero() && time.Since(f.at) < f.ttl {
+		return f.cached, f.cachedE
+	}
+	f.cached, f.cachedE = f.lookup(ctx)
+	f.at = time.Now()
+	return f.cached, f.cachedE
+}
+
+func (f *activityPeerFinder) lookup(ctx context.Context) ([]activityPeer, error) {
 	peers, skipped, err := lookupActivityPeers(ctx, f.resolver, f.name, f.port)
 	if skipped > 0 {
 		f.warn.Do(func() {

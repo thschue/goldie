@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +35,8 @@ const (
 
 // Peer is another replica: Name is all a client ever sees of it. Open opens
 // the peer's own stream (never its merged one) with the caller's token; live
-// closes when that stream ends or falls silent. Its error names no address.
+// closes when that stream ends or falls silent. Its error names no address;
+// when it has a DownReason() string, that class is logged with the peer's name.
 type Peer struct {
 	Name string
 	Open func(ctx context.Context, token string) (history []contract.ActivityEvent, live <-chan contract.ActivityEvent, err error)
@@ -40,10 +44,15 @@ type Peer struct {
 
 // Federation is what a Server needs to serve ?replicas=all. Resolve runs on
 // every federated request and every reconnect, with no input of the request;
-// its error is never shown. Window is the Merger's reorder window.
+// its error is never shown. Window is the Merger's reorder window. Clock is
+// the only source of time of the reconnects and the settle (nil: real time).
+// Logger, when set, gets why a peer is down: its name and a reason class,
+// never an address.
 type Federation struct {
 	Resolve func(ctx context.Context) ([]Peer, error)
 	Window  time.Duration
+	Clock   MergeClock
+	Logger  *slog.Logger
 }
 
 // FederateActivity makes the Server merge the peers' streams for
@@ -111,13 +120,18 @@ func (s *Server) federatedStream(ctx context.Context, token string) (contract.Ge
 			keepalive: s.keepalive, done: s.streamsDone}, nil
 	}
 	life, stop := context.WithCancel(ctx)
-	f := &federation{life: life, token: token, merger: NewMerger(MergeConfig{Window: s.fed.Window}), peers: peers, local: local, resolve: s.fed.Resolve}
+	clock := s.fed.Clock
+	if clock == nil {
+		clock = realMergeClock{}
+	}
+	f := &federation{life: life, token: token, merger: NewMerger(MergeConfig{Window: s.fed.Window, Clock: clock}), peers: peers,
+		local: local, resolve: s.fed.Resolve, clock: clock, log: s.fed.Logger}
 	inputs := append([]MergeInput{{Name: local, History: history, Live: live}}, f.openAll()...)
 	merged, out := f.merger.Start(life, inputs...)
 	for _, p := range peers {
 		go f.supervise(p.Name, f.conns[p.Name])
 	}
-	sleep(ctx, peerSettle) // a peer that breaks as it opens is down before the history, not after it
+	sleep(ctx, clock, peerSettle) // a peer that breaks as it opens is down before the history, not after it
 	st := &federatedStream{merger: f.merger, out: out, merged: merged}
 	st.ctx, st.keepalive, st.done = ctx, s.keepalive, s.streamsDone
 	st.cancel = func() { stop(); cancel(); release() }
@@ -138,6 +152,13 @@ func (s *Server) federatedStream(ctx context.Context, token string) (contract.Ge
 // never this replica. A failed resolution is no peers and shows a client
 // nothing.
 func usablePeers(ctx context.Context, resolve func(context.Context) ([]Peer, error), local string) []Peer {
+	peers := resolvePeers(ctx, resolve, local)
+	return peers[:min(len(peers), MaxFederatedPeers)]
+}
+
+// resolvePeers is usablePeers before the cap: a down peer past the cap in DNS
+// order is still found by name when it is reopened.
+func resolvePeers(ctx context.Context, resolve func(context.Context) ([]Peer, error), local string) []Peer {
 	ctx, cancel := context.WithTimeout(ctx, resolveTimeout)
 	defer cancel()
 	all, err := resolve(ctx)
@@ -148,9 +169,6 @@ func usablePeers(ctx context.Context, resolve func(context.Context) ([]Peer, err
 	for _, p := range all {
 		if p.Name == "" || p.Name == local || p.Open == nil || slices.ContainsFunc(peers, func(q Peer) bool { return q.Name == p.Name }) {
 			continue
-		}
-		if len(peers) == MaxFederatedPeers {
-			break
 		}
 		peers = append(peers, p)
 	}
@@ -166,7 +184,23 @@ type federation struct {
 	peers   []Peer
 	local   string
 	resolve func(context.Context) ([]Peer, error)
+	clock   MergeClock
+	log     *slog.Logger
 	conns   map[string]*peerConn // the first connections, by peer name
+}
+
+// down logs that a peer is down: its name and a reason class, never an
+// address or an error text. Warn the first time, Debug on each retry (which
+// the backoff rates).
+func (f *federation) down(name, reason string, first bool) {
+	if f.log == nil {
+		return
+	}
+	level := slog.LevelDebug
+	if first {
+		level = slog.LevelWarn
+	}
+	f.log.Log(context.Background(), level, "activity peer is down", "peer", name, "reason", reason)
 }
 
 // peerConn is one open peer stream, relayed so its end is seen.
@@ -187,7 +221,7 @@ func (f *federation) openAll() []MergeInput {
 		var ctx context.Context
 		ctx, cancels[i] = context.WithCancel(f.life)
 		done[i] = make(chan struct{})
-		go func() { defer close(done[i]); conns[i] = f.open(ctx, cancels[i], p) }()
+		go func() { defer close(done[i]); conns[i] = f.open(ctx, cancels[i], p, true) }()
 	}
 	wait, stop := context.WithTimeout(f.life, peerOpenWait)
 	defer stop()
@@ -211,13 +245,19 @@ func (f *federation) openAll() []MergeInput {
 }
 
 // open opens p's stream under ctx, nil when it cannot be opened.
-func (f *federation) open(ctx context.Context, cancel context.CancelFunc, p Peer) *peerConn {
+func (f *federation) open(ctx context.Context, cancel context.CancelFunc, p Peer, first bool) *peerConn {
 	history, live, err := p.Open(ctx, f.token)
 	if err != nil {
+		reason := "open_failed"
+		var r interface{ DownReason() string }
+		if errors.As(err, &r) {
+			reason = r.DownReason()
+		}
+		f.down(p.Name, reason, first)
 		cancel()
 		return nil
 	}
-	c := &peerConn{live: make(chan Event, ActivitySubscriberBuffer), done: make(chan struct{}), at: time.Now()}
+	c := &peerConn{live: make(chan Event, ActivitySubscriberBuffer), done: make(chan struct{}), at: f.clock.Now()}
 	for _, e := range history {
 		c.history = append(c.history, peerEvent(e))
 	}
@@ -248,12 +288,13 @@ func (f *federation) supervise(name string, conn *peerConn) {
 			case <-f.life.Done():
 				return
 			}
-			if time.Since(conn.at) >= reconnectStable {
+			f.down(name, "stream_ended", true)
+			if f.clock.Now().Sub(conn.at) >= reconnectStable {
 				backoff = reconnectMin
 			}
 		}
 		for conn = nil; conn == nil; conn = f.reopen(name) {
-			if !sleep(f.life, backoff) {
+			if !sleep(f.life, f.clock, backoff) {
 				return
 			}
 			backoff = min(2*backoff, reconnectMax)
@@ -264,13 +305,13 @@ func (f *federation) supervise(name string, conn *peerConn) {
 // reopen resolves the peers again, finds name among them and opens its
 // stream; nil when that fails or the Merger does not take it.
 func (f *federation) reopen(name string) *peerConn {
-	peers := usablePeers(f.life, f.resolve, f.local)
+	peers := resolvePeers(f.life, f.resolve, f.local)
 	i := slices.IndexFunc(peers, func(p Peer) bool { return p.Name == name })
 	if i < 0 {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(f.life)
-	c := f.open(ctx, cancel, peers[i])
+	c := f.open(ctx, cancel, peers[i], false)
 	if c != nil && !f.merger.Add(MergeInput{Name: name, History: c.history, Live: c.live}) {
 		cancel()
 		<-c.done
@@ -279,22 +320,28 @@ func (f *federation) reopen(name string) *peerConn {
 	return c
 }
 
-// peerEvent is a peer's ActivityEvent as an Event, untrusted: the Merger
-// checks its Replica against the peer's name and clears Late.
+// peerEvent is a peer's ActivityEvent as an Event, untrusted: its text fields
+// are cut to maxQueryBytes and copied, so a cut substring does not keep the
+// peer's whole (up to 16 MiB) field alive; the Merger checks its Replica
+// against the peer's name and clears Late.
 func peerEvent(e contract.ActivityEvent) Event {
-	return Event{
+	b := boundEvent(Event{
 		ID: uint64(max(e.Id, 0)), Replica: e.Replica, Time: e.Time, Kind: EventKind(e.Kind),
 		Query: e.Query, Token: e.Token, ClientVersion: e.ClientVersion, Project: e.Project,
 		TraceID: e.TraceId, Miss: e.Miss,
-	}
+	})
+	b.Kind = EventKind(strings.Clone(string(b.Kind)))
+	b.Query, b.Token, b.ClientVersion = strings.Clone(b.Query), strings.Clone(b.Token), strings.Clone(b.ClientVersion)
+	b.Project, b.TraceID = strings.Clone(b.Project), strings.Clone(b.TraceID)
+	return b
 }
 
 // sleep waits d, and reports false when ctx ended first.
-func sleep(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
-	defer t.Stop()
+func sleep(ctx context.Context, clock MergeClock, d time.Duration) bool {
+	fired, stop := clock.NewTimer(d)
+	defer stop()
 	select {
-	case <-t.C:
+	case <-fired:
 		return true
 	case <-ctx.Done():
 		return false

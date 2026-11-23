@@ -36,7 +36,8 @@ the merged history. Each peer is asked with the caller's own token for
 its own events only, and checks the operator role itself. A peer is
 down when its stream ends or falls silent, or sends no `live` marker.
 An event that reached the merge after its reorder window carries
-`late: true`, and `dropped` counts the merge's own losses.
+`late: true`, and `dropped` counts the merge's own losses. At most 16
+peers are merged; the rest are ignored.
 
 Every event is one SSE event whose `data` is one line of JSON, an
 `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -71,7 +72,7 @@ Operation ID: `getActivity`
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | The event stream, not an audit log. Sent with 'Cache-Control: no-store'; the headers are sent at once, before the first event. | `text/event-stream` (`string`) |
+| `200` | The event stream, not an audit log. Sent with 'Cache-Control: no-store'; the headers are sent before the first event, at once, except with 'replicas=all', which first waits up to a few seconds for its peers. | `text/event-stream` (`string`) |
 | `400` | 'replicas' is not 'all', or is repeated. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or not a configured token. | `application/json` (`ErrorEnvelope`) |
 | `403` | The token is valid but its role is not operator. | `application/json` (`ErrorEnvelope`) |
