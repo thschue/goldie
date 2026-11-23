@@ -1742,6 +1742,13 @@ components:
           description: What the loop is for, from its frontmatter. It comes from a Source and is untrusted.
           examples:
             - Keep the nightly build green
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `Article.scope` says it: `global`,
+            `host/org/repo` or `local`. A missing value means unknown.
+          examples:
+            - global
         interval:
           type: string
           description: |

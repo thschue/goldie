@@ -835,6 +835,12 @@ export interface components {
              */
             description: string;
             /**
+             * @description Where the winning copy lives, as `Article.scope` says it: `global`,
+             *     `host/org/repo` or `local`. A missing value means unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
              * @description How often the loop runs, a positive duration such as `30m`. Absent for a
              *     dynamic loop.
              * @example 30m

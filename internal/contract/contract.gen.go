@@ -494,6 +494,13 @@ type Loop struct {
 	// Examples: nightly
 	Name string `json:"name"`
 
+	// Scope Where the winning copy lives, as `Article.scope` says it: `global`,
+	// `host/org/repo` or `local`. A missing value means unknown.
+	//
+	//
+	// Examples: global
+	Scope *string `json:"scope,omitempty"`
+
 	// Stop When the loop ends. It comes from a Source and is untrusted.
 	//
 	// Examples: when CI is green

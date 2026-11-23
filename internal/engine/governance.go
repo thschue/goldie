@@ -41,7 +41,7 @@ func (a Article) key() itemKey { return keyOf(a.Kind(), a.ID) }
 
 // knownKinds is the one table of Kinds an Item reference may name (ADR 0021).
 // A Kind joins it with its loader; until then a reference to it is rejected.
-var knownKinds = []string{KindArticle, KindAgent}
+var knownKinds = []string{KindArticle, KindAgent, KindLoop}
 
 func isKnownKind(kind string) bool {
 	for _, k := range knownKinds {

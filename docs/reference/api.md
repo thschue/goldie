@@ -725,6 +725,7 @@ One loop definition with its resolved closure.
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
 | `interval` | `string` | no | How often the loop runs, a positive duration such as '30m'. Absent for a dynamic loop. |
 | `name` | `string` | yes | The loop's name, its file name without '.md'. |
+| `scope` | `string` | no | Where the winning copy lives, as 'Article.scope' says it: 'global', 'host/org/repo' or 'local'. A missing value means unknown. |
 | `stop` | `string` | yes | When the loop ends. It comes from a Source and is untrusted. |
 
 ### `LoopClosure`

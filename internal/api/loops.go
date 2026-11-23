@@ -23,7 +23,7 @@ func loopAnswer(l engine.Loop, withContent bool) contract.Loop {
 		return out
 	}
 	ans := contract.Loop{
-		Name: l.Name, Description: l.Description, Dynamic: l.Dynamic, Stop: l.Stop, Digest: l.Digest,
+		Name: l.Name, Description: l.Description, Dynamic: l.Dynamic, Stop: l.Stop, Digest: l.Digest, Scope: &l.Scope,
 		Closure: contract.LoopClosure{Agents: refs(l.Agents), Skills: refs(l.Skills)},
 	}
 	if l.Interval != "" {
