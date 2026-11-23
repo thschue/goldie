@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/thschue/goldie/internal/api"
@@ -44,11 +47,12 @@ func newPublicUI(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s: not a URL", platform.EnvUpstreamAddr)}
 	}
-	// life ends with the server (Public.Start), which cancels the requests
-	// still open so a held stream does not stall the drain (PC-08).
+	// life ends with the server (Public.Start), which cancels the held streams
+	// among the requests, so they do not stall the drain (PC-08).
 	life, endStreams := context.WithCancel(context.Background())
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = upstreamHeaderTimeout
+	failures := &failureLog{}
 	proxy := &httputil.ReverseProxy{
 		// Rewrite sees the request without Forwarded or X-Forwarded-*, and
 		// adds none: SetXForwarded is deliberately not called.
@@ -58,8 +62,20 @@ func newPublicUI(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 		},
 		FlushInterval: -1,
 		Transport:     transport,
-		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
-			// The error holds the upstream's address: it is not echoed.
+		ModifyResponse: func(resp *http.Response) error {
+			// Only a stream (the activity feed) is held open past the first
+			// stop signal; any other request finishes during the drain.
+			if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+				if hold, ok := resp.Request.Context().Value(streamHoldKey{}).(func()); ok {
+					hold()
+				}
+			}
+			return nil
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// The error holds the upstream's address: it reaches the
+			// operator's log and never the client.
+			failures.log(logger, r, err)
 			api.WriteError(w, http.StatusBadGateway, "upstream_unavailable", "the upstream is not reachable",
 				"Retry shortly; if it persists, check that the server behind GOLDIE_UPSTREAM_ADDR is running.")
 		},
@@ -67,10 +83,23 @@ func newPublicUI(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	mux := http.NewServeMux()
 	m := &publicMux{mux: mux, endStreams: endStreams}
 	toUpstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// An encoded dot segment (/api/%2e%2e/x) would be resolved by the
+		// upstream or a proxy in front of it, outside the allowlist: answer
+		// 404. A trailing slash is a subtree and an encoded slash inside a
+		// segment (a Project ID) stays.
+		if !cleanPath(r.URL.Path) {
+			api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint", "A path with a . or .. segment is not served.")
+			return
+		}
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
-		defer context.AfterFunc(life, cancel)()
+		var release func() bool
+		hold := func() { release = context.AfterFunc(life, cancel) }
+		ctx = context.WithValue(ctx, streamHoldKey{}, hold)
 		proxy.ServeHTTP(w, r.WithContext(ctx))
+		if release != nil {
+			release()
+		}
 	})
 	for _, p := range uiUpstreamPaths {
 		mux.Handle(p, toUpstream)
@@ -114,4 +143,51 @@ func upstreamProbe(target *url.URL) func(context.Context) error {
 		}
 		return nil
 	}
+}
+
+// streamHoldKey carries, in a proxied request's context, the func that ties
+// the request to the server's life. ModifyResponse calls it for a stream.
+type streamHoldKey struct{}
+
+// cleanPath reports whether p holds no "." or ".." segment, which path.Clean
+// would resolve. A trailing slash is allowed.
+func cleanPath(p string) bool {
+	clean := path.Clean(p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return clean == p
+}
+
+// failureInterval is the least time between two logged upstream failures: the
+// UI polls, so an outage would otherwise fill the log.
+const failureInterval = 30 * time.Second
+
+// failureLog logs a failed proxied request as one warn line per interval.
+type failureLog struct {
+	mu         sync.Mutex
+	last       time.Time
+	suppressed int
+}
+
+func (f *failureLog) log(logger *slog.Logger, r *http.Request, err error) {
+	if r.Context().Err() != nil {
+		return // the client left; the upstream did nothing wrong
+	}
+	f.mu.Lock()
+	if !f.last.IsZero() && time.Since(f.last) < failureInterval {
+		f.suppressed++
+		f.mu.Unlock()
+		return
+	}
+	suppressed := f.suppressed
+	f.last, f.suppressed = time.Now(), 0
+	f.mu.Unlock()
+	class := "unreachable"
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		class = "timeout"
+	}
+	// The operator's own log may hold the address.
+	logger.Warn("upstream request failed", "class", class, "error", err.Error(), "suppressed", suppressed)
 }

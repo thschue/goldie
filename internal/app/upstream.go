@@ -89,29 +89,10 @@ func upstreamBase(up Upstream, goldieDir string) (engine.Source, error) {
 	})}, nil
 }
 
-// checkUpstreamAddr requires an http(s) URL with a host and no credentials,
-// and https unless the host is loopback, before any connection is made. Errors
-// name env, the setting that holds addr, and never addr.
+// checkUpstreamAddr applies platform.CheckServerURL, the one rule for a
+// server address, before any connection is made. Errors name env and never addr.
 func checkUpstreamAddr(env, addr string) error {
-	if err := contract.CheckBaseURL(addr); err != nil {
-		return fmt.Errorf("%s: %w", env, err)
-	}
-	u, err := url.Parse(addr)
-	if err != nil || u.User != nil {
-		return fmt.Errorf("%s must not hold credentials", env)
-	}
-	if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
-		return fmt.Errorf("%s: the upstream must use https unless its host is loopback", env)
-	}
-	return nil
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return platform.CheckServerURL(env, addr)
 }
 
 // origin is scheme://host:port of an http(s) URL, lower-cased, with the

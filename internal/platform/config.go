@@ -344,10 +344,10 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 	case cfg.Mode != ModeUI:
 		return nil
 	case addr == "":
-		errs = append(errs, fmt.Errorf("%s: %s=%s needs the address of the server to proxy to", EnvUpstreamAddr, EnvMode, ModeUI))
+		errs = append(errs, fmt.Errorf("%s: %s=%s needs it: set it to the base URL of a goldie server, for example http://127.0.0.1:8080", EnvUpstreamAddr, EnvMode, ModeUI))
 	default:
-		if u, err := url.Parse(addr); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
-			errs = append(errs, fmt.Errorf("%s: must be an http or https URL with a host and no credentials", EnvUpstreamAddr))
+		if err := CheckServerURL(EnvUpstreamAddr, addr); err != nil {
+			errs = append(errs, err)
 		} else {
 			cfg.UpstreamAddr = addr
 		}
@@ -358,6 +358,33 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 		}
 	}
 	return errs
+}
+
+// CheckServerURL is the one rule for the address of another goldie server (the
+// upstream of GOLDIE_MODE=ui, and GOLDIE_ADDR as an upstream): an http or https
+// URL with a host and no credentials, and https unless the host is loopback,
+// so a token or a session never crosses a network in clear. Errors name env,
+// the variable that holds addr, and never addr.
+func CheckServerURL(env, addr string) error {
+	u, err := url.Parse(addr)
+	switch {
+	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
+		return fmt.Errorf("%s: must be an http or https URL with a host", env)
+	case u.User != nil:
+		return fmt.Errorf("%s must not hold credentials", env)
+	case u.Scheme != "https" && !IsLoopbackHost(u.Hostname()):
+		return fmt.Errorf("%s: the upstream must use https unless its host is loopback", env)
+	}
+	return nil
+}
+
+// IsLoopbackHost reports whether host is localhost or a loopback IP.
+func IsLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // CheckAPITokenPairing refuses GOLDIE_API_TOKEN and GOLDIE_API_TOKENS set
