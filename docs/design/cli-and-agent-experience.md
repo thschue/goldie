@@ -97,5 +97,5 @@ Missing evidence for a changed surface is blocking, as screenshots are for the U
 
 - Text logs when stderr is a terminal, JSON otherwise (touches the platform contract's logging
   clause).
-- Built-in example content for `goldie server --dev` in an empty directory: decided and built
-  (#451); the binary embeds `examples/knowledge` and serves it only when the directory has no content.
+- Built-in example content for `goldie server --dev` in an empty directory, since a downloaded
+  binary has no `examples/knowledge`.
