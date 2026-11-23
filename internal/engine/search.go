@@ -41,7 +41,9 @@ type Hit struct {
 // ReadOptions widens what a read returns. The zero value is the default view:
 // drafts are left out (CONTEXT: Status).
 type ReadOptions struct {
-	// Drafts includes draft Items. A draft then shadows like any other Item.
+	// Drafts includes draft Items. A draft then shadows like any other Item,
+	// except that a Project draft never shadows an enforced global Item
+	// (#359).
 	Drafts bool
 }
 
@@ -69,7 +71,8 @@ func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
 // Project hits sort before global ones, then by ID. An empty or unregistered
 // Project searches the global articles only. Draft Items are left out unless
 // opts asks for them; a draft left out never shadows, so the published Item
-// with the same identity answers. Deprecated Items are served and shadow. The
+// with the same identity answers. Deprecated Items are served and shadow. No
+// Project Item shadows an enforced global one, drafts asked for or not. The
 // global Items the Project suppresses are left out, drafts asked for or not.
 func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	o := readOpts(opts)
@@ -81,7 +84,7 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 		var layer []itemKey
 		for _, a := range list {
 			key := a.key()
-			if taken[key] || !o.visible(a) || (a.Scope == ScopeGlobal && hidden[key]) {
+			if taken[key] || !o.visible(a) || (a.Scope == ScopeGlobal && hidden[key]) || (a.Scope != ScopeGlobal && s.enforces(key)) {
 				continue
 			}
 			layer = append(layer, key)

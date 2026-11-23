@@ -65,6 +65,39 @@ func scopeHint(snap *engine.Snapshot, project checkedProject) (proj string, hint
 	return "", &h
 }
 
+// forbiddenDrafts is the 403 envelope for drafts asked for by a token that is
+// not an operator. It echoes nothing of the request.
+var forbiddenDrafts = envelope("forbidden", "the API token's role does not allow drafts",
+	"Leave out drafts to read the published Items; asking for drafts=true needs a token with the operator role.")
+
+// readOptions is the engine view the drafts parameter asks for, and false when
+// the caller's Role may not ask for it: drafts=true needs an operator token,
+// and a request without a Role (no Require guard) gets no drafts. It needs no
+// Snapshot, so it runs before the not-ready check: a reader's drafts=true can
+// never succeed (ADR 0014).
+func readOptions(ctx context.Context, drafts *bool) (engine.ReadOptions, bool) {
+	if drafts == nil || !*drafts {
+		return engine.ReadOptions{}, true
+	}
+	if role, ok := TokenRole(ctx); !ok || role < RoleOperator {
+		return engine.ReadOptions{}, false
+	}
+	return engine.ReadOptions{Drafts: true}, true
+}
+
+// lifecycle is an Item's status and replaced_by as the contract sends them: a
+// published Item carries neither, so its answer stays what it was (ADR 0011),
+// and replaced_by is absent when it is not set.
+func lifecycle(status, replacedBy string) (*string, *string) {
+	if status == "" || status == engine.StatusPublished {
+		return nil, nil
+	}
+	if replacedBy == "" {
+		return &status, nil
+	}
+	return &status, &replacedBy
+}
+
 // searchPattern is the pattern the generated router registers the search
 // operation under; the mux reports it as the request's Pattern.
 const searchPattern = http.MethodGet + " /api/v1/search"
@@ -121,9 +154,13 @@ func (s *Server) Register(m contract.ServeMux) {
 }
 
 // SearchArticles answers GET /api/v1/search.
-func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
-	// Input that can never succeed is a 400 before and after the first load,
-	// so a caller is not told to retry it.
+func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
+	// A request that can never succeed is a 403 or 400 before and after the
+	// first load, so a caller is not told to retry it.
+	opts, allowed := readOptions(ctx, req.Params.Drafts)
+	if !allowed {
+		return contract.SearchArticles403JSONResponse(forbiddenDrafts), nil
+	}
 	q := req.Params.Q
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
@@ -138,15 +175,18 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 	}
 	proj, hint := scopeHint(snap, project)
 	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
-	for _, h := range snap.SearchIn(proj, q) {
+	for _, h := range snap.SearchIn(proj, q, opts) {
+		status, replacedBy := lifecycle(h.Status, h.ReplacedBy)
 		res.Results = append(res.Results, contract.SearchHit{
-			Id:       h.ID,
-			Name:     h.Name,
-			Kind:     h.Kind,
-			Scope:    h.Scope,
-			Keywords: list(h.Keywords),
-			Score:    h.Score,
-			Matched:  list(h.Matched),
+			Id:         h.ID,
+			Name:       h.Name,
+			Kind:       h.Kind,
+			Scope:      h.Scope,
+			Keywords:   list(h.Keywords),
+			Score:      h.Score,
+			Matched:    list(h.Matched),
+			Status:     status,
+			ReplacedBy: replacedBy,
 		})
 	}
 	return res, nil
@@ -155,7 +195,11 @@ func (s *Server) SearchArticles(_ context.Context, req contract.SearchArticlesRe
 // GetArticle answers GET /api/v1/articles/{id}. The router hands over the id
 // decoded, so a nested id sent as one %2F-encoded segment keeps its "/"
 // (ADR 0016).
-func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObject) (contract.GetArticleResponseObject, error) {
+func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestObject) (contract.GetArticleResponseObject, error) {
+	opts, allowed := readOptions(ctx, req.Params.Drafts)
+	if !allowed {
+		return contract.GetArticle403JSONResponse(forbiddenDrafts), nil
+	}
 	project, ok := validProject(req.Params.Project)
 	if !ok {
 		return contract.GetArticle400JSONResponse(badProject), nil
@@ -165,17 +209,20 @@ func (s *Server) GetArticle(_ context.Context, req contract.GetArticleRequestObj
 		return contract.GetArticle503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
 	}
 	proj, hint := scopeHint(snap, project)
-	a, ok := snap.ArticleIn(proj, req.Id)
+	a, ok := snap.ArticleIn(proj, req.Id, opts)
 	if !ok {
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			"Search for the article with the search operation, then use an id from its results.")), nil
 	}
+	status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 	return contract.GetArticle200JSONResponse{
-		Id:       a.ID,
-		Name:     a.Name,
-		Keywords: list(a.Keywords),
-		Content:  a.Content,
-		Hint:     hint,
+		Id:         a.ID,
+		Name:       a.Name,
+		Keywords:   list(a.Keywords),
+		Content:    a.Content,
+		Hint:       hint,
+		Status:     status,
+		ReplacedBy: replacedBy,
 	}, nil
 }
 

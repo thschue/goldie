@@ -212,7 +212,11 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	if err != nil {
 		return failure(wordError(err, t.local))
 	}
-	return success(fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
+	notice := contract.DeprecationNotice(*a)
+	if notice != "" {
+		notice += "\n"
+	}
+	return success(notice + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
 		strings.TrimRight(contract.CleanText(a.Content), "\n")) + hintLine(a.Hint))
 }

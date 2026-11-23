@@ -49,6 +49,7 @@ type Env struct {
 	Lookup   platform.Lookup              // environment variables
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
 	Out      io.Writer                    // results
+	Err      io.Writer                    // warnings, such as a deprecated article's; nil discards them
 	Client   *http.Client                 // nil: contract's client, with a timeout
 	// StartLocal starts an embedded server over the content at dir and returns
 	// its address and token. stop ends it. cmd injects app.StartLocal; nil
@@ -58,7 +59,7 @@ type Env struct {
 
 // DefaultEnv is the process environment.
 func DefaultEnv(out io.Writer) Env {
-	return Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out}
+	return Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out, Err: os.Stderr}
 }
 
 // settings are the flags and variables common to every command.

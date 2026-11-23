@@ -104,6 +104,11 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return wordError(err, c.local)
 	}
+	// The warning goes to stderr, so stdout, --json included, is the article
+	// as it would be without lifecycle fields.
+	if notice := contract.DeprecationNotice(*a); notice != "" && c.env.Err != nil {
+		_, _ = fmt.Fprintln(c.env.Err, notice)
+	}
 	if c.s.json {
 		return c.printJSON(a)
 	}

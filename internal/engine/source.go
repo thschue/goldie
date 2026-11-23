@@ -418,13 +418,14 @@ func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
 // ArticleIn resolves an article for a Project ("host/org/repo", matched
 // case-insensitively): the Project's article wins over the global one with the
 // same ID. An empty or unregistered Project resolves globally. Drafts are left
-// out unless opts asks for them, and a draft left out never shadows. A global
-// article the Project suppresses is not found, drafts asked for or not.
+// out unless opts asks for them, and a draft left out never shadows. No
+// Project article shadows an enforced global one, drafts asked for or not. A
+// global article the Project suppresses is not found, drafts asked for or not.
 func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
 	o := readOpts(opts)
 	key := keyOf(KindArticle, id)
 	p, _ := s.lookupProject(proj)
-	if a := p.index[key]; a != nil && o.visible(*a) {
+	if a := p.index[key]; a != nil && o.visible(*a) && !s.enforces(key) {
 		return cloneArticle(*a), true
 	}
 	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {

@@ -132,6 +132,24 @@ type Article struct {
 	//
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
+
+	// ReplacedBy The reference to the Item that replaces this article, as written
+	// in its frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is
+	// set. It comes from a Source and is untrusted: clean it before
+	// printing it.
+	//
+	//
+	// Examples: article:platform/deploy-v2
+	ReplacedBy *string `json:"replaced_by,omitempty"`
+
+	// Status The article's lifecycle when it is not published: `deprecated`
+	// (still served; read `replaced_by` instead when present) or `draft`
+	// (only with `drafts=true`, for operators). Absent for a published
+	// article. Clients ignore values they do not know.
+	//
+	//
+	// Examples: deprecated
+	Status *string `json:"status,omitempty"`
 }
 
 // Error One error. It never contains addresses, paths or stack traces.
@@ -212,6 +230,14 @@ type SearchHit struct {
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
 
+	// ReplacedBy The reference to the Item that replaces this one, as written in its
+	// frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is set.
+	// It comes from a Source and is untrusted.
+	//
+	//
+	// Examples: article:platform/deploy-v2
+	ReplacedBy *string `json:"replaced_by,omitempty"`
+
 	// Scope Where the Item applies, such as `global` (ADR 0005).
 	//
 	// Examples: global
@@ -221,6 +247,15 @@ type SearchHit struct {
 	//
 	// Examples: 6
 	Score int `json:"score"`
+
+	// Status The Item's lifecycle when it is not published: `deprecated` (still
+	// served; prefer `replaced_by` when present) or `draft` (only with
+	// `drafts=true`, for operators). Absent for a published Item. Clients
+	// ignore values they do not know.
+	//
+	//
+	// Examples: deprecated
+	Status *string `json:"status,omitempty"`
 }
 
 // SearchResults The result of a search.
@@ -264,6 +299,14 @@ type GetArticleParams struct {
 	// An unregistered Project answers the global article with a `hint`; a
 	// value that is not a `ProjectId` is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` finds draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *bool `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // SearchArticlesParams defines parameters for SearchArticles.
@@ -276,6 +319,14 @@ type SearchArticlesParams struct {
 	// that is not registered answers the global results with a `hint`; a
 	// value that is not a `ProjectId` is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *bool `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
@@ -633,6 +684,18 @@ func NewGetArticleRequest(server string, id string, params *GetArticleParams) (*
 
 		}
 
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -713,6 +776,18 @@ func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*htt
 		if params.Project != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -1017,6 +1092,8 @@ type GetArticleResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
@@ -1044,6 +1121,11 @@ func (r GetArticleResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r GetArticleResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetArticleResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
 }
 
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
@@ -1197,6 +1279,8 @@ type SearchArticlesResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -1222,6 +1306,11 @@ func (r SearchArticlesResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r SearchArticlesResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r SearchArticlesResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
 }
 
 // GetJSON426 returns the response for an HTTP 426 `application/json` response
@@ -1599,6 +1688,13 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 		}
 		response.JSON401 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -1760,6 +1856,13 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
 		var dest UpgradeRequired
@@ -1949,6 +2052,19 @@ func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetArticle(w, r, id, params)
 	}))
@@ -2005,6 +2121,19 @@ func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
 		}
 		return
 	}
@@ -2390,6 +2519,20 @@ func (response GetArticle401JSONResponse) VisitGetArticleResponse(w http.Respons
 	return err
 }
 
+type GetArticle403JSONResponse ErrorEnvelope
+
+func (response GetArticle403JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetArticle404JSONResponse ErrorEnvelope
 
 func (response GetArticle404JSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
@@ -2621,6 +2764,20 @@ func (response SearchArticles401JSONResponse) VisitSearchArticlesResponse(w http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchArticles403JSONResponse ErrorEnvelope
+
+func (response SearchArticles403JSONResponse) VisitSearchArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

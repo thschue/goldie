@@ -71,6 +71,7 @@ Operation ID: `getArticle`
 | `200` | The article. | `application/json` (`Article`) |
 | `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
+| `403` | The lookup asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
@@ -112,6 +113,7 @@ Operation ID: `searchArticles`
 | `200` | The matching articles, best first. | `application/json` (`SearchResults`) |
 | `400` | The search words are missing or longer than 1024 bytes, or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | The search asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -184,6 +186,8 @@ One article.
 | `id` | `string` | yes | The article id, its path under 'articles/' without '.md'. |
 | `keywords` | `array` | yes | The keywords from the article's frontmatter, lower case. |
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
+| `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Absent when none is set. It comes from a Source and is untrusted: clean it before printing it. |
+| `status` | `string` | no | The article's lifecycle when it is not published: 'deprecated' (still served; read 'replaced_by' instead when present) or 'draft' (only with 'drafts=true', for operators). Absent for a published article. Clients ignore values they do not know. |
 
 ### `Error`
 
@@ -240,8 +244,10 @@ One article that matched a search.
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
 | `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
 | `name` | `string` | yes | The display title from the frontmatter. |
+| `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Absent when none is set. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
 | `score` | `integer` | yes | The relevance score; higher is better. |
+| `status` | `string` | no | The Item's lifecycle when it is not published: 'deprecated' (still served; prefer 'replaced_by' when present) or 'draft' (only with 'drafts=true', for operators). Absent for a published Item. Clients ignore values they do not know. |
 
 ### `SearchResults`
 

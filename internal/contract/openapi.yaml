@@ -62,6 +62,18 @@ paths:
             value that is not a `ProjectId` is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
+        - name: drafts
+          in: query
+          required: false
+          description: |
+            `true` includes draft Items too, marked `status: draft`; for operator
+            tokens only, and a reader token asking for drafts is a 403. Without
+            it a draft is left out for every token and never shadows, so the
+            published Item answers. Even with drafts, a draft Project article
+            never shadows an enforced global Item (ADR 0021). MCP never asks
+            for drafts.
+          schema:
+            type: boolean
       responses:
         "200":
           description: The matching articles, best first.
@@ -77,6 +89,12 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: The bearer token is missing or wrong.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The search asked for drafts with a token whose role is not operator.
           content:
             application/json:
               schema:
@@ -124,6 +142,18 @@ paths:
             value that is not a `ProjectId` is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
+        - name: drafts
+          in: query
+          required: false
+          description: |
+            `true` finds draft Items too, marked `status: draft`; for operator
+            tokens only, and a reader token asking for drafts is a 403. Without
+            it a draft is left out for every token and never shadows, so the
+            published Item answers. Even with drafts, a draft Project article
+            never shadows an enforced global Item (ADR 0021). MCP never asks
+            for drafts.
+          schema:
+            type: boolean
       responses:
         "200":
           description: The article.
@@ -139,6 +169,12 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: No bearer token, or a wrong one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: The lookup asked for drafts with a token whose role is not operator.
           content:
             application/json:
               schema:
@@ -450,6 +486,24 @@ components:
           examples:
             - - kubernetes
               - name
+        status:
+          type: string
+          description: |
+            The Item's lifecycle when it is not published: `deprecated` (still
+            served; prefer `replaced_by` when present) or `draft` (only with
+            `drafts=true`, for operators). Absent for a published Item. Clients
+            ignore values they do not know.
+          examples:
+            - deprecated
+        replaced_by:
+          x-lint-ignore: camel-case-properties
+          type: string
+          description: |
+            The reference to the Item that replaces this one, as written in its
+            frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is set.
+            It comes from a Source and is untrusted.
+          examples:
+            - article:platform/deploy-v2
     Article:
       type: object
       description: One article.
@@ -490,6 +544,25 @@ components:
             article is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+        status:
+          type: string
+          description: |
+            The article's lifecycle when it is not published: `deprecated`
+            (still served; read `replaced_by` instead when present) or `draft`
+            (only with `drafts=true`, for operators). Absent for a published
+            article. Clients ignore values they do not know.
+          examples:
+            - deprecated
+        replaced_by:
+          x-lint-ignore: camel-case-properties
+          type: string
+          description: |
+            The reference to the Item that replaces this article, as written
+            in its frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is
+            set. It comes from a Source and is untrusted: clean it before
+            printing it.
+          examples:
+            - article:platform/deploy-v2
     ActivityEvent:
       type: object
       description: |
