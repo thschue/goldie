@@ -12,7 +12,8 @@
 # node name) that aren't parked: a stream lasts until its PR merges or closes.
 # attention counts those that need action now (stream_state in
 # scripts/lib/markers.jq: disarm, red, dirty, answered), renovate the
-# unreviewed Renovate PRs, and work what the tick can act on (0 ends it).
+# red or conflicted Renovate PRs not reviewed at their head (green ones merge
+# themselves), and work what the tick can act on (0 ends it).
 # For product, decisions counts PRs whose decision for the head has no
 # answer yet (label or not), buffer the claimable issues, and wip the issues
 # in progress. Read-only.
@@ -55,7 +56,7 @@ deliver)
 	streams=$(pr_count "$mine and stream_state(\$me) != \"parked\"")
 	attention=$(pr_count "$mine and (stream_state(\$me) | IN(\"disarm\", \"red\", \"dirty\", \"answered\"))")
 	active=$(pr_count "$mine and stream_state(\$me) == \"active\"")
-	renovate=$(pr_count '(.author.login | test("renovate"))
+	renovate=$(pr_count '(.author.login | test("renovate")) and (.mergeStateStatus == "DIRTY" or failing)
 		and (($m | latest("review") | .line // "" | attr("sha")) != .headRefOid)')
 	claimable=0
 	[ "$streams" -ge 2 ] || claimable=$frontier

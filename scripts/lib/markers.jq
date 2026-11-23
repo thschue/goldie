@@ -30,6 +30,11 @@ def answered($me):
       and ((.body | test("PM decision:"))
            or ((.body | sub("\\s+$"; "") | split("\n") | last) | test("goldie-loop:") | not)));
 
+# failing: a PR with a failed check on its head (needs .statusCheckRollup).
+def failing:
+  any(.statusCheckRollup[]?; (.conclusion // .state)
+    | IN("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"));
+
 # stream_state($me): what an open stream PR needs this tick (docs/agents/delivery-loop.md):
 #   parked    held for the maintainer or waiting on an answer: nothing to do
 #   answered  its decision got an answer: act on it
@@ -52,7 +57,6 @@ def stream_state($me):
       and .autoMergeRequest != null then "disarm"
     elif ($review | attr("reason")) == "clean" and ($review | attr("sha")) == .headRefOid then
       (if .mergeStateStatus == "DIRTY" then "dirty"
-       elif any(.statusCheckRollup[]?; (.conclusion // .state)
-         | IN("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED")) then "red"
+       elif failing then "red"
        else "waiting" end)
     else "active" end;

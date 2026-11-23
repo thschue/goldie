@@ -25,8 +25,9 @@
 #   - a breaking change to the API contract (ADR 0011), through
 #     `./run contract-compat`. $GATE_RUN names the `run` to use: callers pass
 #     main's copy, so a change can't loosen the check that judges it.
-# Version bumps of existing modules, new indirect requirements (CI enforces
-# `go mod tidy`) and go.sum churn are not gated.
+# Version bumps of existing modules (a new major version included), new
+# indirect requirements (CI enforces `go mod tidy`) and go.sum churn are not
+# gated.
 set -euf
 LC_ALL=C
 export LC_ALL
@@ -112,7 +113,13 @@ if changed go.mod; then
 	direct='(.Require // []) | map(select(.Indirect | not)) | .[].Path'
 	jq -r "$direct" "$tmp/old.json" >"$tmp/old.req" || die "jq failed on go.mod"
 	jq -r "$direct" "$tmp/new.json" >"$tmp/new.req" || die "jq failed on go.mod"
-	for m in $(new_lines "$tmp/old.req" "$tmp/new.req"); do gate "new direct Go dependency: $m"; done
+	# A new major version of a module already required (`/vN`, gopkg.in's
+	# `.vN`) is a version bump, not a new dependency.
+	stem() { sed -E 's#[/.]v[0-9]+$##' "$@"; }
+	stem "$tmp/old.req" | sort -u >"$tmp/old.stem"
+	for m in $(new_lines "$tmp/old.req" "$tmp/new.req"); do
+		printf '%s\n' "$m" | stem | grep -qxFf "$tmp/old.stem" || gate "new direct Go dependency: $m"
+	done
 	for k in Replace Exclude Retract GoDebug Tool Ignore; do
 		o=$(jq -cS ".$k // []" "$tmp/old.json")
 		n=$(jq -cS ".$k // []" "$tmp/new.json")
