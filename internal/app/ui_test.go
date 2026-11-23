@@ -30,7 +30,7 @@ import (
 const (
 	// uiCSP is the UI's Content-Security-Policy, character for character.
 	uiCSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
 
 	// uiNotBuiltMessage is the startup warning when the placeholder is served.
 	uiNotBuiltMessage = "ui not built: serving the placeholder page; run ./run ui"
@@ -493,5 +493,47 @@ func TestTheWarningDoesNotRepeatPerRequest(t *testing.T) {
 	}
 	if after := len(logs.lines()); after != before {
 		t.Errorf("serving the UI wrote %d log lines; the warning is for startup only", after-before)
+	}
+}
+
+// --- hardening headers over the wire -----------------------------------------
+
+func TestUIResponsesOverTheWireCarryTheHardeningHeaders(t *testing.T) {
+	srv := newServer(t)
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, p := range []string{"/", "/projects", "/assets/app.js", "/assets/x.js", "/robots.txt", "/%2e%2e/secret.txt"} {
+			resp, _ := uiDo(t, method, srv.URL+p, nil)
+			what := method + " " + p
+			if got := resp.Header.Get("Content-Security-Policy"); !strings.Contains(got, "form-action 'none'") {
+				t.Errorf("%s: CSP %q lacks form-action 'none'", what, got)
+			}
+			for name, want := range map[string]string{
+				"Referrer-Policy":            "no-referrer",
+				"Cross-Origin-Opener-Policy": "same-origin",
+			} {
+				if got := resp.Header.Get(name); got != want {
+					t.Errorf("%s: %s = %q, want %q", what, name, got, want)
+				}
+			}
+			if got := resp.Header.Get("Permissions-Policy"); !strings.Contains(got, "camera=()") || !strings.Contains(got, "geolocation=()") {
+				t.Errorf("%s: Permissions-Policy = %q, want a deny-all policy", what, got)
+			}
+		}
+	}
+}
+
+func TestAPIResponsesDoNotGetTheUIHardeningHeaders(t *testing.T) {
+	srv := newServer(t)
+	resp, _ := apiGet(t, srv.URL+"/api/v1/search?q=kubernetes")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("search: status %d", resp.StatusCode)
+	}
+	resp404, _ := uiDo(t, http.MethodGet, srv.URL+"/api/nope", bearer(testToken))
+	for what, r := range map[string]*http.Response{"200": resp, "404": resp404} {
+		for _, name := range []string{"Referrer-Policy", "Cross-Origin-Opener-Policy", "Permissions-Policy", "Content-Security-Policy"} {
+			if got := r.Header.Get(name); got != "" {
+				t.Errorf("API %s response: %s = %q, want none (API responses are unchanged)", what, name, got)
+			}
+		}
 	}
 }

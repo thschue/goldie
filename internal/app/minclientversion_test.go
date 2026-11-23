@@ -419,6 +419,16 @@ func TestSpecDeclaresTheUpgradeRequiredResponse(t *testing.T) {
 			if !ok || method == "parameters" {
 				continue
 			}
+			if path == "/api/v1/session" && (method == "post" || method == "delete") {
+				// Sign-in and sign-out take no bearer token and skip the version gate (ADR 0027).
+				if sec, ok := o["security"].([]any); !ok || len(sec) != 0 {
+					t.Errorf("%s %s: exempt from the version gate but not marked security: []", method, path)
+				}
+				if _, has := o["responses"].(map[string]any)["426"]; has {
+					t.Errorf("%s %s: declares a 426 it never sends", method, path)
+				}
+				continue
+			}
 			n++
 			responses, _ := o["responses"].(map[string]any)
 			resp := contracttest.ResolveRef(doc, responses["426"])

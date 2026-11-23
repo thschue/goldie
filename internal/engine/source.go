@@ -58,6 +58,10 @@ type Article struct {
 	// ReplacedBy is the frontmatter replaced_by as written, a reference
 	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
 	ReplacedBy string
+	// Overrides is set by Snapshot.View on a winning Item: the Scopes of the
+	// readable, lower-priority copies with the same identity, nearest first
+	// (local, Project, global). Empty when the Item shadows nothing.
+	Overrides []string
 
 	// file is the article's path relative to the Source root, as
 	// loadArticles walked it, for error messages.
@@ -68,6 +72,9 @@ type Article struct {
 	kind        string
 	description string
 	raw         []byte
+	// order and targets are an instruction clause's; its raw is the body.
+	order   int
+	targets []string
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
@@ -167,6 +174,11 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		return nil, err
 	}
 	snap.addAgents(globalAgents)
+	globalClauses, err := loadScopeKind(fsys, instructionsDir, ScopeGlobal, "global instructions", "instruction", parseClause)
+	if err != nil {
+		return nil, err
+	}
+	snap.addInstructions(globalClauses)
 	if snap.skills, err = loadSkills(fsys, skillsDir, ScopeGlobal, "global skills"); err != nil {
 		return nil, err
 	}
@@ -193,12 +205,17 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		if err != nil {
 			return nil, err
 		}
+		clauses, err := loadScopeKind(fsys, d.dir+"/instructions", d.scope, "Project instructions", "instruction", parseClause)
+		if err != nil {
+			return nil, err
+		}
 		skills, err := loadSkills(fsys, d.dir+"/skills", d.scope, "Project skills")
 		if err != nil {
 			return nil, err
 		}
 		snap.addProject(d.scope, articles)
 		snap.addProjectAgents(d.scope, agents)
+		snap.addProjectInstructions(d.scope, clauses)
 		snap.addProjectSkills(d.scope, skills)
 		if err := snap.applySuppressions(d.scope, refs); err != nil {
 			return nil, err
@@ -400,10 +417,12 @@ func parseArticle(id string, raw []byte) (Article, error) {
 // Snapshot is the validated, immutable view of a Source. Its accessors return
 // copies, so callers cannot change it.
 type Snapshot struct {
-	articles []Article              // global, sorted by ID
-	agents   []Article              // global agent records, sorted by ID
-	skills   map[string]skillBundle // global skill bundles by name
-	index    keyIndex               // global articles and agents by itemKey
+	articles []Article // global, sorted by ID
+	agents   []Article // global agent records, sorted by ID
+	// instructions are the global instruction clauses, sorted by ID.
+	instructions []Article
+	skills       map[string]skillBundle // global skill bundles by name
+	index        keyIndex               // global articles and agents by itemKey
 	// projects maps the lower-cased "host/org/repo" to that Project.
 	projects map[string]project
 	// warnings are load findings that do not fail the load, such as a
@@ -412,14 +431,18 @@ type Snapshot struct {
 	// local is the repository's own .goldie/ (NewLocalSource), or nil. It
 	// takes part in every view.
 	local *localScope
+	// viewProject is the Project a ViewSource's View is of, or "" (see viewFor).
+	viewProject string
 }
 
 type project struct {
 	scope    string
 	articles []Article // sorted by ID
 	agents   []Article // agent records, sorted by ID
-	skills   map[string]skillBundle
-	index    keyIndex
+	// instructions are the Project's instruction clauses, sorted by ID.
+	instructions []Article
+	skills       map[string]skillBundle
+	index        keyIndex
 	// suppressed holds the global Items the Project hides (its project.yaml),
 	// and suppressions lists them as <kind>:<ID> (article: or agent:), sorted.
 	suppressed   map[itemKey]bool
@@ -451,6 +474,14 @@ func loadScopeAgents(fsys fs.FS, dir, scope, what string) ([]Article, error) {
 		return nil, err
 	}
 	return loadAgents(fsys, dir, scope)
+}
+
+// loadScopeKind is loadKindFiles behind the same symlink check.
+func loadScopeKind(fsys fs.FS, dir, scope, scopeWhat, what string, parse func(string, []byte) (Article, error)) ([]Article, error) {
+	if exists, err := requireDir(fsys, dir, scopeWhat); err != nil || !exists {
+		return nil, err
+	}
+	return loadKindFiles(fsys, dir, scope, what, parse)
 }
 
 // addAgents registers the global agents. It is called only while loading.
@@ -597,27 +628,59 @@ func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
 	return s.winner(proj, key, ReadOptions{})
 }
 
+// overridden returns the Scopes of the copies of key that sit below the
+// winning copy w in Resolution order (local, Project, global), nearest first.
+// Only readable copies count: a draft is never served, so nothing is
+// overridden by it.
+//
+// idxs lists the per-Scope indexes in the same order as resolutionOrder and
+// winner read them (local, Project, global); change all three together.
+func (s *Snapshot) overridden(proj string, key itemKey, w *Article) []string {
+	p, _ := s.lookupProject(proj)
+	idxs := []map[itemKey]*Article{p.index, s.index}
+	if s.local != nil {
+		idxs = append([]map[itemKey]*Article{s.local.index}, idxs...)
+	}
+	var below []string
+	found := false
+	for _, idx := range idxs {
+		a := idx[key]
+		switch {
+		case a == nil:
+		case a == w:
+			found = true
+		case found && (ReadOptions{}).visible(*a):
+			below = append(below, a.Scope)
+		}
+	}
+	return below
+}
+
 // resolutionOrder returns the article lists that hold proj's candidate Items:
 // local, then Project, then global. winner decides which copy of each itemKey
 // answers.
 func (s *Snapshot) resolutionOrder(proj, kind string) [][]Article {
-	pick := func(articles, agents []Article) []Article {
-		if kind == KindAgent {
+	pick := func(articles, agents, instructions []Article) []Article {
+		switch kind {
+		case KindAgent:
 			return agents
+		case KindInstruction:
+			return instructions
 		}
 		return articles
 	}
 	var lists [][]Article
 	if s.local != nil {
-		lists = append(lists, pick(s.local.articles, s.local.agents))
+		lists = append(lists, pick(s.local.articles, s.local.agents, s.local.instructions))
 	}
 	if p, ok := s.lookupProject(proj); ok {
-		lists = append(lists, pick(p.articles, p.agents))
+		lists = append(lists, pick(p.articles, p.agents, p.instructions))
 	}
-	return append(lists, pick(s.articles, s.agents))
+	return append(lists, pick(s.articles, s.agents, s.instructions))
 }
 
 func cloneArticle(a Article) Article {
 	a.Keywords = append([]string(nil), a.Keywords...)
+	a.Overrides = append([]string(nil), a.Overrides...)
 	return a
 }

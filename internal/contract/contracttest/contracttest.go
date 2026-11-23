@@ -81,6 +81,9 @@ func Check(resp *http.Response, body []byte) error {
 	if resp.Request.Method == http.MethodHead {
 		return nil // a HEAD response has no body to validate
 	}
+	if _, hasContent := node["content"]; !hasContent && len(body) == 0 && resp.Header.Get("Content-Type") == "" {
+		return nil // a declared response with no body, such as a 204
+	}
 	mt, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err != nil {
 		return fmt.Errorf("Content-Type %q: %w", resp.Header.Get("Content-Type"), err)

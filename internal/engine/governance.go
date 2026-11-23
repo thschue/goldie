@@ -202,6 +202,17 @@ func viewOf(a *Article) string {
 	return a.Scope
 }
 
+// viewFor is viewOf for an Item of this Snapshot. A Snapshot built from a View
+// (ViewSource) holds only the winners of one Project's view, so every Item's
+// references resolve there: a global Item's replacement may be the Project's
+// copy, and the global copy it would name alone is not in the View.
+func (s *Snapshot) viewFor(a *Article) string {
+	if s.viewProject != "" {
+		return s.viewProject
+	}
+	return viewOf(a)
+}
+
 // articleFile is the path of a's file relative to the Source root, as
 // loadArticles found it.
 func articleFile(a *Article) string { return a.file }
@@ -226,7 +237,7 @@ func (s *Snapshot) checkReplacements(all []*Article) error {
 		if err != nil { // parseArticle has already checked it
 			return fmt.Errorf("%s: replaced_by %s: %w", articleFile(a), quoteRef(a.ReplacedBy), err)
 		}
-		view := viewOf(a)
+		view := s.viewFor(a)
 		if file, hidden := s.suppressingFile(view, key); hidden {
 			return fmt.Errorf("%s: replaced_by %s names an Item %s suppresses", articleFile(a), quoteRef(a.ReplacedBy), file)
 		}

@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	errInitNoRepo = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root"
-	errInitSource = "this is a Source repository (global/articles or projects/ at its root): goldie init is for a project repository"
+	errInitNoRepo    = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root\nRun it in your repository, or create one first: git init"
+	errInitNoProject = "no Project found: set --project or " + EnvProject + ", or add an upstream or origin remote\nName it: goldie init --project github.com/<org>/<repo>"
+	errInitSource    = "this is a Source repository (global/articles or projects/ at its root): goldie init is for a project repository"
 )
 
 // initRefusal words a refusal of project.WriteConfig for goldie init, or
@@ -57,7 +58,7 @@ func (c *commander) initProject(ctx context.Context) error {
 		return errors.New(h)
 	}
 	if proj.ID == "" {
-		return errors.New("no Project found: set --project or " + EnvProject + ", or add an upstream or origin remote")
+		return errors.New(errInitNoProject)
 	}
 	if err := project.WriteConfig(root, proj.ID); err != nil {
 		if msg := initRefusal(err); msg != "" {
@@ -91,6 +92,9 @@ func (c *commander) initProject(ctx context.Context) error {
 func (c *commander) registered(ctx context.Context, id string) (ok bool, why string) {
 	cl, err := c.client(true)
 	if err != nil {
+		if errors.Is(err, ErrNoAddress) {
+			return false, noAddressInit
+		}
 		return false, err.Error()
 	}
 	// A 401 is "token rejected"; contract.Answer reads every other answer, as

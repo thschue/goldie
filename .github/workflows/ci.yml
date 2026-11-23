@@ -105,6 +105,8 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: ./run regen-ts-check
+        run: ./run regen-ts-check
       - name: ./run ux
         run: ./run ux
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

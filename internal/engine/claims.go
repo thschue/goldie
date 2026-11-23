@@ -71,7 +71,7 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		return nil, errors.New("the base Source returned no Snapshot")
 	}
 	if !s.claim.Global {
-		if a := firstItem(snap.articles, snap.agents); a != nil {
+		if a := firstItem(snap.articles, snap.agents, snap.instructions); a != nil {
 			return nil, unclaimed(a, "global Items")
 		}
 		if name := firstSkill(snap.skills); name != "" {
@@ -83,7 +83,7 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		if s.claim.accepts(p.scope) {
 			continue
 		}
-		if a := firstItem(p.articles, p.agents); a != nil {
+		if a := firstItem(p.articles, p.agents, p.instructions); a != nil {
 			return nil, unclaimed(a, "Project "+p.scope)
 		}
 		if name := firstSkill(p.skills); name != "" {

@@ -13,7 +13,7 @@ import (
 
 // FirstRunHint is the next step for someone who ran a goldie command with
 // nothing set up: the server or a client with no server to ask.
-const FirstRunHint = "To try goldie on this machine: goldie server --dev ."
+const FirstRunHint = "To try goldie on this machine: goldie server --dev"
 
 // Environment variable names. The GOLDIE_ prefix is mandatory (PC-04).
 const (
@@ -27,6 +27,8 @@ const (
 	EnvContentDir = "GOLDIE_CONTENT_DIR"
 	EnvAPIToken   = "GOLDIE_API_TOKEN"  // secret: never logged
 	EnvAPITokens  = "GOLDIE_API_TOKENS" // secret: never logged
+
+	EnvSessionKey = "GOLDIE_SESSION_KEY" // secret: never logged
 
 	EnvRateLimit = "GOLDIE_RATE_LIMIT"
 
@@ -109,6 +111,10 @@ type Config struct {
 	APIToken   string // the shorthand for one operator token; secret
 	APITokens  string // name:role:token lines, as read; secret
 
+	// SessionKey signs the browser session cookie (ADR 0027); secret. Empty:
+	// the server picks a random key per process.
+	SessionKey string
+
 	// The git Source, as read; LoadConfig checks only that GitURL and
 	// ContentDir are not both set. GitURL may carry userinfo: log it only as
 	// RedactedGitURL, as the startup report does.
@@ -170,6 +176,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.ContentDir = str(EnvContentDir, def(EnvContentDir))
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
+	cfg.SessionKey = str(EnvSessionKey, def(EnvSessionKey))
 	if err := CheckAPITokenPairing(cfg.APIToken, cfg.APITokens); err != nil {
 		errs = append(errs, err)
 	}

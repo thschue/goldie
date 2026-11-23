@@ -25,7 +25,11 @@ const (
 	// csp is the Content-Security-Policy of every UI response. The SPA loads
 	// only its own files and talks only to this origin's API.
 	csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+		"connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+
+	// permissionsPolicy denies every browser feature the SPA does not use.
+	permissionsPolicy = "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), " +
+		"payment=(), usb=()"
 
 	assetCache = "public, max-age=31536000, immutable"
 )
@@ -118,7 +122,12 @@ func Handler(fsys fs.FS) http.Handler {
 }
 
 func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("X-Content-Type-Options", "nosniff")
+	hd := w.Header()
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Security-Policy", csp)
+	hd.Set("Referrer-Policy", "no-referrer")
+	hd.Set("Cross-Origin-Opener-Policy", "same-origin")
+	hd.Set("Permissions-Policy", permissionsPolicy)
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", "Use GET or HEAD.")
@@ -138,10 +147,8 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f = h.files["index.html"] // a client-side route
 	}
-	hd := w.Header()
 	hd.Set("Content-Type", f.contentType)
 	hd.Set("Cache-Control", f.cacheControl)
-	hd.Set("Content-Security-Policy", csp)
 	hd.Set("Content-Length", strconv.Itoa(len(f.body)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
