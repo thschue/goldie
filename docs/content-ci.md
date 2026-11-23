@@ -28,8 +28,10 @@ load, and the reason names the file and the field.
 | `replaced_by` | a reference `<kind>:<name>`, such as `article:platform/deploy` | none |
 
 A `replaced_by` reference (ADR 0021) resolves in the referring article's view: a project article
-sees its Project, then global; a global article sees global only. It fails the load when it does not
-resolve, names the article itself, names a draft or is part of a cycle.
+sees its Project, then global; a global article sees global only. A project copy, even a draft,
+never stands in for an enforced global article, so a reference to an enforced article resolves to
+the global one. It fails the load when it does not resolve, names the article itself, names a draft
+or is part of a cycle.
 
 A reference is at most 256 bytes:
 

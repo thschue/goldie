@@ -125,9 +125,11 @@ func yamlErr(err error) error {
 }
 
 // applySuppressions resolves a Project's suppress references in its own
-// Resolution view, published Items only (#353): its published copy first, then
-// the published global Item. A reference to the Project's own Item, or to an
-// enforced global Item, fails the load. One that resolves to nothing, a draft
+// Resolution view by winner's rule, published Items only (#353): its published
+// copy first, then the published global Item, and the global copy when it is
+// enforced (#359). A reference to the Project's own Item, or to an enforced
+// global Item, fails the load. The Project's suppressions are set only at the
+// end, so they never change how its own references resolve here. One that resolves to nothing, a draft
 // included, is a warning, so another team's deletion never fails this Project.
 // It is called only while loading, after the Project is added.
 func (s *Snapshot) applySuppressions(scope string, refs []string) error {
@@ -199,10 +201,4 @@ func (s *Snapshot) suppressingFile(proj string, key itemKey) (string, bool) {
 		return "", false
 	}
 	return projectsDir + "/" + p.scope + "/" + projectFileName, true
-}
-
-// suppressedIn returns the global Items proj hides, or nil.
-func (s *Snapshot) suppressedIn(proj string) map[itemKey]bool {
-	p, _ := s.lookupProject(proj)
-	return p.suppressed
 }

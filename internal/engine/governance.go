@@ -177,7 +177,10 @@ func articleFile(a *Article) string { return a.file }
 // checkReplacements fails when a replaced_by does not resolve in its
 // referrer's view, names the Item itself, names a draft or is part of a cycle.
 // A global Item sees global only; a project Item sees its Project, then
-// global, less the global Items the Project suppresses (#367).
+// global, less the global Items the Project suppresses (#367), by winner's
+// rule with drafts readable (resolve), so a draft target fails as a draft and
+// a Project draft never shadows an enforced global target (#359). The
+// suppression check comes first, so the error names the project.yaml.
 func (s *Snapshot) checkReplacements() error {
 	all := s.allArticles()
 	next := make(map[*Article]*Article, len(all))
@@ -244,8 +247,8 @@ func (s *Snapshot) checkEnforced() error {
 
 // enforces reports whether the global Item key is published and enforced, so
 // no Project Item shadows it (ADR 0021). checkEnforced fails a load in which a
-// published Project copy does; reads skip a draft copy, which only the drafts
-// view would otherwise let shadow it (#359).
+// published Project copy does; winner, the one shadowing rule, skips a draft
+// copy, which only the drafts view would otherwise let shadow it (#359).
 func (s *Snapshot) enforces(key itemKey) bool {
 	g := s.index[key]
 	return g != nil && g.Enforced && g.published()
