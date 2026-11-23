@@ -246,4 +246,11 @@ func TestInstructionsDefaultBlockWithoutAProjectHasNoEmptyParentheses(t *testing
 	if strings.Contains(a.Block, "()") || !strings.HasPrefix(a.Block, "This repository uses Goldie") {
 		t.Errorf("default block %q, want the sentence without a parenthetical", a.Block)
 	}
+	// An unregistered Project resolves as no Project: the same block, and the
+	// hint, not the block, names the Project.
+	const unknown = "github.com/acme/unknown"
+	u := instructionsGet(t, srv, "?target=agents&project="+unknown)
+	if u.Block != a.Block || !strings.Contains(u.Hint, unknown) {
+		t.Errorf("unregistered Project answer %+v, want the block %q and a hint naming it", u, a.Block)
+	}
 }
