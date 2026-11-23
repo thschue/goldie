@@ -14,6 +14,14 @@ export const session = ref<Session | null>(null);
 // True once a session that was signed in has answered 401.
 export const ended = ref(false);
 
+// The CSRF token of the session (#490, ADR 0027): GET and POST /api/v1/session return it in
+// X-Goldie-CSRF, and every unsafe request sends it back. Held in memory only.
+export const csrf = ref('');
+const keepCSRF = (res: Response) => {
+  const t = res.headers.get('X-Goldie-CSRF');
+  if (t) csrf.value = t;
+};
+
 export const role = (): Role => (session.value?.role === 'operator' ? 'operator' : 'reader');
 
 // An error envelope's hint (details.hint), or '' when the body is not one.
@@ -41,6 +49,7 @@ export async function refresh(): Promise<boolean> {
   try {
     const res = await api(endpoint);
     if (res.ok) {
+      keepCSRF(res);
       session.value = (await res.json()) as Session;
       ended.value = false;
       return true;
@@ -70,6 +79,7 @@ export async function signIn(token: string): Promise<SignInResult> {
     return { ok: false, kind: 'failed', hint: '' };
   }
   if (res.ok) {
+    keepCSRF(res);
     session.value = (await res.json()) as Session;
     ended.value = false;
     return { ok: true };
@@ -94,6 +104,7 @@ export async function signOut(): Promise<boolean> {
     return false;
   }
   session.value = null;
+  csrf.value = '';
   ended.value = false;
   return true;
 }

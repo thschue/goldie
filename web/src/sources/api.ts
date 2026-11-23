@@ -1,7 +1,7 @@
 // The Sources calls (#633): the sync status of every Source, for operators (GET /api/v1/sync).
 import { ref } from 'vue';
 import { plain } from '../assets/api';
-import { get } from '../api/client';
+import { get, post } from '../api/client';
 import type { components } from '../api/schema';
 
 export type SourceStatus = components['schemas']['SourceSyncStatus'];
@@ -20,6 +20,9 @@ export async function loadSources(signal?: AbortSignal): Promise<SourceStatus[]>
   failing.value = sources.filter(isFailing).length;
   return failingFirst(sources);
 }
+
+// Starts a sync (POST /api/v1/sync, 202): the outcome is read from the status afterwards.
+export const resync = () => post('/api/v1/sync');
 
 let pending: Promise<unknown> | undefined;
 

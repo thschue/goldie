@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
 import { plain } from '../assets/api';
-import { isFailing, loadSources, when } from './api';
+import { ApiError } from '../api/client';
+import { isFailing, loadSources, resync, when } from './api';
 
 // The Sources page (#633, handoff §3.7, §5.3): a row per Source from GET /api/v1/sync, failing
 // ones first. Read-only. A reader gets the operators-only message and no request. The h1 renders
@@ -12,11 +13,35 @@ const operator = computed(() => role() === 'operator');
 const key = computed(() => (operator.value ? 'sync' : ''));
 const { state, data, failure, skeleton, limited, wait, retry } = useLoad(key, (_k, signal) => loadSources(signal));
 const forbidden = computed(() => !operator.value || (state.value === 'error' && failure.value?.status === 403));
+
+// Resync (#634): the button stays focusable while it runs (aria-disabled, not disabled) so focus is
+// not lost, and a second click does nothing. An error shows as text; the rows refresh on success.
+const syncing = ref(false);
+const syncError = ref('');
+async function startSync() {
+  if (syncing.value) return;
+  syncing.value = true;
+  syncError.value = '';
+  try {
+    await resync();
+    retry();
+  } catch (e) {
+    const f = e instanceof ApiError ? e : undefined;
+    syncError.value = f ? `${f.message} ${f.hint}`.trim() : "Couldn't start a sync.";
+  } finally {
+    syncing.value = false;
+  }
+}
 </script>
 
 <template>
   <h1>Sources</h1>
   <p v-if="!forbidden" class="intro">Failing Sources first. A failing Source keeps serving its last good Snapshot.</p>
+  <div v-if="!forbidden" class="actions">
+    <button type="button" class="sync" :aria-disabled="syncing" @click="startSync">{{ syncing ? 'Syncing…' : 'Resync' }}</button>
+    <span v-if="syncing" role="status" class="sr-only">Sync started. Waiting for it to end.</span>
+  </div>
+  <div v-if="syncError" role="alert" class="box danger sync-error"><p>{{ syncError }}</p></div>
   <div v-if="forbidden" role="status" class="box"><p>This page is for operators.</p></div>
 
   <div v-else-if="skeleton" aria-busy="true" class="list">
@@ -149,6 +174,18 @@ dd {
   border-color: var(--miss-border);
   background: var(--miss-bg);
   color: var(--miss-ink);
+}
+.actions {
+  max-width: 940px;
+  margin: 0 0 var(--space-4);
+}
+.sync-error {
+  margin: 0 0 var(--space-4);
+}
+button[aria-disabled='true'] {
+  border-style: dashed;
+  color: var(--fg-secondary);
+  cursor: progress;
 }
 button {
   min-height: var(--target-min);
