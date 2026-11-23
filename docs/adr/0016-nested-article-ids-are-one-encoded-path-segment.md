@@ -37,6 +37,10 @@ at the HTTP seam covers a nested id end to end, the bare-slash miss included.
 The spec, generated clients, route coverage and the conformance helper stay exact and agree, and one
 id maps to one URL.
 
+The rule applies to every route that carries a slashed id, not only articles: today
+`GET /api/v1/articles/{id}` and `GET /api/v1/projects/{id}`, where a Project id (`host/org/repo`,
+ADR 0020) travels as one segment with `%2F` inside. A new route with a slashed id follows it too.
+
 The cost: a hand-typed or naively joined URL with a bare `/` misses, and its 404 hint is the generic
 one rather than the search hint. Operators behind proxies that reject or decode `%2F` must change
 their proxy settings, which the Helm chart and docs have to state. Moving to a wildcard or query form
