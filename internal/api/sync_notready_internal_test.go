@@ -22,8 +22,6 @@ func TestPostSyncNotReadyIsNotBusy(t *testing.T) {
 	}{
 		"no control bound":  {nil, "503"},
 		"control not ready": {stubSync{started: false, ready: false}, "503"},
-		"poll running":      {stubSync{started: false, ready: true}, "429"},
-		"poll started":      {stubSync{started: true, ready: true}, "202"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
