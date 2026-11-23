@@ -55,6 +55,13 @@ handling: goldie neither validates nor documents them, but a value the SDK rejec
 printed; goldie logs one fixed warning instead. Only the OTLP headers variables
 accept a _FILE form; for any other OTEL_* name it is an error.
 
+The client commands and `goldie mcp --transport stdio` export traces only, with `goldie.mode`
+`cli` or `mcp`: one client span per API call, sent to the server as a W3C `traceparent`. The
+server starts its own trace and links its span to the client span. A client span records no
+query string or header, and an article lookup's path only as /api/v1/articles/{id}. The logs
+and metrics variables do not apply to them, nor does `GOLDIE_TELEMETRY_CLIENT_INFO`. They
+send their spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_SDK_DISABLED` | (none) | true turns telemetry off even when an endpoint is set. |
