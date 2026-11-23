@@ -86,6 +86,29 @@ existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.y
 run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
 root); a refusal writes nothing.
 
+`goldie instructions apply [--target claude|agents] [--force]` writes goldie's instruction block
+between `<!-- goldie:begin digest=sha256:… -->` and `<!-- goldie:end -->` in `CLAUDE.md` (the default)
+or `AGENTS.md` at the repository root, creating the file if needed. The block comes from
+`GET /api/v1/instructions` for the detected Project (`--project` overrides it). Text outside the
+markers is never touched, and a block that is already current is not rewritten. `apply` refuses a
+block edited by hand unless you pass `--force`, and refuses a damaged file (a begin marker without an
+end, or two blocks) even with `--force`. It also refuses a block whose text could change how the rest
+of your file renders (an unclosed code fence, raw HTML, a link reference definition), a `CLAUDE.md` or
+`AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes nothing.
+`goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated or
+edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
+between `apply` reading the file and renaming over it, an edit by another process is lost; there is no
+lock, and the window is one local write.
+
+If your `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` line), apply only the agents target:
+`goldie instructions apply --target agents`. Applying both would show the block twice.
+
+Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_TOKEN` as secrets):
+
+```sh
+goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
+```
+
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
 goldie search kubernetes
