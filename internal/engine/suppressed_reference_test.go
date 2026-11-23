@@ -186,13 +186,19 @@ func TestSuppressingAReferencedItemKeepsTheLastGoodSnapshot(t *testing.T) {
 	if err == nil || s.Current() != first {
 		t.Fatalf("suppressing a referenced Item: err %v, Snapshot kept %v", err, s.Current() == first)
 	}
+	// The Poll error names both files; LastError is that error after redact,
+	// which strips every path-like word by design (sync.go), so it records the
+	// failure without naming them.
 	for _, f := range []string{projectFile("guide"), supFile} {
-		if !strings.Contains(s.Status().LastError, f) {
-			t.Errorf("LastError %q does not name %s", s.Status().LastError, f)
+		if !strings.Contains(err.Error(), f) {
+			t.Errorf("Poll error %q does not name %s", err, f)
 		}
 	}
-	if strings.Contains(s.Status().LastError, root) {
-		t.Errorf("LastError %q leaks the root path", s.Status().LastError)
+	if strings.Contains(err.Error(), root) {
+		t.Errorf("Poll error %q leaks the root path", err)
+	}
+	if st := s.Status(); st.LastError == "" || strings.Contains(st.LastError, root) {
+		t.Errorf("LastError = %q; want the failure recorded without the root path", st.LastError)
 	}
 }
 
