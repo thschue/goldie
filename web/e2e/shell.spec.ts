@@ -1,15 +1,250 @@
-// The page at / (the placeholder until the App shell lands, #166) at each
-// width and theme. The drawer, the nav collapsing below 1024 px and the
-// keyboard path are specs of the shell itself.
+// The App shell at / (#166, handoff §3.1, §7, §9): the frame every screen
+// renders into. Per width and theme: the shot, axe (with best-practice), the
+// landmarks, the empty state and the top bar. Plus the nav, the routes and
+// the 1024 px change of the shell.
 import { expect, test } from '@playwright/test';
-import { blockExternal, eachViewport, evidence } from './ux';
+import { eachViewport, evidence, expectNavCollapsed, menuButton, missingBrandFonts, problems, themeToggle, withNav } from './ux';
+
+const emptyCopy = /Nothing to show yet\. Content appears here as goldie[’']s pages come online\./;
 
 eachViewport((width, theme) => {
-  test('the page at / is captured, axe-clean, without horizontal scroll or small targets', async ({ page, baseURL }) => {
-    const external = await blockExternal(page, baseURL ?? '');
+  test('the shell at / is captured, axe-clean, self-hosted and error-free', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
     const res = await page.goto('/');
     expect(res?.status()).toBe(200);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    expect(await missingBrandFonts(page), 'brand fonts not loaded').toEqual([]);
     await evidence(page, width, theme);
-    expect(external, 'requests to other origins').toEqual([]);
+    expect(seen.external, 'requests to other origins').toEqual([]);
+    expect(seen.failed, 'same-origin 4xx/5xx or failed requests').toEqual([]);
+    expect(seen.errors, 'page errors and CSP violations').toEqual([]);
+  });
+
+  test('the shell has header, nav and main landmarks and one h1 with the empty state', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('header')).toHaveCount(1);
+    await expect(page.getByRole('banner')).toBeVisible();
+    await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.locator('nav[aria-label]')).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    const panel = page.getByRole('main').getByRole('status');
+    await expect(panel).toHaveText(emptyCopy);
+  });
+
+  test('the empty-state panel is neutral, never gold', async ({ page }) => {
+    await page.goto('/');
+    const colours = await page.getByRole('main').getByRole('status').evaluate((el) => {
+      // Normalise any CSS colour (oklch included) to sRGB through a canvas.
+      const ctx = document.createElement('canvas').getContext('2d')!;
+      const rgb = (c: string) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = '#000';
+        ctx.fillStyle = c;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        return { r, g, b, a };
+      };
+      const s = getComputedStyle(el);
+      return [s.backgroundColor, s.borderTopColor, s.borderLeftColor].map(rgb);
+    });
+    for (const { r, g, b, a } of colours) {
+      if (a === 0) continue;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      let hue = 0;
+      if (max !== min) {
+        if (max === r) hue = (60 * ((g - b) / (max - min)) + 360) % 360;
+        else if (max === g) hue = 60 * ((b - r) / (max - min)) + 120;
+        else hue = 60 * ((r - g) / (max - min)) + 240;
+      }
+      const gold = sat > 0.25 && hue >= 30 && hue <= 60;
+      expect(gold, `rgb(${r},${g},${b}) is gold`).toBe(false);
+    }
+  });
+
+  test('the top bar is 64 px: the goldie mark, then the theme toggle, then the menu button below 1024 px', async ({ page }) => {
+    await page.goto('/');
+    const header = await page.locator('header').boundingBox();
+    expect(Math.round(header!.height)).toBe(64);
+    const mark = page.locator('header').getByRole('img', { name: /goldie/i }).or(page.locator('header').getByRole('link', { name: /goldie/i }));
+    await expect(mark.first()).toBeVisible();
+    await expect(page.locator('header')).not.toContainText(/phippy/i);
+    const m = (await mark.first().boundingBox())!;
+    const t = (await themeToggle(page).boundingBox())!;
+    expect(m.x + m.width, 'mark before the toggle').toBeLessThanOrEqual(t.x);
+    if (width < 1024) {
+      const b = (await menuButton(page).boundingBox())!;
+      expect(t.x + t.width, 'toggle before the menu button').toBeLessThanOrEqual(b.x);
+    } else {
+      await expect(menuButton(page)).toBeHidden();
+    }
+  });
+
+  test('the nav collapses below 1024 px and the page has no skip-link-first violation', async ({ page }) => {
+    await page.goto('/');
+    await expectNavCollapsed(page, width);
+    const first = await page.evaluate(
+      () => document.querySelector<HTMLElement>('a[href], button, input, [tabindex]:not([tabindex="-1"])')?.textContent?.trim(),
+    );
+    expect(first).toBe('Skip to content');
+  });
+
+  test('the side nav lists Home, Decisions, the Agent assets group, then the Reader nav note, and no Operate group', async ({ page }) => {
+    await page.goto('/');
+    const nav = await withNav(page);
+    await expect(nav).toHaveAttribute('aria-label', /.+/);
+    const names = await nav.getByRole('link').allTextContents();
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
+    const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
+    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
+      (s) => text.indexOf(s),
+    );
+    expect(at.every((i) => i >= 0), `all entries present in: ${text}`).toBe(true);
+    expect([...at].sort((a, b) => a - b), 'entries in order').toEqual(at);
+    await expect(nav.getByRole('link', { name: /activity|sources/i })).toHaveCount(0);
+    await expect(nav).not.toContainText('Operate');
+  });
+});
+
+test.describe('nav width', () => {
+  for (const [width, min, max] of [
+    [1280, 240, 260],
+    [1440, 240, 260],
+    [1279, 220, 220],
+    [1024, 220, 220],
+  ] as const) {
+    test(`the nav is ${min}-${max} px at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto('/');
+      const box = (await page.getByRole('navigation').boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(min);
+      expect(box.width).toBeLessThanOrEqual(max);
+    });
+  }
+});
+
+test.describe('the shell changes at 1024 px (§7)', () => {
+  test.use({ viewport: { width: 1024, height: 800 } });
+  test('at 1024 px the nav is inline and axe-clean, with no menu button', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
+    expect((await page.goto('/'))?.status()).toBe(200);
+    await expectNavCollapsed(page, 1024);
+    await evidence(page, 1024, 'light', '', 'shell');
+    expect(seen.external).toEqual([]);
+    expect(seen.failed).toEqual([]);
+  });
+});
+
+test.describe('just below 1024 px', () => {
+  test.use({ viewport: { width: 1023, height: 800 } });
+  test('at 1023 px the nav is behind the menu button', async ({ page }) => {
+    await page.goto('/');
+    await expectNavCollapsed(page, 1023);
+  });
+});
+
+test.describe('routes and the current page', () => {
+  const routes: [string, string][] = [
+    ['Home', '/'],
+    ['Decisions', '/decisions'],
+    ['Skills', '/assets/skills'],
+    ['Agents', '/assets/agents'],
+    ['Loops', '/assets/loops'],
+    ['Instructions', '/assets/instructions'],
+  ];
+
+  for (const [name, path] of routes) {
+    test(`${name} links to ${path}, which renders the shell with the empty state and marks the link current`, async ({ page }) => {
+      const res = await page.goto('/');
+      expect(res?.status()).toBe(200);
+      let nav = await withNav(page);
+      const link = nav.getByRole('link', { name, exact: true });
+      await expect(link).toHaveAttribute('href', path);
+      await link.click();
+      await expect(page).toHaveURL((u) => u.pathname === path);
+      await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
+      nav = await withNav(page);
+      const current = nav.getByRole('link', { name, exact: true });
+      await expect(current).toHaveAttribute('aria-current', 'page');
+      await expect(nav.locator('[aria-current="page"]')).toHaveCount(1);
+
+      // A cue other than colour: some non-colour style differs from a link that is not current.
+      const other = nav.getByRole('link', { name: name === 'Home' ? 'Decisions' : 'Home', exact: true });
+      const cue = (l: typeof current) =>
+        l.evaluate((el) => {
+          const s = getComputedStyle(el);
+          const b = getComputedStyle(el, '::before');
+          return [s.fontWeight, s.textDecorationLine, s.borderLeftWidth, s.borderBottomWidth, s.boxShadow, b.content, s.fontStyle].join('|');
+        });
+      expect(await cue(current), 'non-colour cue of the current page').not.toBe(await cue(other));
+    });
+  }
+
+  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/loops', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
+    test(`GET ${path} is 200 and renders the shell, not a 404`, async ({ page }) => {
+      const res = await page.goto(path);
+      expect(res?.status()).toBe(200);
+      await expect(page.getByRole('banner')).toBeVisible();
+      await expect(page.getByRole('main')).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    });
+  }
+
+  test('a route outside §2.2 shows the shell with a not-found message and a link Home', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
+    const res = await page.goto('/no/such/route');
+    expect(res?.status(), 'the SPA index is served with 200').toBe(200);
+    await expect(page.getByRole('banner')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main).toContainText(/not found/i);
+    await expect(main).not.toContainText(emptyCopy);
+    await expect(main.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+    expect(seen.errors).toEqual([]);
+    await main.getByRole('link', { name: /home/i }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/');
+  });
+
+  test('a missing file with an extension is a real 404, never the shell', async ({ request }) => {
+    const res = await request.get('/assets/missing-file.js');
+    expect(res.status()).toBe(404);
+    expect(res.headers()['content-type'] ?? '').not.toContain('text/html');
+  });
+});
+
+test.describe('page hygiene', () => {
+  test('there is no inline script and the pre-paint theme init is an external classic script in head', async ({ page, request }) => {
+    const res = await request.get('/');
+    const csp = res.headers()['content-security-policy'] ?? '';
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain('unsafe-inline');
+    await page.goto('/');
+    const scripts = await page.evaluate(() =>
+      [...document.querySelectorAll('script')].map((s) => ({
+        src: s.getAttribute('src'),
+        inline: !s.src && (s.textContent ?? '').trim() !== '',
+        module: s.type === 'module',
+        deferred: s.defer || s.async,
+        inHead: !!s.closest('head'),
+      })),
+    );
+    expect(scripts.filter((s) => s.inline), 'inline scripts').toEqual([]);
+    const init = scripts.filter((s) => s.src && !s.module && !s.deferred && s.inHead);
+    expect(init.length, 'a blocking external script in head sets data-theme before first paint').toBeGreaterThanOrEqual(1);
+    for (const s of init) {
+      const js = await request.get(s.src!);
+      expect(js.status()).toBe(200);
+      expect(js.headers()['content-type']).toContain('text/javascript');
+    }
+  });
+
+  test('the rendered shell has no inline event-handler attributes', async ({ page }) => {
+    await page.goto('/');
+    const inline = await page.evaluate(() =>
+      [...document.querySelectorAll('*')].flatMap((el) => el.getAttributeNames().filter((a) => /^on/i.test(a)).map((a) => `${el.tagName}.${a}`)),
+    );
+    expect(inline).toEqual([]);
   });
 });
