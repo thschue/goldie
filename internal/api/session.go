@@ -209,9 +209,9 @@ func SessionEntry(next http.Handler) http.Handler {
 // which must have been through Tokens.WithSessions.
 func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.tokens = tokens } }
 
-// Sign-in and sign-out are deliberately unthrottled: sign-in is the same
-// constant-time compare of a high-entropy token as any bearer request, and
-// neither operation reaches the rate limiter or the version gate (ADR 0027).
+// Sign-in and sign-out take no token, so neither reaches the per-token rate
+// limiter or the version gate (ADR 0027); failed sign-ins are capped per
+// remote address by SignInLimiter.
 var (
 	unauthorizedSignIn = envelope("unauthorized", "missing or invalid API token",
 		"Send the API token in the body: {\"token\": \"<token>\"}.")
@@ -219,12 +219,14 @@ var (
 		"Sign in with POST /api/v1/session and the token in the body, or send the token in the Authorization header.")
 )
 
-func (s *Server) PostSession(_ context.Context, req contract.PostSessionRequestObject) (contract.PostSessionResponseObject, error) {
+func (s *Server) PostSession(ctx context.Context, req contract.PostSessionRequestObject) (contract.PostSessionResponseObject, error) {
 	if s.tokens == nil || s.tokens.sessions == nil || req.Body == nil {
+		ReportSignInFailure(ctx)
 		return contract.PostSession401JSONResponse(unauthorizedSignIn), nil
 	}
 	match, found := s.tokens.find(req.Body.Token)
 	if found != 1 {
+		ReportSignInFailure(ctx)
 		return contract.PostSession401JSONResponse(unauthorizedSignIn), nil
 	}
 	e := s.tokens.entries[match]
