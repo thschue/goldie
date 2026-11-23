@@ -27,7 +27,7 @@ var scannerSeeds = []string{
 	"` `` ``` ```` `` `",
 	"goldie\tlookup\tx",
 	"\r\n```\r\ngoldie lookup x\r\n```\r\n",
-	"`goldie lookup ‮x`",
+	"`goldie lookup \u202ex`",
 	"`goldie lookup \x00`",
 	"\xff`goldie lookup \xff`",
 	strings.Repeat("`", 300),
