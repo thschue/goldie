@@ -37,10 +37,11 @@ func HiddenRune(r rune) bool {
 	return unicode.Is(unicode.Cf, r)
 }
 
-// CleanText drops every hidden rune other than newline and tab, keeping the line and paragraph separators U+2028 and
-// U+2029. It is for text that may span lines, such as an article's content.
-// Invalid UTF-8 becomes U+FFFD, so the result is always valid UTF-8 and no
-// stray byte reaches a terminal as an 8-bit control.
+// CleanText drops every hidden rune other than newline and tab, keeping the
+// line and paragraph separators U+2028 and U+2029. It is for text that may
+// span lines, such as an article's content. Invalid UTF-8 becomes U+FFFD, so
+// the result is always valid UTF-8 and no stray byte reaches a terminal as an
+// 8-bit control.
 func CleanText(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r != '\n' && r != '\t' && HiddenRune(r) {
