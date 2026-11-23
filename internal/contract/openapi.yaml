@@ -338,6 +338,18 @@ paths:
       tags:
         - activity
       summary: Stream recent searches and lookups
+      parameters:
+        - name: replicas
+          in: query
+          required: false
+          description: |
+            `all` merges the streams of every replica (see the description);
+            without it the stream is this replica's own. Any other value, and
+            a repeated parameter, is a 400.
+          schema:
+            type: string
+            enum:
+              - all
       description: |
         Streams this server process's recent searches and lookups as
         server-sent events, for operator tokens only. The stream opens with the
@@ -347,6 +359,17 @@ paths:
         view, not an audit log: the buffer is bounded and shared, so any
         reader's requests push older events out of it, and a restart empties
         it.
+
+        With `replicas=all` the stream merges this replica's stream with one
+        per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+        this replica's stream. An event of type `replica_status` (an
+        `ActivityReplicaStatus`) says a peer is down, and again when it is
+        back; those for peers that are down when the stream opens come before
+        the merged history. Each peer is asked with the caller's own token for
+        its own events only, and checks the operator role itself. A peer is
+        down when its stream ends or falls silent, or sends no `live` marker.
+        An event that reached the merge after its reorder window carries
+        `late: true`, and `dropped` counts the merge's own losses.
 
         Every event is one SSE event whose `data` is one line of JSON, an
         `ActivityEvent`. Its `id` increases per server process (per replica)
@@ -366,9 +389,11 @@ paths:
         replica restarts under the same name. An idle stream sends the
         comment `: keepalive` every 15 seconds. The stream costs one
         rate-limit token when it opens, and ends at the server's first stop
-        signal. At most 32 streams are open per server process; one more is a
-        503 whose hint says to retry later. The history before `live` holds at
-        most 10,000 events, and the Go client reads at most 16 MiB of the
+        signal. At most 32 streams are open per server process, and at most 8
+        of them with `replicas=all`, each of which costs a stream on every
+        peer; one more is a 503 whose hint says to retry later. The history
+        before `live` holds at most 10,000 events per replica, so a merged
+        history can be larger, and the Go client reads at most 16 MiB of the
         stream before `live`.
 
         Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -387,18 +412,26 @@ paths:
                 description: |
                   SSE events. The `data` of each is one line of JSON, one of
                   `contentSchema`: an `ActivityEvent` for an event without a
-                  type, an `ActivityDropped` for `dropped`, and an
+                  type, an `ActivityDropped` for `dropped`, an
+                  `ActivityReplicaStatus` for `replica_status` and an
                   `ActivityLive` for `live`.
                 contentSchema:
                   oneOf:
                     - $ref: "#/components/schemas/ActivityEvent"
                     - $ref: "#/components/schemas/ActivityDropped"
+                    - $ref: "#/components/schemas/ActivityReplicaStatus"
                     - $ref: "#/components/schemas/ActivityLive"
               example: |
                 data: {"id":1,"time":"2026-11-23T10:00:00Z","kind":"search","query":"deploy","project":"","token":"ci","client_version":"1.5.0","trace_id":"","miss":false,"replica":"goldie-0","late":false}
 
                 event: live
                 data: {}
+        "400":
+          description: '`replicas` is not `all`, or is repeated.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: The bearer token is missing or not a configured token.
           content:
@@ -851,6 +884,37 @@ components:
           description: How many events were lost before the next one.
           examples:
             - 3
+    ActivityReplicaStatus:
+      type: object
+      description: |
+        The `data` of an SSE event of type `replica_status`, on a stream with
+        `replicas=all`: a peer is down, or up again. A peer that is up when
+        the stream opens gets none. Clients ignore fields they do not know.
+      additionalProperties: false
+      required:
+        - replica
+        - up
+        - last_seen
+      properties:
+        replica:
+          type: string
+          description: |
+            The name of the peer, the first label of its pod name. Never an
+            address.
+          examples:
+            - goldie-1
+        up:
+          type: boolean
+          description: Whether the peer's stream is open.
+          examples:
+            - false
+        last_seen:
+          x-lint-ignore: camel-case-properties
+          type: string
+          format: date-time
+          description: When the merge last heard from the peer, or attached it.
+          examples:
+            - "2026-11-23T10:00:00Z"
     ActivityLive:
       type: object
       description: |

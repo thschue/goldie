@@ -60,6 +60,9 @@ func (s *Server) GetActivity(ctx context.Context, _ contract.GetActivityRequestO
 		return contract.GetActivity503JSONResponse(shuttingDown), nil
 	default:
 	}
+	if call, _ := ctx.Value(activityCallKey{}).(activityCall); call.all && s.fed != nil {
+		return s.federatedStream(ctx, call.token)
+	}
 	history, live, cancel, ok := s.activity.TrySubscribe()
 	if !ok {
 		return contract.GetActivity503JSONResponse(tooManyStreams), nil
@@ -74,8 +77,13 @@ func (s *Server) GetActivity(ctx context.Context, _ contract.GetActivityRequestO
 func headOnly(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
 		resp, err := next(ctx, w, r, req)
-		if st, ok := resp.(*activityStream); ok && r.Method == http.MethodHead {
-			st.head = true
+		if r.Method == http.MethodHead {
+			switch st := resp.(type) {
+			case *activityStream:
+				st.head = true
+			case *federatedStream:
+				st.head = true
+			}
 		}
 		return resp, err
 	}
@@ -161,12 +169,17 @@ func (st *activityStream) appendEvent(b []byte, e Event) []byte {
 		b = appendData(b, "event: dropped\n", contract.ActivityDropped{Dropped: int64(e.ID - st.last - 1)}) //nolint:gosec // ids stay far below 2^63
 	}
 	st.last = e.ID
-	return appendData(b, "", contract.ActivityEvent{
+	return appendData(b, "", activityEventData(e))
+}
+
+// activityEventData is e as the spec's ActivityEvent.
+func activityEventData(e Event) contract.ActivityEvent {
+	return contract.ActivityEvent{
 		Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
 		Query: e.Query, Project: e.Project, Token: e.Token,
 		ClientVersion: e.ClientVersion, TraceId: e.TraceID, Miss: e.Miss,
 		Replica: e.Replica, Late: e.Late,
-	})
+	}
 }
 
 // appendData appends one SSE event to b: the field lines in head, then v as

@@ -69,7 +69,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 		cancel()
 		return nil, nil, err
 	}
-	req, err := NewGetActivityRequest(inner.Server)
+	req, err := NewGetActivityRequest(inner.Server, nil)
 	if err != nil {
 		return fail(errNoAnswer)
 	}
