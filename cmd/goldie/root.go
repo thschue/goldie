@@ -275,6 +275,16 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"Print one article. Find ids with goldie search.",
 		"  goldie lookup platform/deploy",
 	},
+	"skills": {
+		"skills list|show <name> [flags]", "List skills or show one with its files",
+		"List the skills, or show one skill and the files in its bundle.",
+		"  goldie skills list\n  goldie skills show deploy",
+	},
+	"agents": {
+		"agents list|show <name> [flags]", "List agents or show one with its description",
+		"List the agents, or show one agent and its description.",
+		"  goldie agents list\n  goldie agents show reviewer",
+	},
 	"status": {
 		"status [flags]", "Check that a server answers and accepts the token",
 		"Report whether the server answers, whether it accepts the token and which\nProject the repository maps to.",
