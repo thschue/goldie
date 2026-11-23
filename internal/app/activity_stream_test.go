@@ -32,9 +32,9 @@ import (
 //	// a keepalive comment. It is a parameter of newPublic and
 //	// newPublicMuxKeepalive (api.DefaultActivityKeepalive in production).
 //
-//	// The guard puts the paths in operatorPaths behind api.RoleOperator,
-//	// mirroring docPaths; /api/v1/activity is the first.
-//	var operatorPaths map[string]bool
+//	// The guard puts the paths from contract.OperatorPaths() (the operations
+//	// marked x-goldie-role: operator in the spec) behind api.RoleOperator;
+//	// /api/v1/activity is the first.
 //
 // The stream's wire format:
 //   - every Event is one SSE event whose data is one line of JSON: an object
@@ -496,7 +496,7 @@ func TestActivityStreamIsForOperatorsOnly(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("operator: status %d, want 200: %s", resp.StatusCode, body)
 	}
-	// operatorPaths does not reach past the stream: readers still read.
+	// The operator guard (contract.OperatorPaths) does not reach past the stream: readers still read.
 	for _, path := range []string{searchPath("kubernetes"), "/api/v1/articles/agent-loops", "/api/v1/projects", "/openapi.json"} {
 		if r, b := do(t, http.MethodGet, srv.URL+path, bearer(readerToken)); r.StatusCode != http.StatusOK {
 			t.Errorf("reader GET %s: status %d, want 200: %.200s", path, r.StatusCode, b)
