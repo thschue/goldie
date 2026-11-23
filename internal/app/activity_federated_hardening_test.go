@@ -130,7 +130,9 @@ func TestAHostilePeerShowsAsDownAndTheOthersFlow(t *testing.T) {
 			record(t, b, "b-hist")
 			r := openFederated(t, t.Context(), a, bearer(operatorToken))
 			r.until(t, 20*time.Second, "goldie-bad down", status("goldie-bad", false))
-			r.until(t, 5*time.Second, "b-hist", query("b-hist"))
+			if len(eventsFor(r.seen, "b-hist")) == 0 { // the history may already have been read ahead of the down status
+				r.until(t, 5*time.Second, "b-hist", query("b-hist"))
+			}
 			record(t, c, "c-live")
 			r.until(t, 5*time.Second, "c-live", query("c-live"))
 			r.drain(time.Second)
