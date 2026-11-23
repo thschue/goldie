@@ -568,6 +568,7 @@ One article.
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
 | `overrides` | `array` | no | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
+| `scope` | `string` | no | 'global', or the Project ('host/org/repo') whose copy won in the requested view. Absent from an older server, where it means unknown, not global. |
 | `status` | `ItemStatus` | no |  |
 
 ### `ContentWarning`

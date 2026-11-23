@@ -279,6 +279,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		Hint:       hint,
 		Status:     status,
 		ReplacedBy: replacedBy,
+		Scope:      new(a.Scope),
 		Overrides:  new(list(a.Overrides)),
 		Enforced:   new(a.Enforced),
 	}, nil

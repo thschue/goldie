@@ -989,6 +989,13 @@ export interface components {
              */
             replaced_by?: string;
             /**
+             * @description `global`, or the Project (`host/org/repo`) whose copy won in the
+             *     requested view. Absent from an older server, where it means unknown,
+             *     not global.
+             * @example github.com/acme/shop
+             */
+            scope?: string;
+            /**
              * @description The Scopes this article shadows in the requested view, nearest first;
              *     `[]` when it shadows nothing. Never null. Always sent by this server;
              *     absent from an older server, where it means unknown, not empty.
