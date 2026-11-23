@@ -110,6 +110,7 @@ type peerRequest struct {
 	path  string
 	query url.Values
 	auth  string
+	head  http.Header // every header the request carried
 }
 
 // peerSwitch fronts one replica's handler, records every request it sees and
@@ -170,7 +171,7 @@ func (p *peerSwitch) peerRequests() []peerRequest {
 
 func (p *peerSwitch) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
-	p.reqs = append(p.reqs, peerRequest{host: r.Host, path: r.URL.Path, query: r.URL.Query(), auth: r.Header.Get("Authorization")})
+	p.reqs = append(p.reqs, peerRequest{host: r.Host, path: r.URL.Path, query: r.URL.Query(), auth: r.Header.Get("Authorization"), head: r.Header.Clone()})
 	mode, code, location := p.mode, p.redirectCode, p.location
 	p.mu.Unlock()
 	switch mode {
@@ -241,6 +242,7 @@ type nodeSpec struct {
 	noPeers bool          // GOLDIE_ACTIVITY_PEERS unset
 	window  time.Duration // 0 is testWindow
 	logger  *slog.Logger  // handed to newPublic; nil is none
+	key     string        // GOLDIE_SESSION_KEY; "" is sessionKey, which every replica shares
 }
 
 // startReplicas starts the replicas, each configured with peersName, and
@@ -278,7 +280,10 @@ func buildReplica(t *testing.T, s nodeSpec) *replicaNode {
 		stamp = s.claims
 	}
 	activityReplicaName = func() string { return stamp }
-	cfg := platform.Config{ActivityPeers: peersName, ActivityReorderWindow: testWindow, APITokens: s.tokens}
+	cfg := platform.Config{ActivityPeers: peersName, ActivityReorderWindow: testWindow, APITokens: s.tokens, SessionKey: sessionKey}
+	if s.key != "" {
+		cfg.SessionKey = s.key
+	}
 	if s.noPeers {
 		cfg.ActivityPeers = ""
 	}
