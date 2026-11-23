@@ -112,3 +112,17 @@ test.describe('a drawer link (375 px)', () => {
     expect(await focusAtPageStart(page), 'focus is at the page start after back').toBe(true);
   });
 });
+
+// #473 polish: the keyboard path shows the §6.4 ring on the h1.
+test.describe('a nav link activated with the keyboard (1280 px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('moves focus to the h1, which matches :focus-visible', async ({ page }) => {
+    await page.goto('/');
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(h1(page)).toBeFocused();
+    expect(await h1(page).evaluate((el) => el.matches(':focus-visible')), 'keyboard navigation shows the ring').toBe(true);
+  });
+});

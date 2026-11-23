@@ -59,14 +59,26 @@ function onKeydown(e: KeyboardEvent) {
 
 // A link in the open drawer closes it once the router has taken the click.
 function onDrawerClick(e: MouseEvent) {
-  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer(false);
+  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer(!linkClicked);
 }
 
-// An unmodified click on an in-app link marks the next route change as one
-// the user asked for. Captured, so it is set before the router takes the click.
+// An unmodified click on an in-app link to another route marks the next route
+// change as one the user asked for. Captured, so it is set before the router
+// takes the click. A link to the current route, or one the browser follows
+// itself (protocol-relative, a target or download), is no route change and
+// leaves no mark behind to steal focus from a later one.
 function onShellClick(e: MouseEvent) {
   const a = e.target instanceof Element ? e.target.closest('a[href^="/"]') : null;
-  linkClicked = !!a && !e.defaultPrevented && e.button === 0 && !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) && !a.getAttribute('target');
+  const href = a?.getAttribute('href') ?? '';
+  linkClicked =
+    !!a &&
+    !href.startsWith('//') &&
+    !e.defaultPrevented &&
+    e.button === 0 &&
+    !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) &&
+    !a.getAttribute('target') &&
+    !a.hasAttribute('download') &&
+    router.resolve(href).fullPath !== router.currentRoute.value.fullPath;
 }
 
 // Back and forward are not link clicks: drop a mark a modified click left.
