@@ -86,6 +86,12 @@ linters:
           files: ["$all", "!$test"]
           deny:
             - {pkg: github.com/thschue/goldie/internal/contract/contracttest, desc: "contracttest is test-only: import it from _test.go files, never from production code"}
+        examples:
+          # The built-in example content (#451, #458) is a leaf package that only the entry point wires
+          # in, for goldie server --dev on an empty directory. No module imports it.
+          files: ["$all", "!**/cmd/goldie/**"]
+          deny:
+            - {pkg: github.com/thschue/goldie/examples, desc: "examples is wired in by cmd/goldie only: no other package may import it"}
         project-detection:
           # The server never detects a Project from its own working directory (#107, #233): it would
           # leak the server's own repo and scope answers wrongly. Only the stdio MCP role detects, on

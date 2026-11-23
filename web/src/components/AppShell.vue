@@ -1,27 +1,123 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import GoldieMark from './GoldieMark.vue';
+import SideNav from './SideNav.vue';
 import ThemeToggle from './ThemeToggle.vue';
 
-// AppShell (handoff §3.1): the skip link, the top bar and main. The side nav
-// and the drawer behind the menu button come with the next slice of #166.
+// AppShell (handoff §3.1, §4, §7): the top bar, the side nav and main. From
+// 1024 px up the nav is inline; below, it is a modal drawer behind the menu
+// button: focus moves in and is trapped, the page behind is inert, and Esc, a
+// link or the scrim closes it and returns focus to the menu button.
+withDefaults(defineProps<{ role?: 'reader' | 'operator' }>(), { role: 'reader' });
+
+const open = ref(false);
+const menuButton = ref<HTMLButtonElement>();
+const drawer = ref<HTMLElement>();
 const main = ref<HTMLElement>();
+let wide: MediaQueryList | undefined;
+
+const focusables = () => Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
+
+async function openDrawer() {
+  open.value = true;
+  await nextTick();
+  focusables()[0]?.focus();
+}
+
+async function closeDrawer(returnFocus = true) {
+  if (!open.value) return;
+  open.value = false;
+  await nextTick();
+  if (returnFocus) menuButton.value?.focus();
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (!open.value) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    void closeDrawer();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const els = focusables();
+  const first = els[0];
+  const last = els[els.length - 1];
+  const active = document.activeElement;
+  const target = !drawer.value?.contains(active) ? first : e.shiftKey && active === first ? last : !e.shiftKey && active === last ? first : undefined;
+  if (target) {
+    e.preventDefault();
+    target.focus();
+  }
+}
+
+// A link in the open drawer closes it once the router has taken the click.
+function onDrawerClick(e: MouseEvent) {
+  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer();
+}
+
+// Growing past 1024 px puts the nav inline: close the drawer, keep focus.
+function onWide(e: MediaQueryListEvent) {
+  if (e.matches) void closeDrawer(false);
+}
 
 function skipToMain() {
   main.value?.focus();
 }
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown);
+  wide = window.matchMedia('(min-width: 1024px)');
+  wide.addEventListener('change', onWide);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown);
+  wide?.removeEventListener('change', onWide);
+});
 </script>
 
 <template>
   <div class="shell">
-    <header class="topbar">
+    <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
-      <a href="/" class="brand"><GoldieMark /><span>goldie</span></a>
+      <RouterLink to="/" class="brand"><GoldieMark /><span>goldie</span></RouterLink>
       <div class="actions">
         <ThemeToggle />
+        <button
+          ref="menuButton"
+          type="button"
+          class="icon-button menu-button"
+          aria-label="Menu"
+          aria-controls="nav-drawer"
+          :aria-expanded="open"
+          @click="openDrawer"
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
       </div>
     </header>
-    <main id="main" ref="main" tabindex="-1">
+    <div v-if="open" class="scrim" aria-hidden="true" @click="closeDrawer()"></div>
+    <div
+      id="nav-drawer"
+      ref="drawer"
+      class="sidebar"
+      :class="{ open }"
+      :role="open ? 'dialog' : undefined"
+      :aria-modal="open ? 'true' : undefined"
+      :aria-label="open ? 'Navigation' : undefined"
+      @click="onDrawerClick"
+    >
+      <SideNav :role="role">
+        <button type="button" class="icon-button close-button" aria-label="Close menu" @click="closeDrawer()">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </SideNav>
+    </div>
+    <main id="main" ref="main" tabindex="-1" :inert="open">
       <slot />
     </main>
   </div>
@@ -30,10 +126,13 @@ function skipToMain() {
 <style scoped>
 .shell {
   display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
   grid-template-rows: var(--topbar-height) 1fr;
+  grid-template-areas: 'top top' 'nav main';
   min-height: 100vh;
 }
 .topbar {
+  grid-area: top;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -83,17 +182,71 @@ function skipToMain() {
   display: flex;
   gap: var(--space-2);
 }
+.menu-button,
+.close-button {
+  display: none;
+}
+.sidebar {
+  grid-area: nav;
+  /* An inset edge, not a border, so the nav keeps the full column width. */
+  box-shadow: inset -1px 0 0 var(--border-default);
+  background: var(--surface-1);
+}
 main {
+  grid-area: main;
   min-width: 0;
   padding: var(--space-10);
 }
 main:focus-visible {
   outline: none;
 }
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: var(--scrim);
+}
 
+/* §7: 220 px nav from 1024 to 1279 px. */
+@media (width < 1280px) {
+  .shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+/* §7: below 1024 px the nav is a drawer behind the menu button. */
 @media (width < 1024px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'top' 'main';
+  }
   .topbar {
     padding: 0 var(--space-4);
+  }
+  .menu-button {
+    display: inline-grid;
+  }
+  .sidebar {
+    display: none;
+  }
+  .sidebar.open {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    display: block;
+    width: min(280px, calc(100vw - 64px));
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+    transition: transform var(--transition-base);
+  }
+  @starting-style {
+    .sidebar.open {
+      transform: translateX(-100%);
+    }
+  }
+  .close-button {
+    display: inline-grid;
+    margin: 0 0 var(--space-2) var(--space-3);
   }
   main {
     padding: var(--space-6) var(--space-4);
