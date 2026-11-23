@@ -10,7 +10,7 @@ import (
 // the notice without a replacement rather than "Use  instead." (#273).
 func TestDeprecationNoticeWithAnEmptyReplacement(t *testing.T) {
 	status := "deprecated"
-	for _, ref := range []string{"", " ", "​‮", "\x1b\a\n"} {
+	for _, ref := range []string{"", " ", "\u200b\u202e", "\x1b\a\n"} {
 		got := contract.DeprecationNotice(contract.Article{Status: &status, ReplacedBy: &ref})
 		if want := "Warning: this article is deprecated."; got != want {
 			t.Errorf("replaced_by %q: notice %q, want %q", ref, got, want)
