@@ -185,7 +185,7 @@ func (s *Snapshot) resolveSuppressions(view, file, owner, viewer string, refs []
 			return nil, nil, fmt.Errorf("%s: suppress names the enforced Item %s", file, articleFile(target))
 		case !hidden[key]:
 			hidden[key] = true
-			listed = append(listed, KindArticle+":"+target.ID)
+			listed = append(listed, target.Kind()+":"+target.ID)
 		}
 	}
 	sort.Strings(listed)
@@ -233,7 +233,7 @@ func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file
 	if a == nil || !o.visible(*a) {
 		return "", "", false
 	}
-	return KindArticle + ":" + a.ID, projectsDir + "/" + p.scope + "/" + projectFileName, true
+	return a.Kind() + ":" + a.ID, projectsDir + "/" + p.scope + "/" + projectFileName, true
 }
 
 // Warnings returns the load's findings that did not fail it, such as a suppress
