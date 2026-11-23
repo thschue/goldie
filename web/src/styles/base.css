@@ -74,3 +74,10 @@ a {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* The first-load state (index.html): replaced when the app mounts. */
+.boot-loading {
+  padding: var(--space-8) var(--space-6);
+  color: var(--fg-default);
+  font-size: var(--text-md);
+}
