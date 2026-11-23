@@ -191,16 +191,16 @@ func TestCLIVersionAgainstAnErrorStatusCarriesTheStatusAndHint(t *testing.T) {
 
 func TestCLIVersionAgainstAnErrorStatusStripsControlCharacters(t *testing.T) {
 	srv := answerServer(t, 403, jsonType,
-		`{"error":{"code":"forbidden","message":"bad\u001b[31mred‮name","details":{"hint":"fix\u001b[0m it"}}}`)
+		`{"error":{"code":"forbidden","message":"bad\u001b[31mred\u202ename","details":{"hint":"fix\u001b[0m it"}}}`)
 	text, m := versionOut(t, srv.URL)
-	if strings.ContainsAny(text, "\x1b‮") {
+	if strings.ContainsAny(text, "\x1b\u202e") {
 		t.Errorf("version prints a control or bidi character: %q", text)
 	}
 	if !strings.Contains(text, "(403 Forbidden)") {
 		t.Errorf("version = %q, want the status", text)
 	}
 	n, h := asString(m["serverNote"]), asString(m["hint"])
-	if strings.ContainsAny(n+h, "\x1b‮") || !strings.Contains(n, "403") {
+	if strings.ContainsAny(n+h, "\x1b\u202e") || !strings.Contains(n, "403") {
 		t.Errorf("version --json note %q hint %q: want a clean note with the status", n, h)
 	}
 }
