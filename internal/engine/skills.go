@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -151,9 +152,18 @@ func loadSkill(fsys fs.FS, dir, name, scope string) (*Skill, error) {
 		if len(files) >= maxSkillFiles {
 			return fmt.Errorf("%s: the skill has more than %d files", esc(dir), maxSkillFiles)
 		}
-		f, err := readSkillFile(fsys, p, rel, maxSkillBytes-total)
+		limit := maxSkillBytes - total
+		if rel == skillFileName {
+			// SKILL.md is parsed as YAML, which allocates many times its size,
+			// so it is held to one article's cap, not the bundle's.
+			limit = min(limit, maxArticleBytes)
+		}
+		f, err := readSkillFile(fsys, p, rel, limit)
 		if err != nil {
 			if errors.Is(err, errSkillTooLarge) {
+				if rel == skillFileName {
+					return fmt.Errorf("%s: %s is larger than 1 MiB", esc(dir), skillFileName)
+				}
 				return fmt.Errorf("%s: the skill is larger than %d bytes", esc(dir), maxSkillBytes)
 			}
 			return fmt.Errorf("%s: %w", esc(p), err)
@@ -237,14 +247,34 @@ func parseSkillFrontmatter(name string, raw []byte) (string, error) {
 }
 
 // validBundleName holds one path segment of a skill, and the skill's name, to
-// what every file system can keep and no reader is misled by: not empty, not
-// . or .., no separator, no backslash and no hidden rune (HiddenRune, which
-// includes NUL and every control character).
+// what is safe to serve and to write with pull on Linux, macOS and Windows:
+// valid UTF-8, not empty, not . or .., not .git in any case, no separator,
+// backslash or hidden rune (HiddenRune, which includes NUL and every control
+// character), none of the characters Windows refuses (< > : " | ? *, so no NTFS
+// stream), no trailing dot or space, and no Windows device name (CON, PRN, AUX,
+// NUL, COM1-9, LPT1-9, with or without an extension). Unicode normalisation
+// (NFC against NFD) is not checked: macOS may fold two such names into one,
+// which is for pull to handle (#16).
 func validBundleName(n string) bool {
-	if n == "" || n == "." || n == ".." || strings.ContainsAny(n, `/\`) {
+	if n == "" || n == "." || n == ".." || !utf8.ValidString(n) || strings.EqualFold(n, ".git") {
 		return false
 	}
-	return !strings.ContainsFunc(n, HiddenRune)
+	if strings.ContainsAny(n, `/\<>:"|?*`) || strings.ContainsFunc(n, HiddenRune) {
+		return false
+	}
+	if last := n[len(n)-1]; last == '.' || last == ' ' {
+		return false
+	}
+	base, _, _ := strings.Cut(n, ".")
+	switch up := strings.ToUpper(strings.TrimRight(base, " ")); up {
+	case "CON", "PRN", "AUX", "NUL":
+		return false
+	default:
+		if len(up) == 4 && (strings.HasPrefix(up, "COM") || strings.HasPrefix(up, "LPT")) && up[3] >= '1' && up[3] <= '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // esc escapes p to ASCII, so a hostile name cannot put a control character or
