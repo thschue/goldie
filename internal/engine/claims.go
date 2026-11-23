@@ -59,7 +59,8 @@ func (s ClaimedSource) Revision() string {
 
 // Load loads the base Source. An article or agent outside the Claim fails the
 // whole load, with an error naming its file relative to the Source root. A
-// Project with no Items is not an Item and does not fail. A base error is
+// Project with no Items and no suppressions does not fail; one outside the
+// Claim that hides global Items fails, naming its project.yaml. A base error is
 // returned as it is.
 func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 	snap, err := s.base.Load(ctx)
@@ -81,6 +82,10 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		}
 		if a := firstItem(p.articles, p.agents); a != nil {
 			return nil, unclaimed(a, "Project "+p.scope)
+		}
+		if len(p.suppressions) > 0 {
+			return nil, fmt.Errorf("%s/%s/%s: the Source does not claim Project %s",
+				projectsDir, p.scope, projectFileName, p.scope)
 		}
 	}
 	return snap, nil

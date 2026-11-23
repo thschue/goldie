@@ -237,3 +237,14 @@ func TestClaimFailureKeepsLastGoodSnapshotAndNamesFile(t *testing.T) {
 		t.Errorf("LastError = %q after a good load", st.LastError)
 	}
 }
+
+func TestClaimUnclaimedProjectSuppressionFailsLoad(t *testing.T) {
+	// A suppress list hides global Items from a Project view, so it is a
+	// claim on that Project: an unclaimed Project may not carry one.
+	claim := engine.Claim{Global: true, Projects: []string{claimAcmeGlob}}
+	const other = "projects/github.com/other/x/project.yaml"
+	const suppress = "suppress:\n  - article:rules\n"
+	claimLoadErr(t, claim, map[string]string{claimGlobalFile: article("Rules"), other: suppress}, other)
+	// A claimed Project keeps its suppressions.
+	claimLoad(t, claim, map[string]string{claimGlobalFile: article("Rules"), "projects/github.com/acme/api/project.yaml": suppress})
+}
