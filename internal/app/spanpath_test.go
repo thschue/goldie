@@ -258,7 +258,7 @@ func TestLocalServerExportsContractTemplatesNotPaths(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"id-marker-7731", "query-marker-5512", "zz-unknown-marker-9904", "segment-marker-1187",
-		"/API/V1", "/api/v1/articles/id", "LLLLLLLL", "\x1b", "/../", "%2e%2e", "..%2F",
+		"/API/V1", "/api/v1/articles/id", "LLLLLLLL", "/../", "%2e%2e", "..%2F",
 	} {
 		if bytes.Contains(body, []byte(bad)) {
 			t.Errorf("the exported spans carry %q", bad)

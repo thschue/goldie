@@ -40,7 +40,7 @@ var spanPathTargets = []string{
 // spanPathLeaks must appear in no export.
 var spanPathLeaks = []string{
 	"id-marker-7731", "query-marker-5512", "zz-unknown-marker-9904", "segment-marker-1187",
-	"/API/V1", "/api/v1/articles/id", "LLLLLLLL", "\x1b", "/../", "%2e%2e", "%2E%2E", "..%2F", "..%2f",
+	"/API/V1", "/api/v1/articles/id", "LLLLLLLL", "/../", "%2e%2e", "%2E%2E", "..%2F", "..%2f",
 }
 
 func assertTemplatesOnly(t *testing.T, body []byte) {

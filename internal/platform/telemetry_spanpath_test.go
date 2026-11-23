@@ -66,6 +66,7 @@ func pathRequest(t *testing.T, base, rawPath, rawQuery string) *http.Request {
 	u.RawQuery = rawQuery
 	req := httptest.NewRequest(http.MethodGet, "http://goldie.test/", nil)
 	req.URL = u
+	req.RequestURI = "" // a client request must not carry one; httptest.NewRequest sets it
 	return req
 }
 
