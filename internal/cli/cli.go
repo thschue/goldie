@@ -344,7 +344,7 @@ func (f *ClientFlags) commander(env Env, mode tokenMode) (*commander, error) {
 
 // readToken reads the token from GOLDIE_TOKEN or GOLDIE_TOKEN_FILE. A setting
 // that cannot give a token (both set, or a token file that is unreadable,
-// empty or blank, or a blank token) comes back as broken: words that name the
+// empty or blank) comes back as broken: words that name the
 // setting and never the path, the error text or the content. The token is then
 // "".
 func readToken(env Env) (token, broken string) {
@@ -356,8 +356,6 @@ func readToken(env Env) (token, broken string) {
 		return "", EnvToken + " and " + EnvToken + "_FILE are both set: set only one"
 	case err != nil || (hasFile && strings.TrimSpace(tok) == ""):
 		return "", EnvToken + "_FILE names a token file that can't be used: it is unreadable, empty or blank"
-	case hasVal && tok != "" && strings.TrimSpace(tok) == "":
-		return "", EnvToken + " is blank: set a token"
 	}
 	return tok, ""
 }
