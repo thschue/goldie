@@ -232,10 +232,12 @@ func (c *commander) version(ctx context.Context) error {
 	line := platform.Version
 	var note string
 	var hint *string
-	cl, err := c.client(c.s.token != "")
+	given := c.s.token != ""
+	cl, err := c.client(given)
 	var probe serverProbe
+	var apiErr *contract.APIError
 	if err == nil {
-		probe = probeServer(ctx, cl, c.s.token != "")
+		probe = probeServer(ctx, cl, given)
 		err = probe.err
 	}
 	switch {
@@ -253,8 +255,16 @@ func (c *commander) version(ctx context.Context) error {
 		note = "the server's answer was too large"
 		h := "check that the address points at a Goldie server"
 		hint = &h
-	case errors.As(err, new(*contract.APIError)), errors.Is(err, contract.ErrNotAPIAnswer):
-		note = "the server did not return its API document"
+	case errors.Is(err, contract.ErrNotAPIAnswer):
+		note = "the server's answer isn't a goldie API answer"
+		h := "check the address (--addr or " + EnvAddr + ")"
+		hint = &h
+	case errors.As(err, &apiErr):
+		var h string
+		note, h = wordAPIError(apiErr)
+		if h != "" {
+			hint = &h
+		}
 	case err != nil:
 		note = "the server cannot be reached"
 		h := "check that the server is running and the address is right"
@@ -324,20 +334,28 @@ func wordError(err error, local bool) error {
 	default:
 		return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 	}
-	status := http.StatusText(e.Status)
-	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Message == "" {
-		msg = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	msg, hint := wordAPIError(e)
+	if hint != "" {
+		msg += "\nHint: " + hint
 	}
-	hint := e.Hint
+	return errors.New(msg)
+}
+
+// wordAPIError words an error status as a note and a hint, which status joins
+// into one message (wordError) and version prints on its own lines. The hint
+// is empty when there is none.
+func wordAPIError(e *contract.APIError) (note, hint string) {
+	status := http.StatusText(e.Status)
+	note = fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
+	if e.Message == "" {
+		note = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	}
+	hint = e.Hint
 	switch {
 	case e.Wait() != "":
 		hint = "Wait " + e.Wait() + ", then retry."
 	case e.Status == http.StatusTooManyRequests:
 		hint = "Wait a little, then retry."
 	}
-	if hint != "" {
-		msg += "\nHint: " + hint
-	}
-	return errors.New(msg)
+	return note, hint
 }
