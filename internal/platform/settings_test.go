@@ -40,6 +40,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got[EnvSessionKey] = ""
 	got[EnvMCPName] = cfg.MCPName
 	got[EnvMode] = cfg.Mode
+	got[EnvUpstreamAddr] = cfg.UpstreamAddr
 
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
