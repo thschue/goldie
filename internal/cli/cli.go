@@ -86,7 +86,7 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	}
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
-		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand")
+		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
 	}
 	if name != "init" && name != "instructions" { // init prints three fixed lines; instructions has no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")

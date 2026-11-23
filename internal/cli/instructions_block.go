@@ -38,7 +38,7 @@ func (s BlockStatus) String() string {
 
 var (
 	// ErrBlockEdited is returned for a hand-edited block when not forced.
-	ErrBlockEdited = errors.New("the goldie block was edited by hand; --force replaces it and discards those edits")
+	ErrBlockEdited = errors.New("the goldie block was edited by hand, and --force discards those edits")
 	// ErrBlockMalformed is returned for a file whose markers do not form
 	// exactly one block, or for block content that holds a marker.
 	ErrBlockMalformed = errors.New("the goldie block markers are malformed")

@@ -82,7 +82,12 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 	// check replaces with force so an edited block reports its status.
 	out, status, err := ReplaceBlock(file, block, action == "check" || c.s.force)
 	if err != nil {
-		return err
+		// The messages say what is wrong; the caller names the file and, for an
+		// edited block, the next command.
+		if errors.Is(err, ErrBlockEdited) {
+			return fmt.Errorf("%s: %w; to replace it run: goldie instructions apply --target %s --force", name, err, c.s.target)
+		}
+		return fmt.Errorf("%s: %w", name, err)
 	}
 	if action == "check" {
 		if status != BlockCurrent {
