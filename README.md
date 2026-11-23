@@ -97,7 +97,20 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 ## MCP over stdio
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
-`search_knowledge` and `get_article`. An agent's MCP client starts it as a subprocess. It talks to a
+`search_knowledge`, `get_article`, `list_projects` and `current_context`. `search_knowledge` and
+`get_article` take an optional `project` (`host/org/repo`, as `list_projects` names it; case is
+ignored) that puts that Project's articles first; a value that isn't a Project id, or has any
+non-ASCII character, is refused before any request. For a Project that isn't registered, the answer
+is global and carries the server's hint. At startup, and only then, it finds the default Project
+of the directory it runs in the way the CLI does: `GOLDIE_PROJECT`, then `.goldie/config.yaml`,
+then the git remotes `upstream` and `origin`. A call that leaves `project` out, or empty, answers for
+that default; an explicit `project` beats it, and one made only of white space is refused.
+`current_context` reports the default and where it came from, in the words of `goldie status`, or
+that there is none (outside a repository, for example, where the answers are global), naming a
+remote whose URL isn't `host/org/repo` by name only. A broken or unreadable `.goldie/config.yaml`
+doesn't stop the session: `current_context` reports the problem as `status` does, calls that rely on
+the default fail with it before any request, and calls with an explicit `project` still answer. Fix
+the file and restart the MCP server to pick it up. An agent's MCP client starts it as a subprocess. It talks to a
 running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
 (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content
 with `--dir` (or `GOLDIE_DIR`, see [CLI](#cli)). Prefer the variables to
@@ -121,7 +134,9 @@ of `GOLDIE_API_TOKENS`) as `Authorization: Bearer <token>`; without it the answe
 envelope. The tools call the API inside the process with the caller's token, so the API checks that
 token and no other. The endpoint is stateless and answers with JSON: there are no sessions, no
 standing event stream and no tool-list change notifications (the tool set is fixed), and each
-request must finish within 10 seconds, so connected agents never hold up shutdown.
+request must finish within 10 seconds, so connected agents never hold up shutdown. The server never
+detects a Project from its own working directory or environment: over HTTP there is no default
+Project, `current_context` says so, and an agent passes `project` to scope an answer.
 
 The server advertises its capabilities explicitly: tools, and not the SDK's default `logging`
 capability, which nothing in goldie uses, so there are no MCP log notifications. If an API handler

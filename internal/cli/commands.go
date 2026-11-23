@@ -137,15 +137,9 @@ func (c *commander) status(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// spec stays nil for the document's 401: the server is reachable, and the
-	// API name unknown. Any other answer is read by contract.Answer.
-	var spec *map[string]any
-	raw, err := cl.GetOpenAPIJSON(ctx)
-	if err == nil && raw.StatusCode == http.StatusUnauthorized {
-		_ = raw.Body.Close()
-	} else if spec, err = contract.Answer(raw, err, contract.ParseGetOpenAPIJSONResponse,
-		func(r *contract.GetOpenAPIJSONResponse) *map[string]any { return r.JSON200 }); err != nil {
-		return wordError(err, c.local)
+	probe := probeServer(ctx, cl, given)
+	if probe.err != nil {
+		return wordError(probe.err, c.local)
 	}
 	// A Project problem is reported on the Project line, not as a failure:
 	// status is how a user finds out what is wrong. Other commands still fail.
@@ -157,24 +151,22 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
-	var title, apiVersion string
 	var hint *string
 	switch {
-	case spec != nil:
-		title, apiVersion = specInfo(*spec)
+	case probe.answered():
 		if given {
 			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj), c.local); err != nil {
 				return err
 			}
 		}
-	case given:
+	case probe.tokenState == tokenRejected:
 		auth = "token rejected"
 	}
 	if c.s.json {
 		out := map[string]any{"reachable": true, "api": nil, "apiVersion": nil,
 			"tokenGiven": given, "tokenAccepted": accepted, "project": nil, "projectSource": nil}
-		if spec != nil {
-			out["api"], out["apiVersion"] = title, apiVersion
+		if probe.answered() {
+			out["api"], out["apiVersion"] = probe.title, probe.apiVersion
 		}
 		if proj.ID != "" {
 			out["project"], out["projectSource"] = proj.ID, sourceWords[proj.Source]
@@ -191,8 +183,8 @@ func (c *commander) status(ctx context.Context) error {
 		return c.printJSON(out)
 	}
 	apiLine := "unknown (the API document needs an accepted token)"
-	if spec != nil {
-		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
+	if probe.answered() {
+		apiLine = contract.CleanLine(probe.title) + " " + contract.CleanLine(probe.apiVersion)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
 		apiLine, auth, describeProject(proj, projectError))
@@ -240,10 +232,13 @@ func (c *commander) version(ctx context.Context) error {
 	line := platform.Version
 	var note string
 	var hint *string
-	cl, err := c.client(c.s.token != "")
-	var doc *contract.GetOpenAPIJSONResponse
+	given := c.s.token != ""
+	cl, err := c.client(given)
+	var probe serverProbe
+	var apiErr *contract.APIError
 	if err == nil {
-		doc, err = cl.GetOpenAPIJSONWithResponse(ctx)
+		probe = probeServer(ctx, cl, given)
+		err = probe.err
 	}
 	switch {
 	case cl == nil:
@@ -260,19 +255,28 @@ func (c *commander) version(ctx context.Context) error {
 		note = "the server's answer was too large"
 		h := "check that the address points at a Goldie server"
 		hint = &h
+	case errors.Is(err, contract.ErrNotAPIAnswer):
+		note = "the server's answer isn't a goldie API answer"
+		h := "check the address (--addr or " + EnvAddr + ")"
+		hint = &h
+	case errors.As(err, &apiErr):
+		var h string
+		note, h = wordAPIError(apiErr)
+		if h != "" {
+			hint = &h
+		}
 	case err != nil:
 		note = "the server cannot be reached"
 		h := "check that the server is running and the address is right"
 		hint = &h
-	case doc.JSON200 != nil:
-		_, apiVersion := specInfo(*doc.JSON200)
-		info["serverApiVersion"] = apiVersion
-		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(apiVersion))
-	case doc.StatusCode() == http.StatusUnauthorized && c.s.token == "":
+	case probe.answered():
+		info["serverApiVersion"] = probe.apiVersion
+		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(probe.apiVersion))
+	case probe.tokenState == tokenMissing:
 		note = "no token given"
 		h := "set " + EnvToken + " or " + EnvToken + "_FILE (or pass --token) to see the server API version"
 		hint = &h
-	case doc.StatusCode() == http.StatusUnauthorized:
+	case probe.tokenState == tokenRejected:
 		note = "the token was rejected"
 		h := "check " + EnvToken + " or " + EnvToken + "_FILE"
 		hint = &h
@@ -298,14 +302,6 @@ func (c *commander) printVersion(info map[string]any, line string) error {
 	}
 	_, err := fmt.Fprintln(c.out, line)
 	return err
-}
-
-// specInfo reads the title and version from an OpenAPI document.
-func specInfo(doc map[string]any) (title, version string) {
-	info, _ := doc["info"].(map[string]any)
-	title, _ = info["title"].(string)
-	version, _ = info["version"].(string)
-	return title, version
 }
 
 // wordError words a failure to call the API or read its answer, as
@@ -338,20 +334,28 @@ func wordError(err error, local bool) error {
 	default:
 		return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 	}
-	status := http.StatusText(e.Status)
-	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Message == "" {
-		msg = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	msg, hint := wordAPIError(e)
+	if hint != "" {
+		msg += "\nHint: " + hint
 	}
-	hint := e.Hint
+	return errors.New(msg)
+}
+
+// wordAPIError words an error status as a note and a hint, which status joins
+// into one message (wordError) and version prints on its own lines. The hint
+// is empty when there is none.
+func wordAPIError(e *contract.APIError) (note, hint string) {
+	status := http.StatusText(e.Status)
+	note = fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
+	if e.Message == "" {
+		note = fmt.Sprintf("the server answered %d %s", e.Status, status)
+	}
+	hint = e.Hint
 	switch {
 	case e.Wait() != "":
 		hint = "Wait " + e.Wait() + ", then retry."
 	case e.Status == http.StatusTooManyRequests:
 		hint = "Wait a little, then retry."
 	}
-	if hint != "" {
-		msg += "\nHint: " + hint
-	}
-	return errors.New(msg)
+	return note, hint
 }

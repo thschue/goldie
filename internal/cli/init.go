@@ -49,7 +49,7 @@ func (c *commander) initProject(ctx context.Context) error {
 	if project.IsSourceRepository(root) { // before detection: a Source needs no Project
 		return errors.New(errInitSource)
 	}
-	proj, err := c.projectIn(dir)
+	proj, err := projectIn(dir, c.env.Lookup, c.s.project)
 	if err != nil {
 		return err
 	}

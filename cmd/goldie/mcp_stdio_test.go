@@ -121,8 +121,8 @@ func TestMCPStdioAdvertisesBothTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	if len(got) != 2 || !got["search_knowledge"] || !got["get_article"] {
-		t.Errorf("tools over stdio = %v, want exactly search_knowledge and get_article", got)
+	if len(got) != 4 || !got["search_knowledge"] || !got["get_article"] || !got["list_projects"] || !got["current_context"] {
+		t.Errorf("tools over stdio = %v, want exactly search_knowledge, get_article, list_projects and current_context", got)
 	}
 }
 

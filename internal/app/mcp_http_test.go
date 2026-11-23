@@ -83,8 +83,8 @@ func assertToolsAnswerOverHTTP(t *testing.T, cs *mcp.ClientSession) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	if len(got) != 2 || !got["search_knowledge"] || !got["get_article"] {
-		t.Errorf("tools over HTTP = %v, want exactly search_knowledge and get_article", got)
+	if len(got) != 4 || !got["search_knowledge"] || !got["get_article"] || !got["list_projects"] || !got["current_context"] {
+		t.Errorf("tools over HTTP = %v, want exactly search_knowledge, get_article, list_projects and current_context", got)
 	}
 	text, isErr := call(t, cs, "search_knowledge", map[string]any{"query": "agents loops"})
 	if isErr || !strings.Contains(text, "agent-loops") || !strings.Contains(text, "Autonomous agent loops") {
