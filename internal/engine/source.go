@@ -416,6 +416,8 @@ type Snapshot struct {
 	// local is the repository's own .goldie/ (NewLocalSource), or nil. It
 	// takes part in every view.
 	local *localScope
+	// viewProject is the Project a ViewSource's View is of, or "" (see viewFor).
+	viewProject string
 }
 
 type project struct {

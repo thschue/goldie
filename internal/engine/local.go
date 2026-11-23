@@ -247,6 +247,52 @@ func localShadowErr(local, enforced *Article) error {
 	return fmt.Errorf("%s: %s shadows the enforced Item %s (%s)", articleFile(local), itemRef(local), itemRef(enforced), articleFile(enforced))
 }
 
+// LocalConfigAddr returns the server address that goldieDir/config.yaml names
+// with `addr:`, or "" when it names none (no file, no key or a null one). The
+// value is untrusted and returned as written: the caller decides whether it
+// may be used, and must never send a token to it unchecked. The file is read
+// like the local Scope reads it, through os.Root, as a regular file within the
+// size cap. A file that cannot be read, is not valid YAML or holds an addr that
+// is not a string is an error that names the file and no part of the value.
+func LocalConfigAddr(goldieDir string) (string, error) {
+	parent, name, err := splitGoldieDir(goldieDir)
+	if err != nil {
+		return "", err
+	}
+	repo, err := os.OpenRoot(parent)
+	if err != nil {
+		return "", errors.New("local content directory is not readable")
+	}
+	defer func() { _ = repo.Close() }()
+	fsys := DirSource{}.contentFS(repo)
+	p := name + "/" + localConfigName
+	fi, err := fs.Lstat(fsys, p)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", nil
+	case err != nil || !fi.Mode().IsRegular():
+		return "", fmt.Errorf("%s: must be a regular file that can be read", p)
+	}
+	raw, err := readLimited(fsys, p, localConfigName)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", p, err)
+	}
+	var cfg struct {
+		Addr yaml.Node `yaml:"addr"`
+	}
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return "", fmt.Errorf("%s: is not valid YAML", p)
+	}
+	if !present(cfg.Addr) {
+		return "", nil
+	}
+	v, ok := scalar(cfg.Addr, "!!str")
+	if !ok {
+		return "", fmt.Errorf("%s: addr must be a string", p)
+	}
+	return v, nil
+}
+
 // itemRef is a's reference, article:<ID>, with the ID escaped to ASCII and cut
 // like a lookup id (quoteID), but without quotes.
 func itemRef(a *Article) string {

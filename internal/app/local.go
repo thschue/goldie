@@ -80,6 +80,14 @@ type Local struct {
 	// Examples is content to serve while the content directory has none. It is
 	// never mixed with the directory's own content. Nil serves nothing instead.
 	Examples fs.FS
+	// Upstream, when its Addr is set, is a central server whose view of its
+	// Project is the base, in place of the content directory, with GoldieDir on
+	// top (upstream.go). Start does not need it reachable: until its first good
+	// load /readyz fails source:upstream and the API answers 503 not_ready.
+	Upstream Upstream
+	// OnListen, when not nil, is called once for each listener, "app" and
+	// "admin", with the address it bound, before Start returns.
+	OnListen func(listener, addr string)
 }
 
 // logger is Logger, or a logger that discards.
@@ -122,7 +130,13 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, err
 	}
 	var src engine.Source = engine.EmptySource{}
-	if cfg.ContentDir != "" {
+	if l.Upstream.Addr != "" {
+		base, err := upstreamBase(l.Upstream, l.GoldieDir)
+		if err != nil {
+			return "", "", nil, err
+		}
+		src = base
+	} else if cfg.ContentDir != "" {
 		if l.Root != nil {
 			src = engine.NewRootSource(l.Root)
 		} else {
@@ -136,8 +150,14 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		src = engine.NewLocalSource(src, l.GoldieDir)
 	}
 	syncer, err := loadSource(ctx, src)
-	if err != nil {
+	var upstreamErr *upstreamError
+	if err != nil && !errors.As(err, &upstreamErr) {
 		return "", "", nil, contentLoadError(err)
+	}
+	// An upstream that cannot be loaded does not stop the server: it is not
+	// ready until a poll succeeds.
+	if syncer == nil {
+		syncer = engine.NewSyncer(src)
 	}
 	token, err = newLocalToken()
 	if err != nil {
@@ -148,7 +168,11 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, errors.New("the local token was refused")
 	}
 	logger := l.logger()
-	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger, api.DefaultActivityKeepalive, resultCounters(l.Telemetry))
+	served := source{syncer: syncer, check: sourceDirCheck}
+	if l.Upstream.Addr != "" {
+		served = source{syncer: syncer, check: sourceUpstreamCheck, logAttrs: []any{"source", "upstream"}}
+	}
+	pub, err := newPublic(cfg, tokens, served, logger, api.DefaultActivityKeepalive, resultCounters(l.Telemetry))
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -160,6 +184,9 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	srv := &platform.Server{
 		Config: cfg, Logger: logger, Ready: ready, App: pub, Telemetry: l.Telemetry,
 		OnListen: func(listener, a string) {
+			if l.OnListen != nil {
+				l.OnListen(listener, a)
+			}
 			if listener == "app" {
 				bound <- a
 			}
@@ -211,6 +238,7 @@ type LocalOptions struct {
 	BaseDir   string   // the content directory (global/articles, projects/...); "" is empty content
 	Root      *os.Root // BaseDir opened by the caller, who closes it after stop; nil opens BaseDir by path
 	GoldieDir string   // the repository's .goldie directory, an absolute path: the local Scope; "" is none
+	Upstream  Upstream // a central server to take the base from instead of BaseDir; the zero value is none
 }
 
 // StartLocal starts the server on loopback over the content at opts.BaseDir,
@@ -227,7 +255,7 @@ func StartLocal(ctx context.Context, opts LocalOptions) (addr, token string, sto
 	}
 	base.DrainTimeout = 0
 	runCtx, cancel := context.WithCancel(ctx)
-	addr, token, wait, err := Local{Config: LocalConfig(base, opts.BaseDir), GoldieDir: opts.GoldieDir, Root: opts.Root}.Start(runCtx)
+	addr, token, wait, err := Local{Config: LocalConfig(base, opts.BaseDir), GoldieDir: opts.GoldieDir, Root: opts.Root, Upstream: opts.Upstream}.Start(runCtx)
 	if err != nil {
 		cancel()
 		return "", "", nil, err

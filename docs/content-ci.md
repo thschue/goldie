@@ -164,6 +164,24 @@ replacing the path with a symlink while the command runs does not redirect the r
 `config.yaml` the handle is the one the check opened through the repository root, so there is no gap
 between check and use. `--dir` and `GOLDIE_DIR` are opened by path, once, right after their checks.
 
+### With an upstream (a central server)
+
+`app.Local` and `app.LocalOptions` take an `Upstream{Addr, Token, Project}` (ADR 0026). With an `Addr`,
+the embedded server's base is the Project's resolved view from that server
+(`GET /api/v1/projects/{id}/items`), in place of the content directory, and `.goldie/` goes on top. A
+local Item that shadows an Item the upstream marks `enforced` stops startup, naming `article:<id>` and
+the `.goldie/` file.
+
+- The token goes only to `Addr`, which is `GOLDIE_ADDR`. A `config.yaml` `addr:` of another origin
+  (scheme, host and port; a path or trailing slash does not count) is refused with a hint to set
+  `GOLDIE_ADDR`, and that address is never contacted. `http://` is refused unless the host is loopback.
+- The upstream is reached through the contract client: no redirect is followed, an answer is capped at
+  16 MiB, a call times out after 30 s. The view is validated like a file: `scope` must be `global` or one
+  Project id, `enforced` a boolean, and references and lookups must resolve.
+- An upstream that is down at startup does not stop the server. `/readyz` fails `source:upstream` and the
+  API answers 503 `not_ready` until the first good load, which the poll loop retries. A later failure keeps
+  the last good Snapshot and readiness stays `ok`.
+
 ## Pipeline snippet
 
 Put the `goldie` binary on `PATH` in your pipeline, then fail the job on a non-zero exit:
