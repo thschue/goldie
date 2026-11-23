@@ -1,4 +1,4 @@
-// Agent assets calls (#587, #589): the skills and agents that answer in a Project's view, sorted by name.
+// Agent assets calls (#587, #589, #647): the skills, agents and loops that answer in a Project's view, sorted by name.
 import { get } from '../api/client';
 import type { components } from '../api/schema';
 
@@ -6,6 +6,8 @@ export type Skill = components['schemas']['Skill'];
 export type SkillList = components['schemas']['SkillList'];
 export type Agent = components['schemas']['Agent'];
 export type AgentList = components['schemas']['AgentList'];
+export type Loop = components['schemas']['Loop'];
+export type LoopList = components['schemas']['LoopList'];
 
 // Sorted by name, ascending, whatever order the API answers in. Code-point order, as the server sorts.
 const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
@@ -20,6 +22,12 @@ export const listAgents = (project: string, signal?: AbortSignal) =>
   get<AgentList>(`/api/v1/agents?project=${encodeURIComponent(project)}`, signal).then((l) => ({
     ...l,
     agents: [...l.agents].sort(byName),
+  }));
+
+export const listLoops = (project: string, signal?: AbortSignal) =>
+  get<LoopList>(`/api/v1/loops?project=${encodeURIComponent(project)}`, signal).then((l) => ({
+    ...l,
+    loops: [...l.loops].sort(byName),
   }));
 
 // Source text is untrusted: shown as text, minus the invisible and bidirectional controls that

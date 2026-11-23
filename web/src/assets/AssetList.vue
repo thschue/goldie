@@ -17,13 +17,15 @@ defineProps<{
   retry: () => void;
   hint?: string;
   items: T[];
+  // `grid` (default) is cards side by side; `list` is one full-width card per row (the Loops tab).
+  layout?: 'grid' | 'list';
 }>();
 </script>
 
 <template>
   <p v-if="!project" class="note">Pick a Project from the selector to see its {{ noun }}.</p>
 
-  <div v-else-if="skeleton" class="grid" aria-busy="true">
+  <div v-else-if="skeleton" class="grid" :class="layout" aria-busy="true">
     <span role="status" class="sr-only">Loading {{ noun }}</span>
     <div v-for="n in 3" :key="n" class="card bar"></div>
   </div>
@@ -47,7 +49,7 @@ defineProps<{
       <p>No {{ noun }} for <code>{{ project }}</code> yet.</p>
       <a :href="sourceDocsURL" target="_blank" rel="noopener noreferrer">Source docs</a>
     </div>
-    <ul v-else class="grid">
+    <ul v-else class="grid" :class="layout">
       <li v-for="item in items" :key="item.name" class="card">
         <slot :item="item" />
       </li>
@@ -68,6 +70,9 @@ defineProps<{
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.list {
+  grid-template-columns: minmax(0, 940px);
 }
 .card {
   display: flex;
