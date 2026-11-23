@@ -86,7 +86,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 | CLI | `internal/cli` | Talks to the API only through the client |
 | Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), reading API answers (`Answer`, `ParseOK`, `DecodeAPIError`) and cleaning a list of strings from them (`CleanList`), and client-side Project detection and the writing of `.goldie/config.yaml` that `goldie init` does (`internal/contract/project`) |
 | Platform | `internal/platform` | Config, logging, admin port, readiness, drain, telemetry |
-| Examples | `examples` | Built-in example content that `goldie server --dev` serves from an empty directory; a leaf package that only `cmd/goldie` imports |
+| Examples | `examples` | Built-in example content that `goldie server --dev` serves from an empty directory; a leaf package outside `internal/` because `go:embed` cannot reach `examples/knowledge` from there, and only `cmd/goldie` imports it |
 | Composition root | `internal/app` | Wires modules into roles; the only client-side code that may reach the server (embedded server) |
 
 A **role** is what one process does (`server` in mode `all|api|ui|mcp`, `mcp`, or a client command).
