@@ -273,7 +273,7 @@ func runChild(test, env string, bound time.Duration) (out []byte, pid int, err e
 		return nil, 0, err
 	}
 	pid = cmd.Process.Pid
-	waitErr := cmd.Wait() // before buf is read: Wait ends the copying into it
+	waitErr := cmd.Wait() // Wait ends the copying into buf, so read buf only after it
 	return buf.Bytes(), pid, childResult(ctx, test, bound, waitErr)
 }
 
@@ -366,34 +366,56 @@ func TestGitMemoryChildResult(t *testing.T) {
 }
 
 // TestGitMemoryPeakChildUsesBound checks measurePeakInChild starts the peak
-// child with childBound(t, memPeakBound). The bound is raised far above any
-// test deadline, so a child started with the bound uncut, or with a constant,
-// shows: with a test deadline the child's bound must be cut to it, and without
-// one it must be the bound itself.
+// child with childBound(t, memPeakBound), in two parts.
+//
+// A bound well under the test's remaining time (30s; the default test deadline
+// is 10 minutes) must reach the child exactly. A revert to the raw constant
+// memPeakChildBound (2 minutes) fails here. This part holds with or without a
+// test deadline, so it is the only one that applies under -timeout 0. It is
+// skipped when less than a minute of the test deadline remains, since the bound
+// would then be cut legitimately.
+//
+// A bound far above the test deadline must be cut to the time remaining. A
+// child started with the bound uncut fails here. Without a test deadline there
+// is nothing to cut to, and the bound must arrive as it is.
 func TestGitMemoryPeakChildUsesBound(t *testing.T) {
-	const huge = 1000 * time.Hour
+	const (
+		short = 30 * time.Second
+		huge  = 1000 * time.Hour
+	)
 	var gotTest, gotEnv string
 	var gotBound time.Duration
 	calls := 0
 	origFn, origBound := runChildFn, memPeakBound
+	t.Cleanup(func() { runChildFn, memPeakBound = origFn, origBound })
 	runChildFn = func(test, env string, bound time.Duration) ([]byte, int, error) {
 		calls++
 		gotTest, gotEnv, gotBound = test, env, bound
 		return []byte(memPeakLine + "peak=7 samples=3\n"), 1, nil
 	}
-	memPeakBound = huge
-	defer func() { runChildFn, memPeakBound = origFn, origBound }()
+	run := func(bound time.Duration) (started time.Time) {
+		memPeakBound, calls = bound, 0
+		started = time.Now() // the child's bound is measured no earlier than this
+		peak, samples := measurePeakInChild(t)
+		if calls != 1 || peak != 7 || samples != 3 {
+			t.Fatalf("calls = %d, peak = %d, samples = %d", calls, peak, samples)
+		}
+		if gotTest != "TestGitMemoryPeakChild" || gotEnv != memPeakChildEnv {
+			t.Fatalf("started %q with %q, want the peak child", gotTest, gotEnv)
+		}
+		return started
+	}
 
-	before := time.Now() // the child's bound is measured no earlier than this
-	peak, samples := measurePeakInChild(t)
-	if calls != 1 || peak != 7 || samples != 3 {
-		t.Fatalf("calls = %d, peak = %d, samples = %d", calls, peak, samples)
+	started := run(short)
+	if dl, ok := t.Deadline(); !ok || dl.Sub(started) > time.Minute {
+		if gotBound != short {
+			t.Fatalf("bound = %v, want exactly the %v bound (not the %v constant)", gotBound, short, memPeakChildBound)
+		}
 	}
-	if gotTest != "TestGitMemoryPeakChild" || gotEnv != memPeakChildEnv {
-		t.Fatalf("started %q with %q, want the peak child", gotTest, gotEnv)
-	}
+
+	started = run(huge)
 	if dl, ok := t.Deadline(); ok {
-		if max := dl.Sub(before); gotBound <= 0 || gotBound > max {
+		if max := dl.Sub(started); gotBound <= 0 || gotBound > max {
 			t.Fatalf("bound = %v, want it cut to the test's remaining time (at most %v)", gotBound, max)
 		}
 	} else if gotBound != huge {
