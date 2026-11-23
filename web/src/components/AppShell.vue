@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import RoleMenu from '../auth/RoleMenu.vue';
+import ProjectSelector from '../projects/ProjectSelector.vue';
 import GoldieMark from './GoldieMark.vue';
 import SideNav from './SideNav.vue';
 import ThemeToggle from './ThemeToggle.vue';
@@ -12,7 +14,10 @@ import ThemeToggle from './ThemeToggle.vue';
 // a route change, so there focus moves to the new view's h1 instead (#473,
 // WCAG 2.4.3). Only a click on an in-app link does that: the initial load and
 // browser back or forward leave focus where it is.
-withDefaults(defineProps<{ role?: 'reader' | 'operator' }>(), { role: 'reader' });
+// The role chip (#495) shows the session's role (account is false on the public
+// sign-in route); its menu's Sign out is emitted.
+withDefaults(defineProps<{ role?: 'reader' | 'operator'; account?: boolean }>(), { role: 'reader', account: true });
+const emit = defineEmits<{ signout: [] }>();
 
 const open = ref(false);
 const menuButton = ref<HTMLButtonElement>();
@@ -136,9 +141,11 @@ onBeforeUnmount(() => {
   <div class="shell" @click.capture="onShellClick">
     <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
-      <RouterLink to="/" class="brand"><GoldieMark /><span>goldie</span></RouterLink>
+      <RouterLink to="/" class="brand"><GoldieMark /><span class="sr-only sr-only-phone">goldie</span></RouterLink>
+      <ProjectSelector />
       <div class="actions">
         <ThemeToggle />
+        <RoleMenu v-if="account" :role="role" @signout="emit('signout')" />
         <button
           ref="menuButton"
           type="button"
@@ -235,6 +242,7 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 .actions {
+  margin-left: auto;
   display: flex;
   gap: var(--space-2);
 }
@@ -267,6 +275,16 @@ main:focus-visible {
 @media (width < 1280px) {
   .shell {
     grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+@media (width < 480px) {
+  .topbar {
+    gap: var(--space-2);
+  }
+  .brand {
+    justify-content: center;
+    min-width: var(--target-min);
   }
 }
 

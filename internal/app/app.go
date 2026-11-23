@@ -388,7 +388,7 @@ type Public struct {
 	*publicMux
 	source
 	pollLog *slog.Logger          // logs every poll, when the Source asks for it; nil logs none
-	polls   *platform.PollCounter // counts every poll (goldie.syncs); nil counts none
+	polls   *platform.PollCounter // counts and times every poll (goldie.syncs, goldie.sync.duration); nil counts none
 	poll    time.Duration         // GOLDIE_POLL_INTERVAL
 	mu      sync.Mutex
 	started bool
@@ -427,7 +427,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 }
 
 // pollHook is the poll loop's onPoll: it logs polls when the Source asks for
-// it (logPolls) and counts each finished poll in goldie.syncs. A poll that
+// it (logPolls) and counts each finished poll in goldie.syncs and times it in goldie.sync.duration. A poll that
 // ends with ctx, the server stopping, is no result and is not counted. It is
 // nil when there is nothing to do.
 func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
@@ -443,7 +443,7 @@ func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
 			logged(st)
 		}
 		if ctx.Err() == nil {
-			p.polls.Add(ctx, st.LastError != "")
+			p.polls.Add(ctx, st.LastError != "", st.Duration)
 		}
 	}
 }

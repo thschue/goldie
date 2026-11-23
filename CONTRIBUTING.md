@@ -14,8 +14,8 @@ Thanks for helping. Agents follow the same rules; the agent-specific mechanics a
    contract change; a change to `run` only when it weakens a check);
    everything else merges after review and green CI.
    `./run regen-ts-check` (the TypeScript types match the spec, and a drifted spec is flagged) needs
-   Node, so it is not in `./run check`: CI runs it in the `ux` job. Run it yourself after a spec
-   change if you have Node; `./run regen` rewrites the types.
+   Node, so it is not in `./run check`: CI runs it in the `regen-ts-check` job, which `lint and test`
+   requires. Run it yourself after a spec change if you have Node; `./run regen` rewrites the types.
 5. The PR title is a Conventional Commit (`feat:`, `fix:`, `docs:`, ...). PRs are squash-merged, so the
    title becomes the commit message and drives release notes.
 

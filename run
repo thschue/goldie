@@ -22,11 +22,12 @@
 #                    needs Node, not part of check
 #   ./run ux         build, type-check and run the component tests, serve examples/knowledge and run the
 #                    Playwright specs in web/e2e
-#                    (screenshots, axe) into ux/, the CI artifact for the UX review; needs Node
+#                    (screenshots, axe) into ux/, the CI artifact for the UX review; the specs sign in
+#                    with a throwaway reader token (GOLDIE_UX_TOKEN); needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run regen-ts-check  fail if web/src/api/schema.ts differs from the spec, and prove the check fires
-#                    on the drifted fixture; needs Node, not part of check (CI's ux job runs it)
+#                    on the drifted fixture; needs Node, not part of check (CI's regen-ts-check job runs it)
 #   ./run versions   print the toolchain versions this repository expects
 #
 # `./run check` must exit 0 with no output from the linters ("zero warnings").
@@ -593,6 +594,9 @@ cmd_ux() {
 	go build -o "$ux_tmp/goldie" ./cmd/goldie || die "go build failed"
 	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/token") ||
 		die "cannot create the throwaway token"
+	# The token is a reader named ux, so the specs see the reader nav and chip.
+	(umask 077 && printf 'ux:reader:%s\n' "$(cat "$ux_tmp/token")" >"$ux_tmp/tokens") ||
+		die "cannot create the throwaway token file"
 	say "ux: goldie server on examples/knowledge"
 	(ux_goldie 127.0.0.1:0 server) >"$UX_DIR/server.log" 2>&1 &
 	ux_pid=$!
@@ -610,7 +614,8 @@ cmd_ux() {
 	done
 	say "ux: playwright test against http://$app"
 	status=0
-	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" npx --no playwright test) || status=$?
+	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" GOLDIE_UX_TOKEN="$(cat "$ux_tmp/token")" \
+		GOLDIE_UX_STATE="$ux_tmp/state.json" npx --no playwright test) || status=$?
 	[ "$status" = 0 ] || die "ux: the Playwright specs failed; the report is in $UX_DIR/"
 	say "ux: screenshots and report in $UX_DIR/"
 }
@@ -623,7 +628,7 @@ cmd_ux() {
 ux_goldie() {
 	for v in $(env | sed -n 's/^\(GOLDIE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 	export GOLDIE_ADMIN_ADDR="$1" GOLDIE_ADDR=127.0.0.1:0 GOLDIE_DRAIN_SECONDS=0 \
-		GOLDIE_CONTENT_DIR="$ROOT/examples/knowledge" GOLDIE_API_TOKEN_FILE="$ux_tmp/token"
+		GOLDIE_CONTENT_DIR="$ROOT/examples/knowledge" GOLDIE_API_TOKENS_FILE="$ux_tmp/tokens"
 	shift
 	exec "$ux_tmp/goldie" "$@"
 }
@@ -673,9 +678,11 @@ cmd_regen() {
 # failure never leaves a truncated types file behind.
 ts_generate() {
 	command -v npm >/dev/null 2>&1 ||
-		die "npm not found: ./run $1 needs Node. Install Node, or leave this to CI (the ux job runs regen-ts-check)."
+		die "npm not found: ./run $1 needs Node. Install Node, or leave this to CI (the regen-ts-check job runs it)."
+	task=$1
 	shift
 	if [ ! -d web/node_modules/openapi-typescript ]; then
+		say "$task: npm ci --ignore-scripts in web/ (first run, this takes a while)"
 		(cd web && npm ci --ignore-scripts) || die "npm ci failed in web/"
 	fi
 	tmp=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for openapi-typescript"
@@ -705,7 +712,7 @@ ts_drift() {
 
 # regen-ts-check: the TypeScript types must match the spec, and the check must
 # fire on the drifted fixture, or it cannot catch a stale file. Needs Node, so
-# it is not in check; CI's ux job runs it.
+# it is not in check; CI's regen-ts-check job runs it.
 cmd_regen_ts_check() {
 	say "TypeScript drift check ($TS_SCHEMA must match the spec)"
 	ts_drift "$CONTRACT_SPEC" || die "$TS_SCHEMA is out of date with $CONTRACT_SPEC (run: ./run regen)"

@@ -10,7 +10,7 @@ import (
 // noSuchLoop is the 404 envelope for a name that answers nothing in the view.
 // It echoes nothing of the request.
 var noSuchLoop = envelope("not_found", "no such loop",
-	"List the loops, then use a name from the list.")
+	contract.LoopMissHint)
 
 // loopAnswer is an engine loop as the contract sends it. The prompt is only
 // sent by a get.
@@ -23,7 +23,7 @@ func loopAnswer(l engine.Loop, withContent bool) contract.Loop {
 		return out
 	}
 	ans := contract.Loop{
-		Name: l.Name, Description: l.Description, Dynamic: l.Dynamic, Stop: l.Stop, Digest: l.Digest,
+		Name: l.Name, Description: l.Description, Dynamic: l.Dynamic, Stop: l.Stop, Digest: l.Digest, Scope: &l.Scope,
 		Closure: contract.LoopClosure{Agents: refs(l.Agents), Skills: refs(l.Skills)},
 	}
 	if l.Interval != "" {
