@@ -121,13 +121,18 @@ func (s *mergeInputState) raiseMark(e Event) {
 }
 
 // normalizeEvent is the one check every event passes, live or history: it
-// rejects an empty Replica or ID 0, cuts the query to maxQueryBytes and
-// clears Late, which only the Merger sets.
+// rejects an empty Replica or ID 0, cuts every free-text field a peer
+// controls (Query, Token, ClientVersion, Project, TraceID) to maxQueryBytes
+// and clears Late, which only the Merger sets.
 func normalizeEvent(e Event) (Event, bool) {
 	if e.Replica == "" || e.ID == 0 {
 		return Event{}, false
 	}
 	e.Query = truncateQuery(e.Query)
+	e.Token = truncateQuery(e.Token)
+	e.ClientVersion = truncateQuery(e.ClientVersion)
+	e.Project = truncateQuery(e.Project)
+	e.TraceID = truncateQuery(e.TraceID)
 	e.Late = false
 	return e, true
 }
@@ -497,10 +502,8 @@ func (m *Merger) schedule() {
 		var fired <-chan time.Time
 		stop := func() {}
 		if !next.IsZero() {
-			fired, stop = m.clock.NewTimer(next.Sub(m.clock.Now()))
-			// The clock may have moved between the two reads above.
-			if !m.clock.Now().Before(next) {
-				stop()
+			var due bool
+			if fired, stop, due = m.arm(next); due {
 				continue
 			}
 		}
@@ -510,6 +513,28 @@ func (m *Merger) schedule() {
 			return
 		case <-fired:
 		case <-m.kick:
+		}
+		stop()
+	}
+}
+
+// arm starts a timer for the instant next. A timer counts from the moment it
+// is created, so if the clock moved between reading Now and creating it, the
+// timer would be late by that much. arm therefore reads Now again afterwards
+// and, if it moved, re-arms from the new reading (a few times at most, so a
+// real clock that always moves a little cannot spin). due reports that next
+// has already passed, with no timer left running.
+func (m *Merger) arm(next time.Time) (fired <-chan time.Time, stop func(), due bool) {
+	for try := 0; ; try++ {
+		before := m.clock.Now()
+		fired, stop = m.clock.NewTimer(next.Sub(before))
+		after := m.clock.Now()
+		if !after.Before(next) {
+			stop()
+			return nil, func() {}, true
+		}
+		if after.Equal(before) || try >= 8 {
+			return fired, stop, false
 		}
 		stop()
 	}

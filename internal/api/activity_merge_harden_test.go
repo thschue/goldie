@@ -124,3 +124,19 @@ func TestActivityRecord_ClearsACallersLate(t *testing.T) {
 		t.Fatalf("history = %+v", hist)
 	}
 }
+
+func TestMergeHistories_CutsEveryPeerControlledTextField(t *testing.T) {
+	long := strings.Repeat("z", 5*maxQueryBytes)
+	e := mergeEv("a", 1, mergeT0)
+	e.Token, e.ClientVersion, e.Project, e.TraceID = long, long, long, long
+	got := MergeHistories([]Event{e})
+	if len(got) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	fields := map[string]string{"Token": got[0].Token, "ClientVersion": got[0].ClientVersion, "Project": got[0].Project, "TraceID": got[0].TraceID}
+	for name, v := range fields {
+		if len(v) > maxQueryBytes {
+			t.Errorf("%s is %d bytes", name, len(v))
+		}
+	}
+}
