@@ -9,7 +9,7 @@ const reply = (status: number, body: string, headers: Record<string, string> = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-const requested = () => new URL(String(vi.mocked(fetch).mock.calls[0][0]), 'http://goldie.test');
+const requested = () => new URL(String(vi.mocked(fetch).mock.calls[0][0]), 'file:///');
 
 describe('searchItems', () => {
   it('sends the query as one encoded q parameter, to /api/v1/search only', async () => {
