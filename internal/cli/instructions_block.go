@@ -38,11 +38,18 @@ func (s BlockStatus) String() string {
 
 var (
 	// ErrBlockEdited is returned for a hand-edited block when not forced.
-	ErrBlockEdited = errors.New("the goldie block was edited by hand, and --force discards those edits")
+	ErrBlockEdited = errors.New("the goldie block was edited by hand. To replace it and discard those edits, use --force")
 	// ErrBlockMalformed is returned for a file whose markers do not form
 	// exactly one block, or for block content that holds a marker.
 	ErrBlockMalformed = errors.New("the goldie block markers are malformed")
 )
+
+// editedError is an ErrBlockEdited that carries the caller's message: the file
+// name and the next command.
+type editedError string
+
+func (e editedError) Error() string        { return string(e) }
+func (e editedError) Is(target error) bool { return target == ErrBlockEdited }
 
 // malformedError is an ErrBlockMalformed that carries its own message, so the
 // text is not prefixed with the sentinel's and does not say the same thing twice.

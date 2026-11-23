@@ -85,7 +85,7 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 		// The messages say what is wrong; the caller names the file and, for an
 		// edited block, the next command.
 		if errors.Is(err, ErrBlockEdited) {
-			return fmt.Errorf("%s: %w; to replace it run: goldie instructions apply --target %s --force", name, err, c.s.target)
+			return editedError(fmt.Sprintf("%s: the goldie block was edited by hand. To replace it and discard those edits, run: goldie instructions apply --target %s --force", name, c.s.target))
 		}
 		return fmt.Errorf("%s: %w", name, err)
 	}
