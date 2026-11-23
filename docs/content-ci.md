@@ -41,6 +41,14 @@ A reference is at most 256 bytes:
 
 An article whose path holds a character outside that set still loads, but it cannot be referenced.
 
+Two more checks fail the load:
+
+- A project article may not shadow a global Item that is `enforced: true` and published or
+  deprecated (an enforced draft does not enforce). The error names both files.
+- A lookup line must resolve in the article's own view, by the same rule as `replaced_by`, and a
+  draft does not resolve. A lookup line is a fenced code block line or a one-line inline code span
+  whose whole content is `goldie lookup <id>`. A line with extra words or `--project` is skipped.
+
 `status: draft` does not hide an article yet: it is served like any other. Do not rely on it to keep
 content private until the enforcement slice lands.
 
