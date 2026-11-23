@@ -103,10 +103,10 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
 		var ae *contract.APIError
-		// Only lookup words not_found: other commands keep the server's hint.
-		// Inside a Project a not_found can be a Suppression, whose hint names
-		// the entry to remove and is kept; the plain-miss hint is worded.
-		if errors.As(err, &ae) && ae.Code == "not_found" && (projectParam(proj) == nil || ae.Hint == plainMissHint) {
+		// Only lookup words the plain-miss hint: other commands keep the
+		// server's hint, and so does any other not_found, such as a
+		// Suppression's, whose hint names the entry to remove.
+		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
 			ae.Hint = "Search for the article with: goldie search <words>, then use an id from its results."
 		}
 		return wordError(err, c.local)
