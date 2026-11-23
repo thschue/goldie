@@ -114,6 +114,7 @@ var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 // operator` (contract.OperatorPaths) need api.RoleOperator instead, checked
 // before the gate and the rate limit so a reader's 403 costs no token; their
 // other methods' 405 does too.
+// The "/" catch-all (the UI) is public by design and does not go through guard.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -297,19 +298,14 @@ func addSwaggerUI(m *publicMux) error {
 
 // addUI mounts the embedded UI as the catch-all at "/". It is not registered
 // through m.handle: it is no API operation, so it stays out of the route table
-// and the spec. Paths that must never fall back to the UI are claimed first:
-// the Swagger UI prefix (unknown paths, or every path when it is switched off,
-// keep the token and the 404 envelope) and the probe paths, which only the
-// admin listener serves (PC-01), so a monitor pointed at this port never reads
-// a UI page as "ready". Matching is exact and case-sensitive.
+// and the spec. newPublic claims /api and /swagger-ui first, so they never fall
+// back to the UI; addUI claims the probe paths, which only the admin listener
+// serves (PC-01), so a monitor pointed at this port never reads a UI page as
+// "ready". Matching is exact and case-sensitive.
 func addUI(m *publicMux, notFound http.Handler, logger *slog.Logger) {
 	if !ui.Built() {
 		logger.Warn("ui not built: serving the placeholder page; run ./run ui")
 	}
-	if len(m.methods("/swagger-ui")) == 0 {
-		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
-	}
-	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
 	for _, p := range []string{"/livez", "/readyz", "/version"} {
 		m.mux.Handle(p, notFound)
 	}
@@ -451,6 +447,12 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 	// Unknown /api/ paths need the token too, so they reveal nothing.
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
+	// The Swagger UI prefix: unknown paths, or every path when it is switched
+	// off, keep the token and the 404 envelope instead of falling back to the UI.
+	if len(m.methods("/swagger-ui")) == 0 {
+		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
+	}
+	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
 	addUI(m, notFound, logger)
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {
