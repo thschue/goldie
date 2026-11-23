@@ -198,7 +198,7 @@ From top to bottom:
 | Component | Variants / props | Notes |
 |---|---|---|
 | `AppShell` | role: reader \| operator | Top bar + side nav. The nav collapses below 1024 px (see §7). |
-| `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. |
+| `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono, `org/repo` below 768 px. An ARIA combobox (focus stays on it, options by `aria-activedescendant`). The choice is the `project` query parameter, never storage; the list is read when a Project is named or the selector is first opened. Home (`/?project=…`) lists that Project's Items. |
 | `ThemeToggle` | light \| dark \| system | Persists the choice. `system` follows `prefers-color-scheme`. |
 | `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see the `Forms` row). |
 | `SuggestionChip` | on-hero \| on-surface | A button. Sets the query. |

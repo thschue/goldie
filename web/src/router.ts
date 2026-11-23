@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import ProjectHome from './projects/ProjectHome.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -18,7 +19,8 @@ const pages: [path: string, title: string][] = [
 ];
 
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: EmptyView, meta: { title: 'Home', heading: 'What are you deciding today?' } },
+  // Home lists a Project's Items once ?project= names one, else the empty state.
+  { path: '/', component: ProjectHome, meta: { title: 'Home', heading: 'What are you deciding today?' } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
   { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: 'Page not found' } },
 ];

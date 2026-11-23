@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import ProjectSelector from '../projects/ProjectSelector.vue';
 import GoldieMark from './GoldieMark.vue';
 import SideNav from './SideNav.vue';
 import ThemeToggle from './ThemeToggle.vue';
@@ -127,7 +128,8 @@ onBeforeUnmount(() => {
   <div class="shell" @click.capture="onShellClick">
     <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
-      <RouterLink to="/" class="brand"><GoldieMark /><span>goldie</span></RouterLink>
+      <RouterLink to="/" class="brand"><GoldieMark /><span class="brand-name">goldie</span></RouterLink>
+      <ProjectSelector />
       <div class="actions">
         <ThemeToggle />
         <button
@@ -226,6 +228,7 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 .actions {
+  margin-left: auto;
   display: flex;
   gap: var(--space-2);
 }
@@ -258,6 +261,24 @@ main:focus-visible {
 @media (width < 1280px) {
   .shell {
     grid-template-columns: 220px minmax(0, 1fr);
+  }
+}
+
+/* On a phone the word goes (the link keeps its name) so the selector has room. */
+@media (width < 480px) {
+  .topbar {
+    gap: var(--space-2);
+  }
+  .brand {
+    justify-content: center;
+    min-width: var(--target-min);
+  }
+  .brand-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
 }
 
