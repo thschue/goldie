@@ -96,6 +96,18 @@ func namespaceEntries(root *os.Root) ([]string, error) {
 	return out, nil
 }
 
+// checkedNamespaceEntries refuses a symlinked or non-directory .claude,
+// .claude/skills or .claude/agents, then lists the namespace entries. The real
+// pull and the dry run both go through it, so they refuse identically.
+func checkedNamespaceEntries(root *os.Root) ([]string, error) {
+	for _, d := range []string{".claude", ".claude/skills", ".claude/agents"} {
+		if _, err := plainDir(root, d); err != nil {
+			return nil, err
+		}
+	}
+	return namespaceEntries(root)
+}
+
 // topEntry is the namespace entry a file belongs to: its first three elements.
 func topEntry(p string) string {
 	return strings.Join(strings.SplitN(p, "/", 4)[:3], "/")
@@ -109,12 +121,7 @@ func topEntry(p string) string {
 // written through a symlink: .claude, .claude/skills and .claude/agents must be
 // real directories, and old entries are moved or removed as themselves.
 func applyPull(root *os.Root, files []pulledFile, digest string) (err error) {
-	for _, d := range []string{".claude", ".claude/skills", ".claude/agents"} {
-		if _, err := plainDir(root, d); err != nil {
-			return err
-		}
-	}
-	old, err := namespaceEntries(root)
+	old, err := checkedNamespaceEntries(root)
 	if err != nil {
 		return err
 	}
