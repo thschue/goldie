@@ -214,3 +214,36 @@ func TestResourceReadRefusesHostileURIsBeforeAnyRequest(t *testing.T) {
 		t.Errorf("the API got %d file or agent requests for hostile URIs, want none", n)
 	}
 }
+
+// Criterion 5, at the seam of the fake API with skills: with a Project problem
+// set, the prompt and the resources of a skill and an agent fail with their
+// own wording and not the tool's, and say nothing about a project argument.
+func TestPromptAndResourceWithAProjectProblemAndNoArgumentDoNotOfferAProjectArgument(t *testing.T) {
+	api := newSkillsAPI(t, "body", "deployer")
+	cs := problemSession(t, api.srv.URL, "no Project is registered for the remote")
+	ctx := context.Background()
+	_, perr := cs.GetPrompt(ctx, &sdk.GetPromptParams{Name: "goldie-deployer"})
+	_, ferr := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: "goldie://skills/deployer/SKILL.md"})
+	_, aerr := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: "goldie://agents/releaser"})
+	for what, c := range map[string]struct {
+		err    error
+		prefix string
+	}{
+		"prompt":     {perr, "the prompt could not be read: "},
+		"skill file": {ferr, "the resource could not be read: "},
+		"agent":      {aerr, "the resource could not be read: "},
+	} {
+		if c.err == nil {
+			t.Errorf("%s: want an error", what)
+			continue
+		}
+		m := protocolText(c.err)
+		if !strings.HasPrefix(m, c.prefix) {
+			t.Errorf("%s: the error lacks the prefix %q: %q", what, c.prefix, m)
+		}
+		low := strings.ToLower(m)
+		if strings.Contains(low, "pass project") || strings.Contains(low, "list_projects") || strings.Contains(m, "\nHint:") {
+			t.Errorf("%s: the error offers a project argument that does not exist here: %q", what, m)
+		}
+	}
+}

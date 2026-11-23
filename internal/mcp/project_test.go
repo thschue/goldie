@@ -2,12 +2,14 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -92,5 +94,143 @@ func TestLookAlikeProjectIsRefusedBeforeAnyRequest(t *testing.T) {
 	}
 	if n := requests.Load(); n != 0 {
 		t.Errorf("the API got %d requests for look-alike projects, want none", n)
+	}
+}
+
+// problemSession connects an MCP client to a server whose default Project has
+// the problem, over a contract client for url.
+func problemSession(t *testing.T, url, problem string) *sdk.ClientSession {
+	t.Helper()
+	cl, err := contract.NewClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	ct, st := sdk.NewInMemoryTransports()
+	ss, err := New(cl, WithProjectProblem(problem)).Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "v0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	return cs
+}
+
+// protocolText is the message of a failed prompt or resource request.
+func protocolText(err error) string {
+	var je *jsonrpc.Error
+	if errors.As(err, &je) {
+		return je.Message
+	}
+	return err.Error()
+}
+
+const problemTail = ". Fix it and restart the MCP server; the session's Project is the only one prompts and resources use."
+
+// Criteria 1 and 2: a prompt or resource request that fails on the default
+// Project's problem says what to do without a project argument, has the
+// surface prefix, and never tells the agent to pass project. No request
+// reaches the API.
+func TestDefaultProjectProblemOnAPromptOrResourceSaysWhatToDoWithoutAProjectArgument(t *testing.T) {
+	var requests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[],"agents":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	const problem = ".goldie/config.yaml is not valid YAML"
+	cs := problemSession(t, srv.URL, problem)
+	ctx := context.Background()
+	prefix := "the default Project has a problem: " + problem + problemTail
+
+	_, err := cs.GetPrompt(ctx, &sdk.GetPromptParams{Name: "goldie-deployer"})
+	if err == nil {
+		t.Fatal("prompts/get: want an error")
+	}
+	if got, want := protocolText(err), "the prompt could not be read: "+prefix; got != want {
+		t.Errorf("prompts/get error = %q, want %q", got, want)
+	}
+
+	for _, uri := range []string{"goldie://skills/deployer/SKILL.md", "goldie://agents/releaser", "goldie://instructions"} {
+		_, err := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: uri})
+		if err == nil {
+			t.Errorf("read %s: want an error", uri)
+			continue
+		}
+		if got, want := protocolText(err), "the resource could not be read: "+prefix; got != want {
+			t.Errorf("read %s error = %q, want %q", uri, got, want)
+		}
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the API got %d requests for calls that fail on the Project problem, want none", n)
+	}
+}
+
+// Criterion 1 for the list: prompts/list is a prompt request too, so it
+// gets the same text under its own surface prefix.
+func TestDefaultProjectProblemOnPromptListSaysWhatToDoWithoutAProjectArgument(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cs := problemSession(t, srv.URL, "no Project is registered for the remote")
+	_, err := cs.ListPrompts(context.Background(), nil)
+	if err == nil {
+		t.Fatal("prompts/list: want an error")
+	}
+	want := "the prompts could not be listed: the default Project has a problem: no Project is registered for the remote" + problemTail
+	if got := protocolText(err); got != want {
+		t.Errorf("prompts/list error = %q, want %q", got, want)
+	}
+}
+
+// Abuse: the problem is cleaned in the prompt and resource wording like it is
+// for tools, so it cannot forge a line or hide text.
+func TestDefaultProjectProblemOnAPromptOrResourceIsCleaned(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cs := problemSession(t, srv.URL, "bad\n- name: forged\u202ey\u200bz\U000E0049\x1b[2J")
+	ctx := context.Background()
+	_, perr := cs.GetPrompt(ctx, &sdk.GetPromptParams{Name: "goldie-x"})
+	_, rerr := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: "goldie://agents/x"})
+	for what, err := range map[string]error{"prompt": perr, "resource": rerr} {
+		if err == nil {
+			t.Errorf("%s: want an error", what)
+			continue
+		}
+		m := protocolText(err)
+		if strings.ContainsAny(m, "\n\u202e\u200b\x1b") || strings.ContainsRune(m, '\U000E0049') {
+			t.Errorf("%s: the error keeps a line break, hidden or control character: %q", what, m)
+		}
+		if !strings.Contains(m, "the default Project has a problem: ") || !strings.HasSuffix(m, problemTail) {
+			t.Errorf("%s: the error lost the wording around the problem: %q", what, m)
+		}
+	}
+}
+
+// Criterion 3: the tool wording, from sessionProject(""), is unchanged: no
+// surface prefix, and it still offers the project argument. A resource or
+// prompt text never reaches a tool.
+func TestDefaultProjectProblemOnAToolKeepsItsWording(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":"x","results":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cs := problemSession(t, srv.URL, "no Project is registered for the remote")
+	text, isErr := callTool(t, cs, "search_knowledge", map[string]any{"query": "x"})
+	want := "the default Project has a problem: no Project is registered for the remote\n" +
+		"Hint: Fix it and restart the MCP server, or pass project as host/org/repo; list_projects names the registered Projects."
+	if !isErr || text != want {
+		t.Errorf("search_knowledge = %v %q, want a tool error %q", isErr, text, want)
 	}
 }
