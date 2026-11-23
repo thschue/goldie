@@ -37,8 +37,8 @@ read the skill bundles (name and file list), agent definitions (name and descrip
 skills it names, with the Scope that answered for each) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. Skill and agent names match case-insensitively, and the answer shows the
-name as written. Two skills, or two agents, in one Scope whose names differ only in case fail the
+before any request. Skill, agent and loop names match case-insensitively, and the answer shows the
+name as written. Two skills, two agents or two loops in one Scope whose names differ only in case fail the
 load; the error names both. File paths inside a skill stay exact. `goldie skills show <name>
 --file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
 bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
