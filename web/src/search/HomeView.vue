@@ -50,10 +50,16 @@ async function search(q: string) {
   }
 }
 
+// Queries this field pushed that the route has not shown yet. The route follows
+// a submit a moment later; by then the user may have typed the next query, which
+// the field must keep. Only a query that came from elsewhere (a link, back and
+// forward) replaces the draft.
+const pushed = new Set<string>();
+
 watch(
   [query, retries],
   ([q], old) => {
-    if (!old || q !== old[0]) draft.value = q;
+    if (!old || (q !== old[0] && !pushed.delete(q))) draft.value = q;
     void search(q);
   },
   { immediate: true },
@@ -71,7 +77,8 @@ const shown = computed(() => (kindFilter.value === 'all' ? hits.value : hits.val
 // Submit in JavaScript, through the router: the UI runs under form-action 'none'.
 function submit() {
   const q = draft.value.trim();
-  void router.push(q ? { path: '/', query: { q } } : { path: '/' });
+  pushed.add(q);
+  void router.push(q ? { path: '/', query: { q } } : { path: '/' }).finally(() => pushed.delete(q));
 }
 
 async function clear() {
