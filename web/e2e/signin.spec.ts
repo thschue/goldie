@@ -382,6 +382,113 @@ test.describe('signed in: the role chip and Sign out', () => {
     await expect(chip).toHaveAttribute('aria-expanded', 'false');
     await expect(chip).toBeFocused();
   });
+
+  test('the chip shows a caret that tells it opens a menu, and its name is still the role', async ({ page }) => {
+    await page.goto('/');
+    const chip = page.getByRole('banner').getByRole('button', { name: /^(reader|operator)$/i });
+    await expect(chip, 'the caret is decorative: the accessible name is the role alone').toBeVisible();
+    const caret = await chip.evaluate((el) => {
+      const decorative = el.querySelector('svg, [aria-hidden="true"]');
+      const after = getComputedStyle(el, '::after').content;
+      const box = decorative?.getBoundingClientRect();
+      return { element: !!box && box.width > 0 && box.height > 0, pseudo: after !== 'none' && after !== 'normal' && after !== '""' };
+    });
+    expect(caret.element || caret.pseudo, 'a visible caret inside the chip').toBe(true);
+  });
+
+  for (const failure of ['the server answers 500', 'the request cannot be sent'] as const) {
+    test(`when ${failure}, Sign out keeps the user signed in with an error alert and a retry that then signs out`, async ({ page }) => {
+      let failing = true;
+      let deletes = 0;
+      await page.route('**/api/v1/session', (route) => {
+        if (route.request().method() !== 'DELETE') return route.continue();
+        deletes++;
+        if (!failing) return route.fulfill({ status: 204 });
+        return failure === 'the server answers 500'
+          ? route.fulfill({ status: 500, contentType: 'application/json', body: envelope('internal', 'something went wrong', '') })
+          : route.abort();
+      });
+      await page.goto('/decisions');
+      const chip = page.getByRole('banner').getByRole('button', { name: /reader|operator/i });
+      await chip.click();
+      await page.getByRole('menuitem', { name: 'Sign out' }).click();
+
+      // The user is not told they are signed out.
+      const alert = page.getByRole('alert');
+      await expect(alert).toBeVisible();
+      await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+      await expect(chip, 'the account chip is still there').toBeVisible();
+      const retry = alert.getByRole('button', { name: /retry|try again/i }).or(page.getByRole('button', { name: /retry|try again/i }));
+      await expect(retry.first()).toBeVisible();
+      expect(deletes).toBe(1);
+      // And the session really is still valid on the server.
+      expect((await page.request.get('/api/v1/session')).status()).toBe(200);
+
+      // Retry once the server answers: the user reaches the sign-in page.
+      failing = false;
+      await retry.first().click();
+      await expect(page).toHaveURL((u) => u.pathname === '/signin');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+      expect(deletes).toBe(2);
+    });
+  }
+
+  test('a sign out that succeeds shows no error alert before reaching /signin', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) => (route.request().method() === 'DELETE' ? route.fulfill({ status: 204 }) : route.continue()));
+    await page.goto('/');
+    await page.getByRole('banner').getByRole('button', { name: /reader|operator/i }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/signin');
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  });
+});
+
+test.describe('the first load', () => {
+  // Holds GET /api/v1/session until released, as a slow server would.
+  async function slowSession(page: Page) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/v1/session', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      await gate;
+      return route.continue();
+    });
+    return release;
+  }
+  const loadingState = (page: Page) => page.getByRole('status').filter({ hasText: /loading/i });
+
+  test('shows a loading state while the first session check is in flight, then the page', async ({ page }) => {
+    const release = await slowSession(page);
+    try {
+      await page.goto('/decisions', { waitUntil: 'domcontentloaded' });
+      await expect(loadingState(page), 'not a blank page').toBeVisible();
+      // The loading state carries the page's one h1 (axe best-practice page-has-heading-one), so the
+      // check is that no view heading is there yet, and that any h1 is the loading state's.
+      await expect(page.getByRole('heading', { name: 'Decisions' }), 'no view before the answer').toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1 }).filter({ hasNotText: /loading/i }), 'no view heading before the answer').toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^(reader|operator)/i })).toHaveCount(0);
+    } finally {
+      release();
+    }
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+    await expect(loadingState(page), 'the loading state is gone').toHaveCount(0);
+  });
+
+  test('a visitor without a session sees the loading state, then the sign-in page', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: anonymous });
+    const page = await context.newPage();
+    const release = await slowSession(page);
+    try {
+      await page.goto('/decisions', { waitUntil: 'domcontentloaded' });
+      await expect(loadingState(page)).toBeVisible();
+    } finally {
+      release();
+    }
+    await expect(page).toHaveURL((u) => u.pathname === '/signin');
+    await expect(loadingState(page)).toHaveCount(0);
+    await context.close();
+  });
 });
 
 // The evidence of §12: the Sign in screen and its error states at 375, 768 and
@@ -438,5 +545,38 @@ eachViewport((width, theme) => {
     await page.goto('/');
     await expect(page.getByRole('banner').getByRole('button', { name: /reader|operator/i })).toBeVisible();
     await evidence(page, width, theme, '-chip', 'shell');
+  });
+
+  test('the account chip menu open with Sign out is captured and axe-clean', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('banner').getByRole('button', { name: /reader|operator/i }).click();
+    await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
+    await evidence(page, width, theme, '-chip-menu', 'shell');
+  });
+
+  test('the operator chip is captured and axe-clean', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ status: 200, contentType: 'application/json', body: sessionBody('operator') }) : route.continue(),
+    );
+    await page.goto('/');
+    await expect(page.getByRole('banner').getByRole('button', { name: /operator/i })).toBeVisible();
+    await evidence(page, width, theme, '-chip-operator', 'shell');
+  });
+
+  test('the loading state is captured and axe-clean', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    await page.route('**/api/v1/session', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      await gate;
+      return route.continue();
+    });
+    try {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await expect(page.getByRole('status').filter({ hasText: /loading/i })).toBeVisible();
+      await evidence(page, width, theme, '', 'loading');
+    } finally {
+      release();
+    }
   });
 });

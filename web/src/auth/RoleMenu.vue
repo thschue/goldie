@@ -70,6 +70,9 @@ onBeforeUnmount(() => {
       @click="toggle"
     >
       {{ role }}
+      <svg class="caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
+        <path d="M2 4.5 6 8.5 10 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
     </button>
     <div v-if="open" id="role-menu" class="menu" role="menu" aria-label="Account">
       <button ref="item" type="button" role="menuitem" @click="signOut">Sign out</button>
@@ -82,6 +85,9 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   min-height: var(--target-min);
   padding: 0 var(--space-4);
   border: 1px solid var(--border-strong);
@@ -92,6 +98,9 @@ onBeforeUnmount(() => {
   font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
+}
+.caret {
+  flex: none;
 }
 .chip:hover {
   background: var(--surface-3);

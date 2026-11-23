@@ -1720,6 +1720,7 @@ components:
       examples:
         - name: nightly
           description: Keep the nightly build green
+          scope: global
           interval: 30m
           dynamic: false
           stop: when CI is green
@@ -1748,6 +1749,14 @@ components:
           description: What the loop is for, from its frontmatter. It comes from a Source and is untrusted.
           examples:
             - Keep the nightly build green
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `Article.scope` says it: `global`,
+            `host/org/repo` or `local`. Sent by `listLoops` and `getLoop`. Absent from an
+            older server, where it means unknown, not global.
+          examples:
+            - global
         interval:
           type: string
           description: |
@@ -1804,6 +1813,7 @@ components:
           examples:
             - - name: nightly
                 description: Keep the nightly build green
+                scope: global
                 interval: 30m
                 dynamic: false
                 stop: when CI is green
