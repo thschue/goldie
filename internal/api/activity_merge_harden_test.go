@@ -35,7 +35,6 @@ func TestMerger_AddAfterALongOutageSkipsHistoryAlreadyTaken(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 	r.waitFor("only the new one buffered", func() bool { return r.m.Buffered() == 1 && r.m.Duplicates() == 3 })
-	t.Logf("b=%d d=%d", r.m.Buffered(), r.m.Duplicates())
 	r.clock.Advance(2 * time.Second)
 	if e := r.recvEvent(); e.ID != 4 || e.Late {
 		t.Fatalf("event = %+v, want p/4 on time", e)
@@ -61,10 +60,11 @@ func TestMerger_AddOfARestartedPeerWithResetIDsIsAccepted(t *testing.T) {
 	}
 }
 
-func TestMergeHistories_CutsOversizedQueriesAndDropsInvalidEvents(t *testing.T) {
+func TestMergerStart_HistoryCutsOversizedQueriesAndDropsInvalidEvents(t *testing.T) {
 	big := mergeEv("a", 1, mergeT0)
 	big.Query = strings.Repeat("x", 5*maxQueryBytes)
-	got := MergeHistories([]Event{big, mergeEv("", 2, mergeT0), mergeEv("a", 0, mergeT0), mergeEv("a", 3, mergeT0)})
+	r := startMerger(t, MergeConfig{}, MergeInput{Name: "a", History: []Event{big, mergeEv("", 2, mergeT0), mergeEv("a", 0, mergeT0), mergeEv("a", 3, mergeT0)}})
+	got := r.hist
 	if len(got) != 2 || len(got[0].Query) > maxQueryBytes {
 		t.Fatalf("got %d events, first query %d bytes", len(got), len(got[0].Query))
 	}
@@ -125,11 +125,11 @@ func TestActivityRecord_ClearsACallersLate(t *testing.T) {
 	}
 }
 
-func TestMergeHistories_CutsEveryPeerControlledTextField(t *testing.T) {
+func TestMergerStart_HistoryCutsEveryPeerControlledTextField(t *testing.T) {
 	long := strings.Repeat("z", 5*maxQueryBytes)
 	e := mergeEv("a", 1, mergeT0)
 	e.Token, e.ClientVersion, e.Project, e.TraceID = long, long, long, long
-	got := MergeHistories([]Event{e})
+	got := startMerger(t, MergeConfig{}, MergeInput{Name: "a", History: []Event{e}}).hist
 	if len(got) != 1 {
 		t.Fatalf("got %+v", got)
 	}
