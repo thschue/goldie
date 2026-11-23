@@ -33,12 +33,39 @@ var httpMethods = map[string]bool{
 	"options": true, "head": true, "patch": true, "trace": true,
 }
 
-func hasKey(m map[string]any, key string) bool {
-	_, ok := m[key]
-	return ok
+// containsKey reports whether key is a mapping key anywhere under n,
+// following aliases. A visited set guards against alias cycles.
+func containsKey(n *yaml.Node, key string) bool {
+	return walkKey(n, key, map[*yaml.Node]bool{})
 }
 
-// parseOperatorPaths reads the operator paths from an OpenAPI document.
+func walkKey(n *yaml.Node, key string, seen map[*yaml.Node]bool) bool {
+	if n == nil || seen[n] {
+		return false
+	}
+	seen[n] = true
+	switch n.Kind {
+	case yaml.AliasNode:
+		return walkKey(n.Alias, key, seen)
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Value == key || walkKey(n.Content[i+1], key, seen) {
+				return true
+			}
+		}
+	case yaml.DocumentNode, yaml.SequenceNode:
+		for _, c := range n.Content {
+			if walkKey(c, key, seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseOperatorPaths reads the operator paths from an OpenAPI document. The
+// mark must sit directly on an operation. Anywhere else it would be ignored
+// and leave the path open, so it fails startup.
 func parseOperatorPaths(spec []byte) (map[string]bool, error) {
 	var doc struct {
 		Paths map[string]map[string]yaml.Node `yaml:"paths"`
@@ -48,28 +75,37 @@ func parseOperatorPaths(spec []byte) (map[string]bool, error) {
 	}
 	out := map[string]bool{}
 	for path, item := range doc.Paths {
+		if _, ok := item["$ref"]; ok {
+			return nil, fmt.Errorf("openapi.yaml: %s: $ref at path level hides operations from the %s check", path, RoleExtension)
+		}
 		for method, node := range item {
-			var op map[string]any
-			decodeErr := node.Decode(&op)
 			if !httpMethods[method] {
-				// The mark belongs on an operation. Anywhere else it would be
-				// ignored and leave the path open, so it fails startup.
-				if method == RoleExtension || (decodeErr == nil && hasKey(op, RoleExtension)) {
+				if method == RoleExtension || containsKey(&node, RoleExtension) {
 					return nil, fmt.Errorf("openapi.yaml: %s: %s under %q, want it on an operation", path, RoleExtension, method)
 				}
 				continue // "parameters", "summary" and the like are not operations
 			}
-			if decodeErr != nil {
+			op := &node
+			for op.Kind == yaml.AliasNode && op.Alias != nil {
+				op = op.Alias
+			}
+			if op.Kind != yaml.MappingNode {
 				continue
 			}
-			role, ok := op[RoleExtension]
-			if !ok {
-				continue
+			for i := 0; i+1 < len(op.Content); i += 2 {
+				k, v := op.Content[i].Value, op.Content[i+1]
+				if k != RoleExtension {
+					if containsKey(v, RoleExtension) {
+						return nil, fmt.Errorf("openapi.yaml: %s %s: %s under %q, want it on the operation", method, path, RoleExtension, k)
+					}
+					continue
+				}
+				var role any
+				if err := v.Decode(&role); err != nil || role != "operator" {
+					return nil, fmt.Errorf("openapi.yaml: %s %s: %s %v, want operator", method, path, RoleExtension, role)
+				}
+				out[path] = true
 			}
-			if role != "operator" {
-				return nil, fmt.Errorf("openapi.yaml: %s %s: %s %v, want operator", method, path, RoleExtension, role)
-			}
-			out[path] = true
 		}
 	}
 	return out, nil
