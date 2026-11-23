@@ -1,5 +1,4 @@
 ---
-model: sonnet
 description: Run one delivery tick (advance streams, resume, claim, dispatch; at most 2 streams)
 argument-hint: "[dry-run]"
 ---
