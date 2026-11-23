@@ -1,12 +1,12 @@
 // The Agent assets frame at /assets/:tab (#584, handoff §3.5, A3): the h1, the
-// tabs Skills, Agents and Instructions (no Loops), the WAI-ARIA tabs pattern,
+// tabs Skills, Agents, Loops and Instructions (#647), the WAI-ARIA tabs pattern,
 // the side nav group, reload, and the `goldie pull --dry-run` header snippet.
 // Per width and theme: the shot, axe, no horizontal scroll, targets of 44 px.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { eachViewport, evidence, problems, sideNav, withNav } from './ux';
 
-const tabNames = ['Skills', 'Agents', 'Instructions'] as const;
-const slugs = ['skills', 'agents', 'instructions'] as const;
+const tabNames = ['Skills', 'Agents', 'Loops', 'Instructions'] as const;
+const slugs = ['skills', 'agents', 'loops', 'instructions'] as const;
 
 const h1 = (page: Page) => page.getByRole('heading', { level: 1 });
 const tabs = (page: Page) => page.getByRole('tablist').getByRole('tab');
@@ -38,7 +38,7 @@ eachViewport((width, theme) => {
   }
 
   test('an unknown tab is captured and axe-clean', async ({ page }) => {
-    await page.goto('/assets/loops');
+    await page.goto('/assets/nope');
     await expect(h1(page)).toHaveText('Agent assets');
     await evidence(page, width, theme, '', 'assets-notfound');
   });
@@ -58,7 +58,7 @@ test.describe('routes', () => {
     await expect(page).toHaveURL((u) => u.pathname === '/assets/skills' && u.searchParams.get('project') === 'demo');
   });
 
-  for (const bad of ['loops', 'nope', 'Skills', '%3Cscript%3E']) {
+  for (const bad of ['nope', 'Loops', 'Skills', '%3Cscript%3E']) {
     test(`/assets/${bad} shows the not-found view under the h1, never a blank page`, async ({ page, baseURL }) => {
       const seen = await problems(page, baseURL ?? '');
       const res = await page.goto(`/assets/${bad}`);
@@ -85,19 +85,20 @@ test.describe('routes', () => {
     expect(body).not.toMatch(/Agent assets/);
   });
 
-  test('there is no Loops tab and no Loops link anywhere', async ({ page }) => {
-    await page.goto('/assets/skills');
-    await expect(tabs(page)).toHaveCount(3);
-    await expect(page.getByRole('tab', { name: /loops/i })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: /loops/i })).toHaveCount(0);
-    await expect(page.getByRole('main')).not.toContainText(/loops/i);
+  test('/assets/loops shows the Loops tab, selected, between Agents and Instructions (replaces #584 "loops is not found")', async ({ page }) => {
+    const res = await page.goto('/assets/loops');
+    expect(res?.status()).toBe(200);
+    await expect(tabs(page)).toHaveCount(4);
+    await expect(tab(page, 'Loops')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('main')).not.toContainText(/not found/i);
+    expect(pathOf(page)).toBe('/assets/loops');
   });
 });
 
 test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('a tablist of Skills, Agents and Instructions, each tab controlling a tabpanel', async ({ page }) => {
+  test('a tablist of Skills, Agents, Loops and Instructions, each tab controlling a tabpanel', async ({ page }) => {
     await page.goto('/assets/skills');
     await expect(page.getByRole('tablist')).toHaveCount(1);
     expect((await tabs(page).allTextContents()).map((t) => t.trim())).toEqual([...tabNames]);
@@ -112,15 +113,19 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
     expect(await panel.getAttribute('aria-labelledby'), 'the panel is named by its tab').toBe(await selected.getAttribute('id'));
     await expect(page.locator('[aria-selected="true"]')).toHaveCount(1);
     await expect(tab(page, 'Agents')).toHaveAttribute('aria-selected', 'false');
+    await expect(tab(page, 'Loops')).toHaveAttribute('aria-selected', 'false');
     await expect(tab(page, 'Instructions')).toHaveAttribute('aria-selected', 'false');
   });
 
-  test('the tab panel stays empty: no Skill, Agent or Instruction content yet', async ({ page }) => {
-    await page.goto('/assets/skills');
-    await expect(page.getByRole('tabpanel')).toBeVisible();
-    await expect(page.getByRole('tabpanel').getByRole('link')).toHaveCount(0);
-    await expect(page.getByRole('tabpanel').getByRole('table')).toHaveCount(0);
-  });
+  // The Skills tab has content since #587 (web/e2e/assets-skills.spec.ts).
+  for (const slug of ['agents', 'instructions']) {
+    test(`the ${slug} tab panel stays empty: no content yet`, async ({ page }) => {
+      await page.goto(`/assets/${slug}`);
+      await expect(page.getByRole('tabpanel')).toBeVisible();
+      await expect(page.getByRole('tabpanel').getByRole('link')).toHaveCount(0);
+      await expect(page.getByRole('tabpanel').getByRole('table')).toHaveCount(0);
+    });
+  }
 
   for (const [i, name] of tabNames.entries()) {
     test(`the URL names the selected tab: /assets/${slugs[i]} selects ${name} and makes it the one tab stop`, async ({ page }) => {
@@ -150,6 +155,8 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
     await page.keyboard.press('ArrowRight');
     await expectOneTabStop(page, 'Agents');
     await page.keyboard.press('ArrowRight');
+    await expectOneTabStop(page, 'Loops');
+    await page.keyboard.press('ArrowRight');
     await expectOneTabStop(page, 'Instructions');
     await page.keyboard.press('ArrowRight');
     await expectOneTabStop(page, 'Skills');
@@ -160,6 +167,8 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
     await tab(page, 'Skills').focus();
     await page.keyboard.press('ArrowLeft');
     await expectOneTabStop(page, 'Instructions');
+    await page.keyboard.press('ArrowLeft');
+    await expectOneTabStop(page, 'Loops');
     await page.keyboard.press('ArrowLeft');
     await expectOneTabStop(page, 'Agents');
     await page.keyboard.press('ArrowLeft');
@@ -205,6 +214,7 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
       });
     const selected = await cue(tab(page, 'Agents'));
     expect(selected, 'non-colour cue vs Skills').not.toBe(await cue(tab(page, 'Skills')));
+    expect(selected, 'non-colour cue vs Loops').not.toBe(await cue(tab(page, 'Loops')));
     expect(selected, 'non-colour cue vs Instructions').not.toBe(await cue(tab(page, 'Instructions')));
   });
 
@@ -223,7 +233,7 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
 
 test.describe('the side nav', () => {
   for (const width of [1280, 375]) {
-    test(`lists exactly Skills, Agents and Instructions under Agent assets at ${width} px`, async ({ page }) => {
+    test(`lists exactly Skills, Agents, Loops and Instructions, in that order, under Agent assets at ${width} px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto('/assets/agents');
       const nav = await withNav(page);
@@ -232,7 +242,7 @@ test.describe('the side nav', () => {
       for (const [i, slug] of slugs.entries()) {
         await expect(group.getByRole('link').nth(i)).toHaveAttribute('href', `/assets/${slug}`);
       }
-      await expect(nav.getByRole('link', { name: /loops/i })).toHaveCount(0);
+      await expect(group.getByRole('link', { name: 'Loops', exact: true })).toHaveAttribute('href', '/assets/loops');
       await expect(group.getByRole('link', { name: 'Agents', exact: true })).toHaveAttribute('aria-current', 'page');
     });
   }

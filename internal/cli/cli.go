@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "instructions", "pull", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "loops", "status", "init", "instructions", "pull", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -114,7 +114,7 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	var err error
 	// skills and agents check their words before any server or token is met.
 	var verb, itemName string
-	if name == "skills" || name == "agents" {
+	if name == "skills" || name == "agents" || name == "loops" {
 		if verb, itemName, err = catalogUsage(name, pos); err != nil {
 			return err
 		}
@@ -172,6 +172,8 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 		return c.skills(ctx, verb, itemName)
 	case "agents":
 		return c.agents(ctx, verb, itemName)
+	case "loops":
+		return c.loops(ctx, verb, itemName)
 	case "status":
 		if len(pos) != 0 {
 			return &UsageError{name, "status takes no arguments"}

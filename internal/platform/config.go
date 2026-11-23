@@ -23,6 +23,7 @@ const (
 	EnvDrainSeconds = "GOLDIE_DRAIN_SECONDS"
 
 	EnvSwaggerUIEnabled = "GOLDIE_SWAGGER_UI_ENABLED"
+	EnvMode             = "GOLDIE_MODE"
 
 	EnvContentDir = "GOLDIE_CONTENT_DIR"
 	EnvAPIToken   = "GOLDIE_API_TOKEN"  // secret: never logged
@@ -82,6 +83,33 @@ func PollIntervalFloor() time.Duration {
 // live event of a merged activity stream waits longer than this.
 const MaxActivityReorderWindow = time.Minute
 
+// The values of GOLDIE_MODE: what the server mounts. ModeAll serves /api, the
+// docs, /mcp and the UI; ModeAPI serves /api and the docs only.
+const (
+	ModeAll = "all"
+	ModeAPI = "api"
+)
+
+// ParseMode validates a GOLDIE_MODE value; empty is ModeAll. The error names
+// the variable and the accepted values, never the value.
+func ParseMode(v string) (string, error) {
+	switch v {
+	case "", ModeAll:
+		return ModeAll, nil
+	case ModeAPI:
+		return ModeAPI, nil
+	}
+	return ModeAll, fmt.Errorf("%s: must be %s or %s", EnvMode, ModeAll, ModeAPI)
+}
+
+// modeOrAll is mode, or ModeAll when it is empty.
+func modeOrAll(mode string) string {
+	if mode == "" {
+		return ModeAll
+	}
+	return mode
+}
+
 // Config is the effective server configuration. It is read once at startup
 // by LoadConfig and never changes afterwards.
 type Config struct {
@@ -91,6 +119,10 @@ type Config struct {
 	DrainTimeout time.Duration // time between failing readiness and shutdown
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
+
+	// Mode is what the public handler mounts: ModeAll or ModeAPI. Empty (a
+	// Config built by hand) means ModeAll.
+	Mode string
 
 	MCPName string // {{mcp_name}} of the instruction blocks; validated by validMCPName
 
@@ -218,6 +250,12 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		cfg.MCPName = def(EnvMCPName)
 	}
 	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
+	if m, err := ParseMode(str(EnvMode, def(EnvMode))); err != nil {
+		errs = append(errs, err)
+		cfg.Mode = ModeAll
+	} else {
+		cfg.Mode = m
+	}
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
 	case "true":

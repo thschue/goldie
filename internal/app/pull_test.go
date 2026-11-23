@@ -707,6 +707,66 @@ func TestPullDryRunListsTheFilesAndWritesNothing(t *testing.T) {
 	}
 }
 
+// Criterion (#641): a dry run predicts a real pull, so a symlinked .claude is
+// refused with the real pull's error, lists nothing and writes nothing.
+func TestPullDryRunRefusesASymlinkedClaudeLikeARealPull(t *testing.T) {
+	srv := pullServer(t, absContent(t))
+	outside := t.TempDir()
+	repo := gitCheckout(t, nil)
+	if err := os.Symlink(outside, filepath.Join(repo, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshot(t, repo)
+
+	_, realErr := pullCLI(t, srv.URL, repo, "--project", pullProject)
+	if realErr == nil {
+		t.Fatal("a real pull through a symlinked .claude succeeded")
+	}
+	out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--dry-run")
+	if err == nil {
+		t.Fatalf("--dry-run with a symlinked .claude succeeded:\n%s", out)
+	}
+	if err.Error() != realErr.Error() {
+		t.Errorf("--dry-run error %q differs from the real pull's %q", err, realErr)
+	}
+	for _, w := range []string{"would write", "would remove"} {
+		if strings.Contains(out, w) {
+			t.Errorf("--dry-run printed %q for a refused pull:\n%s", w, out)
+		}
+	}
+	if after := snapshot(t, repo); !mapsEqual(before, after) {
+		t.Errorf("the project changed: before %v, after %v", before, after)
+	}
+	if left := snapshot(t, outside); len(left) != 0 {
+		t.Errorf("the link target gained %v", left)
+	}
+}
+
+// Criterion (#641): with a real or an absent .claude the dry run still lists
+// every file it would write, and writes nothing.
+func TestPullDryRunWithARealOrAbsentClaudeIsUnchanged(t *testing.T) {
+	srv := pullServer(t, absContent(t))
+	for name, files := range map[string]map[string]string{
+		"absent": nil,
+		"real":   {".claude/settings.local.json": "{}\n"},
+	} {
+		repo := gitCheckout(t, files)
+		before := snapshot(t, repo)
+		out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--dry-run")
+		if err != nil {
+			t.Fatalf("%s .claude: goldie pull --dry-run: %v\n%s", name, err, out)
+		}
+		for p := range wantAll(shopSet(), shopAgents) {
+			if !strings.Contains(out, "would write "+p) {
+				t.Errorf("%s .claude: --dry-run does not list %q:\n%s", name, "would write "+p, out)
+			}
+		}
+		if after := snapshot(t, repo); !mapsEqual(before, after) {
+			t.Errorf("%s .claude: --dry-run changed the project: before %v, after %v", name, before, after)
+		}
+	}
+}
+
 func wantAll(skills fileSet, agents map[string][]string) map[string]bool {
 	out := map[string]bool{}
 	for p := range skills {

@@ -291,6 +291,11 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"List the agents, or show one agent and its description.",
 		"  goldie agents list\n  goldie agents show reviewer",
 	},
+	"loops": {
+		"loops list|show <name> [flags]", "List loops or show one with its closure",
+		"List the loops, or show one loop: its interval, stop condition, prompt and the\nagents and skills it names, with the Scope that answered for each.",
+		"  goldie loops list\n  goldie loops show nightly",
+	},
 	"status": {
 		"status [flags]", "Check that a server answers and accepts the token",
 		"Report whether the server answers, whether it accepts the token and which\nProject the repository maps to.",

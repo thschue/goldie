@@ -563,4 +563,32 @@ test.describe('rapid typing', () => {
     await expect(missPanel(page)).toHaveCount(0);
     await expect(field(page)).toHaveValue('');
   });
+
+  // The auth guard asks the session before every navigation, so a search's
+  // navigation can land after the user has typed on. It must not put the
+  // submitted words back into the field over the new ones.
+  test('a late navigation never overwrites what was typed since', async ({ page }) => {
+    await stubSearch(page, sample);
+    await page.goto('/');
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let holding = true;
+    await page.route('**/api/v1/session', async (route) => {
+      if (holding && route.request().method() === 'GET') {
+        holding = false;
+        await held;
+      }
+      await route.continue().catch(() => {});
+    });
+    await field(page).fill('first');
+    await field(page).press('Enter');
+    await field(page).fill('second');
+    release();
+    await expect.poll(() => qParam(page)).toBe('first');
+    await expect(rows(page)).toHaveCount(5);
+    await expect(field(page)).toHaveValue('second');
+    await field(page).press('Enter');
+    await expect.poll(() => qParam(page)).toBe('second');
+    await expect(field(page)).toHaveValue('second');
+  });
 });

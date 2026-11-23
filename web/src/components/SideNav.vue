@@ -2,15 +2,16 @@
 // The side nav (handoff §2.1): every entry links to its §2.2 route, and the
 // router marks the current one with aria-current="page". Operator-only entries
 // are absent for readers, who get the Reader nav note (§8) instead.
+import { watch } from 'vue';
 import { assetTabs } from '../assets/tabs';
+import { failing, loadFailing } from '../sources/api';
 
-defineProps<{ role: 'reader' | 'operator' }>();
+const props = defineProps<{ role: 'reader' | 'operator' }>();
+
+// The failing-Source count (#633) is an operator's: a reader never asks for it.
+watch(() => props.role, (r) => r === 'operator' && void loadFailing(), { immediate: true });
 
 const assets = assetTabs.map((t) => [t.name, `/assets/${t.slug}`]);
-const operate = [
-  ['Activity', '/ops/activity'],
-  ['Sources', '/ops/sources'],
-];
 </script>
 
 <template>
@@ -27,7 +28,10 @@ const operate = [
     <template v-if="role === 'operator'">
       <p id="nav-operate" class="group">Operate</p>
       <ul aria-labelledby="nav-operate">
-        <li v-for="[name, path] in operate" :key="path"><RouterLink :to="path">{{ name }}</RouterLink></li>
+        <li><RouterLink to="/ops/activity">Activity</RouterLink></li>
+        <li>
+          <RouterLink to="/ops/sources">Sources<strong v-if="failing" class="count">{{ ` ${failing} failing` }}</strong></RouterLink>
+        </li>
       </ul>
     </template>
     <p v-else class="note">Reader view: Activity and Sources are for operators and aren't shown.</p>
@@ -51,6 +55,13 @@ a {
   border-radius: var(--radius-sm);
   color: var(--fg-default);
   text-decoration: none;
+}
+a {
+  gap: var(--space-2);
+}
+.count {
+  color: var(--danger-ink);
+  font-size: var(--text-sm);
 }
 a:hover {
   background: var(--surface-3);

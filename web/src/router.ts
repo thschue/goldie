@@ -9,6 +9,7 @@ import SignInView from './auth/SignInView.vue';
 import ProjectHome from './projects/ProjectHome.vue';
 import { projectOf } from './projects/api';
 import HomeView from './search/HomeView.vue';
+import SourcesView from './sources/SourcesView.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -19,7 +20,6 @@ const pages: [path: string, title: string][] = [
   ['/decisions', 'Decisions'],
   ['/items/:kind/:name', 'Item'],
   ['/ops/activity', 'Activity'],
-  ['/ops/sources', 'Sources'],
 ];
 
 // Home is one address: with a Project (`/?project=`) it lists that Project's Items,
@@ -45,6 +45,7 @@ export const routes: RouteRecordRaw[] = [
   // Sign in is public: the guard lets it through, and the shell shows no role chip.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },
   { path: '/items/article/:name', component: ArticleView, meta: { title: 'Article' } },
+  { path: '/ops/sources', component: SourcesView, meta: { title: 'Sources' } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
   { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: 'Page not found' } },
 ];

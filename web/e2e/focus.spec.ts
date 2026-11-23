@@ -126,3 +126,184 @@ test.describe('a nav link activated with the keyboard (1280 px)', () => {
     expect(await h1(page).evaluate((el) => el.matches(':focus-visible')), 'keyboard navigation shows the ring').toBe(true);
   });
 });
+
+// A view whose h1 only renders after an async load (#550). No routed view does
+// that yet, so the browser stands in for one: lateH1Script pulls the next h1
+// that a render adds to the page out of the DOM and puts it back after delayMs,
+// which is what such a view looks like to the shell.
+const lateH1Script = (delayMs: number) => {
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) {
+        if (!(node instanceof Element)) continue;
+        const heading = node.matches('h1') ? node : node.querySelector('h1');
+        const parent = heading?.parentNode;
+        if (!heading || !parent) continue;
+        observer.disconnect();
+        const anchor = heading.nextSibling;
+        parent.removeChild(heading);
+        setTimeout(() => {
+          parent.insertBefore(heading, anchor && anchor.parentNode === parent ? anchor : parent.firstChild);
+        }, delayMs);
+        return;
+      }
+    }
+  });
+  observer.observe(document.querySelector('main') ?? document.body, { childList: true, subtree: true });
+};
+
+const lateH1 = (page: Page, delayMs: number) => page.evaluate(`(${lateH1Script.toString()})(${delayMs})`);
+
+test.describe('a view whose h1 renders late (1280 px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('moves focus to the h1 once it renders after a nav link click', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 600);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(h1(page), 'the h1 is absent until the view has loaded').toHaveCount(0);
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toHaveAttribute('tabindex', '-1');
+    await expect(h1(page)).toBeFocused();
+  });
+
+  test('does not move focus when the h1 renders late on the initial load', async ({ page }) => {
+    await page.addInitScript(`document.addEventListener('DOMContentLoaded', () => (${lateH1Script.toString()})(500))`);
+    await page.goto('/decisions');
+    await expect(h1(page)).toHaveText('Decisions');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'h1 has focus after the initial load').toBe(false);
+    expect(await focusAtPageStart(page), 'focus is at the page start').toBe(true);
+  });
+
+  test('does not move focus when the h1 renders late after browser back', async ({ page }) => {
+    await page.goto('/');
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toBeFocused();
+    await lateH1(page, 500);
+    await page.goBack();
+    await expect(page).toHaveURL((u) => u.pathname === '/');
+    await expect(h1(page)).toHaveText('What are you deciding today?');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'h1 has focus after back').toBe(false);
+    expect(await focusAtPageStart(page), 'focus is at the page start after back').toBe(true);
+  });
+
+  // App.vue keys the routed view by path (#550): a path change remounts it, so
+  // per-view state starts fresh. Pinned until a stateful view needs otherwise.
+  test('a path change renders a new view: the old view and its state are gone', async ({ page }) => {
+    await page.goto('/decisions');
+    await expect(h1(page)).toHaveText('Decisions');
+    await h1(page).evaluate((el) => ((el as HTMLElement & { seen?: boolean }).seen = true));
+    await sideNav(page).getByRole('link', { name: 'Skills', exact: true }).click();
+    await expect(h1(page)).toHaveText('Agent assets');
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toHaveText('Decisions');
+    expect(await h1(page).evaluate((el) => (el as HTMLElement & { seen?: boolean }).seen)).toBeUndefined();
+  });
+});
+
+test.describe('a view whose h1 renders late, from the drawer (375 px)', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('closes the drawer and moves focus to the h1 once it renders', async ({ page }) => {
+    await page.goto('/');
+    const drawer = await openDrawer(page);
+    await lateH1(page, 600);
+    await drawer.getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(drawer).toBeHidden();
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toBeFocused();
+  });
+});
+
+// #659: the late h1 takes focus only while focus is still where the click left
+// it (the body or the clicked link). Once the user has moved it, it stays put.
+const activeLabel = (page: Page) =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    if (el === document.body || el === document.documentElement) return 'body';
+    return el?.getAttribute('aria-label') ?? el?.textContent?.trim() ?? el?.tagName;
+  });
+
+test.describe('a late h1 after the user moved focus (1280 px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('does not take focus when the user tabbed to another element while it was absent', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 1200);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(h1(page), 'the h1 is absent until the view has loaded').toHaveCount(0);
+    await page.keyboard.press('Tab');
+    const before = await activeLabel(page);
+    expect(before, 'Tab moved focus off the clicked link').not.toBe('Decisions');
+    await expect(h1(page)).toHaveText('Decisions');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'the late h1 took focus back').toBe(false);
+    expect(await activeLabel(page), 'focus stays where the user put it').toBe(before);
+  });
+
+  test('does not take focus when the user focused a control outside the nav while it was absent', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 1200);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toHaveCount(0);
+    const skip = page.getByRole('link', { name: 'Skip to content' });
+    await skip.focus();
+    await expect(skip).toBeFocused();
+    await expect(h1(page)).toHaveText('Decisions');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'the late h1 took focus back').toBe(false);
+    await expect(skip).toBeFocused();
+  });
+
+  test('still focuses the h1 of a later nav click after the user moved focus during an earlier wait', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 1200);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toHaveCount(0);
+    await page.getByRole('link', { name: 'Skip to content' }).focus();
+    await expect(h1(page)).toHaveText('Decisions');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page)).toBe(false);
+    // A fresh click is a fresh request: that view's h1 is focused again.
+    await sideNav(page).getByRole('link', { name: 'Skills', exact: true }).click();
+    await expect(h1(page)).toHaveText('Agent assets');
+    await expect(h1(page)).toBeFocused();
+  });
+});
+
+test.describe('a late h1 while focus is still where the click left it (1280 px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('takes focus when focus is still on the clicked link', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 800);
+    const link = sideNav(page).getByRole('link', { name: 'Decisions', exact: true });
+    await link.click();
+    await expect(h1(page)).toHaveCount(0);
+    await expect(link, 'focus is on the clicked link').toBeFocused();
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toBeFocused();
+  });
+
+  test('takes focus when focus fell back to the body during the wait', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 800);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toHaveCount(0);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    expect(await focusAtPageStart(page), 'focus is on the body').toBe(true);
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toBeFocused();
+  });
+});

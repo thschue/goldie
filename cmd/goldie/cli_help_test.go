@@ -121,6 +121,7 @@ var commandHelp = []struct {
 	{"lookup", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"skills", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"}},
 	{"agents", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"}},
+	{"loops", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"}},
 	{"status", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"init", []string{"--addr", "--dir", "--token", "--project"}, []string{"process list"}},
 	{"version", []string{"--addr", "--dir", "--token", "--json"}, []string{"process list"}},

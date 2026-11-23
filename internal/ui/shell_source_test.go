@@ -130,6 +130,10 @@ func TestWebSourceHasNoVHTMLNoInnerHTMLAndNoHexInComponents(t *testing.T) {
 				t.Errorf("%s uses %s (no raw HTML injection; ADR 0010)", f, bad)
 			}
 		}
+		if strings.HasSuffix(f, "/web/src/assets/links.ts") {
+			// The one followed link of the Agent assets page (#587): only this exact URL is exempt.
+			body = strings.ReplaceAll(body, "'https://github.com/thschue/goldie/blob/main/docs/skills.md'", "")
+		}
 		if regexp.MustCompile(`https?://`).MatchString(strings.ReplaceAll(body, "http://www.w3.org/", "")) && ext != ".html" {
 			if !strings.HasSuffix(f, "vite.config.ts") {
 				t.Errorf("%s names an external URL (no external requests)", f)

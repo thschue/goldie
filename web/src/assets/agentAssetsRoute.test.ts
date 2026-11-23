@@ -1,6 +1,6 @@
 // The /assets/:tab route of the Agent assets frame (#584): /assets redirects to
-// /assets/skills (keeping the query), the three tabs resolve, and no route names
-// a Loops tab. The browser behaviour of the tabs is in web/e2e/assets.spec.ts.
+// /assets/skills (keeping the query), the four tabs resolve (Loops since #647),
+// and a wrong-case tab does not. The browser behaviour of the tabs is in web/e2e/assets.spec.ts.
 import { describe, expect, it } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { routes } from '../router';
@@ -23,7 +23,7 @@ describe('the Agent assets routes', () => {
     expect(r.query.project).toBe('demo');
   });
 
-  for (const tab of ['skills', 'agents', 'instructions']) {
+  for (const tab of ['skills', 'agents', 'loops', 'instructions']) {
     it(`resolves /assets/${tab} and keeps its path and query`, async () => {
       const r = await go(`/assets/${tab}?project=demo`);
       expect(r.fullPath).toBe(`/assets/${tab}?project=demo`);
@@ -31,7 +31,8 @@ describe('the Agent assets routes', () => {
     });
   }
 
-  it('has no route that names a Loops tab', () => {
-    expect(routes.map((r) => String(r.path)).filter((p) => /loops/i.test(p))).toEqual([]);
+  it('matches the tab slug case-sensitively: /assets/Loops is not a tab', async () => {
+    const r = await go('/assets/Loops');
+    expect(r.params.tab ?? '').not.toBe('Loops');
   });
 });
