@@ -8,6 +8,10 @@ import (
 // FSSource is a Source that reads from an fs.FS laid out like a content
 // directory (global/articles/**, projects/**). It is how content embedded in
 // the binary is served.
+//
+// It is for embedded, trusted, read-only file systems only. Unlike DirSource it
+// does no os.Root confinement and no non-regular-file checks, so never pass it
+// os.DirFS.
 type FSSource struct {
 	fsys fs.FS
 }
