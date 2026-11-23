@@ -243,10 +243,12 @@ func (t *tools) projects(ctx context.Context) *sdk.CallToolResult {
 	}
 	if len(res.Projects) == 0 {
 		return success("No Projects are registered on the knowledge server, so every answer is global guidance. " +
-			"Leave project out of search_knowledge, get_article, find_skills, get_skill, list_skills and list_agents.")
+			"Leave project out of search_knowledge, get_article, find_skills, get_skill, " +
+			"list_skills and list_agents.")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d Projects. Pass one as project to search_knowledge, get_article, find_skills, get_skill, list_skills or list_agents.\n", len(res.Projects))
+	fmt.Fprintf(&b, "%d Projects. Pass one as project to search_knowledge, get_article, find_skills, "+
+		"get_skill, list_skills or list_agents.\n", len(res.Projects))
 	for _, p := range res.Projects {
 		fmt.Fprintf(&b, "\n- %s", contract.CleanLine(p))
 	}
