@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Amended by [24. Managed-block marker format v1](0024-managed-block-marker-format-v1.md): the marker format.
+
 ## Context
 
 Telling agents to use goldie has to survive in files people also edit by hand, and has to be enforceable rather than a suggestion.
