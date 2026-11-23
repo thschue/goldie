@@ -76,7 +76,7 @@ func activityFederation(cfg platform.Config, logger *slog.Logger) []api.ServerOp
 	return []api.ServerOption{api.FederateActivity(api.Federation{
 		Window: cfg.ActivityReorderWindow,
 		Logger: logger,
-		Resolver: func() func(context.Context) ([]api.Peer, error) {
+		PeersFor: func() func(context.Context) ([]api.Peer, error) {
 			find := finder.find
 			if stub := resolveActivityPeers; stub != nil { // tests stand in for DNS; read here, on the request's goroutine
 				find = func(ctx context.Context) ([]activityPeer, error) { return stub(ctx, cfg.ActivityPeers) }

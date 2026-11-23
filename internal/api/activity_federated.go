@@ -42,18 +42,16 @@ type Peer struct {
 	Open func(ctx context.Context, token string) (history []contract.ActivityEvent, live <-chan contract.ActivityEvent, err error)
 }
 
-// Federation is what a Server needs to serve ?replicas=all. Resolve runs on
-// every federated request and every reconnect, with no input of the request;
-// its error is never shown. Window is the Merger's reorder window. Clock is
-// the only source of time of the reconnects and the settle (nil: real time).
-// Logger, when set, gets why a peer is down: its name and a reason class,
-// never an address. Resolver, when set, is called once per merged stream on
-// the request's goroutine and its result resolves that stream's peers and
-// reconnects, so nothing that runs after the request has to look anything up
-// by itself; it replaces Resolve.
+// Federation is what a Server needs to serve ?replicas=all. PeersFor is
+// called once per merged stream, on the request's goroutine, with no input of
+// the request: it binds what that stream needs to look the peers up, and the
+// function it returns resolves them for the stream's first open and every
+// reconnect. Its error is never shown. Window is the Merger's reorder window.
+// Clock is the only source of time of the reconnects and the settle (nil:
+// real time). Logger, when set, gets why a peer is down: its name and a
+// reason class, never an address.
 type Federation struct {
-	Resolve  func(ctx context.Context) ([]Peer, error)
-	Resolver func() func(ctx context.Context) ([]Peer, error)
+	PeersFor func() func(ctx context.Context) ([]Peer, error)
 	Window   time.Duration
 	Clock    MergeClock
 	Logger   *slog.Logger
@@ -117,10 +115,7 @@ func (s *Server) federatedStream(ctx context.Context, token string) (contract.Ge
 		return contract.GetActivity503JSONResponse(tooManyStreams), nil
 	}
 	local := s.activity.Replica()
-	resolve := s.fed.Resolve
-	if s.fed.Resolver != nil {
-		resolve = s.fed.Resolver()
-	}
+	resolve := s.fed.PeersFor()
 	peers := usablePeers(ctx, resolve, local)
 	if len(peers) == 0 {
 		release()
