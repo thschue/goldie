@@ -103,16 +103,17 @@ goldie server --dev examples/knowledge
 # export GOLDIE_ADDR=http://127.0.0.1:41234 GOLDIE_TOKEN=<64 hex characters>
 ```
 
-Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there. That `export GOLDIE_ADDR=…` line is also what the
-MCP config in the next section reads.
+Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there. That
+`export GOLDIE_ADDR=…` line is also what the MCP config in the next section reads.
 
 A directory with no content serves the example content built into the binary, and says so on
 stderr; a directory with content is served as it is. The examples hold one article, `agent-loops`.
 Try `goldie search loop`.
 
 A plain `goldie server` with no Source and no API token set stops with two configuration errors and
-ends with `To try goldie on this machine: goldie server --dev`, the command above with the
-working directory as `dir`. With only one of the two missing, or a value that is invalid, it shows the errors alone.
+ends with `To try goldie on this machine: goldie server --dev`, the command above with the working
+directory as `dir`. With only one of the two missing, or a value that is invalid, it shows the
+errors alone.
 
 `goldie validate [dir]` runs the same content load without starting a server, for a pipeline: it
 exits 0 and prints nothing when the content loads, and exits 1 with one `goldie: content does not
