@@ -19,8 +19,8 @@ import (
 var dist embed.FS
 
 const (
-	builtIndex      = "dist/app/index.html"
-	maxPathLen      = 2048
+	builtIndex = "dist/app/index.html"
+	maxPathLen = 2048
 
 	// csp is the Content-Security-Policy of every UI response. The SPA loads
 	// only its own files and talks only to this origin's API.
