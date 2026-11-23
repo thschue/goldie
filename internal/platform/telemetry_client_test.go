@@ -255,17 +255,17 @@ func TestWrapTransportServerSpanIsANewTraceLinkedToTheClientSpan(t *testing.T) {
 func spanText(s tracetest.SpanStub) []string {
 	out := []string{s.Name, s.Status.Description}
 	for _, kv := range s.Attributes {
-		out = append(out, string(kv.Key)+"="+kv.Value.Emit())
+		out = append(out, string(kv.Key)+"="+kv.Value.String())
 	}
 	for _, e := range s.Events {
 		out = append(out, e.Name)
 		for _, kv := range e.Attributes {
-			out = append(out, string(kv.Key)+"="+kv.Value.Emit())
+			out = append(out, string(kv.Key)+"="+kv.Value.String())
 		}
 	}
 	for _, l := range s.Links {
 		for _, kv := range l.Attributes {
-			out = append(out, string(kv.Key)+"="+kv.Value.Emit())
+			out = append(out, string(kv.Key)+"="+kv.Value.String())
 		}
 	}
 	return out
