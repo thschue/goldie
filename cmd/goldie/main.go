@@ -244,9 +244,10 @@ func handlerError(err error) error {
 
 // withDevHint ends err with platform.FirstRunHint when cfg names neither a Source nor an
 // API token: a first run, not an operator mid-setup. A value that is set but
-// invalid, or only one of the two missing, keeps the error as it is.
+// invalid, or only one of the two missing, keeps the error as it is. A ui-mode
+// server serves no content by design, so it never gets the hint.
 func withDevHint(cfg platform.Config, err error) error {
-	if cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
+	if cfg.Mode == platform.ModeUI || cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
 		return err
 	}
 	return fmt.Errorf("%w\n%s", err, platform.FirstRunHint)
