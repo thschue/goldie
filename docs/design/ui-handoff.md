@@ -110,7 +110,6 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 - Kind filter pills with counts, plus "← Back to home".
 - A result card shows Kind badge · name · Scope badge · lifecycle badges · match explanation, then a score bar, title, summary, and "Overrides `x` from global" when it shadows another Item.
 - Order: score, descending (exact keyword +4, name word +2, keyword substring +1). The `matched` text from the API is shown verbatim.
-- As built (#497): one `GET /api/v1/search?q=` per query, with no `kind` parameter. The Kind pills and their counts are computed in the browser from that one response. A hit links to `/items/<kind>/<id>` with each segment percent-encoded, so the article id `platform/deploy` is `/items/article/platform%2Fdeploy`. The API's `overrides` holds Scopes, not Items, so the shadowing line is built from the hit's own `<kind>:<id>` and says one `Overrides <kind>:<id> from <scope>` line per Scope. A hit without `enforced` or `overrides` (an older server) shows no shield and no line.
 
 ### 3.4 Item detail (`/items/article/:name`)
 
