@@ -90,7 +90,7 @@ func serverSpanText(t *testing.T, fn func(string) string, withOption bool, req *
 	}
 	for _, kv := range got[0].Attributes {
 		if string(kv.Key) == "url.path" {
-			urlPath = kv.Value.Emit()
+			urlPath = kv.Value.String()
 		}
 	}
 	if urlPath == "" {
@@ -187,7 +187,7 @@ func TestServerSpanCarriesNothingRawFromAHostilePath(t *testing.T) {
 	for name, req := range map[string]*http.Request{
 		"control characters": func() *http.Request {
 			r := pathRequest(t, "http://goldie.test", "/", "")
-			r.URL.Path, r.URL.RawPath = "/foo/\x00\x1b[31mred\r\ninjected: 1\x7f/‮evil", ""
+			r.URL.Path, r.URL.RawPath = "/foo/\x00\x1b[31mred\r\ninjected: 1\x7f/\u202eevil", ""
 			return r
 		}(),
 		"long unknown segment":  pathRequest(t, "http://goldie.test", "/"+long, ""),
@@ -199,7 +199,7 @@ func TestServerSpanCarriesNothingRawFromAHostilePath(t *testing.T) {
 			if got != pathPlaceholder && got != "/api/v1/articles/{id}" {
 				t.Errorf("url.path = %q: neither a template nor the placeholder", got)
 			}
-			assertNoneOf(t, name, text, "\x00", "\x1b", "\r", "\n", "\x7f", "‮", "evil", "injected", "AAAA", "foo", "%00", "%1b")
+			assertNoneOf(t, name, text, "\x00", "\x1b", "\r", "\n", "\x7f", "\u202e", "evil", "injected", "AAAA", "foo", "%00", "%1b")
 		})
 	}
 }
