@@ -5,8 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"slices"
+	"sync"
 
 	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/engine"
@@ -67,6 +70,33 @@ type Local struct {
 	Logger    *slog.Logger        // nil discards
 	Telemetry *platform.Telemetry // nil for none
 	Force     <-chan struct{}     // closing it cuts the drain short; nil never does
+	// Examples is content to serve while the content directory has none. It is
+	// never mixed with the directory's own content. Nil serves nothing instead.
+	Examples fs.FS
+}
+
+// logger is Logger, or a logger that discards.
+func (l Local) logger() *slog.Logger {
+	if l.Logger == nil {
+		return discardLogger
+	}
+	return l.Logger
+}
+
+// examplesNotice returns the callback that says, once, that the built-in
+// examples are served because dir has no content. It names dir made absolute,
+// so the line says where goldie looked.
+func (l Local) examplesNotice(dir string) func() {
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	logger := l.logger()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			logger.Info("no content in " + dir + ": serving the built-in examples; put your content there to serve it instead")
+		})
+	}
 }
 
 // Start loads the content, makes the token and starts both listeners and the
@@ -87,6 +117,9 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	var src engine.Source = engine.EmptySource{}
 	if cfg.ContentDir != "" {
 		src = engine.NewDirSource(cfg.ContentDir)
+		if l.Examples != nil {
+			src = engine.NewFallbackSource(src, engine.NewFSSource(l.Examples), l.examplesNotice(cfg.ContentDir))
+		}
 	}
 	if l.GoldieDir != "" {
 		src = engine.NewLocalSource(src, l.GoldieDir)
@@ -103,10 +136,7 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	if err != nil {
 		return "", "", nil, errors.New("the local token was refused")
 	}
-	logger := l.Logger
-	if logger == nil {
-		logger = discardLogger
-	}
+	logger := l.logger()
 	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger, api.DefaultActivityKeepalive)
 	if err != nil {
 		return "", "", nil, err

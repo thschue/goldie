@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thschue/goldie/examples"
 	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/cli"
 	"github.com/thschue/goldie/internal/platform"
@@ -136,7 +137,7 @@ func runDev(args []string, out io.Writer) error {
 	ctx, force, stop := stopSignals(logger)
 	defer stop()
 
-	addr, token, wait, err := app.Local{Config: cfg, Logger: logger, Telemetry: tel, Force: force}.Start(ctx)
+	addr, token, wait, err := app.Local{Config: cfg, Logger: logger, Telemetry: tel, Force: force, Examples: examples.Knowledge()}.Start(ctx)
 	if err != nil {
 		return err
 	}

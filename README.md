@@ -105,6 +105,10 @@ goldie server --dev examples/knowledge
 
 Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there.
 
+A directory with no content serves the example content built into the binary, and says so on
+stderr; a directory with content is served as it is. The examples hold one article, `agent-loops`.
+Try `goldie search loop`.
+
 A plain `goldie server` with no Source and no API token set stops with two configuration errors and
 ends with `To try goldie on this machine: goldie server --dev .`, the command above with `.` as
 `dir`. With only one of the two missing, or a value that is invalid, it shows the errors alone.
