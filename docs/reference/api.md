@@ -330,12 +330,12 @@ One article.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `content` | `string` | yes | The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML. |
-| `enforced` | `boolean` | no | Whether the article is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. |
+| `enforced` | `boolean` | no | Whether the article is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false. |
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the article is the global one, and this says what to do next. |
 | `id` | `string` | yes | The article id, its path under 'articles/' without '.md'. |
 | `keywords` | `array` | yes | The keywords from the article's frontmatter, lower case. |
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
-| `overrides` | `array` | no | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. |
+| `overrides` | `array` | no | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
 | `status` | `ItemStatus` | no |  |
 
@@ -441,13 +441,13 @@ One article that matched a search.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `enforced` | `boolean` | no | Whether the hit is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. |
+| `enforced` | `boolean` | no | Whether the hit is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false. |
 | `id` | `string` | yes | The article id, for a lookup. |
 | `keywords` | `array` | yes | The article's keywords, lower case. |
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
 | `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
 | `name` | `string` | yes | The display title from the frontmatter. |
-| `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. |
+| `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
 | `score` | `integer` | yes | The relevance score; higher is better. |

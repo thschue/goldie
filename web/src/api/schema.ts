@@ -572,14 +572,15 @@ export interface components {
             replaced_by?: string;
             /**
              * @description The Scopes this hit shadows in the requested view, nearest first;
-             *     `[]` when it shadows nothing. Never null.
+             *     `[]` when it shadows nothing. Never null. Always sent by this server;
+             *     absent from an older server, where it means unknown, not empty.
              * @example [
              *       "global"
              *     ]
              */
             overrides?: string[];
             /**
-             * @description Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+             * @description Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
              * @example false
              */
             enforced?: boolean;
@@ -651,14 +652,15 @@ export interface components {
             replaced_by?: string;
             /**
              * @description The Scopes this article shadows in the requested view, nearest first;
-             *     `[]` when it shadows nothing. Never null.
+             *     `[]` when it shadows nothing. Never null. Always sent by this server;
+             *     absent from an older server, where it means unknown, not empty.
              * @example [
              *       "global"
              *     ]
              */
             overrides?: string[];
             /**
-             * @description Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+             * @description Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
              * @example false
              */
             enforced?: boolean;

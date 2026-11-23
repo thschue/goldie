@@ -206,7 +206,7 @@ type Article struct {
 	// Examples: Use the platform chart.
 	Content string `json:"content"`
 
-	// Enforced Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+	// Enforced Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
 	//
 	// Examples: false
 	Enforced *bool `json:"enforced,omitempty"`
@@ -234,7 +234,8 @@ type Article struct {
 	Name string `json:"name"`
 
 	// Overrides The Scopes this article shadows in the requested view, nearest first;
-	// `[]` when it shadows nothing. Never null.
+	// `[]` when it shadows nothing. Never null. Always sent by this server;
+	// absent from an older server, where it means unknown, not empty.
 	//
 	//
 	// Examples: ["global"]
@@ -427,7 +428,7 @@ type ProjectView struct {
 //
 // Examples: {"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","overrides":["global"],"scope":"global","score":6}
 type SearchHit struct {
-	// Enforced Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+	// Enforced Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
 	//
 	// Examples: false
 	Enforced *bool `json:"enforced,omitempty"`
@@ -458,7 +459,8 @@ type SearchHit struct {
 	Name string `json:"name"`
 
 	// Overrides The Scopes this hit shadows in the requested view, nearest first;
-	// `[]` when it shadows nothing. Never null.
+	// `[]` when it shadows nothing. Never null. Always sent by this server;
+	// absent from an older server, where it means unknown, not empty.
 	//
 	//
 	// Examples: ["global"]
