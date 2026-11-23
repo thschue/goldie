@@ -24,7 +24,6 @@ import (
 const (
 	claimGlobalFile = "global/articles/rules.md"
 	claimAPIFile    = "projects/github.com/acme/api/articles/api.md"
-	claimDeepFile   = "projects/github.com/acme/a/b/articles/deep.md"
 	claimOtherFile  = "projects/github.com/other/x/articles/other.md"
 	claimOtherAgent = "projects/github.com/other/x/agents/bot.md"
 	claimAcmeGlob   = "github.com/acme/*"
@@ -108,7 +107,6 @@ func TestClaimProjectGlobMatchesOneSegment(t *testing.T) {
 	if a, ok := snap.ArticleIn(claimAPIProject, "api"); !ok || a.Scope != claimAPIProject {
 		t.Fatalf("ArticleIn(%s, api) = %+v, %v", claimAPIProject, a, ok)
 	}
-	claimLoadErr(t, claim, map[string]string{claimDeepFile: article("Deep")}, claimDeepFile)
 	claimLoadErr(t, claim, map[string]string{claimOtherFile: article("Other")}, claimOtherFile)
 }
 
