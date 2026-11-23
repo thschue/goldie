@@ -16,10 +16,11 @@ import (
 // promptPrefix starts the name of every prompt: goldie-<skill name>.
 const promptPrefix = "goldie-"
 
-// promptDescription is the fixed description of every skill prompt. The skill's
-// own text is never copied into prompt metadata.
-const promptDescription = "A skill from the team's golden-path knowledge: the text of its SKILL.md. " +
-	"It comes from a Source."
+// promptDescription is the description of the prompt of one skill. It names
+// the skill, whose name is clean, and nothing else of what a Source says.
+func promptDescription(skill string) string {
+	return "Loads the " + skill + " skill's instructions into this conversation."
+}
 
 // promptSnapshots hold, per session, the skill names the session's prompts
 // were made from. The prompt list is fixed when a session starts: the first
@@ -110,7 +111,7 @@ func (t *tools) listPrompts(ctx context.Context, s *sdk.Server, snaps *promptSna
 	}
 	res := &sdk.ListPromptsResult{Prompts: []*sdk.Prompt{}}
 	for _, n := range order {
-		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: promptPrefix + n, Description: promptDescription})
+		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: promptPrefix + n, Description: promptDescription(n)})
 	}
 	return res, nil
 }
@@ -121,7 +122,8 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		return nil, err
 	}
 	// The name is the client's, and may carry anything: an unknown one is not echoed.
-	unknown := &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "unknown prompt"}
+	unknown := &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams,
+		Message: "unknown prompt; the prompt list is fixed for this session, so list prompts again, or call list_skills"}
 	skill, ok := strings.CutPrefix(name, promptPrefix)
 	if !ok || !names[skill] {
 		return nil, unknown
@@ -139,7 +141,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		return nil, wordError(err, t.local)
 	}
 	return &sdk.GetPromptResult{
-		Description: promptDescription,
+		Description: promptDescription(skill),
 		Messages: []*sdk.PromptMessage{{
 			Role:    "user",
 			Content: &sdk.TextContent{Text: contract.CleanText(string(file))},

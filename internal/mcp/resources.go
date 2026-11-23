@@ -8,63 +8,75 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/thschue/goldie/internal/contract"
 )
 
 const (
-	skillFileTemplate = "goldie://skills/{name}/{path}"
+	// skillFileTemplate expands {+path} (reserved expansion), so a path with
+	// slashes, such as scripts/run.sh, is one value. Simple {path} would escape
+	// the slash, and a compliant client would send scripts%2Frun.sh.
+	skillFileTemplate = "goldie://skills/{name}/{+path}"
 	agentTemplate     = "goldie://agents/{name}"
 )
 
-// addResources registers the two goldie:// resource templates.
+// addResources registers the two goldie:// resource templates, and answers
+// every resources/read itself. A read that fell through to the SDK would have
+// the client's URI echoed in the error data, quoted so that a control
+// character makes invalid JSON, so nothing falls through: a URI under
+// goldie://skills/ is a skill file read, under goldie://agents/ an agent read,
+// and anything else is resource not found.
 func addResources(s *sdk.Server, t *tools) {
 	s.AddResourceTemplate(&sdk.ResourceTemplate{
 		Name:        "skill-file",
 		Title:       "A file of a skill's bundle",
-		Description: "One file of a skill, by the skill's name and the file's path in its bundle. The session's default Project picks the bundle. The text comes from a Source.",
+		Description: "One file of a skill, by the skill's name and the file's path in its bundle, such as scripts/run.sh. The session's default Project picks the bundle.",
 		URITemplate: skillFileTemplate,
 		MIMEType:    "text/plain",
 	}, t.readSkillFile)
 	s.AddResourceTemplate(&sdk.ResourceTemplate{
 		Name:        "agent",
 		Title:       "An agent",
-		Description: "An agent's name and description, by name. The text comes from a Source.",
+		Description: "An agent's name and description, by name.",
 		URITemplate: agentTemplate,
 		MIMEType:    "text/plain",
 	}, t.readAgent)
-	// The SDK matches {path} against one segment, and a skill file's path may
-	// have several (scripts/run.sh), so a read of a skill file is answered here.
-	// A URI that is no skill file goes on to the SDK, which finds nothing for it.
 	s.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
-			if rr, ok := req.(*sdk.ReadResourceRequest); ok && rr.Params != nil && strings.HasPrefix(rr.Params.URI, "goldie://skills/") {
-				return t.readSkillFile(ctx, rr)
+			rr, ok := req.(*sdk.ReadResourceRequest)
+			if !ok {
+				return next(ctx, method, req)
 			}
-			return next(ctx, method, req)
+			uri := ""
+			if rr.Params != nil {
+				uri = rr.Params.URI
+			}
+			switch {
+			case strings.HasPrefix(uri, "goldie://skills/"):
+				return t.readSkillFile(ctx, rr)
+			case strings.HasPrefix(uri, "goldie://agents/"):
+				return t.readAgent(ctx, rr)
+			}
+			return nil, notFound()
 		}
 	})
 }
 
 // resourcePath splits uri, which must be goldie://<kind>/<name>[/<path>], into
 // its parts. Nothing but the session selects a Project, and nothing may leave
-// the bundle, so a query, a fragment, an escape, a backslash, a hidden
-// character, an empty or dot-only segment, or a name that is no path segment
-// is refused, before any request.
+// the bundle, so a query, a fragment, invalid UTF-8, or a segment that is not
+// a clean path segment (skillNameOK: empty, dots only, an escape, a backslash,
+// a hidden character) is refused, before any request.
 func resourcePath(uri, kind string) (name, path string, ok bool) {
 	rest, found := strings.CutPrefix(uri, "goldie://"+kind+"/")
-	if !found || !utf8.ValidString(rest) || strings.ContainsAny(rest, "?#%\\") {
+	if !found || !utf8.ValidString(rest) || strings.ContainsAny(rest, "?#") {
 		return "", "", false
-	}
-	for _, r := range rest {
-		if contract.HiddenRune(r) {
-			return "", "", false
-		}
 	}
 	parts := strings.Split(rest, "/")
 	for _, p := range parts {
-		if contract.CheckArticleID(p) != nil {
+		if !skillNameOK(p) {
 			return "", "", false
 		}
 	}
@@ -74,9 +86,12 @@ func resourcePath(uri, kind string) (name, path string, ok bool) {
 	return parts[0], strings.Join(parts[1:], "/"), true
 }
 
-// notFound is the protocol's resource-not-found error. It names no address,
-// path or token, and no URI: the client's own may carry anything.
-func notFound() error { return sdk.ResourceNotFoundError("") }
+// notFound is the protocol's resource-not-found error. It names a next step,
+// and no URI, address, path or token: the client's own URI may carry anything.
+func notFound() error {
+	return &jsonrpc.Error{Code: sdk.CodeResourceNotFound,
+		Message: "resource not found; list_skills and list_agents give valid names"}
+}
 
 func textResource(uri, body string) *sdk.ReadResourceResult {
 	return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: uri, MIMEType: "text/plain", Text: body}}}
@@ -91,7 +106,7 @@ func (t *tools) resourceError(err error) error {
 	return wordError(err, t.local)
 }
 
-// readSkillFile answers goldie://skills/{name}/{path}: a file of the bundle,
+// readSkillFile answers goldie://skills/{name}/{+path}: a file of the bundle,
 // cleaned and quoted line by line like get_skill does, and never served as a
 // page.
 func (t *tools) readSkillFile(ctx context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
