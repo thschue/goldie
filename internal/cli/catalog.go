@@ -91,7 +91,7 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 		s, err := contract.Answer(raw, err, contract.ParseGetSkillResponse,
 			func(r *contract.GetSkillResponse) *contract.Skill { return r.JSON200 })
 		if err != nil {
-			return wordError(contract.RewordMiss(err, skillMissHint, "List the skills with: goldie skills list, then use a name from its results."), c.local)
+			return wordError(contract.RewordMiss(err, contract.SkillMissHint, "List the skills with: goldie skills list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(s)
@@ -126,15 +126,9 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 	return err
 }
 
-// The server's plain-miss hints for an unknown skill or agent (api/items.go);
-// show words them with the CLI's list command, as lookup does for articles.
-const (
-	skillMissHint = "List the skills, then use a name from the list."
-	agentMissHint = "List the agents, then use a name from the list."
-	// emptyNextStep follows an empty list, which the server explains only for
-	// an unregistered Project.
-	emptyNextStep = "Check which Project this repository maps to with: goldie status\n"
-)
+// emptyNextStep follows an empty list, which the server explains only for an
+// unregistered Project.
+const emptyNextStep = "Check which Project this repository maps to with: goldie status\n"
 
 // writeSkill prints a skill's name and one line per file; each server text is
 // one cleaned line, so none can forge a line of its own.
@@ -160,7 +154,7 @@ func (c *commander) agents(ctx context.Context, verb, name string) error {
 		a, err := contract.Answer(raw, err, contract.ParseGetAgentResponse,
 			func(r *contract.GetAgentResponse) *contract.Agent { return r.JSON200 })
 		if err != nil {
-			return wordError(contract.RewordMiss(err, agentMissHint, "List the agents with: goldie agents list, then use a name from its results."), c.local)
+			return wordError(contract.RewordMiss(err, contract.AgentMissHint, "List the agents with: goldie agents list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(a)
