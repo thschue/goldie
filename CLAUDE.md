@@ -57,6 +57,7 @@ One binary `goldie`, roles as subcommands, modules with one-way dependencies:
 
 ```
 cmd/goldie        entry point
+examples          built-in example content for server --dev (leaf: only cmd/goldie imports it)
 internal/app      composition root: wires modules into roles
 internal/engine   Items, Resolution, Sources, Snapshots (pure: no inbound transport; Sources may be outbound clients)
 internal/api      HTTP transport over the engine
