@@ -281,7 +281,7 @@ func readLimited(fsys fs.FS, p, what string) ([]byte, error) {
 // path. It passes through the path-free errors about the content itself (load
 // limits, invalid trees), which the operator needs to fix the Source.
 func readErr(err error) error {
-	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName, errNotRegular} {
+	for _, content := range []error{errLoadLimit, errDuplicateEntry, errBadEntryName, errNotRegular, errNotDir} {
 		if errors.Is(err, content) {
 			return content
 		}
