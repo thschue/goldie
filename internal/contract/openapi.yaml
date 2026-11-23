@@ -422,7 +422,9 @@ paths:
       summary: List the agents
       description: |
         Returns the agents that answer in the Project's view, sorted by name,
-        one per name: the nearest Scope wins.
+        one per name: the nearest Scope wins. Each carries its `scope` and
+        `status`. A draft agent is listed only with `drafts=true` and the
+        operator role.
       parameters:
         - name: project
           in: query
@@ -1386,6 +1388,22 @@ components:
           description: The frontmatter description. It comes from a Source and is untrusted.
           examples:
             - Reviews code
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+            `host/org/repo` or `local`. Sent by `listAgents` only; `getAgent`
+            omits it, and a missing value means unknown.
+          examples:
+            - global
+        status:
+          type: string
+          description: |
+            The `status` in the frontmatter: `draft` or `deprecated`; absent for
+            a published agent. Sent by `listAgents` only. Draft agents are
+            hidden unless `drafts=true` is asked for with the operator role.
+          examples:
+            - draft
         hint:
           type: string
           minLength: 1
