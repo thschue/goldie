@@ -96,9 +96,9 @@ eachViewport((width, theme) => {
     const nav = await withNav(page);
     await expect(nav).toHaveAttribute('aria-label', /.+/);
     const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Instructions']);
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
     const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
-    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
+    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
       (s) => text.indexOf(s),
     );
     expect(at.every((i) => i >= 0), `all entries present in: ${text}`).toBe(true);
