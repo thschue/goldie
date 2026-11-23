@@ -82,6 +82,7 @@ func transportClient(t handlerTransport, authorization string) contract.ClientIn
 		contract.WithHTTPClient(&http.Client{Transport: t}),
 		contract.WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set("Authorization", authorization)
+			contract.MarkMCP(r.Header)
 			return nil
 		}))
 	if err != nil {

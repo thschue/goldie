@@ -48,7 +48,8 @@ running server through the generated client, or an embedded one over local conte
 takes `--addr` (or `GOLDIE_ADDR`), `--token` (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it
 from a file) and `--json`. Prefer `GOLDIE_TOKEN` or `GOLDIE_TOKEN_FILE` to `--token`: a `--token`
 value shows in the process list (`ps`) of the machine. The CLI follows no redirects, so a server
-cannot send the token elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`.
+cannot send the token elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`
+(`goldie mcp` adds `X-Goldie-Via: mcp`).
 `status` reports whether the server answers and accepts the token (`--json` adds `tokenGiven`) and
 which Project the CLI works for; without an accepted token it cannot read the API document, so it
 reports the API as unknown, and `version` leaves out the server's API version. `search`, `lookup`
