@@ -11,9 +11,9 @@ import (
 // nothing in the view. They echo nothing of the request.
 var (
 	noSuchSkill = envelope("not_found", "no such skill",
-		"Search for the skill, then use an id from its results.")
+		"List the skills, then use a name from the list.")
 	noSuchAgent = envelope("not_found", "no such agent",
-		"Search for the agent, then use an id from its results.")
+		"List the agents, then use a name from the list.")
 )
 
 // skillAnswer is an engine skill as the contract sends it, files already
