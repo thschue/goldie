@@ -200,7 +200,7 @@ From top to bottom:
 | `AppShell` | role: reader \| operator | Top bar + side nav. The nav collapses below 1024 px (see §7). |
 | `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. |
 | `ThemeToggle` | light \| dark \| system | Persists the choice. `system` follows `prefers-color-scheme`. |
-| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see Forms below). |
+| `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see the `Forms` row). |
 | `SuggestionChip` | on-hero \| on-surface | A button. Sets the query. |
 | `KindTile` | per Kind | Icon, name, purpose, count. A button. |
 | `ResultCard` | default · enforced · draft · deprecated · shadowing | The whole card is one link. Score bar is `aria-hidden`; the score text stays readable. |
@@ -225,8 +225,7 @@ From top to bottom:
 | `EventDetail` | hit \| miss | — |
 | `SourceCard` | healthy · failing · syncing | Resync is CSRF-protected and operator only. |
 | `Alert` | info · warning (gold) · danger | `role="alert"` only for new errors; otherwise `role="status"`. |
-
-**Forms.** The SPA runs under `form-action 'none'` in its Content-Security-Policy (see `docs/platform-contract.md`, the UI paragraph under PC-01), so the browser silently blocks a native form submit. Handle every form in JavaScript: `@submit.prevent`, then `fetch` for the API call and the router for navigation. This covers the sign-in access-token form and `SearchField`. GitHub sign-in is a link or a `location` navigation to the sign-in route, never a form post.
+| `Forms` | sign-in token form · `SearchField` | The SPA runs under `form-action 'none'` (the UI bullet under "Settings and endpoints" in `docs/platform-contract.md`). A native submit is blocked silently, so Enter would do nothing. Put `@submit.prevent` on the `<form>` so Enter still submits, then use `fetch` and the router. GitHub sign-in is a link or `location` navigation to the server's GitHub OAuth start endpoint (owned by #25), never a form post; leaving the origin by navigation is not blocked by `form-action`. |
 
 ---
 
