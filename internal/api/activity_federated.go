@@ -34,12 +34,12 @@ const (
 )
 
 // Peer is another replica: Name is all a client ever sees of it. Open opens
-// the peer's own stream (never its merged one) with the caller's token; live
+// the peer's own stream (never its merged one) with the caller's credential; live
 // closes when that stream ends or falls silent. Its error names no address;
 // when it has a DownReason() string, that class is logged with the peer's name.
 type Peer struct {
 	Name string
-	Open func(ctx context.Context, token string) (history []contract.ActivityEvent, live <-chan contract.ActivityEvent, err error)
+	Open func(ctx context.Context, cred Credential) (history []contract.ActivityEvent, live <-chan contract.ActivityEvent, err error)
 }
 
 // Federation is what a Server needs to serve ?replicas=all. PeersFor is
@@ -69,20 +69,29 @@ var tooManyFederated = envelope("too_many_streams", "too many merged activity st
 var badReplicas = envelope("bad_request", "invalid replicas",
 	"Use replicas=all, once, or leave it out for this replica's stream.")
 
+// Credential is what a merged stream forwards to the peers, only to the ones
+// the operator configured: the caller's bearer token or, when it sent none,
+// its session cookie under its local name. Never both, never logged.
+type Credential struct {
+	Token       string // the bearer token
+	SessionName string // the session cookie's name, empty with a bearer token
+	SessionVal  string
+}
+
 // activityCall is what activityRequest hands the handler: replicas=all, and
-// the caller's bearer token, which only a merged stream forwards, only to the
-// peers the operator configured.
+// the caller's credential.
 type activityCall struct {
-	all   bool
-	token string
+	all  bool
+	cred Credential
 }
 
 type activityCallKey struct{}
 
 // activityRequest checks replicas on the raw query (the generated binder
 // takes any string, and one value of a repeated one) and hands the handler
-// the caller's token. The route's guard has checked the operator role.
-func activityRequest(next contract.StrictHandlerFunc, op string) contract.StrictHandlerFunc {
+// the caller's credential. The route's guard has checked the operator role,
+// so a session cookie that comes without a bearer token is the valid one.
+func (s *Server) activityRequest(next contract.StrictHandlerFunc, op string) contract.StrictHandlerFunc {
 	if op != "GetActivity" {
 		return next
 	}
@@ -94,7 +103,14 @@ func activityRequest(next contract.StrictHandlerFunc, op string) contract.Strict
 			}
 			call.all = r.Method != http.MethodHead // a HEAD only needs the headers
 		}
-		call.token, _ = bearerToken(r.Header.Get("Authorization"))
+		if h := r.Header.Get("Authorization"); h != "" {
+			call.cred.Token, _ = bearerToken(h) // a bearer token beats a cookie
+		} else if s.tokens != nil && s.tokens.sessions != nil {
+			name := s.tokens.sessions.cookieName(r)
+			if c, err := r.Cookie(name); err == nil {
+				call.cred.SessionName, call.cred.SessionVal = name, c.Value
+			}
+		}
 		return next(context.WithValue(ctx, activityCallKey{}, call), w, r, req)
 	}
 }
@@ -102,7 +118,7 @@ func activityRequest(next contract.StrictHandlerFunc, op string) contract.Strict
 // federatedStream answers ?replicas=all: the local subscription and one per
 // peer, merged, holding a federated slot until the stream ends. With no peer
 // it is the plain local stream.
-func (s *Server) federatedStream(ctx context.Context, token string) (contract.GetActivityResponseObject, error) {
+func (s *Server) federatedStream(ctx context.Context, cred Credential) (contract.GetActivityResponseObject, error) {
 	if s.fedOpen.Add(1) > MaxFederatedSubscribers {
 		s.fedOpen.Add(-1)
 		return contract.GetActivity503JSONResponse(tooManyFederated), nil
@@ -127,7 +143,7 @@ func (s *Server) federatedStream(ctx context.Context, token string) (contract.Ge
 	if clock == nil {
 		clock = realMergeClock{}
 	}
-	f := &federation{life: life, token: token, merger: NewMerger(MergeConfig{Window: s.fed.Window, Clock: clock}), peers: peers,
+	f := &federation{life: life, cred: cred, merger: NewMerger(MergeConfig{Window: s.fed.Window, Clock: clock}), peers: peers,
 		local: local, resolve: resolve, clock: clock, log: s.fed.Logger, downs: &s.fedDown}
 	inputs := append([]MergeInput{{Name: local, History: history, Live: live}}, f.openAll()...)
 	merged, out := f.merger.Start(life, inputs...)
@@ -183,7 +199,7 @@ func resolvePeers(ctx context.Context, resolve func(context.Context) ([]Peer, er
 // and opens a down one again, until life ends.
 type federation struct {
 	life    context.Context
-	token   string
+	cred    Credential
 	merger  *Merger
 	peers   []Peer
 	local   string
@@ -283,7 +299,7 @@ func (f *federation) openAll() []MergeInput {
 
 // open opens p's stream under ctx, nil when it cannot be opened.
 func (f *federation) open(ctx context.Context, cancel context.CancelFunc, p Peer) *peerConn {
-	history, live, err := p.Open(ctx, f.token)
+	history, live, err := p.Open(ctx, f.cred)
 	if err != nil {
 		reason := "open_failed"
 		var r interface{ DownReason() string }

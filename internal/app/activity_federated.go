@@ -53,7 +53,7 @@ func openError(err error) error {
 
 // activityFederation is the server option of a replica configured with
 // GOLDIE_ACTIVITY_PEERS, none without. Peers come only from that DNS name,
-// never a request; the caller's token goes only to the addresses it resolves
+// never a request; the caller's credential goes only to the addresses it resolves
 // to, over a client that follows no redirect and reads no proxy.
 func activityFederation(cfg platform.Config, logger *slog.Logger) []api.ServerOption {
 	if cfg.ActivityPeers == "" {
@@ -96,12 +96,36 @@ func activityFederation(cfg platform.Config, logger *slog.Logger) []api.ServerOp
 	})}
 }
 
+// sessionCookieTransport sends one cookie, the caller's session cookie, with
+// every request: the only cookie a peer is ever sent.
+type sessionCookieTransport struct {
+	base        http.RoundTripper
+	name, value string
+}
+
+func (t sessionCookieTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Del("Cookie")
+	r.AddCookie(&http.Cookie{Name: t.name, Value: t.value})
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(r)
+}
+
 // peerOpener opens the local activity stream of the peer at base with the
-// caller's token: the plain stream, never replicas=all, so a cycle of
+// caller's credential, a bearer token or else its session cookie: the plain stream, never replicas=all, so a cycle of
 // replicas does not fan out.
-func peerOpener(httpc *http.Client, base string, idle time.Duration) func(context.Context, string) ([]contract.ActivityEvent, <-chan contract.ActivityEvent, error) {
-	return func(ctx context.Context, token string) ([]contract.ActivityEvent, <-chan contract.ActivityEvent, error) {
-		client, err := contract.NewAPIClient(base, token, platform.Version, httpc)
+func peerOpener(httpc *http.Client, base string, idle time.Duration) func(context.Context, api.Credential) ([]contract.ActivityEvent, <-chan contract.ActivityEvent, error) {
+	return func(ctx context.Context, cred api.Credential) ([]contract.ActivityEvent, <-chan contract.ActivityEvent, error) {
+		hc := httpc
+		if cred.Token == "" && cred.SessionName != "" {
+			c := *httpc
+			c.Transport = sessionCookieTransport{base: httpc.Transport, name: cred.SessionName, value: cred.SessionVal}
+			hc = &c
+		}
+		client, err := contract.NewAPIClient(base, cred.Token, platform.Version, hc)
 		if err != nil {
 			return nil, nil, &peerError{"open_failed"}
 		}
