@@ -50,8 +50,8 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 	}
 }
 
-// recorded is the Event for an answered search or lookup: its words or the
-// article id asked for, the project as sent (record stores its spelling), and
+// recorded is the Event for an answered search, lookup or get: its words, the
+// article id or the skill or agent name asked for, the project as sent (record stores its spelling), and
 // whether it is a Miss (a search with zero results, or a lookup answering
 // 404). Any other answer is not recorded.
 func recorded(req, resp any) (Event, bool) {
@@ -63,6 +63,14 @@ func recorded(req, resp any) (Event, bool) {
 		r, _ := req.(contract.GetArticleRequestObject)
 		_, miss := resp.(contract.GetArticle404JSONResponse)
 		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: miss}, true
+	case contract.GetSkill200JSONResponse, contract.GetSkill404JSONResponse:
+		r, _ := req.(contract.GetSkillRequestObject)
+		_, miss := resp.(contract.GetSkill404JSONResponse)
+		return Event{Kind: KindGet, Query: r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
+	case contract.GetAgent200JSONResponse, contract.GetAgent404JSONResponse:
+		r, _ := req.(contract.GetAgentRequestObject)
+		_, miss := resp.(contract.GetAgent404JSONResponse)
+		return Event{Kind: KindGet, Query: r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
 	}
 	return Event{}, false
 }
