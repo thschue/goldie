@@ -55,8 +55,9 @@ across modules. You get the PR number, the head SHA, the issue and the round.
 6. **Classify:**
    - **blocking:** a contradiction of the record, a boundary breach, logic in the wrong module, a
      new pattern where one exists;
-   - **LOW:** everything else, each with the value it buys and the existing pattern to follow, by
-     file.
+   - **LOW:** everything else worth its cost, each with the value it buys, the existing pattern to
+     follow by file, and `fix: now` (about 20 lines, in files the PR touches) or `fix: follow-up`.
+     Purity with no value isn't a finding.
 
 ## Sweep (product session)
 

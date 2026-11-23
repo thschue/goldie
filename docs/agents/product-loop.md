@@ -7,11 +7,9 @@ are in the [README](./README.md).
 
 ## Write surface
 
-- **Issues:**
-  - bodies, comments and triage labels;
-  - `area:` lanes, `priority`, native `blocked_by` edges and sub-issues;
-  - creating issues, and closing them with evidence;
-  - the pinned `Maintainer inbox` and `PM decision log`.
+- **Issues:** bodies, comments, triage labels, `area:` lanes, priority levels, native `blocked_by`
+  edges and sub-issues; creating issues and closing them with evidence; the pinned
+  `Maintainer inbox` and `PM decision log`.
 - **PRs:** comments, lifting a `needs-info` it owns (`spec`, `product`, `decision`), and closing a
   PR whose issue is closed or superseded (never an external contributor's).
 - **Never:** code, branches, merges, or another session's flow labels.
@@ -35,9 +33,13 @@ Each step runs only after the steps before it are done.
    (`decisions=`, with or without its labels) gets `PM decision: merge` or `PM decision: change`
    (with the rework and the record it rests on) in this tick, and `needs-info` and `question` if
    they're missing. Log it. Escalate only the critical list.
-2. **Triage** every `needs-triage` issue, bugs and security first. First bundle follow-ups by area
-   into the oldest issue (a checklist; the rest close as duplicates). Then apply exactly one
-   verdict:
+2. **Triage** every `needs-triage` issue, and every `ready-for-agent` one without a priority level,
+   bugs and security first.
+   - **Value check:** is the user, security or maintenance benefit worth a stream (about 30 min of
+     agents and a review)? If not, close it `wontfix`: "overengineered: <why>" (the architect's view
+     for a refactor). Tier 1 for issues the loops filed, tier 2 for the maintainer's.
+   - Bundle the remaining follow-ups by area into the oldest issue (a checklist; the rest close as
+     duplicates). Then apply exactly one verdict, and a priority level with `ready-for-agent`:
 
    | Verdict | When |
    |---|---|
@@ -67,8 +69,7 @@ Each step runs only after the steps before it are done.
    - You decide what goes in. Architect and UX input that would delay a valuable outcome becomes a
      follow-up issue with its value stated.
    - Write the issue body from the [template](./issue-tracker.md#issue-template). Set the `area:`
-     lane, and attach slices and follow-ups to their epic as sub-issues. Keep `priority` on the 2
-     issues that unblock the most.
+     lane and the priority level, and attach slices and follow-ups to their epic as sub-issues.
 
    **Readiness gate** (all must pass):
    - it changes one Go package or Vue feature folder, within about 400 lines;
@@ -77,7 +78,7 @@ Each step runs only after the steps before it are done.
    - measured claims carry their probe;
    - every acceptance criterion is testable at a named seam.
 4. **Flow.** Report stalls:
-   - a `priority` issue not merged within a day;
+   - a `priority:P1` issue not merged within a day;
    - `round-cap`, `security` and `human-check` parks;
    - `needs-maintainer` older than a day;
    - a stream idle for over 2 h, or an owned PR `red` or `dirty` for over 30 min;

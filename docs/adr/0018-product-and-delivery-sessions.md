@@ -40,7 +40,8 @@ minutes from ready to merge.
   - auto-merge pinned to the reviewed head replaces the drift and red-after-arming rules. A merge
     queue isn't available to a user-owned repository, so skew between PRs is caught by CI on
     `main` and the stop-the-line rule;
-  - Renovate replaces manual dependency upkeep;
+  - Renovate replaces manual dependency upkeep: green updates merge themselves after the required
+    checks and a 7-day release age; the delivery loop fixes red ones (amended 2026-11-23);
   - a branch push replaces claim locks.
 - **The harness changes only in batches by the maintainer.** Loops record friction in the pinned
   `Harness feedback` issue and never open harness PRs. `docs/agents/*.md` stays within 600 lines

@@ -38,7 +38,9 @@ orchestrator passes you.
      `Closes`);
    - MEDIUM+ security on `main`: commit locally and report class and area only.
 
-   Ideas and refactors become one `needs-triage` follow-up, not code.
+   A small improvement in code you touch (about 20 lines, no behaviour beyond the issue): make it.
+   A bigger idea or refactor becomes one `needs-triage` follow-up only with the value it buys;
+   otherwise drop it.
 7. **Gates,** in order:
    - targeted tests;
    - `./run check` (exit 0, zero warnings);
@@ -55,7 +57,7 @@ orchestrator passes you.
    Update the draft PR's title (a Conventional Commit) and body
    (`Closes #<n>`, the pattern followed, the gate reasons). Leave it a draft. Don't touch labels,
    don't review, don't merge. Kill every process you start.
-10. **Fix round:** fix every finding you're sent, give evidence per finding, re-run the gates, and
+10. **Fix round:** fix every finding you're sent (LOWs included), give evidence per finding, re-run the gates, and
     push.
 
 **Your final message is the report**, after the push and the PR body, with nothing after it: prose,

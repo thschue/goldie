@@ -28,9 +28,10 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
    - `active` with no live subagent: continue at the step its markers show.
 
    Adopt a stream idle for over 2 h ([sessions](./README.md#identity-and-sessions)).
-3. **Renovate PRs:** an open, unreviewed `renovate[bot]` PR is a stream with no test or implement
-   step. The `reviewer` reads the diff and the release notes; no code from it runs locally; CI is
-   authoritative.
+3. **Renovate PRs** merge themselves when green. A red or conflicted one (`renovate=`) is a stream
+   with no test step: the implementer fixes it on its branch, then review and `scripts/merge-pr`.
+   If the fix exceeds a stream or needs a product choice, close the PR with the reason (Renovate
+   skips that version) and file the migration as `needs-triage`.
 4. **Claim** while fewer than 2 streams are running: the first issue `scripts/frontier` prints
    ([order of work](./README.md#order-of-work)) that shares no Go package or Vue feature folder
    with this session's other stream. Run `scripts/claim <n> <type>`:
@@ -71,13 +72,12 @@ reason), consults, test change requests, and harness feedback filed.
    never the implementer's report. They don't re-run gates; CI is authoritative.
 4. **Fix.**
    - The worst outcome wins, in this order: `needs-info`, `changes-requested`, `decision`, `clean`.
-   - On `changes-requested`, send every blocking finding, and every LOW finding with a clear fix,
-     to the **same implementer** (`SendMessage`; a fresh one after a restart). Then go to step 3
-     with only the reviewers that had findings.
+   - Send every blocking and every `fix: now` LOW finding to the **same implementer**
+     (`SendMessage`; a fresh one after a restart), also when only `now` LOWs are left (a polish
+     pass). Then go to step 3 with only the reviewers that had findings, on the new commits.
    - At most **2** fix rounds. A blocking finding still open after that becomes
-     `needs-info reason=round-cap` with the findings and a recommendation.
-   - LOW findings never cause a round. The ones left are filed as one follow-up issue
-     (`needs-triage`).
+     `needs-info reason=round-cap` with the findings and a recommendation. LOWs found after a
+     polish pass are dropped; `fix: follow-up` LOWs go into one `needs-triage` issue.
 5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
    agent: fixed, or why not. Then:
    - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker, `main`'s gate and the test
