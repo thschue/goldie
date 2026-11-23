@@ -23,8 +23,17 @@ var (
 	binErr  error
 )
 
+// testPollFloor is the poll interval floor the test binary is linked with
+// (#96), so a process test can poll a git Source every few hundred
+// milliseconds. A release build leaves it unset and keeps the documented
+// floor, platform.MinPollInterval.
+const testPollFloor = "100ms"
+
 // goldieBinary builds the real binary once per test run, stamping version
-// info the way a release build does.
+// info the way a release build does, and lowering the poll interval floor
+// to testPollFloor through the link-time seam
+// github.com/thschue/goldie/internal/platform.pollIntervalFloor (a string
+// variable holding a Go duration; empty means platform.MinPollInterval).
 func goldieBinary(t *testing.T) string {
 	t.Helper()
 	binOnce.Do(func() {
@@ -36,7 +45,8 @@ func goldieBinary(t *testing.T) string {
 		binPath = filepath.Join(dir, "goldie")
 		ld := "-X github.com/thschue/goldie/internal/platform.Version=1.2.3 " +
 			"-X github.com/thschue/goldie/internal/platform.Commit=abc123 " +
-			"-X github.com/thschue/goldie/internal/platform.BuildDate=2026-01-02"
+			"-X github.com/thschue/goldie/internal/platform.BuildDate=2026-01-02 " +
+			"-X github.com/thschue/goldie/internal/platform.pollIntervalFloor=" + testPollFloor
 		out, err := exec.Command("go", "build", "-ldflags", ld, "-o", binPath, ".").CombinedOutput()
 		if err != nil {
 			binErr = &buildError{string(out)}

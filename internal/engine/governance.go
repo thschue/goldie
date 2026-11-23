@@ -162,9 +162,10 @@ func escapeHidden(quoted string) string {
 }
 
 // viewOf is the Project whose view a's references resolve in: a's own
-// Project, or "" (global only) for a global Item.
+// Project, or "" for a global Item (global only) and a local one (local, then
+// global: the local Scope is in every view and names no Project).
 func viewOf(a *Article) string {
-	if a.Scope == ScopeGlobal {
+	if a.Scope == ScopeGlobal || a.Scope == ScopeLocal {
 		return ""
 	}
 	return a.Scope
@@ -180,9 +181,11 @@ func articleFile(a *Article) string { return a.file }
 // global, less the global Items the Project suppresses (#367), by winner's
 // rule with drafts readable (resolve), so a draft target fails as a draft and
 // a Project draft never shadows an enforced global target (#359). The
-// suppression check comes first, so the error names the project.yaml.
-func (s *Snapshot) checkReplacements() error {
-	all := s.allArticles()
+// suppression check comes first, so the error names the project.yaml. all is
+// the Articles to check, so a Source that adds the local Scope checks only the
+// local Items, which see local, then global; a chain ends at an Item outside
+// all, whose own chain was checked with its Scope.
+func (s *Snapshot) checkReplacements(all []*Article) error {
 	next := make(map[*Article]*Article, len(all))
 	for _, a := range all {
 		if a.ReplacedBy == "" {

@@ -16,9 +16,11 @@ import (
 // a draft is dangling too. A placeholder such as <id>
 // or … is skipped (see isPlaceholder). The error names the article, and the
 // project.yaml when that is why the id is hidden, and quotes the id, bounded
-// and escaped, never raw.
-func (s *Snapshot) checkLookups() error {
-	for _, a := range s.allArticles() {
+// and escaped, never raw. all is the Articles to check, so a Source that adds
+// the local Scope checks only the local Items; a local Item sees local, then
+// global (ADR 0021).
+func (s *Snapshot) checkLookups(all []*Article) error {
+	for _, a := range all {
 		view := viewOf(a)
 		for _, id := range lookupIDs(a.Content) {
 			if isPlaceholder(id) {
