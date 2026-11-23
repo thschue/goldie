@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.yaml.in/yaml/v3"
 
@@ -26,7 +27,7 @@ func loopInvocations(files []pulledFile) []string {
 			continue
 		}
 		name, ok = strings.CutSuffix(name, "/SKILL.md")
-		if !ok || name == "" || strings.Contains(name, "/") || contract.CleanLine(name) != name {
+		if !ok || name == "" || strings.Contains(name, "/") || contract.CleanLine(name) != name || strings.ContainsFunc(name, unicode.IsSpace) {
 			continue
 		}
 		front, _, ok := bytes.Cut(bytes.TrimPrefix(f.data, []byte("---\n")), []byte("\n---\n"))

@@ -19,3 +19,12 @@ func TestLoopInvocationsSkipsWhatIsNotAPlainEntry(t *testing.T) {
 		t.Errorf("loopInvocations = %q, want %q", got, want)
 	}
 }
+
+func TestLoopInvocationsRejectsAWhitespaceName(t *testing.T) {
+	data := []byte("---\nloop: 30m\n---\n")
+	for _, n := range []string{"a b", "a\tb", "a b"} {
+		if got := loopInvocations([]pulledFile{{path: ".claude/skills/goldie-loop-" + n + "/SKILL.md", data: data}}); len(got) != 0 {
+			t.Errorf("name %q printed %q", n, got)
+		}
+	}
+}

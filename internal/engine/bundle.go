@@ -31,24 +31,17 @@ func loopEntry(l Loop) []byte {
 		Name        string `yaml:"name"`
 		Description string `yaml:"description"`
 		Loop        string `yaml:"loop"`
-	}{goldiePrefix + loopEntryPrefix + l.Name, cleanText(l.Description), timing})
+	}{goldiePrefix + loopEntryPrefix + l.Name, cleanValue(l.Description), timing})
 	if err != nil {
 		return nil
 	}
 	return []byte("---\n" + string(front) + "---\n" + l.Content + "\n## Stop\n\nStop " + l.Stop + ".\n")
 }
 
-// cleanText is s on one line, without any rune HiddenRune names.
-func cleanText(s string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\n' || r == '\r' || r == '\t' || r == 0x2028 || r == 0x2029:
-			return ' '
-		case HiddenRune(r):
-			return -1
-		}
-		return r
-	}, s)
+// safeLoopName reports whether a loop's name can be its entry skill's name: a
+// safeElem without whitespace, which would split the /loop invocation.
+func safeLoopName(n string) bool {
+	return safeElem(n) && !strings.ContainsFunc(n, unicode.IsSpace)
 }
 
 // BundleFile is one file of a bundle: a clean relative slash path from the
@@ -77,7 +70,8 @@ const goldiePrefix = "goldie-"
 // claudeLayout is the Claude target: .claude/skills/goldie-<name>/<file>,
 // .claude/agents/goldie-<name>.md and, for each loop, its entry skill
 // .claude/skills/goldie-loop-<name>/SKILL.md (see loopEntry). A loop whose entry
-// path a skill already holds is left out.
+// path a skill already holds, compared ignoring case, is left out, as is a loop
+// whose name holds whitespace.
 func claudeLayout(skills []skillBundle, agents []Agent, loops []Loop) []BundleFile {
 	var out []BundleFile
 	for _, sk := range skills {
@@ -97,11 +91,11 @@ func claudeLayout(skills []skillBundle, agents []Agent, loops []Loop) []BundleFi
 	}
 	taken := map[string]bool{}
 	for _, f := range out {
-		taken[f.Path] = true
+		taken[strings.ToLower(f.Path)] = true
 	}
 	for _, l := range loops {
 		p := ".claude/skills/" + goldiePrefix + loopEntryPrefix + l.Name + "/SKILL.md"
-		if safeElem(l.Name) && !taken[p] {
+		if safeLoopName(l.Name) && !taken[strings.ToLower(p)] {
 			out = append(out, BundleFile{Path: p, Data: loopEntry(l)})
 		}
 	}

@@ -1285,9 +1285,10 @@ type ClientInterface interface {
 	// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
 	// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 	// whose name, or a skill file whose path, cannot be a safe path is left out
-	// on purpose, and nothing in the response marks the omission. A Project
-	// whose view holds no skill and no agent gets a 200 with an empty archive and
-	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// on purpose, and nothing in the response marks the omission. So is a loop
+	// whose name holds whitespace, or whose entry path a skill already holds
+	// (compared ignoring case). A Project whose view holds no skill, agent or
+	// loop gets a 200 with an empty archive and a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
 	// always gives the same ETag. Compare ETags, not bytes: gzip output can
 	// change between Go toolchains. `If-None-Match` with that ETag answers 304
 	// with no body. `goldie pull` writes the archive into the Goldie namespace.
@@ -1684,9 +1685,10 @@ func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticlePa
 // loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
 // the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 // whose name, or a skill file whose path, cannot be a safe path is left out
-// on purpose, and nothing in the response marks the omission. A Project
-// whose view holds no skill and no agent gets a 200 with an empty archive and
-// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// on purpose, and nothing in the response marks the omission. So is a loop
+// whose name holds whitespace, or whose entry path a skill already holds
+// (compared ignoring case). A Project whose view holds no skill, agent or
+// loop gets a 200 with an empty archive and a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
 // always gives the same ETag. Compare ETags, not bytes: gzip output can
 // change between Go toolchains. `If-None-Match` with that ETag answers 304
 // with no body. `goldie pull` writes the archive into the Goldie namespace.
@@ -3430,9 +3432,10 @@ type ClientWithResponsesInterface interface {
 	// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
 	// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 	// whose name, or a skill file whose path, cannot be a safe path is left out
-	// on purpose, and nothing in the response marks the omission. A Project
-	// whose view holds no skill and no agent gets a 200 with an empty archive and
-	// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+	// on purpose, and nothing in the response marks the omission. So is a loop
+	// whose name holds whitespace, or whose entry path a skill already holds
+	// (compared ignoring case). A Project whose view holds no skill, agent or
+	// loop gets a 200 with an empty archive and a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
 	// always gives the same ETag. Compare ETags, not bytes: gzip output can
 	// change between Go toolchains. `If-None-Match` with that ETag answers 304
 	// with no body. `goldie pull` writes the archive into the Goldie namespace.
@@ -5793,9 +5796,10 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 // loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
 // the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 // whose name, or a skill file whose path, cannot be a safe path is left out
-// on purpose, and nothing in the response marks the omission. A Project
-// whose view holds no skill and no agent gets a 200 with an empty archive and
-// a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+// on purpose, and nothing in the response marks the omission. So is a loop
+// whose name holds whitespace, or whose entry path a skill already holds
+// (compared ignoring case). A Project whose view holds no skill, agent or
+// loop gets a 200 with an empty archive and a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
 // always gives the same ETag. Compare ETags, not bytes: gzip output can
 // change between Go toolchains. `If-None-Match` with that ETag answers 304
 // with no body. `goldie pull` writes the archive into the Goldie namespace.
