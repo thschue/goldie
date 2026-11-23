@@ -21,7 +21,8 @@ to every request, the page's fetch of `/openapi.json` included.
 ## CLI
 
 `goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
-`validate`, `health`) and Ask a server (`search`, `lookup`, `status`, `init`, `mcp`, `version`).
+`validate`, `health`) and Ask a server (`search`, `lookup`, `skills`, `agents`, `status`, `init`,
+`mcp`, `version`).
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
 are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
 command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
@@ -29,6 +30,12 @@ help you ask for goes to stdout and exits 0.
 `goldie --version` prints the same as `goldie version`; on a subcommand `--version` stays an unknown flag.
 `goldie health` with no admin port answering exits 1 and says to check that the server runs and
 `GOLDIE_ADMIN_ADDR` matches its admin address.
+
+`goldie skills list|show <name>` and `goldie agents list|show <name>` read the skill bundles (name
+and file list) and agent definitions (name and description) that answer for the Project; they take
+`--project`, `--json` and the same address and token settings, and print the server's hint for an
+unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
+before any request. `show --file` is not available yet.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
@@ -57,7 +64,7 @@ with the sync work (#6). `goldie lookup` of a deprecated article prints
 `Warning: this article is deprecated. Use <replacement> instead.` on stderr, naming the replacement
 when there is one; stdout, `--json` included, carries only the article.
 
-`goldie search`, `lookup`, `status` and `mcp` also work without a server: `--dir PATH` (or
+`goldie search`, `lookup`, `skills`, `agents`, `status` and `mcp` also work without a server: `--dir PATH` (or
 `GOLDIE_DIR`) starts an embedded server over a directory of content (`global/articles` under it) on
 loopback, with its own random token, and stops it when the command ends. Output is the same as
 against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, and also a

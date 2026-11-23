@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "status", "init", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -92,6 +92,13 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 
 func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env Env) error {
 	var err error
+	// skills and agents check their words before any server or token is met.
+	var verb, itemName string
+	if name == "skills" || name == "agents" {
+		if verb, itemName, err = catalogUsage(name, pos); err != nil {
+			return err
+		}
+	}
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
 	// init checks registration against a running server only: it writes into
@@ -128,6 +135,10 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 			return &UsageError{name, "lookup takes one <id>"}
 		}
 		return c.lookup(ctx, pos[0])
+	case "skills":
+		return c.skills(ctx, verb, itemName)
+	case "agents":
+		return c.agents(ctx, verb, itemName)
 	case "status":
 		if len(pos) != 0 {
 			return &UsageError{name, "status takes no arguments"}
