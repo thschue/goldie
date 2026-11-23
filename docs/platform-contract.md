@@ -87,8 +87,13 @@ and running `./run regen`.
   line, a reused name or token, or a short token makes the server exit non-zero naming the variable
   and the line number, never the token, its digest or its length.
   Every path under `/api/`, `/openapi.yaml`, `/openapi.json` and every `/swagger-ui` path require
-  `Authorization: Bearer <token>` with at least the `reader` Role; no other header, query parameter
-  or cookie is a credential. The server hashes the token and compares it with every configured
+  `Authorization: Bearer <token>` with at least the `reader` Role. The only other credential is the
+  session cookie `POST /api/v1/session` issues for a valid token (ADR 0027): a signed, `HttpOnly`,
+  `SameSite=Strict` cookie that authenticates `GET` and `HEAD` only, never an unsafe method, and a
+  bearer token beats it. The session cookie is a credential, so it is never logged; it is signed with
+  `GOLDIE_SESSION_KEY` (or `_FILE`), a secret the startup report shows as `(redacted)` or `(unset)`,
+  and a random per-process key is used when it is unset. No other header or query parameter is a
+  credential. The server hashes the token and compares it with every configured
   digest in constant time, and answers 401 in the error envelope otherwise. `GET /api/v1/activity`,
   the live event stream of recent searches and lookups, needs the `operator` Role: other tokens get
   403 before the rate limit, so the refusal costs them nothing. The stream is a live view, not an

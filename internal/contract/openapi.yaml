@@ -32,6 +32,8 @@ tags:
     description: How the server's content sync is doing, for operators.
   - name: activity
     description: The live view of recent searches and lookups, for operators.
+  - name: session
+    description: Browser sign-in with a token, as a signed session cookie.
 paths:
   /api/v1/search:
     get:
@@ -343,6 +345,111 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/session:
+    post:
+      operationId: postSession
+      security: []
+      tags:
+        - session
+      summary: Sign in with a token and get a session cookie
+      description: |
+        Exchanges a configured API token, sent as `token` in the JSON body,
+        for a signed session cookie, so a browser never holds the token. The
+        cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+        `Secure` with the `__Host-` prefix; on a plain-http loopback listener
+        (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
+        the token's name and its times, signed (ADR 0027), never the token or
+        its role, and expires after a short idle time and at an absolute
+        limit; each use re-issues it. The cookie authenticates `GET` and
+        `HEAD` requests only, and a bearer token beats it. This operation takes
+        no bearer token: the token in the body is the credential, and a
+        cross-origin request is refused with a 403. The response is
+        `Cache-Control: no-store`.
+      requestBody:
+        required: true
+        description: The API token to sign in with.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionRequest"
+            example:
+              token: replace-with-a-configured-api-token
+      responses:
+        "200":
+          description: The token is valid; the session cookie is in `Set-Cookie`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+              example:
+                name: ci-reader
+                role: reader
+        "401":
+          description: The body holds no configured token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        default:
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: getSession
+      tags:
+        - session
+      summary: Read who the session cookie signs in
+      description: |
+        Returns the name and the current role of the token behind a valid
+        session cookie (or a bearer token). The role is read from the
+        configuration on each request, so a change shows at once, and a token
+        removed from it ends the session. Any other request is a 401. The
+        response is `Cache-Control: no-store`.
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+              example:
+                name: ci-reader
+                role: reader
+        "401":
+          description: No valid session cookie or bearer token was sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSession
+      security: []
+      tags:
+        - session
+      summary: Sign out
+      description: |
+        Clears the session cookie. A cross-origin request is refused with a
+        403, so another site cannot sign a user out. The response is
+        `Cache-Control: no-store`.
+      responses:
+        "204":
+          description: The cookie is cleared in `Set-Cookie`.
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         default:
           $ref: "#/components/responses/Error"
   /api/v1/sync:
@@ -825,6 +932,39 @@ components:
         enforced:
           type: boolean
           description: Whether the Item is enforced, as its frontmatter says.
+    SessionRequest:
+      type: object
+      description: The token to sign in with.
+      required:
+        - token
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          description: A configured API token, in plain text.
+          examples:
+            - replace-with-a-configured-api-token
+    Session:
+      type: object
+      description: Who a session signs in.
+      required:
+        - name
+        - role
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: The name of the token behind the session.
+          examples:
+            - ci-reader
+        role:
+          type: string
+          description: The token's role, read from the configuration now.
+          examples:
+            - reader
+          enum:
+            - reader
+            - operator
     SyncStatus:
       type: object
       description: How the last content load went, for operators.

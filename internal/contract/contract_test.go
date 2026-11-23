@@ -58,6 +58,18 @@ func (stub) GetActivity(context.Context, GetActivityRequestObject) (GetActivityR
 	return GetActivity200TexteventStreamResponse{Body: strings.NewReader(": keepalive\n\n")}, nil
 }
 
+func (stub) PostSession(context.Context, PostSessionRequestObject) (PostSessionResponseObject, error) {
+	return PostSession200JSONResponse{Name: "boom", Role: "reader"}, nil
+}
+
+func (stub) GetSession(context.Context, GetSessionRequestObject) (GetSessionResponseObject, error) {
+	return GetSession200JSONResponse{Name: "boom", Role: "reader"}, nil
+}
+
+func (stub) DeleteSession(context.Context, DeleteSessionRequestObject) (DeleteSessionResponseObject, error) {
+	return DeleteSession204Response{}, nil
+}
+
 func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 	srv := httptest.NewServer(Handler(NewStrictHandler(stub{}, nil)))
 	t.Cleanup(srv.Close)

@@ -70,7 +70,10 @@ const hashPrefix = "sha256:"
 // Tokens is the set of configured API tokens. It holds each token's name,
 // Role and SHA-256 digest, never a secret. The zero value rejects every
 // request.
-type Tokens struct{ entries []tokenEntry }
+type Tokens struct {
+	entries  []tokenEntry
+	sessions *Sessions // see WithSessions, nil: no session cookies
+}
 
 type tokenEntry struct {
 	name   string
@@ -201,26 +204,20 @@ func TokenRole(ctx context.Context) (Role, bool) {
 // every configured digest in constant time, whatever its length or content,
 // and it is never logged or echoed.
 func (t *Tokens) Require(minRole Role, next http.Handler) http.Handler {
-	var entries []tokenEntry
-	if t != nil {
-		entries = t.entries
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		presented, ok := bearerToken(r.Header.Get("Authorization"))
-		got := sha256.Sum256([]byte(presented))
-		match, found := 0, 0
-		for i := range entries {
-			eq := subtle.ConstantTimeCompare(got[:], entries[i].digest[:])
-			match = subtle.ConstantTimeSelect(eq, i, match)
-			found |= eq
+		// A bearer token beats a cookie; a cookie counts only without one.
+		if t != nil && t.sessions != nil && r.Header.Get("Authorization") == "" && t.serveCookie(w, r, minRole, next) {
+			return
 		}
+		presented, ok := bearerToken(r.Header.Get("Authorization"))
+		match, found := t.find(presented)
 		if found != 1 || !ok {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="goldie"`)
 			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid API token",
 				"Send the API token in the Authorization header: Bearer <token>.")
 			return
 		}
-		e := entries[match]
+		e := t.entries[match]
 		if e.role < minRole {
 			WriteError(w, http.StatusForbidden, "forbidden", "the API token's role does not allow this operation",
 				"Use a token with the operator role.")
@@ -229,6 +226,22 @@ func (t *Tokens) Require(minRole Role, next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))
 	})
+}
+
+// find hashes presented and compares it with every configured digest in
+// constant time, whatever its length or content. found is 1 on a match, with
+// the entry's index in match.
+func (t *Tokens) find(presented string) (match, found int) {
+	if t == nil {
+		return 0, 0
+	}
+	got := sha256.Sum256([]byte(presented))
+	for i := range t.entries {
+		eq := subtle.ConstantTimeCompare(got[:], t.entries[i].digest[:])
+		match = subtle.ConstantTimeSelect(eq, i, match)
+		found |= eq
+	}
+	return match, found
 }
 
 // bearerToken extracts the credentials of a Bearer Authorization header. The
