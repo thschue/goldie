@@ -129,7 +129,7 @@ func protocolText(err error) string {
 	return err.Error()
 }
 
-const problemTail = ". Fix it and restart the MCP server; the session's Project is the only one prompts and resources use."
+const problemTail = ". Ask the user to fix it and restart the MCP server; the session's Project is the only one prompts and resources use."
 
 // Criteria 1 and 2: a prompt or resource request that fails on the default
 // Project's problem says what to do without a project argument, has the
@@ -213,6 +213,80 @@ func TestDefaultProjectProblemOnAPromptOrResourceIsCleaned(t *testing.T) {
 		}
 		if !strings.Contains(m, "the default Project has a problem: ") || !strings.HasSuffix(m, problemTail) {
 			t.Errorf("%s: the error lost the wording around the problem: %q", what, m)
+		}
+	}
+}
+
+// A problem that already ends in sentence punctuation does not double it: the
+// wording reads "<problem>. Ask the user ..." with one full stop.
+func TestDefaultProjectProblemEndingInPunctuationIsNotDoubled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	for _, c := range []struct{ problem, trimmed string }{
+		{"the config is not valid YAML.", "the config is not valid YAML"},
+		{"is the remote registered?", "is the remote registered"},
+	} {
+		cs := problemSession(t, srv.URL, c.problem)
+		ctx := context.Background()
+		_, perr := cs.GetPrompt(ctx, &sdk.GetPromptParams{Name: "goldie-x"})
+		_, rerr := cs.ReadResource(ctx, &sdk.ReadResourceParams{URI: "goldie://instructions"})
+		for what, err := range map[string]error{"prompt": perr, "resource": rerr} {
+			if err == nil {
+				t.Errorf("%s %q: want an error", what, c.problem)
+				continue
+			}
+			m := protocolText(err)
+			want := "the default Project has a problem: " + c.trimmed + problemTail
+			if !strings.Contains(m, want) {
+				t.Errorf("%s %q: error = %q, want it to contain %q", what, c.problem, m, want)
+			}
+			if strings.Contains(m, "..") || strings.Contains(m, "?.") {
+				t.Errorf("%s %q: doubled punctuation in %q", what, c.problem, m)
+			}
+		}
+	}
+}
+
+// The prompt and resource wording speaks to the agent: it cannot restart its
+// own MCP server, so it is told to ask the user.
+func TestDefaultProjectProblemOnAPromptOrResourceTellsTheAgentToAskTheUser(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cs := problemSession(t, srv.URL, "no Project is registered for the remote")
+	_, err := cs.GetPrompt(context.Background(), &sdk.GetPromptParams{Name: "goldie-x"})
+	if err == nil || !strings.Contains(protocolText(err), "Ask the user to fix it and restart the MCP server") {
+		t.Errorf("prompts/get error = %v, want it to tell the agent to ask the user to fix it and restart the MCP server", err)
+	}
+}
+
+// Trailing whitespace and "!" are trimmed with the sentence punctuation, so
+// exactly one full stop precedes "Ask the user".
+func TestDefaultProjectProblemEndingInNewlineOrBangIsNotDoubled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	for _, c := range []struct{ problem, trimmed string }{
+		{"bad config.\n", "bad config"},
+		{"bad config!", "bad config"},
+	} {
+		cs := problemSession(t, srv.URL, c.problem)
+		_, err := cs.GetPrompt(context.Background(), &sdk.GetPromptParams{Name: "goldie-x"})
+		if err == nil {
+			t.Errorf("%q: want an error", c.problem)
+			continue
+		}
+		m := protocolText(err)
+		want := "the default Project has a problem: " + c.trimmed + problemTail
+		if !strings.Contains(m, want) {
+			t.Errorf("%q: error = %q, want it to contain %q", c.problem, m, want)
 		}
 	}
 }

@@ -173,14 +173,17 @@ func (t *tools) sessionProject(p string) (*contract.ProjectId, error) {
 
 // sessionProjectFor is sessionProject for one surface. A tool may pass a
 // project, so its hint names that and list_projects; a prompt or resource
-// only ever uses the session's Project, so its error says to fix it and
-// restart.
+// only ever uses the session's Project, so its error tells the agent to ask
+// the user to fix it and restart.
 func (t *tools) sessionProjectFor(p string, s surface) (*contract.ProjectId, error) {
 	if p == "" && t.problem != "" {
 		msg := "the default Project has a problem: " + contract.CleanLine(t.problem)
 		if s.failed != "" {
+			// The problem may end in sentence punctuation; the ". " below
+			// supplies the one full stop.
+			msg = strings.TrimRight(msg, ".?! ")
 			return nil, errors.New(s.failed + ": " + msg +
-				". Fix it and restart the MCP server; the session's Project is the only one prompts and resources use.")
+				". Ask the user to fix it and restart the MCP server; the session's Project is the only one prompts and resources use.")
 		}
 		return nil, withHint(msg,
 			"Fix it and restart the MCP server, or pass project as host/org/repo; list_projects names the registered Projects.")
