@@ -420,7 +420,20 @@ cmd_vuln() {
 
 cmd_test() {
 	say "go test"
-	go test -count=1 "$@" ./...
+	# -v is what prints a skip's message. The output goes to a file so go
+	# test's exit status survives, then is shown without the per-test
+	# progress lines. Skips of timing-sensitive tests ("TIMING-SKIP:" message
+	# prefix) are summarised afterwards; this only reports, it never fails.
+	out=$(mktemp) || die "test: mktemp failed"
+	status=0
+	go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
+	grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' "$out" || true
+	skipped=$(awk '/--- SKIP: /{n=$3} /TIMING-SKIP:/{print n}' "$out" | sort -u | tr '\n' ' ')
+	rm -f "$out"
+	if [ -n "$skipped" ]; then
+		printf 'run: timing-sensitive test(s) skipped: %s\n' "${skipped% }" >&2
+	fi
+	return "$status"
 }
 
 # Generated files, relative to the repository root.
