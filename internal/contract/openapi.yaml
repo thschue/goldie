@@ -32,6 +32,8 @@ tags:
     description: List and read agent definitions.
   - name: instructions
     description: The managed instruction block for a repository's CLAUDE.md or AGENTS.md.
+  - name: bundle
+    description: The resolved skills and agents as an archive, for goldie pull.
   - name: projects
     description: The Projects whose Scope the server holds.
   - name: sync
@@ -579,6 +581,88 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: 'For the instruction block, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/bundle:
+    get:
+      operationId: getBundle
+      tags:
+        - bundle
+      summary: Download the resolved set as an archive
+      description: |
+        Returns the skills and agents that resolve in the Project's view (the
+        view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+        wins, drafts are left out) as a gzip-compressed tar, laid out for the
+        target. For `claude` the entries are regular files with clean relative
+        slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+        file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+        A script keeps its executable bit in the entry's mode. A skill or agent
+        whose name, or a skill file whose path, cannot be a safe path is left out.
+        The `ETag` is the digest of the set, quoted: the same set always gives the
+        same ETag and the same bytes. `If-None-Match` with that ETag answers 304
+        with no body. `goldie pull` writes the archive into the Goldie namespace.
+      parameters:
+        - name: target
+          in: query
+          required: true
+          description: The layout of the archive. `claude` is the only target. Anything else, or none, is a 400.
+          schema:
+            type: string
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve for this Project (ADR 0020). Matched ignoring case. An
+            unregistered Project answers the global set; a value that is not a
+            `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - name: If-None-Match
+          in: header
+          required: false
+          description: The `ETag` of the archive the client already has.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The archive.
+          headers:
+            ETag:
+              description: The digest of the set, in double quotes.
+              required: true
+              schema:
+                type: string
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: The set is the one `If-None-Match` names. No body.
+          headers:
+            ETag:
+              description: The digest of the set, unchanged, in double quotes.
+              required: true
+              schema:
+                type: string
+        "400":
+          description: 'For the bundle, `target` is missing or not a known target, or `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the bundle, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:

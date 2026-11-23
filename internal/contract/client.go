@@ -129,7 +129,8 @@ func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // refuseRedirect sends r through base (nil means http.DefaultTransport) and
-// turns a 3xx answer into ErrRedirect.
+// turns a 3xx answer into ErrRedirect, except 304: it names no Location, so
+// there is nothing to follow, and a caller that sent If-None-Match reads it.
 func refuseRedirect(base http.RoundTripper, r *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
@@ -138,7 +139,7 @@ func refuseRedirect(base http.RoundTripper, r *http.Request) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && resp.StatusCode != http.StatusNotModified {
 		_ = resp.Body.Close()
 		return nil, ErrRedirect
 	}

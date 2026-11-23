@@ -54,6 +54,10 @@ func (stub) GetInstructions(context.Context, GetInstructionsRequestObject) (GetI
 	return GetInstructions200JSONResponse{}, nil
 }
 
+func (stub) GetBundle(context.Context, GetBundleRequestObject) (GetBundleResponseObject, error) {
+	return GetBundle304Response{}, nil
+}
+
 func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjectsResponseObject, error) {
 	return ListProjects200JSONResponse{Projects: []ProjectId{}}, nil
 }
