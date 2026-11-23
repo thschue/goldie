@@ -426,51 +426,54 @@ func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
 // ArticleIn resolves an article for a Project ("host/org/repo", matched
 // case-insensitively): the Project's article wins over the global one with the
 // same ID. An empty or unregistered Project resolves globally. Drafts are left
-// out unless opts asks for them, and a draft left out never shadows. No
-// Project article shadows an enforced global one, drafts asked for or not. A
-// global article the Project suppresses is not found, drafts asked for or not.
+// out unless opts asks for them. Which copy answers is winner's rule.
 func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
-	o := readOpts(opts)
-	key := keyOf(KindArticle, id)
-	p, _ := s.lookupProject(proj)
-	if a := p.index[key]; a != nil && o.visible(*a) && !s.enforces(key) {
-		return cloneArticle(*a), true
-	}
-	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {
+	if a := s.winner(proj, keyOf(KindArticle, id), readOpts(opts)); a != nil {
 		return cloneArticle(*a), true
 	}
 	return Article{}, false
 }
 
-// resolve returns the Item that wins for key in proj's view, Project before
-// global, or nil. The pointer is into the Snapshot, so callers must not change
-// or return it.
-func (s *Snapshot) resolve(proj string, key itemKey) *Article {
-	if p, ok := s.lookupProject(proj); ok {
-		if a := p.index[key]; a != nil {
-			return a
-		}
+// winner returns the copy of key that answers in proj's view under o, or nil.
+// It is the one shadowing rule: every read and every load check that resolves
+// an Item goes through it. proj is matched case-insensitively; an empty or
+// unregistered Project is the global view.
+//
+//   - The Project's copy answers when it exists, is readable under o
+//     (published, or o.Drafts), and the global copy is not published and
+//     enforced (ADR 0021, #359).
+//   - Otherwise the global copy answers when it exists, is readable under o,
+//     and the Project does not suppress it (#360).
+//
+// A copy that is not readable never shadows (#353). The pointer is into the
+// Snapshot, so callers must not change or return it.
+func (s *Snapshot) winner(proj string, key itemKey, o ReadOptions) *Article {
+	p, _ := s.lookupProject(proj)
+	if a := p.index[key]; a != nil && o.visible(*a) && !s.enforces(key) {
+		return a
 	}
-	return s.index[key]
-}
-
-// resolvePublished is resolve in the default Resolution view: a draft is left
-// out (#353), so a draft Project copy does not shadow and a draft-only Item
-// resolves to nil.
-func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
-	if p, ok := s.lookupProject(proj); ok {
-		if a := p.index[key]; a != nil && a.published() {
-			return a
-		}
-	}
-	if a := s.index[key]; a != nil && a.published() {
+	if a := s.index[key]; a != nil && o.visible(*a) && !p.suppressed[key] {
 		return a
 	}
 	return nil
 }
 
-// resolutionOrder returns the article lists to consult, Project before global.
-// An Item in an earlier list shadows one with the same itemKey in a later one.
+// resolve is winner with drafts readable: the copy a replaced_by names, so
+// checkReplacements can fail on a draft rather than on nothing. A Project draft
+// still never shadows an enforced global Item.
+func (s *Snapshot) resolve(proj string, key itemKey) *Article {
+	return s.winner(proj, key, ReadOptions{Drafts: true})
+}
+
+// resolvePublished is winner in the default Resolution view: a draft is left
+// out (#353), so a draft Project copy does not shadow and a draft-only Item
+// resolves to nil.
+func (s *Snapshot) resolvePublished(proj string, key itemKey) *Article {
+	return s.winner(proj, key, ReadOptions{})
+}
+
+// resolutionOrder returns the article lists that hold proj's candidate Items,
+// Project before global. winner decides which copy of each itemKey answers.
 func (s *Snapshot) resolutionOrder(proj string) [][]Article {
 	if p, ok := s.lookupProject(proj); ok {
 		return [][]Article{p.articles, s.articles}

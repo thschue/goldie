@@ -125,9 +125,11 @@ func yamlErr(err error) error {
 }
 
 // applySuppressions resolves a Project's suppress references in its own
-// Resolution view, published Items only (#353): its published copy first, then
-// the published global Item. A reference to the Project's own Item, or to an
-// enforced global Item, fails the load. One that resolves to nothing, a draft
+// Resolution view by winner's rule, published Items only (#353): its published
+// copy first, then the published global Item, and the global copy when it is
+// enforced (#359). A reference to the Project's own Item, or to an enforced
+// global Item, fails the load. The Project's suppressions are set only at the
+// end, so they never change how its own references resolve here. One that resolves to nothing, a draft
 // included, is a warning, so another team's deletion never fails this Project.
 // It is called only while loading, after the Project is added.
 func (s *Snapshot) applySuppressions(scope string, refs []string) error {
@@ -189,11 +191,10 @@ func (s *Snapshot) Suppressions(project string) []string {
 }
 
 // SuppressedIn reports whether a global article is hidden from proj by a
-// Suppression: the Project's own copy would win when visible under opts, and
-// an Item not visible under opts is never found, so only a visible global
-// article the Project suppresses counts. It returns the Suppression as
-// article:<ID> in the ID's loaded spelling and the project.yaml that sets it,
-// relative to the Source root.
+// Suppression: no copy answers in proj's view under opts (winner's rule), yet
+// the Project suppresses a global article visible under opts. It returns the
+// Suppression as article:<ID> in the ID's loaded spelling and the project.yaml
+// that sets it, relative to the Source root.
 func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file string, ok bool) {
 	o := readOpts(opts)
 	p, registered := s.lookupProject(proj)
@@ -201,11 +202,11 @@ func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file
 		return "", "", false
 	}
 	key := keyOf(KindArticle, id)
-	if own := p.index[key]; own != nil && o.visible(*own) {
+	if s.winner(proj, key, o) != nil || !p.suppressed[key] {
 		return "", "", false
 	}
 	a := s.index[key]
-	if a == nil || !o.visible(*a) || !p.suppressed[key] {
+	if a == nil || !o.visible(*a) {
 		return "", "", false
 	}
 	return KindArticle + ":" + a.ID, projectsDir + "/" + p.scope + "/" + projectFileName, true
@@ -229,10 +230,4 @@ func (s *Snapshot) suppressingFile(proj string, key itemKey) (string, bool) {
 		return "", false
 	}
 	return projectsDir + "/" + p.scope + "/" + projectFileName, true
-}
-
-// suppressedIn returns the global Items proj hides, or nil.
-func (s *Snapshot) suppressedIn(proj string) map[itemKey]bool {
-	p, _ := s.lookupProject(proj)
-	return p.suppressed
 }

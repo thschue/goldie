@@ -11,8 +11,9 @@ import (
 // checkLookups fails when a lookup line in an article's body names an id that
 // does not resolve in that article's own Scope view: a global article sees
 // global only, a Project article its Project, then global, less the global
-// Items the Project suppresses (#367). A draft is left out of Resolution
-// (#353), so a lookup of a draft is dangling too. A placeholder such as <id>
+// Items the Project suppresses (#367), by winner's rule in the default view
+// (resolvePublished). A draft is left out of Resolution (#353), so a lookup of
+// a draft is dangling too. A placeholder such as <id>
 // or … is skipped (see isPlaceholder). The error names the article, and the
 // project.yaml when that is why the id is hidden, and quotes the id, bounded
 // and escaped, never raw.

@@ -43,8 +43,8 @@ type Hit struct {
 // argument and uses only the first value; any further values are ignored.
 type ReadOptions struct {
 	// Drafts includes draft Items. A draft then shadows like any other Item,
-	// except that a Project draft never shadows an enforced global Item
-	// (#359).
+	// within winner's rule: a Project draft never shadows an enforced global
+	// Item (#359).
 	Drafts bool
 }
 
@@ -68,33 +68,28 @@ func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
 
 // SearchIn is Search for a Project ("host/org/repo", case-insensitive). The
 // Project's articles take part together with the global ones; when both have an
-// ID, the Project's article wins and the global one is dropped. On equal score
+// ID, the one winner picks answers and the other is dropped. On equal score
 // Project hits sort before global ones, then by ID. An empty or unregistered
 // Project searches the global articles only. Draft Items are left out unless
-// opts asks for them; a draft left out never shadows, so the published Item
-// with the same identity answers. Deprecated Items are served and shadow. No
-// Project Item shadows an enforced global one, drafts asked for or not. The
-// global Items the Project suppresses are left out, drafts asked for or not.
+// opts asks for them. Deprecated Items are served and shadow. Which copy of
+// each Item answers is winner's rule.
 func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	o := readOpts(opts)
-	hidden := s.suppressedIn(proj)
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
-	taken := map[itemKey]bool{}
+	seen := map[itemKey]bool{}
 	for _, list := range s.resolutionOrder(proj) {
-		var layer []itemKey
-		for _, a := range list {
-			key := a.key()
-			if taken[key] || !o.visible(a) || (a.Scope == ScopeGlobal && hidden[key]) || (a.Scope != ScopeGlobal && s.enforces(key)) {
+		for i := range list {
+			key := list[i].key()
+			if seen[key] {
 				continue
 			}
-			layer = append(layer, key)
-			if h := scoreArticle(a, words); h.Score > 0 {
-				hits = append(hits, h)
+			seen[key] = true
+			if a := s.winner(proj, key, o); a != nil {
+				if h := scoreArticle(*a, words); h.Score > 0 {
+					hits = append(hits, h)
+				}
 			}
-		}
-		for _, key := range layer {
-			taken[key] = true
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
