@@ -17,7 +17,8 @@
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
 #   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs)
-#   ./run ui         build the SPA (npm ci, vite build in web/) into internal/ui/dist/app; needs Node, not part of check
+#   ./run ui         build the SPA (npm ci --ignore-scripts, npm run build in web/) into internal/ui/dist/app;
+#                    needs Node, not part of check
 #   ./run ux         build, serve examples/knowledge and run the Playwright specs in web/e2e
 #                    (screenshots, axe) into ux/, the CI artifact for the UX review; needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
@@ -474,14 +475,12 @@ oapi_codegen() {
 cmd_ui() {
 	[ -f web/package.json ] || die "web/package.json not found: the SPA source is not in this checkout"
 	command -v npm >/dev/null 2>&1 || die "npm not found: ./run ui needs Node"
-	say "ui: npm ci"
-	(cd web && npm ci) || die "npm ci failed in web/"
-	if [ ! -f web/index.html ]; then
-		say "ui: web/ has no Vite app yet (no index.html); the server serves the placeholder"
-		return 0
-	fi
-	say "ui: vite build"
-	(cd web && npx vite build --outDir ../internal/ui/dist/app --emptyOutDir) || die "vite build failed"
+	# --ignore-scripts: no package runs code at install. The build runs the
+	# pinned vite through npm run, never npx, which could fetch an unpinned one.
+	say "ui: npm ci --ignore-scripts"
+	(cd web && npm ci --ignore-scripts) || die "npm ci failed in web/"
+	say "ui: npm run build"
+	(cd web && npm run build) || die "the SPA build failed in web/"
 }
 
 # ux: the screenshot and axe evidence for the UX review (handoff §7, §12). It

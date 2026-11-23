@@ -484,6 +484,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Shadowing line | Overrides `<kind:name>` from global |
 | requires_sync | Contains scripts, so agents won't run it from text. Run `goldie pull` to install it. |
 | Reader nav note | Reader view: Activity and Sources are for operators and aren't shown. |
+| Empty state | Nothing to show yet. Content appears here as goldie's pages come online. (A neutral `role="status"` panel under the page's `h1`, on every §2.2 route whose screen isn't built yet; Home's `h1` is the *Home question*.) |
 | Sign-in lead | The golden path for **`<org>`** — the same guidance your coding agents get. |
 | Token help | Exchanged once for a secure session. The token is never stored in your browser. |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |

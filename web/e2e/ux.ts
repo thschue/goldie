@@ -14,7 +14,8 @@ const heights: Record<(typeof widths)[number], number> = { 375: 812, 768: 1024, 
 const shotDir = `${process.env.UX_DIR ?? '../ux'}/screenshots`;
 
 // The handoff's bar is WCAG 2.1 AA (§9); 2.2 is included for its new rules.
-const axeTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'];
+// best-practice adds the page-structure rules (one h1, landmarks, regions).
+const axeTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa', 'best-practice'];
 
 // Controls a user acts on (§9: targets of at least 44 px).
 const targets =
@@ -53,19 +54,18 @@ export async function blockExternal(page: Page, baseURL: string): Promise<string
   return external;
 }
 
-// evidence saves the shot shell-<width>-<theme><suffix>.png (suffix is
-// "-drawer" for an open drawer) and then checks the page. The shot is taken
-// first, so a failing check still leaves the evidence.
-export async function evidence(page: Page, width: number, theme: Theme, suffix = '') {
+// evidence saves the shot shell-<width>-<theme>.png and then checks the page.
+// The shot is taken first, so a failing check still leaves the evidence.
+export async function evidence(page: Page, width: number, theme: Theme) {
   await page.evaluate(() => document.fonts.ready);
-  const name = `shell-${width}-${theme}${suffix}.png`;
+  const file = `shell-${width}-${theme}.png`;
   const shot = await page.screenshot({
-    path: `${shotDir}/${name}`,
+    path: `${shotDir}/${file}`,
     fullPage: true,
     animations: 'disabled',
     caret: 'hide',
   });
-  await test.info().attach(name, { body: shot, contentType: 'image/png' });
+  await test.info().attach(file, { body: shot, contentType: 'image/png' });
 
   const axe = await new AxeBuilder({ page }).withTags(axeTags).analyze();
   expect.soft(axe.violations, 'axe violations').toEqual([]);
@@ -90,3 +90,41 @@ export async function evidence(page: Page, width: number, theme: Theme, suffix =
   );
   expect.soft(small, 'targets under 44 px').toEqual([]);
 }
+
+// problems watches a page for what must never happen (handoff §12): a request
+// to another origin, a same-origin 4xx or 5xx response or failed request, a
+// page error, and a Content-Security-Policy violation. Call it before goto.
+export async function problems(page: Page, baseURL: string) {
+  const external = await blockExternal(page, baseURL);
+  const origin = new URL(baseURL).origin;
+  const failed: string[] = [];
+  const errors: string[] = [];
+  page.on('response', (res) => {
+    if (new URL(res.url()).origin === origin && res.status() >= 400) {
+      failed.push(`${res.status()} ${new URL(res.url()).pathname}`);
+    }
+  });
+  page.on('requestfailed', (req) => {
+    if (new URL(req.url()).origin === origin) failed.push(`failed ${new URL(req.url()).pathname}`);
+  });
+  page.on('pageerror', (err) => errors.push(err.message));
+  page.on('console', (msg) => {
+    if (/content security policy/i.test(msg.text())) errors.push(msg.text());
+  });
+  return { external, failed, errors };
+}
+
+// missingBrandFonts lists the brand fonts (§6.4) that are not loaded. They are
+// self-hosted: Space Grotesk is the display face of the h1, Inter the body.
+export async function missingBrandFonts(page: Page): Promise<string[]> {
+  await page.evaluate(() => document.fonts.ready);
+  return page.evaluate(() => {
+    const loaded = new Set<string>();
+    document.fonts.forEach((f) => {
+      if (f.status === 'loaded') loaded.add(f.family.replace(/["']/g, ''));
+    });
+    return ['Inter', 'Space Grotesk'].filter((f) => !loaded.has(f) || !document.fonts.check(`16px "${f}"`));
+  });
+}
+
+export const themeToggle = (page: Page) => page.locator('header').getByRole('button', { name: /theme/i });

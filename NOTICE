@@ -15,3 +15,13 @@ Copyright 2020-2021 SmartBear Software Inc.
 
 The Swagger UI licence (LICENSE) and the licences of the third-party code in its bundle
 (swagger-ui-bundle.js.LICENSE.txt) are in internal/contract/swaggerui/vendor/.
+
+This product includes the Inter and Space Grotesk fonts, vendored in web/src/assets/fonts/ and
+embedded in the goldie binary when the UI is built. Both are licensed under the SIL Open Font
+License, Version 1.1; the licences are in web/src/assets/fonts/.
+
+Inter
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+Space Grotesk
+Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
