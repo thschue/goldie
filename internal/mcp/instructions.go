@@ -27,7 +27,7 @@ func addInstructionsResource(s *sdk.Server, t *tools) {
 		Description: instructionsDescription,
 		MIMEType:    "text/markdown",
 	}, func(ctx context.Context, _ *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
-		block, err := t.instructions(ctx)
+		block, err := t.instructions(ctx, surfaceResource)
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +37,7 @@ func addInstructionsResource(s *sdk.Server, t *tools) {
 
 // instructions reads the rendered block for the default Project through the
 // API and cleans it: it is derived from Source content.
-func (t *tools) instructions(ctx context.Context) (string, error) {
+func (t *tools) instructions(ctx context.Context, s surface) (string, error) {
 	proj, err := t.sessionProject("")
 	if err != nil {
 		return "", err
@@ -46,7 +46,7 @@ func (t *tools) instructions(ctx context.Context) (string, error) {
 	res, err := contract.Answer(raw, err, contract.ParseGetInstructionsResponse,
 		func(r *contract.GetInstructionsResponse) *contract.InstructionBlock { return r.JSON200 })
 	if err != nil {
-		return "", wordError(err, t.local)
+		return "", wordErrorFor(err, t.local, s)
 	}
 	return strings.TrimRight(contract.CleanText(res.Block), "\n"), nil
 }

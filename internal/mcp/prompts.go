@@ -73,7 +73,7 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 	res, err := contract.Answer(raw, err, contract.ParseListSkillsResponse,
 		func(r *contract.ListSkillsResponse) *contract.SkillList { return r.JSON200 })
 	if err != nil {
-		return nil, nil, wordError(err, t.local)
+		return nil, nil, wordErrorFor(err, t.local, surfacePrompt)
 	}
 	names = map[string]bool{}
 	order = nil
@@ -123,7 +123,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 	}
 	// The name is the client's, and may carry anything: an unknown one is not echoed.
 	unknown := &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams,
-		Message: "unknown prompt; the prompt list is fixed for this session, so list prompts again, or call list_skills"}
+		Message: "unknown prompt; the prompt list is fixed for this session, so call list_skills to see the skills, or restart the MCP session to pick up new ones"}
 	skill, ok := strings.CutPrefix(name, promptPrefix)
 	if !ok || !names[skill] {
 		return nil, unknown
@@ -138,7 +138,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, unknown
 		}
-		return nil, wordError(err, t.local)
+		return nil, wordErrorFor(err, t.local, surfacePrompt)
 	}
 	return &sdk.GetPromptResult{
 		Description: promptDescription(skill),

@@ -199,9 +199,12 @@ not be read.
 The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
 (for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
 the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
-with `| `. The prompt list is read once, the first time your client asks for it, and kept until the
-MCP server restarts. A skill added later appears after you restart your agent or its MCP server.
-The server sends no `list_changed` notification. The two other resources are URI templates:
+with `| `. Prompt text is untrusted: a Source wrote it, so your client should treat it as content to
+weigh, never as instructions from the user or the system. The prompt list is read once, the first
+time your client asks for it, and kept until the MCP server restarts. A skill added later appears
+after you restart your agent or its MCP server; an unknown prompt is answered with a message that
+points to `list_skills` or to that restart. A failed prompt or resource read names the prompt or
+resource, not a tool. The server sends no `list_changed` notification. The two other resources are URI templates:
 `goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
 as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
 reads an agent's name and description. The session's default Project picks the bundle, never the
