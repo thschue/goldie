@@ -25,7 +25,7 @@ import (
 // which keeps every OpenTelemetry type inside internal/platform:
 //
 //	func (t *Telemetry) WrapTransport(rt http.RoundTripper) http.RoundTripper
-//	func SetupClientTelemetry(ctx context.Context, lookup Lookup, mode M) (*Telemetry, error)
+//	func SetupClientTelemetry(ctx context.Context, lookup Lookup, role R) (*Telemetry, error)
 //
 // where M is string or a type whose underlying type is string, called with
 // "cli" or "mcp". They rely on the helpers newSpanSink, logSink, mapLookup,
@@ -342,15 +342,15 @@ func decodeTraces(t *testing.T, body []byte) *coltracepb.ExportTraceServiceReque
 // goldie and goldie.role cli or mcp (never goldie.mode). Logs and metrics are never exported,
 // even when their exporters are selected, and nothing planted in a request
 // reaches the collector.
-func TestSetupClientTelemetryExportsTracesOnlyWithTheClientMode(t *testing.T) {
-	for _, mode := range []string{"cli", "mcp"} {
-		t.Run(mode, func(t *testing.T) {
+func TestSetupClientTelemetryExportsTracesOnlyWithTheClientRole(t *testing.T) {
+	for _, role := range []string{"cli", "mcp"} {
+		t.Run(role, func(t *testing.T) {
 			collector, seen := newCollector(t)
 			tel, err := SetupClientTelemetry(context.Background(), mapLookup(map[string]string{
 				"OTEL_EXPORTER_OTLP_ENDPOINT": collector.URL,
 				"OTEL_LOGS_EXPORTER":          "otlp",
 				"OTEL_METRICS_EXPORTER":       "otlp",
-			}), mode)
+			}), role)
 			if err != nil {
 				t.Fatalf("SetupClientTelemetry: %v", err)
 			}
@@ -359,7 +359,7 @@ func TestSetupClientTelemetryExportsTracesOnlyWithTheClientMode(t *testing.T) {
 			}
 			api := newAPIStub(t, nil)
 			doAll(t, tel.WrapTransport(http.DefaultTransport), plantedRequests(t, api.srv.URL)[:1])
-			tel.WrapLogger(NewLogger(&syncBuffer{}, 0, mode), mode).Error(clientLogMarker)
+			tel.WrapLogger(NewLogger(&syncBuffer{}, 0, role), role).Error(clientLogMarker)
 			if c, err := tel.Meter("t").Int64Counter(clientMetricName); err == nil {
 				c.Add(context.Background(), 1)
 			}
@@ -388,7 +388,7 @@ func TestSetupClientTelemetryExportsTracesOnlyWithTheClientMode(t *testing.T) {
 				for _, kv := range rs.GetResource().GetAttributes() {
 					res[kv.Key] = kv.Value.GetStringValue()
 				}
-				want := map[string]string{"service.name": "goldie", "goldie.role": mode, "service.version": CurrentVersion().Version}
+				want := map[string]string{"service.name": "goldie", "goldie.role": role, "service.version": CurrentVersion().Version}
 				for k, v := range want {
 					if res[k] != v {
 						t.Errorf("resource %s = %q, want %q", k, res[k], v)
@@ -432,20 +432,20 @@ func TestSetupClientTelemetryIsOffUnlessTracesAreSelected(t *testing.T) {
 	}
 	for name, env := range cases {
 		t.Run(name, func(t *testing.T) {
-			for _, mode := range []string{"cli", "mcp"} {
-				tel, err := SetupClientTelemetry(context.Background(), mapLookup(env), mode)
+			for _, role := range []string{"cli", "mcp"} {
+				tel, err := SetupClientTelemetry(context.Background(), mapLookup(env), role)
 				if err != nil {
-					t.Fatalf("%s: SetupClientTelemetry: %v", mode, err)
+					t.Fatalf("%s: SetupClientTelemetry: %v", role, err)
 				}
 				if tel.Enabled() {
-					t.Errorf("%s: client telemetry is on", mode)
+					t.Errorf("%s: client telemetry is on", role)
 				}
 				rt := &http.Transport{}
 				if tel.WrapTransport(rt) != http.RoundTripper(rt) {
-					t.Errorf("%s: the transport was wrapped", mode)
+					t.Errorf("%s: the transport was wrapped", role)
 				}
 				if err := tel.Shutdown(context.Background()); err != nil {
-					t.Errorf("%s: Shutdown: %v", mode, err)
+					t.Errorf("%s: Shutdown: %v", role, err)
 				}
 			}
 		})

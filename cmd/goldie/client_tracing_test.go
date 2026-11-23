@@ -207,9 +207,9 @@ func assertNoTraceparent(t *testing.T, headers []http.Header) {
 }
 
 // assertClientExport checks what the collector got from one client run:
-// traces only, carrying goldie.role=mode (and no goldie.mode) and the trace ids the API saw, and
+// traces only, carrying goldie.role=<role> (and no goldie.mode) and the trace ids the API saw, and
 // nothing of the token, the article id or the Project.
-func assertClientExport(t *testing.T, c *otlpCollector, mode string, ids [][]byte) {
+func assertClientExport(t *testing.T, c *otlpCollector, role string, ids [][]byte) {
 	t.Helper()
 	hits, bodies := c.snapshot()
 	for path, n := range hits {
@@ -224,8 +224,8 @@ func assertClientExport(t *testing.T, c *otlpCollector, mode string, ids [][]byt
 	i := bytes.Index(body, []byte("goldie.role"))
 	if i < 0 {
 		t.Error("the export carries no goldie.role resource attribute")
-	} else if rest := body[i+len("goldie.role"):]; !bytes.Contains(rest[:min(len(rest), 16)], []byte(mode)) {
-		t.Errorf("goldie.role is not %q", mode)
+	} else if rest := body[i+len("goldie.role"):]; !bytes.Contains(rest[:min(len(rest), 16)], []byte(role)) {
+		t.Errorf("goldie.role is not %q", role)
 	}
 	if bytes.Contains(body, []byte("goldie.mode")) {
 		t.Error("a client export carries goldie.mode; that stays a server-mode attribute")
