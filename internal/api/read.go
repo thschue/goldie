@@ -208,6 +208,8 @@ func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticles
 			Matched:    list(h.Matched),
 			Status:     status,
 			ReplacedBy: replacedBy,
+			Overrides:  new(list(h.Overrides)),
+			Enforced:   new(h.Enforced),
 		})
 	}
 	return res, nil
@@ -247,6 +249,8 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		Hint:       hint,
 		Status:     status,
 		ReplacedBy: replacedBy,
+		Overrides:  new(list(a.Overrides)),
+		Enforced:   new(a.Enforced),
 	}, nil
 }
 

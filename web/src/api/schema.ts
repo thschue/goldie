@@ -295,7 +295,11 @@ export interface components {
          *           "matched": [
          *             "kubernetes",
          *             "name"
-         *           ]
+         *           ],
+         *           "overrides": [
+         *             "global"
+         *           ],
+         *           "enforced": false
          *         }
          *       ]
          *     }
@@ -508,7 +512,11 @@ export interface components {
          *       "matched": [
          *         "kubernetes",
          *         "name"
-         *       ]
+         *       ],
+         *       "overrides": [
+         *         "global"
+         *       ],
+         *       "enforced": false
          *     }
          */
         SearchHit: {
@@ -562,6 +570,19 @@ export interface components {
              * @example article:platform/deploy-v2
              */
             replaced_by?: string;
+            /**
+             * @description The Scopes this hit shadows in the requested view, nearest first;
+             *     `[]` when it shadows nothing. Never null.
+             * @example [
+             *       "global"
+             *     ]
+             */
+            overrides?: string[];
+            /**
+             * @description Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+             * @example false
+             */
+            enforced?: boolean;
         };
         /**
          * @description An Item's lifecycle when it is not published: `deprecated` (still
@@ -572,7 +593,22 @@ export interface components {
          * @enum {string}
          */
         ItemStatus: "deprecated" | "draft";
-        /** @description One article. */
+        /**
+         * @description One article.
+         * @example {
+         *       "id": "platform/deploy",
+         *       "name": "Deploying to Kubernetes",
+         *       "keywords": [
+         *         "kubernetes",
+         *         "deploy"
+         *       ],
+         *       "content": "Use the platform chart.",
+         *       "overrides": [
+         *         "global"
+         *       ],
+         *       "enforced": false
+         *     }
+         */
         Article: {
             /**
              * @description The article id, its path under `articles/` without `.md`.
@@ -613,6 +649,19 @@ export interface components {
              * @example article:platform/deploy-v2
              */
             replaced_by?: string;
+            /**
+             * @description The Scopes this article shadows in the requested view, nearest first;
+             *     `[]` when it shadows nothing. Never null.
+             * @example [
+             *       "global"
+             *     ]
+             */
+            overrides?: string[];
+            /**
+             * @description Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+             * @example false
+             */
+            enforced?: boolean;
         };
         /**
          * @description One search or lookup on the activity stream, the `data` of an SSE
