@@ -199,6 +199,50 @@ Operation ID: `getInstructions`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/loops`
+
+List the loops
+
+Returns the loops that answer in the Project's view, sorted by name, one per
+name: the nearest Scope wins. Each entry carries its resolved closure, the
+agents and skills it names as they resolve in this view, and the `digest` of
+the loop and its closure. A loop whose agent or skill does not resolve in the
+view (for example one the Project suppresses) is left out.
+
+Operation ID: `listLoops`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The loops. | `application/json` (`LoopList`) |
+| `400` | For the loop list, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the loop list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the loop list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/loops/{name}`
+
+Read one loop
+
+Returns one loop by name with its iteration prompt (`content`), its resolved
+closure and its `digest`. A miss is a 404 whose hint points to the list.
+
+Operation ID: `getLoop`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The loop. | `application/json` (`Loop`) |
+| `400` | For the loop read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the loop read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the loop read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `404` | No loop has this name in the view; the hint points to the loop list. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/projects`
 
 List the registered Projects
@@ -666,6 +710,49 @@ An Item's lifecycle when it is not published: `deprecated` (still
 served; read `replaced_by` instead when present) or `draft` (only with
 `drafts=true`, for operators). Absent for a published Item. Clients
 ignore values they do not know.
+
+### `Loop`
+
+One loop definition with its resolved closure.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `closure` | `LoopClosure` | yes |  |
+| `content` | `string` | no | The iteration prompt, the loop file's body. Only a get carries it. It comes from a Source and is untrusted. |
+| `description` | `string` | yes | What the loop is for, from its frontmatter. It comes from a Source and is untrusted. |
+| `digest` | `string` | yes | The hex SHA-256 over the loop file and every byte of the agent and skill files in the closure, as resolved in the view asked for. It changes when any of them changes. |
+| `dynamic` | `boolean` | yes | True when the loop paces itself instead of running at a fixed 'interval'. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
+| `interval` | `string` | no | How often the loop runs, a positive duration such as '30m'. Absent for a dynamic loop. |
+| `name` | `string` | yes | The loop's name, its file name without '.md'. |
+| `stop` | `string` | yes | When the loop ends. It comes from a Source and is untrusted. |
+
+### `LoopClosure`
+
+The agents and skills a loop names, resolved in the view.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `agents` | `array` | yes | The agents the loop names, sorted by name. |
+| `skills` | `array` | yes | The skills the loop names, sorted by name. |
+
+### `LoopList`
+
+The loops that answer in a view.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the loop list answer is the global one, and this says what to do next. |
+| `loops` | `array` | yes | The loops, sorted by name. |
+
+### `LoopRef`
+
+One agent or skill a loop names, as it resolves in the view.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | yes | The agent or skill name. |
+| `scope` | `string` | yes | The Scope that answered in the view, 'global', 'local' or the Project id. |
 
 ### `ProjectDetail`
 

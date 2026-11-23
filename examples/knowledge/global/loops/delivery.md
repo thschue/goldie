@@ -2,9 +2,9 @@
 name: delivery
 description: Turn ready issues into merged pull requests, two streams at a time. Each stream owns one issue end to end - claim, acceptance tests, implementation, fresh review, fixes, merge - and never hands it to another session.
 keywords: [delivery, implement, review, stream, acceptance tests, tdd, auto-merge, pull request, ready-for-agent]
-interval: self-paced
+dynamic: true
 agents: [test-author, implementer, reviewer, architect, ux-designer, security-reviewer]
-skills: [tdd]
+skills: []
 stop: "No stream running and no claimable issue for two consecutive ticks, or the maintainer stops the loop."
 ---
 Run one tick. The repository's loop rules are authoritative; this Item is the summary
