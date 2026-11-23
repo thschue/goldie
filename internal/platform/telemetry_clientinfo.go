@@ -8,6 +8,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // EnvTelemetryClientInfo opts server spans in to the caller's address and user
@@ -61,6 +65,37 @@ func (t *Telemetry) spanView(r *http.Request, clientInfo bool) *http.Request {
 		}
 	}
 	return v
+}
+
+// hostFreeExporter drops server.address and server.port from server spans.
+// otelhttp fills both from the Host header, which any caller sets, and always
+// emits server.address, even for an empty Host, so spanView cannot hide them.
+// Client spans keep theirs: they name the API the client calls, not a caller's
+// choice.
+type hostFreeExporter struct{ sdktrace.SpanExporter }
+
+func (e hostFreeExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	out := make([]sdktrace.ReadOnlySpan, len(spans))
+	for i, sp := range spans {
+		out[i] = sp
+		if sp.SpanKind() == oteltrace.SpanKindServer {
+			out[i] = hostFreeSpan{sp}
+		}
+	}
+	return e.SpanExporter.ExportSpans(ctx, out)
+}
+
+type hostFreeSpan struct{ sdktrace.ReadOnlySpan }
+
+func (s hostFreeSpan) Attributes() []attribute.KeyValue {
+	in := s.ReadOnlySpan.Attributes()
+	out := make([]attribute.KeyValue, 0, len(in))
+	for _, kv := range in {
+		if k := string(kv.Key); k != "server.address" && k != "server.port" {
+			out = append(out, kv)
+		}
+	}
+	return out
 }
 
 // noSpanPath is the path of a span when no path function was given: no part
