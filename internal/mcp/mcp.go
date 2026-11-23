@@ -87,16 +87,18 @@ func WithRejectedRemote(name string) Option {
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
 //
-// The tool set is fixed, so the server advertises tools without listChanged:
-// a client cannot park a request waiting for tool-list changes that never
-// come, and hold up a drain with it.
+// The tool set and the one resource, goldie://instructions, are fixed, so the
+// server advertises tools and resources without listChanged: a client cannot
+// park a request waiting for list changes that never come, and hold up a
+// drain with it.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
 	for _, o := range opts {
 		o(t)
 	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
-		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}}})
+		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{
+			Tools: &sdk.ToolCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return t.search(ctx, in.Query, in.Project), nil, nil
@@ -110,10 +112,11 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 			return t.projects(ctx), nil, nil
 		})
 	sdk.AddTool(s, &sdk.Tool{Name: "current_context", Description: contextDescription},
-		func(context.Context, *sdk.CallToolRequest, noInput) (*sdk.CallToolResult, any, error) {
-			return t.currentContext(), nil, nil
+		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, any, error) {
+			return t.currentContext(ctx), nil, nil
 		})
 	addSkillTools(s, t)
+	addInstructionsResource(s, t)
 	return s
 }
 
@@ -258,8 +261,23 @@ func (t *tools) projects(ctx context.Context) *sdk.CallToolResult {
 // currentContext reports the default Project from WithProject, or the
 // problem from WithProjectProblem, or that there is none. It shows only the
 // cleaned id, source, problem and remote name, never the address, the token
-// or a path.
-func (t *tools) currentContext() *sdk.CallToolResult {
+// or a path. It ends with the rendered instruction clauses, unless there is a
+// problem with the default Project; when the API fails it says so, worded as
+// a tool error is.
+func (t *tools) currentContext(ctx context.Context) *sdk.CallToolResult {
+	res := t.contextLine()
+	if t.problem != "" {
+		return res
+	}
+	text := res.Content[0].(*sdk.TextContent).Text
+	block, err := t.instructions(ctx)
+	if err != nil {
+		return success(text + "\n\nThe instruction clauses could not be read: " + contract.CleanLine(err.Error()))
+	}
+	return success(text + "\n\nInstruction clauses (also the resource " + instructionsURI + "):\n\n" + block)
+}
+
+func (t *tools) contextLine() *sdk.CallToolResult {
 	switch {
 	case t.problem != "":
 		return success("There is no default Project in this session because of a problem: " +

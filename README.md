@@ -181,6 +181,14 @@ quoted with `| `; a name that is empty, dots only or holds a separator is refuse
 request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
 description.
 
+The server also has one resource, `goldie://instructions` (`resources/list`, `resources/read`): the
+instruction block the API renders for the default Project, or the global block without one, with
+`{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
+`goldie instructions`; the target changes only the file the block is written into. The text is cleaned
+of hidden characters like any Source content, no other URI is a resource, and a failed read is an
+error without the address or token. `current_context` ends with the same clauses, or says they could
+not be read. Resources are advertised without `listChanged`.
+
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or
 `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content with `--dir` (or
