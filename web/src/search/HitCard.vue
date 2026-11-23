@@ -104,6 +104,7 @@ const to = computed(() => `/items/${encodeURIComponent(props.hit.kind)}/${encode
   overflow-wrap: anywhere;
 }
 .overrides {
-  color: var(--miss-ink);
+  color: var(--fg-secondary);
+  font-weight: 600;
 }
 </style>

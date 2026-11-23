@@ -262,4 +262,14 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
 }
+
+/* §7: the field is 52 px below 768 px; the clear button stays centred. */
+@media (max-width: 767px) {
+  .input {
+    height: 52px;
+  }
+  .clear {
+    top: calc((52px - var(--target-min)) / 2);
+  }
+}
 </style>
