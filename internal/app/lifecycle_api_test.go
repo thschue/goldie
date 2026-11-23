@@ -47,10 +47,13 @@ const lifecycleProject = "github.com/acme/shop"
 var draftMarkers = []string{`"wip"`, "Draft marker", "draft-marker-body"}
 
 // lifecycleServer serves lifecycleContent with the named reader, operator and
-// hashed reader tokens of namedTokenLines.
+// hashed reader tokens of namedTokenLines. The rate limit is not under test
+// here, and the spelling matrix sends more requests per token than the
+// default burst, so the server gets roomyRateLimit; a 429 is still a failure
+// wherever a test checks the status.
 func lifecycleServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(activityHandler(t, platform.Config{ContentDir: lifecycleContent}))
+	srv := httptest.NewServer(activityHandler(t, platform.Config{ContentDir: lifecycleContent, RateLimit: roomyRateLimit}))
 	t.Cleanup(srv.Close)
 	return srv
 }
