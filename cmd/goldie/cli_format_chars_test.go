@@ -101,9 +101,12 @@ func TestCLISearchEchoDropsFormatCharactersFromTheQuery(t *testing.T) {
 	}
 }
 
+// The server's plain-miss hint (a not_found for an id that is no article) is
+// worded with the CLI's search command; the message is cleaned of format
+// characters.
 func TestCLIErrorDropsFormatCharactersFromTheEnvelope(t *testing.T) {
 	h := jsonString(t, hiddenCf)
-	body := `{"error":{"code":"not_found","message":` + h + `,"details":{"hint":` + h + `}}}`
+	body := `{"error":{"code":"not_found","message":` + h + `,"details":{"hint":"Search for the article, then use an id from its results."}}}`
 	_, err := runCLI(t, "lookup", "x", "--addr", hostileServer(t, http.StatusNotFound, body), "--token", cliToken)
 	if err == nil {
 		t.Fatal("expected an error")
@@ -113,6 +116,31 @@ func TestCLIErrorDropsFormatCharactersFromTheEnvelope(t *testing.T) {
 	}
 	if want := "abcdefghijk (404 Not Found)\nHint: " + lookupHint; err.Error() != want {
 		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+// A not_found hint other than the plain-miss one (a Suppression's) is passed
+// through unchanged, in and out of a Project, cleaned of format characters.
+func TestCLIErrorDropsFormatCharactersFromAPassedThroughNotFoundHint(t *testing.T) {
+	h := jsonString(t, hiddenCf)
+	body := `{"error":{"code":"not_found","message":` + h + `,"details":{"hint":` + h + `}}}`
+	for name, args := range map[string][]string{
+		"without a Project": {"lookup", "x"},
+		"inside a Project":  {"lookup", "x", "--project", "github.com/acme/shop"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			args = append(args, "--addr", hostileServer(t, http.StatusNotFound, body), "--token", cliToken)
+			_, err := runCLI(t, args...)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if leaked := formatChars(err.Error()); len(leaked) > 0 {
+				t.Errorf("error carries format characters %v:\n%q", leaked, err)
+			}
+			if want := "abcdefghijk (404 Not Found)\nHint: abcdefghijk"; err.Error() != want {
+				t.Errorf("error = %q, want %q", err, want)
+			}
+		})
 	}
 }
 
