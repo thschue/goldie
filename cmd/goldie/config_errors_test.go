@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,71 @@ func TestBinaryHealthRejectsContentDirAndGitURL(t *testing.T) {
 			if strings.Contains(string(out), hidden) {
 				t.Errorf("health with %s: output echoes %q: %s", name, hidden, out)
 			}
+		}
+	}
+}
+
+// #438: a first run with nothing set ends at the command that works, one line
+// naming goldie server -dev. An operator who set one of the two, or set a bad
+// value, knows what they are doing and gets the error alone.
+
+// serverFailure runs goldie server with env on top of an otherwise empty
+// environment and returns its stderr, failing the test if it starts or hangs.
+func serverFailure(t *testing.T, env ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goldieBinary(t), "server")
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADDR=127.0.0.1:0", "GOLDIE_ADMIN_ADDR=127.0.0.1:0"}, env...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if ctx.Err() != nil {
+		t.Fatalf("the server started instead of failing: %s", stderr.String())
+	}
+	if err == nil {
+		t.Fatalf("exit 0, want a failure: %s", stderr.String())
+	}
+	return stderr.String()
+}
+
+var devHint = regexp.MustCompile(`goldie server --?dev`)
+
+func TestBinaryServerWithNothingSetEndsWithTheDevHint(t *testing.T) {
+	out := serverFailure(t)
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	last := lines[len(lines)-1]
+	if !devHint.MatchString(last) {
+		t.Errorf("last stderr line = %q, want a hint naming goldie server -dev: %s", last, out)
+	}
+	// The error wording stays: both operator errors come before the hint.
+	for _, want := range []string{"invalid configuration", "GOLDIE_API_TOKENS or GOLDIE_API_TOKEN is not set", "GOLDIE_CONTENT_DIR or GOLDIE_GIT_URL is not set"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("stderr lost %q: %s", want, out)
+		}
+	}
+	if len(devHint.FindAllString(out, -1)) != 1 {
+		t.Errorf("want the hint exactly once: %s", out)
+	}
+}
+
+func TestBinaryServerWithOnlyOneOfSourceAndTokenHasNoDevHint(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-marker-dir")
+	const gitURL = "https://git.example.com/org/content.git"
+	for name, env := range map[string][]string{
+		"token only":                {"GOLDIE_API_TOKEN=" + testToken},
+		"tokens only":               {"GOLDIE_API_TOKENS=" + binTokenLines()},
+		"token file only":           {"GOLDIE_API_TOKEN_FILE=" + tokenFile(t, testToken)},
+		"content dir, no token":     {"GOLDIE_CONTENT_DIR=" + t.TempDir()},
+		"git url, no token":         {"GOLDIE_GIT_URL=" + gitURL},
+		"bad token, no source":      {"GOLDIE_API_TOKENS=ci:reader:short"},
+		"missing dir, no token":     {"GOLDIE_CONTENT_DIR=" + missing},
+		"token, bad dir":            {"GOLDIE_API_TOKEN=" + testToken, "GOLDIE_CONTENT_DIR=" + missing},
+		"token, both sources (bad)": {"GOLDIE_API_TOKEN=" + testToken, "GOLDIE_CONTENT_DIR=" + t.TempDir(), "GOLDIE_GIT_URL=" + gitURL},
+	} {
+		out := serverFailure(t, env...)
+		if devHint.MatchString(out) {
+			t.Errorf("%s: stderr has the dev hint, want the error alone: %s", name, out)
 		}
 	}
 }
