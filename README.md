@@ -124,26 +124,6 @@ Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_T
 goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
 ```
 
-`goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
-detected Project (`--project` overrides it) into the repository root of the working directory, from any
-subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
-`.claude/agents/goldie-<name>.md`. Those `goldie-` names are goldie's namespace. A pull replaces
-the namespace as a whole, so a skill or agent removed from the platform disappears, and touches nothing
-else: your own skills and agents stay. The bundle comes from `GET /api/v1/bundle`, a tar.gz whose ETag is
-the digest of the set; `pull` keeps that digest in `.claude/goldie-pull.digest` and sends it back, so an
-unchanged set costs no download and no write. A skill file keeps its executable bit. The CLI checks
-the whole archive before it writes: it refuses an absolute path, `..`, a symlink, hardlink, device or
-fifo, and any entry outside the namespace, and it never writes through a symlinked `.claude`,
-`.claude/skills` or `.claude/agents`. The new files are staged and moved in, and a failure puts the old
-ones back, so a failed pull leaves the project as it was. `--dry-run` lists what would be written or
-removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
-`goldie pull`, when the namespace was never pulled or the set changed. `--dry-run` and `--check` cannot be
-combined. `pull` takes no `--json`.
-
-```sh
-goldie pull --check   # in CI or a hook: exits non-zero if never pulled or stale
-```
-
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
 goldie search kubernetes

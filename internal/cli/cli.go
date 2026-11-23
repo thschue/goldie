@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "instructions", "pull", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "instructions", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -74,7 +74,6 @@ type settings struct {
 	dir                  string // content directory of local mode
 	target               string // instructions: claude or agents
 	force                bool   // instructions apply: replace a hand-edited block
-	dryRun, check        bool   // pull: list what would change; fail when stale
 	file                 string // skills show: the file of the skill to print
 	fileSet              bool   // --file was given, even empty
 	json                 bool
@@ -87,11 +86,6 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	if name != "version" { // version has no use for a Project
 		fs.StringVar(&f.s.project, "project", "", "Project as host/org/repo")
 	}
-	if name == "pull" {
-		fs.StringVar(&f.s.target, "target", "claude", "layout to write: claude (.claude/skills and .claude/agents)")
-		fs.BoolVar(&f.s.dryRun, "dry-run", false, "list the files a pull would write or remove, and write nothing")
-		fs.BoolVar(&f.s.check, "check", false, "exit non-zero when the namespace was never pulled or is stale, and write nothing")
-	}
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
 		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
@@ -102,7 +96,7 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 			return nil
 		})
 	}
-	if name != "init" && name != "instructions" && name != "pull" { // init prints three fixed lines; instructions and pull have no JSON
+	if name != "init" && name != "instructions" { // init prints three fixed lines; instructions has no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")
 	}
 	return func(ctx context.Context, pos []string, env Env) error {
@@ -130,11 +124,6 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	var c *commander
 	if name == "instructions" { // usage errors come before any server step
 		if err := f.s.checkInstructionsUsage(pos); err != nil {
-			return err
-		}
-	}
-	if name == "pull" {
-		if err := f.s.checkPullUsage(pos); err != nil {
 			return err
 		}
 	}
@@ -184,8 +173,6 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 		return c.initProject(ctx)
 	case "instructions":
 		return c.instructions(ctx, pos[0])
-	case "pull":
-		return c.pull(ctx)
 	default:
 		if len(pos) != 0 {
 			return &UsageError{name, "version takes no arguments"}
