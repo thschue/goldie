@@ -364,7 +364,7 @@ test.describe('hostile Markdown', () => {
     });
     await stubArticle(
       page,
-      article({ id: 'x/<img src=x onerror=alert(1)>', name: '<img src=x onerror=alert(2)> **t**', keywords: ['<script>alert(3)</script>'] }),
+      article({ id: 'x/<img src=x onerror=alert(1)>', name: '<img src=x onerror=alert(2)> **t**', keywords: ['<script>alert(3)</script>'], content: '## Steps\n\nPlain text.' }),
     );
     await open(page, 'x%2F%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E');
     await expect(h1(page)).toContainText('<img src=x onerror=alert(2)> **t**');
