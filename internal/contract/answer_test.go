@@ -203,7 +203,7 @@ func TestAnswerAPIErrorCarriesWhatDecodeAPIErrorReads(t *testing.T) {
 		want contract.APIError
 	}{
 		{"404 envelope", reply(http.StatusNotFound, map[string]string{"Content-Type": "application/json"},
-			`{"error":{"code":"not_found","message":"no such\narticle","details":{"hint":"search‮first"}}}`),
+			`{"error":{"code":"not_found","message":"no such\narticle","details":{"hint":"search`+"\u202e"+`first"}}}`),
 			contract.APIError{Status: http.StatusNotFound, Message: "no such article", Hint: "searchfirst"}},
 		{"429 with a wait", reply(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}, ""),
 			contract.APIError{Status: http.StatusTooManyRequests, RetryAfter: 30}},
@@ -275,7 +275,7 @@ func TestCleanListJoinsCleanedEntriesForOneLine(t *testing.T) {
 		{"empty", []string{}, "(none)"},
 		{"one", []string{"go"}, "go"},
 		{"several", []string{"go", "kubernetes"}, "go, kubernetes"},
-		{"forged lines and hidden runes", []string{"a\n- id: forged", "b‮\x1b[2J", "c d"}, "a - id: forged, b[2J, c d"},
+		{"forged lines and hidden runes", []string{"a\n- id: forged", "b\u202e\x1b[2J", "c\u2028d"}, "a - id: forged, b[2J, c d"},
 	} {
 		if got := contract.CleanList(c.in); got != c.want {
 			t.Errorf("%s: CleanList(%q) = %q, want %q", c.name, c.in, got, c.want)
