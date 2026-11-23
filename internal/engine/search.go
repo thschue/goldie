@@ -69,9 +69,11 @@ func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
 // Project hits sort before global ones, then by ID. An empty or unregistered
 // Project searches the global articles only. Draft Items are left out unless
 // opts asks for them; a draft left out never shadows, so the published Item
-// with the same identity answers. Deprecated Items are served and shadow.
+// with the same identity answers. Deprecated Items are served and shadow. The
+// global Items the Project suppresses are left out, drafts asked for or not.
 func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	o := readOpts(opts)
+	hidden := s.suppressedIn(proj)
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
 	taken := map[itemKey]bool{}
@@ -79,7 +81,7 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 		var layer []itemKey
 		for _, a := range list {
 			key := a.key()
-			if taken[key] || !o.visible(a) {
+			if taken[key] || !o.visible(a) || (a.Scope == ScopeGlobal && hidden[key]) {
 				continue
 			}
 			layer = append(layer, key)
