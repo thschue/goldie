@@ -265,6 +265,32 @@ func TestDefaultProjectProblemOnAPromptOrResourceTellsTheAgentToAskTheUser(t *te
 	}
 }
 
+// Trailing whitespace and "!" are trimmed with the sentence punctuation, so
+// exactly one full stop precedes "Ask the user".
+func TestDefaultProjectProblemEndingInNewlineOrBangIsNotDoubled(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"skills":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	for _, c := range []struct{ problem, trimmed string }{
+		{"bad config.\n", "bad config"},
+		{"bad config!", "bad config"},
+	} {
+		cs := problemSession(t, srv.URL, c.problem)
+		_, err := cs.GetPrompt(context.Background(), &sdk.GetPromptParams{Name: "goldie-x"})
+		if err == nil {
+			t.Errorf("%q: want an error", c.problem)
+			continue
+		}
+		m := protocolText(err)
+		want := "the default Project has a problem: " + c.trimmed + problemTail
+		if !strings.Contains(m, want) {
+			t.Errorf("%q: error = %q, want it to contain %q", c.problem, m, want)
+		}
+	}
+}
+
 // Criterion 3: the tool wording, from sessionProject(""), is unchanged: no
 // surface prefix, and it still offers the project argument. A resource or
 // prompt text never reaches a tool.

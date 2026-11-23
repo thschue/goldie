@@ -181,7 +181,7 @@ func (t *tools) sessionProjectFor(p string, s surface) (*contract.ProjectId, err
 		if s.failed != "" {
 			// The problem may end in sentence punctuation; the ". " below
 			// supplies the one full stop.
-			msg = strings.TrimRight(msg, ".?")
+			msg = strings.TrimRight(msg, ".?! ")
 			return nil, errors.New(s.failed + ": " + msg +
 				". Ask the user to fix it and restart the MCP server; the session's Project is the only one prompts and resources use.")
 		}
