@@ -73,6 +73,9 @@ For a UI change:
    job done elsewhere, such as a second copy of what the PR changes, at any size) or
    `fix: follow-up`. A matter of taste no user would notice isn't a finding.
 
+On every surface, **over-engineering** is blocking, with what to cut: flags, options, states or
+copy the user doesn't need yet. In refine, ask for only what this slice's user needs.
+
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `changes-requested` or `needs-info` (review), or `refined` (refine);
 - `pr` and `head_sha`, or `issue`;

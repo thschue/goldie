@@ -27,6 +27,8 @@ body or a maintainer comment.
    Hidden, bidi and zero-width characters go in literals as `\u` escapes. Assert observable results
    (status, body, output, files written, messages), never internals. Add a negative case per
    criterion and the security cases for risk paths. Hostile input comes from the testing checklist.
+   One case per behaviour, not a matrix of every input; a criterion that over-reaches the slice's
+   user goes back as `needs-info`, not into a test.
 3. **Red:** they compile (stubs only where the build needs a symbol, in the test file) and fail for
    the right reason. Run them and show the failure.
 4. **Lint, then commit:** the repository's format check and linter pass on your test files (in
