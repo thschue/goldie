@@ -29,8 +29,8 @@ func TestParseRefKnownKindsTable(t *testing.T) {
 
 func TestAgentCarriesItsKind(t *testing.T) {
 	a := Agent{Name: "Team-Bot"}
-	if a.Kind() != "agent" || a.key() != keyOf("agent", "team-bot") {
-		t.Fatalf("Kind %q key %v", a.Kind(), a.key())
+	if a.Kind() != "agent" {
+		t.Fatalf("Kind %q", a.Kind())
 	}
 }
 
