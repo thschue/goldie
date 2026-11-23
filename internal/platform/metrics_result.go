@@ -7,10 +7,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// ResultCounter counts answered requests by outcome. It is the shape every
-// goldie counter follows (#13): a goldie-named instrument whose one attribute,
-// result, takes one of two fixed values, so no value derived from a request
-// (query text, article id, Project id) can become a label (PC-12). No
+// ResultCounter counts answered requests by outcome. It is the shape
+// goldie counters follow (#13): a goldie-named instrument whose attributes are
+// fixed or checked, so no value derived from a request (query text, article id,
+// Project id) can become a label (PC-12). This one has one attribute, result,
+// with two fixed values; SkillGetCounter is the one that labels a skill name. No
 // OpenTelemetry type leaves this package.
 type ResultCounter struct {
 	c         metric.Int64Counter // nil counts nothing

@@ -52,6 +52,17 @@ func CheckBaseURL(baseURL string) error {
 // gets requestTimeout unless httpc sets a Timeout. A baseURL CheckBaseURL
 // rejects is ErrBaseURL.
 func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, version, false, httpc)
+}
+
+// NewMCPAPIClient is NewAPIClient for goldie mcp: every request also carries
+// the MarkMCP header, so the server counts it as MCP. X-Goldie-Client is the
+// same as for the CLI.
+func NewMCPAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, version, true, httpc)
+}
+
+func newAPIClient(baseURL, token, version string, mcp bool, httpc *http.Client) (*ClientWithResponses, error) {
 	if err := CheckBaseURL(baseURL); err != nil {
 		return nil, err
 	}
@@ -67,6 +78,9 @@ func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWi
 	opts := []ClientOption{WithHTTPClient(&hardened),
 		WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set(ClientHeader, ClientHeaderPrefix+version)
+			if mcp {
+				MarkMCP(r.Header)
+			}
 			if token != "" {
 				r.Header.Set("Authorization", "Bearer "+token)
 			}

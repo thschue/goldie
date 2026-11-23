@@ -1011,14 +1011,14 @@ export interface components {
             enforced?: boolean;
         };
         /**
-         * @description One search or lookup on the activity stream, the `data` of an SSE
+         * @description One search, lookup or get on the activity stream, the `data` of an SSE
          *     event without a type. Every field is always sent; text fields are `""`
          *     when empty. Clients ignore fields they do not know.
          */
         ActivityEvent: {
             /**
              * Format: int64
-             * @description Increases per server process (per replica); starts again at 1 on restart.
+             * @description Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it.
              * @example 42
              */
             id: number;
@@ -1035,7 +1035,10 @@ export interface components {
              */
             kind: "search" | "lookup" | "get";
             /**
-             * @description The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
+             * @description The search words, the article id a lookup asked for (bare), or for a
+             *     get the Reference `<kind>:<name>` (ADR 0021), such as `skill:review`
+             *     or `agent:review`. A replica older than this form shows the bare name
+             *     of a get in a federated stream.
              * @example deploy kubernetes
              */
             query: string;
@@ -1050,7 +1053,7 @@ export interface components {
              */
             token: string;
             /**
-             * @description The version in `X-Goldie-Client: goldie/<version>`, or `""`.
+             * @description The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.
              * @example 1.5.0
              */
             client_version: string;
@@ -1060,7 +1063,7 @@ export interface components {
              */
             trace_id: string;
             /**
-             * @description A search with no results, or a lookup answering 404.
+             * @description A search with no results, or a lookup or get answering 404.
              * @example false
              */
             miss: boolean;
@@ -1171,7 +1174,8 @@ export interface components {
          *     minimum version: upgrade goldie, then retry. Requests without the
          *     header, or whose header is not `goldie/<semver>`, are not refused;
          *     requests without a valid token are rejected with 401 first, and a
-         *     refused request does not count against the rate limit.
+         *     refused request does not count against the rate limit. `goldie mcp` and
+         *     the server's `/mcp` add `X-Goldie-Via: mcp`, which the gate does not read.
          */
         UpgradeRequired: {
             headers: {
