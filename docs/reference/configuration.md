@@ -60,7 +60,7 @@ when any is set. `GOLDIE_DRAIN_SECONDS` defaults to 0 here; every other setting 
 
 ## OpenTelemetry
 
-Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
+The server's traces of the public listener, logs and metrics are exported over OTLP (http/protobuf) when an
 endpoint is set. These variables keep their standard names and are read as defined by
 OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request
 headers and query strings are not recorded, and a lookup's path is recorded as the route

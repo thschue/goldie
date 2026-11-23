@@ -160,3 +160,21 @@ func TestAPITokensAreReadFromFile(t *testing.T) {
 		t.Fatalf("APITokens = %q, want the file's lines without the trailing newline", cfg.APITokens)
 	}
 }
+
+// The OpenTelemetry section's intro says what PC-12 says: the server's traces
+// of the public listener, its logs and its metrics are exported, and the
+// client roles' traces are described apart from it (#327).
+func TestConfigReferenceOpenTelemetryIntroMatchesPC12(t *testing.T) {
+	ref := string(ConfigReference(Settings))
+	_, section, ok := strings.Cut(ref, "## OpenTelemetry")
+	if !ok {
+		t.Fatal("the reference has no OpenTelemetry section")
+	}
+	const want = "The server's traces of the public listener, logs and metrics are exported over OTLP (http/protobuf)"
+	if !strings.HasPrefix(strings.TrimSpace(section), want) {
+		t.Errorf("the OpenTelemetry intro does not start with %q:\n%.300s", want, section)
+	}
+	if strings.Contains(section, "Traces of the public listener and logs are exported") {
+		t.Error("the old intro, which leaves out metrics, is still there")
+	}
+}

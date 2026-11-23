@@ -84,7 +84,7 @@ func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error
 	env.StartLocalScope = func(ctx context.Context, dir, goldieDir string) (string, string, func(), error) {
 		return app.StartLocal(ctx, app.LocalOptions{BaseDir: dir, GoldieDir: goldieDir})
 	}
-	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role)
+	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role, platform.WithSpanPath(app.ClientSpanPath))
 	if err != nil {
 		return env, nil, fmt.Errorf("invalid configuration:\n%w", err)
 	}
@@ -206,7 +206,7 @@ func serverSetup(lookup platform.Lookup, logOut io.Writer) (platform.Config, *sl
 	}
 	level, _ := platform.ParseLevel(cfg.LogLevel) // validated by LoadConfig
 	logger := platform.NewLogger(logOut, level, "server")
-	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv)
+	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv, platform.WithSpanPath(app.SpanPath))
 	if err != nil {
 		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
 	}

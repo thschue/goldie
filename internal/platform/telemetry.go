@@ -51,6 +51,9 @@ type Telemetry struct {
 	// (GOLDIE_TELEMETRY_CLIENT_INFO).
 	clientInfo bool
 
+	// spanPath turns a request path into the one a span carries (WithSpanPath).
+	spanPath func(string) string
+
 	once sync.Once
 	err  error
 }
@@ -212,7 +215,7 @@ func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanE
 	for _, o := range opts {
 		o(&cfg)
 	}
-	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
+	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}, spanPath: cfg.spanPath}
 	withoutProcessResourceEnv(func() {
 		if cfg.metricReader != nil {
 			t.mp = newMeterProvider(res, cfg.metricReader)
@@ -277,13 +280,13 @@ var secretOTelNames = secretSet(TelemetrySettings)
 // SetupTelemetry reads the OTEL_* variables and builds the exporters. It
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
-func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
-	return setupTelemetry(ctx, lookup, RoleServer)
+func SetupTelemetry(ctx context.Context, lookup Lookup, opts ...telemetryOption) (*Telemetry, error) {
+	return setupTelemetry(ctx, lookup, RoleServer, opts...)
 }
 
 // setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
 // client role (any role but RoleServer) reads and exports traces only.
-func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+func setupTelemetry(ctx context.Context, lookup Lookup, role string, extra ...telemetryOption) (*Telemetry, error) {
 	server := role == RoleServer
 	var errs []error
 	get := func(name string) string {
@@ -395,7 +398,7 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 	var (
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
-		opts  []telemetryOption
+		opts  = extra
 	)
 	// The SDK parses the OTEL_* variables goldie does not (timeouts, TLS file
 	// paths, batch and log record limits) while the exporters are built, and
@@ -645,7 +648,7 @@ func (t *Telemetry) WrapHandler(h http.Handler) http.Handler {
 	// otelhttp sees a view of the request without the caller's address and
 	// user agent unless the operator opted in, and never X-Forwarded-For.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traced.ServeHTTP(w, spanView(r, t.clientInfo))
+		traced.ServeHTTP(w, t.spanView(r, t.clientInfo))
 	})
 }
 

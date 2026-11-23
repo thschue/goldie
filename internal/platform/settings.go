@@ -156,7 +156,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("when any is set. `" + EnvDrainSeconds + "` defaults to 0 here; every other setting applies as for\n")
 	b.WriteString("`goldie server`.\n")
 	b.WriteString("\n## OpenTelemetry\n\n")
-	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
+	b.WriteString("The server's traces of the public listener, logs and metrics are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
 	b.WriteString("headers and query strings are not recorded, and a lookup's path is recorded as the route\n")

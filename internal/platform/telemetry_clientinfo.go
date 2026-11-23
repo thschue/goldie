@@ -39,12 +39,12 @@ type originalKey struct{}
 // processor cannot delete attributes, so the view never carries them: the
 // forwarding and user agent headers are removed, and RemoteAddr is emptied, or
 // with clientInfo reduced to the peer IP (no port). otelhttp also records the
-// path as url.path, so an article id in it is replaced by the route template
-// (templatePath). The view is only for the span: restoreRequest gives the
+// path as url.path, so it is replaced by what the path function returns
+// (spanURLPath). The view is only for the span: restoreRequest gives the
 // handler the original request.
-func spanView(r *http.Request, clientInfo bool) *http.Request {
+func (t *Telemetry) spanView(r *http.Request, clientInfo bool) *http.Request {
 	v := r.WithContext(context.WithValue(r.Context(), originalKey{}, r))
-	v.URL = redactedURL(r.URL)
+	v.URL = t.redactedURL(r.URL)
 	v.Header = r.Header.Clone()
 	v.Header.Del("X-Forwarded-For")
 	v.RemoteAddr = ""
@@ -63,13 +63,38 @@ func spanView(r *http.Request, clientInfo bool) *http.Request {
 	return v
 }
 
-// redactedURL is a copy of u whose path is templatePath of it, so an article
-// id never reaches a span. The query string is dropped too: otelhttp does not
+// noSpanPath is the path of a span when no path function was given: no part
+// of the request path is exported.
+const noSpanPath = "/{unknown}"
+
+// WithSpanPath sets the function that turns a request path into the path a
+// span carries, so platform names no route: internal/app builds it from the
+// contract's templates. fn gets the escaped path as sent (no query, no
+// cleaning). Without it, or with nil, spans carry one fixed placeholder.
+func WithSpanPath(fn func(path string) string) telemetryOption {
+	return func(c *telemetryConfig) { c.spanPath = fn }
+}
+
+// spanURLPath is the one place a span's path is decided: the path function's
+// answer for u's escaped path, or the placeholder when there is none or it
+// answers with nothing.
+func (t *Telemetry) spanURLPath(u *url.URL) string {
+	if t == nil || t.spanPath == nil {
+		return noSpanPath
+	}
+	if p := t.spanPath(u.EscapedPath()); p != "" {
+		return p
+	}
+	return noSpanPath
+}
+
+// redactedURL is a copy of u whose path is spanURLPath of it, so no id or raw
+// path reaches a span. The query string is dropped too: otelhttp does not
 // record it, and the view has no use for search words.
-func redactedURL(u *url.URL) *url.URL {
+func (t *Telemetry) redactedURL(u *url.URL) *url.URL {
 	c := *u
 	c.RawQuery, c.ForceQuery = "", false
-	c.Path, c.RawPath = templatePath(c.Path), ""
+	c.Path, c.RawPath = t.spanURLPath(u), ""
 	return &c
 }
 
