@@ -4,7 +4,6 @@
 import type { components } from '../api/schema';
 
 export type ProjectView = components['schemas']['ProjectView'];
-export type ProjectItem = components['schemas']['ProjectItem'];
 
 export class ApiError extends Error {
   constructor(
@@ -36,7 +35,7 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
     message = clip(body.error?.message, 300);
     hint = clip(body.error?.details?.hint, 300);
   } catch {
-    // Not an envelope (a proxy page, say): show the generic copy only.
+    // Not an envelope: the generic copy only.
   }
   const seconds = Number.parseInt(res.headers.get('Retry-After') ?? '', 10);
   const retryAfter = res.status === 429 ? Math.min(Math.max(Number.isFinite(seconds) ? seconds : 5, 1), 3600) : 0;

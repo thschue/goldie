@@ -4,10 +4,8 @@ import { useRoute } from 'vue-router';
 import EmptyView from '../views/EmptyView.vue';
 import { ApiError, projectItems, projectOf, type ProjectView } from './api';
 
-// Home with a Project (`/?project=host/org/repo`, handoff §3.2, §5.1, §5.2): the
-// Project's resolved Items from GET /api/v1/projects/{id}/items. Without a
-// Project it is the empty state, as every screen not built yet. Every value from
-// the API is interpolated as text, never as HTML.
+// Home with a Project (`/?project=host/org/repo`, handoff §3.2, §5.1, §5.2): its
+// resolved Items. Without one it is the empty state. API values are text only.
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
 
@@ -19,17 +17,13 @@ const wait = ref(0);
 let controller: AbortController | undefined;
 let timer: ReturnType<typeof setInterval> | undefined;
 
-function stopCountdown() {
-  clearInterval(timer);
-  timer = undefined;
-}
+const stopCountdown = () => clearInterval(timer);
 
 function countdown(seconds: number) {
   stopCountdown();
   wait.value = seconds;
   timer = setInterval(() => {
-    wait.value -= 1;
-    if (wait.value <= 0) stopCountdown();
+    if (--wait.value <= 0) stopCountdown();
   }, 1000);
 }
 
@@ -94,7 +88,7 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
     </div>
 
     <template v-else>
-      <p class="lead">Same golden path your agents follow — {{ items.length }} {{ items.length === 1 ? 'Item' : 'Items' }} for {{ project }}.</p>
+      <p class="lead">Same golden path your agents follow — {{ items.length }} Items for {{ project }}.</p>
       <p v-if="view?.hint" class="hint">{{ view.hint }}</p>
       <div v-if="!items.length" role="status" class="panel">No articles for {{ project }} yet.</div>
       <ul v-else class="items">
@@ -103,16 +97,14 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
           <bdi class="name">{{ item.name }}</bdi>
           <span class="badge scope">
             <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
-              <template v-if="item.scope === 'global'"><circle cx="6" cy="6" r="4.5" /><path d="M1.5 6h9M6 1.5c-2 2.5-2 6.5 0 9M6 1.5c2 2.5 2 6.5 0 9" /></template>
-              <path v-else d="M2 2.5h8v7H2zM2 5h8" />
+              <path d="M2 2.5h8v7H2zM2 5h8" />
             </svg>
             {{ item.scope }}
           </span>
           <span class="badge" :class="item.status === 'deprecated' ? 'deprecated' : 'published'">
             <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
               <path v-if="item.status === 'published'" d="M6 1.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9zM3.8 6.2l1.6 1.6 2.9-3.2" />
-              <path v-else-if="item.status === 'deprecated'" d="M6 1.5l5 9H1zM6 5v2.5M6 9v.1" />
-              <path v-else d="M6 1l5 5-5 5-5-5z" />
+              <path v-else d="M6 1.5l5 9H1zM6 5v2.5M6 9v.1" />
             </svg>
             <span>{{ item.status }}</span>
           </span>
@@ -134,15 +126,13 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   color: var(--fg-secondary);
 }
 .home {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--target-min);
-  font-weight: 600;
+  display: inline-block;
+  padding: var(--space-3) 0;
 }
 .panel,
 .box {
   max-width: 940px;
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: var(--surface-2);
@@ -154,7 +144,6 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-6);
 }
 .box p {
   margin: 0;
@@ -170,7 +159,6 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   color: var(--miss-ink);
 }
 .retry {
-  min-width: var(--target-min);
   min-height: var(--target-min);
   padding: 0 var(--space-4);
   border: 1px solid currentColor;
@@ -179,22 +167,11 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   color: var(--fg-default);
   font: inherit;
   font-weight: 600;
-  cursor: pointer;
 }
 .retry:disabled {
   color: var(--fg-muted);
-  cursor: not-allowed;
 }
-.skeleton {
-  display: grid;
-  gap: var(--space-3);
-  max-width: 940px;
-}
-.bar {
-  height: 64px;
-  border-radius: var(--radius-md);
-  background: var(--surface-3);
-}
+.skeleton,
 .items {
   display: grid;
   gap: var(--space-3);
@@ -202,6 +179,11 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.bar {
+  height: 64px;
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
 }
 .item {
   display: flex;
@@ -223,13 +205,11 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  min-width: 0;
   padding: 2px var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--text-sm);
-  overflow-wrap: anywhere;
 }
 .badge svg {
   flex: none;
@@ -237,7 +217,6 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linecap: round;
-  stroke-linejoin: round;
 }
 /* §4: the Kind badge is mono on blue; the Scope badge an outline. */
 .kind {
@@ -255,8 +234,5 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   border-color: var(--miss-border);
   background: var(--miss-bg);
   color: var(--miss-ink);
-}
-.enforced {
-  font-weight: 600;
 }
 </style>
