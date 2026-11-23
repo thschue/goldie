@@ -23,14 +23,15 @@ import (
 //	Hint: To register it, add a projects/<id>/ directory to one of goldie's Sources, usually through the platform team.
 //
 // A refusal writes nothing, prints nothing and returns one of the init errors
-// below.
+// below. For #513 the two first-run refusals (no repository, no Project) end
+// with the next step on its own line, as withDevHint does.
 
 const (
 	initErrExists    = ".goldie/config.yaml already exists at the repository root; goldie init never overwrites it"
 	initErrSymlink   = ".goldie at the repository root is a symlink; goldie init never follows it"
-	initErrNoRepo    = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root"
+	initErrNoRepo    = "not inside a git repository: goldie init writes .goldie/config.yaml at the repository root\nRun it in your repository, or create one first: git init"
 	initErrSource    = "this is a Source repository (global/articles or projects/ at its root): goldie init is for a project repository"
-	initErrNoProject = "no Project found: set --project or GOLDIE_PROJECT, or add an upstream or origin remote"
+	initErrNoProject = "no Project found: set --project or GOLDIE_PROJECT, or add an upstream or origin remote\nName it: goldie init --project github.com/<org>/<repo>"
 )
 
 // projectsAPI is a fake API that serves only GET /api/v1/projects, to the CLI

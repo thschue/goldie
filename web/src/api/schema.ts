@@ -128,6 +128,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read who the session cookie signs in
+         * @description Returns the name and current role of the token behind a valid
+         *     session cookie (or a bearer token); a token removed from the
+         *     configuration ends its sessions. Any other request is a 401. The
+         *     response is `Cache-Control: no-store`.
+         */
+        get: operations["getSession"];
+        put?: never;
+        /**
+         * Sign in with a token and get a session cookie
+         * @description Exchanges a configured API token, sent as `token` in the JSON body,
+         *     for a signed session cookie, so a browser never holds the token. The
+         *     cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+         *     `Secure` with the `__Host-` prefix (both dropped only on the
+         *     plain-http loopback dev server, `goldie server --dev`; any other
+         *     server, one behind a TLS proxy included, always sets both). It names
+         *     the token and its times under a signature (ADR 0027), expires after 30
+         *     minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+         *     sign-in at the latest, ends when the token is removed or given a new
+         *     value, and authenticates `GET` and `HEAD` only; a bearer
+         *     token beats it. This operation takes no bearer token, and a
+         *     cross-origin request is refused with a 403. Sign-in is not rate
+         *     limited. The response is `Cache-Control: no-store`.
+         */
+        post: operations["postSession"];
+        /**
+         * Sign out
+         * @description Clears the session cookie. A cross-origin request is refused with a
+         *     403, so another site cannot sign a user out. The response is
+         *     `Cache-Control: no-store`.
+         */
+        delete: operations["deleteSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync": {
         parameters: {
             query?: never;
@@ -417,6 +462,28 @@ export interface components {
             scope: string;
             /** @description Whether the Item is enforced, as its frontmatter says. */
             enforced: boolean;
+        };
+        /** @description The token to sign in with. */
+        SessionRequest: {
+            /**
+             * @description A configured API token, in plain text.
+             * @example replace-with-a-configured-api-token
+             */
+            token: string;
+        };
+        /** @description Who a session signs in. */
+        Session: {
+            /**
+             * @description The name of the token behind the session.
+             * @example ci-reader
+             */
+            name: string;
+            /**
+             * @description The token's role, read from the configuration now. Clients ignore values they do not know.
+             * @example reader
+             * @enum {string}
+             */
+            role: "reader" | "operator";
         };
         /** @description How the last content load went, for operators. */
         SyncStatus: {
@@ -1176,6 +1243,128 @@ export interface operations {
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "name": "ci-reader",
+                     *       "role": "reader"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description No valid session cookie or bearer token was sent. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    postSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The API token to sign in with. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "token": "replace-with-a-configured-api-token"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description The token is valid; the session cookie is in `Set-Cookie`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "name": "ci-reader",
+                     *       "role": "reader"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            /** @description The body holds no configured token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The request came from another origin. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cookie is cleared in `Set-Cookie`. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The sign-out came from another origin, so the cookie is kept. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

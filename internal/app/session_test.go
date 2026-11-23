@@ -161,7 +161,7 @@ func both(fs ...func(*http.Request)) func(*http.Request) {
 	}
 }
 
-func sameOrigin(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") }
+func setSameOrigin(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "same-origin") }
 
 type sessionBody struct {
 	Name string `json:"name"`
@@ -492,7 +492,7 @@ func TestSignOutClearsTheCookie(t *testing.T) {
 	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
 	for _, base := range []string{secureBase, loopbackBase} {
 		c := signedIn(t, h, base, operatorToken)
-		resp, body := send(t, h, http.MethodDelete, base+sessionPath, both(withCookie(c), sameOrigin))
+		resp, body := send(t, h, http.MethodDelete, base+sessionPath, both(withCookie(c), setSameOrigin))
 		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 			t.Fatalf("%s: DELETE status %d, want 200 or 204: %s", base, resp.StatusCode, body)
 		}
@@ -575,7 +575,7 @@ func TestSessionsLogNeitherTheTokenNorTheCookie(t *testing.T) {
 	send(t, h, http.MethodGet, secureBase+sessionPath, withCookie(c))
 	send(t, h, http.MethodGet, secureBase+sessionSearch, withCookie(c))
 	send(t, h, http.MethodPost, secureBase+"/api/v1/sync", withCookie(c))
-	send(t, h, http.MethodDelete, secureBase+sessionPath, both(withCookie(c), sameOrigin))
+	send(t, h, http.MethodDelete, secureBase+sessionPath, both(withCookie(c), setSameOrigin))
 	for _, secret := range []string{operatorToken, unknown, sha256Hex(operatorToken), c.Value, sessionKey} {
 		if strings.Contains(logs.String(), secret) {
 			t.Errorf("a log line carries a secret (%.8s...): %s", secret, logs.String())
