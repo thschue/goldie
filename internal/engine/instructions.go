@@ -19,11 +19,6 @@ import (
 // winner serves the enforced one.
 const KindInstruction = "instruction"
 
-// instructionsDir is where a Source keeps its global clauses, relative to its
-// root. A Project's are in <project dir>/instructions and the local Scope's in
-// .goldie/instructions.
-const instructionsDir = "global/instructions"
-
 // The targets a clause may name: the file a block is written into.
 const (
 	TargetClaude = "claude"
@@ -180,21 +175,4 @@ func (s *Snapshot) Instructions(proj, target string, vars InstructionVars) (bloc
 	block = r.Replace(strings.Join(bodies, "\n\n"))
 	sum := sha256.Sum256([]byte(block))
 	return block, hex.EncodeToString(sum[:])
-}
-
-// addInstructions registers the global clauses. It is called only while loading.
-func (s *Snapshot) addInstructions(items []Article) {
-	sortArticles(items)
-	s.instructions = items
-	s.index.add(items)
-}
-
-// addProjectInstructions registers a Project's clauses. It is called only
-// while loading, after addProject.
-func (s *Snapshot) addProjectInstructions(scope string, items []Article) {
-	p, _ := s.lookupProject(scope)
-	sortArticles(items)
-	p.instructions = items
-	p.index.add(items)
-	s.projects[strings.ToLower(scope)] = p
 }
