@@ -351,8 +351,9 @@ func (e *ConfigError) Unwrap() error { return e.err }
 type Public struct {
 	*publicMux
 	source
-	pollLog *slog.Logger  // logs every poll, when the Source asks for it; nil logs none
-	poll    time.Duration // GOLDIE_POLL_INTERVAL
+	pollLog *slog.Logger          // logs every poll, when the Source asks for it; nil logs none
+	polls   *platform.PollCounter // counts every poll (goldie.syncs); nil counts none
+	poll    time.Duration         // GOLDIE_POLL_INTERVAL
 	mu      sync.Mutex
 	started bool
 	loops   sync.WaitGroup // the poll loop Start runs
@@ -380,16 +381,35 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		return
 	}
 	p.started = true
-	var onPoll func(engine.SyncStatus)
-	if p.pollLog != nil {
-		onPoll = logPolls(ctx, p.pollLog)
-	}
+	onPoll := p.pollHook(ctx)
 	p.sync.run(ctx, onPoll)
 	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	// The first stop signal ends the activity streams: Shutdown waits for
 	// open requests and never cancels them, so a stream would hold it for
 	// the whole grace period (PC-08).
 	context.AfterFunc(ctx, p.endStreams)
+}
+
+// pollHook is the poll loop's onPoll: it logs polls when the Source asks for
+// it (logPolls) and counts each finished poll in goldie.syncs. A poll that
+// ends with ctx, the server stopping, is no result and is not counted. It is
+// nil when there is nothing to do.
+func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
+	var logged func(engine.SyncStatus)
+	if p.pollLog != nil {
+		logged = logPolls(ctx, p.pollLog)
+	}
+	if logged == nil && p.polls == nil {
+		return nil
+	}
+	return func(st engine.SyncStatus) {
+		if logged != nil {
+			logged(st)
+		}
+		if ctx.Err() == nil {
+			p.polls.Add(ctx, st.LastError != "")
+		}
+	}
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
@@ -414,7 +434,8 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 
 // PublicHandlerWith is PublicHandler for a server that exports metrics through
 // tel (nil for none): every search and lookup it answers is counted by hit or
-// miss (goldie.searches, goldie.lookups).
+// miss (goldie.searches, goldie.lookups) and every finished poll of its Source
+// by result (goldie.syncs).
 func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.Telemetry) (*Public, error) {
 	var errs []error
 	tokens, err := apiTokens(cfg)
@@ -431,7 +452,11 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	return newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive, resultCounters(tel))
+	p, err := newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive, resultCounters(tel))
+	if p != nil {
+		p.polls = tel.PollCounter("goldie.syncs", "Source polls finished, by source and result.", src.name)
+	}
+	return p, err
 }
 
 // resultCounters is the option that counts searches and lookups through tel.

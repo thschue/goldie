@@ -26,6 +26,7 @@ const (
 type source struct {
 	syncer *engine.Syncer
 	check  string // its readiness check
+	name   string // its name in metrics: "dir" or "git"
 	// logAttrs, when not nil, has Start log every poll with them.
 	logAttrs []any
 }
@@ -42,10 +43,10 @@ func serveSource(cfg platform.Config) (source, error) {
 	case cfg.GitURL != "":
 		syncer, err := gitSource(cfg)
 		// The URL is logged here and nowhere else, redacted by platform.
-		return source{syncer: syncer, check: sourceGitCheck, logAttrs: []any{"source", "git", "url", cfg.RedactedGitURL()}}, err
+		return source{syncer: syncer, check: sourceGitCheck, name: "git", logAttrs: []any{"source", "git", "url", cfg.RedactedGitURL()}}, err
 	case cfg.ContentDir != "":
 		syncer, err := content(cfg.ContentDir)
-		return source{syncer: syncer, check: sourceDirCheck}, err
+		return source{syncer: syncer, check: sourceDirCheck, name: "dir"}, err
 	}
 	if len(cfg.Sources) > 0 {
 		return source{}, fmt.Errorf("%s is valid, but this version cannot serve a list of Sources yet: set %s or %s instead", platform.EnvSources, platform.EnvContentDir, platform.EnvGitURL)
