@@ -76,11 +76,13 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 		return nil, wordErrorFor(err, t.local, failed)
 	}
 	names = nil
+	seen := map[string]bool{}
 	for _, sk := range res.Skills {
 		// A name from a Source is a prompt only when it is one clean path segment.
-		if !skillNameOK(sk.Name) || contract.CleanLine(sk.Name) != sk.Name || slices.Contains(names, sk.Name) {
+		if !skillNameOK(sk.Name) || contract.CleanLine(sk.Name) != sk.Name || seen[sk.Name] {
 			continue
 		}
+		seen[sk.Name] = true
 		names = append(names, sk.Name)
 	}
 	snaps.mu.Lock()
