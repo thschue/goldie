@@ -18,6 +18,9 @@ const chips = (l: (typeof loops.value)[number]) => [
   ...l.closure.agents.map((a) => ({ key: `agent:${a.name}`, kind: 'agent', name: a.name })),
   ...l.closure.skills.map((s) => ({ key: `skill:${s.name}`, kind: 'skill', name: s.name })),
 ];
+// Same line `goldie pull` prints (internal/cli/pullloops.go): the interval unless dynamic.
+const startCommand = (l: (typeof loops.value)[number]) =>
+  `/loop ${!l.dynamic && l.interval ? `${plain(l.interval)} ` : ''}/goldie-loop-${plain(l.name)}`;
 </script>
 
 <template>
@@ -57,7 +60,7 @@ const chips = (l: (typeof loops.value)[number]) => [
           </li>
         </ul>
         <CommandSnippet command="goldie pull" />
-        <CommandSnippet :command="`/loop /goldie-${plain(l.name)}`" />
+        <CommandSnippet :command="startCommand(l)" />
       </article>
     </template>
   </AssetList>
