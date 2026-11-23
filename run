@@ -661,18 +661,20 @@ cmd_regen() {
 	# skip them loudly there; CI's regen-ts-check fails on the stale file.
 	if command -v npm >/dev/null 2>&1; then
 		say "regen: openapi-typescript"
-		ts_generate "$CONTRACT_SPEC" "$TS_SCHEMA" || die "openapi-typescript failed for $CONTRACT_SPEC"
+		ts_generate regen "$CONTRACT_SPEC" "$TS_SCHEMA" || die "openapi-typescript failed for $CONTRACT_SPEC"
 	else
-		say "regen: SKIPPED $TS_SCHEMA, npm not found; run ./run regen with Node after a spec change"
+		printf 'run: warning: skipped %s, npm not found. If you changed the spec, the TypeScript types are now stale: install Node, then run ./run regen. CI fails on stale types.\n' "$TS_SCHEMA" >&2
 	fi
 }
 
-# ts_generate <spec> <output>: write the TypeScript types for <spec> to
-# <output> with the pinned openapi-typescript. It installs web/'s locked
+# ts_generate <task> <spec> <output>: write the TypeScript types for <spec> to
+# <output> with the pinned openapi-typescript; <task> names the caller in errors. It installs web/'s locked
 # dependencies when they are missing, and writes through a temporary file so a
 # failure never leaves a truncated types file behind.
 ts_generate() {
-	command -v npm >/dev/null 2>&1 || die "npm not found: the TypeScript types need Node"
+	command -v npm >/dev/null 2>&1 ||
+		die "npm not found: ./run $1 needs Node. Install Node, or leave this to CI (the ux job runs regen-ts-check)."
+	shift
 	if [ ! -d web/node_modules/openapi-typescript ]; then
 		(cd web && npm ci --ignore-scripts) || die "npm ci failed in web/"
 	fi
@@ -690,7 +692,7 @@ ts_generate() {
 # from <spec>, return 1 when they differ, die when they cannot be compared.
 ts_drift() {
 	fresh=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for the TypeScript drift check"
-	if ! ts_generate "$1" "$fresh"; then
+	if ! ts_generate regen-ts-check "$1" "$fresh"; then
 		rm -f "$fresh"
 		die "openapi-typescript failed for $1"
 	fi
