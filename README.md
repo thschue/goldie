@@ -32,10 +32,13 @@ help you ask for goes to stdout and exits 0.
 `GOLDIE_ADMIN_ADDR` matches its admin address.
 
 `goldie skills list|show <name>` and `goldie agents list|show <name>` read the skill bundles (name
-and file list) and agent definitions (name and description) that answer for the Project; they take
+and file list) and agent definitions (name and description) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. `show --file` is not available yet.
+before any request. `goldie skills show <name> --file <path>` writes one file of the skill, as
+listed by `show <name>`, to stdout as its raw bytes and nothing else. Redirect it to a file for
+anything binary. An unknown path exits 1 and names `goldie skills show <name>`. `--file` belongs to
+`skills show` only. An empty or dot-only path is refused before any request.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
@@ -66,11 +69,11 @@ when there is one; stdout, `--json` included, carries only the article.
 
 `goldie search`, `lookup`, `skills`, `agents`, `status` and `mcp` also work without a server:
 `--dir PATH` (or `GOLDIE_DIR`) starts an embedded server over a directory of content
-(`global/articles` under it) on loopback, with its own random token, and stops it when the command
-ends. Output is the same as against a remote server over the same content. `--dir` overrides
-`GOLDIE_DIR`, and also a `GOLDIE_ADDR` from the environment; a repository with `.goldie/articles/`
-starts the same embedded server with its local Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in
-`.goldie/config.yaml` or empty content (see
+(`global/articles`, `global/skills` and `global/agents` under it) on loopback, with its own random
+token, and stops it when the command ends. Output is the same as against a remote server over the
+same content. `--dir` overrides `GOLDIE_DIR`. It also overrides a `GOLDIE_ADDR` from the
+environment. A repository with `.goldie/articles/` starts the same embedded server with its local
+Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or empty content (see
 [the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr` or `GOLDIE_ADDR` is
 an error; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with `--addr`, or `GOLDIE_DIR`
 and `GOLDIE_ADDR` both set in the environment, is an error naming both. Content that does not load
