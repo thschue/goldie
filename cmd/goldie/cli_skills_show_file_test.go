@@ -116,7 +116,9 @@ func TestCLISkillsShowFilePrintsALargeFileWhole(t *testing.T) {
 }
 
 func TestCLISkillsShowFileReadsTheExampleContent(t *testing.T) {
-	want, err := os.ReadFile(filepath.Join(dirContent(t), "global", "skills", "deploy", "SKILL.md"))
+	// Resolve the relative content path before runCLI changes the working directory.
+	dir := dirContent(t)
+	want, err := os.ReadFile(filepath.Join(dir, "global", "skills", "deploy", "SKILL.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +128,7 @@ func TestCLISkillsShowFileReadsTheExampleContent(t *testing.T) {
 		t.Errorf("remote: exit %d, stderr %q, stdout %q, want 0, empty and the file's bytes %q", code, stderr, remote, want)
 	}
 	// Local mode over the same content prints the same bytes.
-	local, stderr, code := runCLIStderr(t, "skills", "show", "deploy", "--file", "SKILL.md", "--dir", dirContent(t))
+	local, stderr, code := runCLIStderr(t, "skills", "show", "deploy", "--file", "SKILL.md", "--dir", dir)
 	if code != 0 || stderr != "" || local != string(want) {
 		t.Errorf("--dir: exit %d, stderr %q, stdout %q, want 0, empty and the file's bytes %q", code, stderr, local, want)
 	}
