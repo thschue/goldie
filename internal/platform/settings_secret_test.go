@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -50,11 +51,18 @@ func secretNames(t *testing.T, rows []SettingSpec) []string {
 }
 
 // The registry marks exactly the secret variables of the record: the API
-// tokens of the server, the client's token, and the OTLP headers (ADR-0017).
-// A plain setting marked Secret would vanish from the startup report (PC-06).
+// tokens of the server, the git Source's token, SSH key and known hosts
+// (#258; its CA bundle is reported as set or unset, not Secret), the client's
+// token, and the OTLP headers (ADR-0017). A plain setting marked Secret would
+// vanish from the startup report (PC-06). Registry order is not part of this
+// check; the golden report pins it.
 func TestRegistryMarksExactlyTheSecretSettings(t *testing.T) {
-	if got, want := secretNames(t, Settings), []string{EnvAPIToken, EnvAPITokens}; !reflect.DeepEqual(got, want) {
-		t.Errorf("Settings rows marked Secret = %v, want %v", got, want)
+	server := secretNames(t, Settings)
+	sort.Strings(server)
+	want := []string{EnvAPIToken, EnvAPITokens, envGitSSHKey, envGitSSHKnownHosts, envGitToken}
+	sort.Strings(want)
+	if !reflect.DeepEqual(server, want) {
+		t.Errorf("Settings rows marked Secret = %v, want %v", server, want)
 	}
 	if got, want := secretNames(t, ClientSettings), []string{EnvToken}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ClientSettings rows marked Secret = %v, want %v", got, want)
@@ -122,7 +130,9 @@ func reportKeys(t *testing.T, cfg Config) ([]string, map[string]any, string) {
 
 // The startup report lists every Settings row, in registry order, and nothing
 // else: a setting added to the registry is reported without a hand-written
-// call. Each plain row shows its effective value.
+// call. Each plain row shows its effective value. The dir and git Sources
+// exclude each other (#258), so the samples are loaded once per Source, the
+// other left unset; GOLDIE_GIT_CA_BUNDLE is reported only as set.
 func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 	// A valid, non-default value for every plain setting. A row added to the
 	// registry without a sample here fails, so the test stays exhaustive.
@@ -136,41 +146,55 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		EnvRateLimit:           "5/m",
 		EnvMinClientVersion:    "1.4.0",
 		EnvTelemetryClientInfo: "true",
+		envGitURL:              gitSampleURL,
+		envGitRef:              "release/v2",
+		envGitCABundle:         gitSampleCABundle,
+		envGitAllowFileURL:     "true",
+		envPollInterval:        "90s",
 	}
-	env := map[string]string{}
-	var want []string
-	for _, s := range Settings {
-		want = append(want, s.Name)
-		if secretOf(t, s) {
-			continue
-		}
-		v, ok := samples[s.Name]
-		if !ok {
-			t.Fatalf("no sample value for %s: add one to this test", s.Name)
-		}
-		if v == s.Default {
-			t.Fatalf("sample for %s equals its default; pick another", s.Name)
-		}
-		env[s.Name] = v
-	}
-	cfg, err := loadEnv(env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keys, rec, out := reportKeys(t, cfg)
-	if !reflect.DeepEqual(keys, want) {
-		t.Errorf("startup report keys = %v\nwant the Settings registry in order: %v\n%s", keys, want, out)
-	}
-	for _, s := range Settings {
-		if secretOf(t, s) {
-			if rec[s.Name] != "(unset)" {
-				t.Errorf("%s is unset: report shows %v, want (unset)", s.Name, rec[s.Name])
+	for source, other := range map[string]string{EnvContentDir: envGitURL, envGitURL: EnvContentDir} {
+		t.Run(source, func(t *testing.T) {
+			env := map[string]string{}
+			var want []string
+			for _, s := range Settings {
+				want = append(want, s.Name)
+				if secretOf(t, s) || s.Name == other {
+					continue
+				}
+				v, ok := samples[s.Name]
+				if !ok {
+					t.Fatalf("no sample value for %s: add one to this test", s.Name)
+				}
+				if v == s.Default {
+					t.Fatalf("sample for %s equals its default; pick another", s.Name)
+				}
+				env[s.Name] = v
 			}
-			continue
-		}
-		if got := fmt.Sprint(rec[s.Name]); got != env[s.Name] {
-			t.Errorf("%s=%q: report shows %q, want the effective value", s.Name, env[s.Name], got)
-		}
+			cfg, err := loadEnv(env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys, rec, out := reportKeys(t, cfg)
+			if !reflect.DeepEqual(keys, want) {
+				t.Errorf("startup report keys = %v\nwant the Settings registry in order: %v\n%s", keys, want, out)
+			}
+			for _, s := range Settings {
+				switch {
+				case secretOf(t, s):
+					if rec[s.Name] != "(unset)" {
+						t.Errorf("%s is unset: report shows %v, want (unset)", s.Name, rec[s.Name])
+					}
+				case s.Name == envGitCABundle:
+					if got := fmt.Sprint(rec[s.Name]); got == "" || got == "(unset)" || strings.Contains(got, gitSampleCABundleTag) {
+						t.Errorf("%s is set: report shows %q, want it reported only as set", s.Name, got)
+					}
+				default:
+					if got := fmt.Sprint(rec[s.Name]); got != env[s.Name] {
+						t.Errorf("%s=%q: report shows %q, want the effective value", s.Name, env[s.Name], got)
+					}
+				}
+			}
+		})
 	}
 }
 

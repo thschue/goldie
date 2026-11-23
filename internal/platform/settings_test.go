@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -24,6 +25,16 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got[EnvSwaggerUIEnabled] = "true"
 	got[EnvTelemetryClientInfo] = "false"                            // read by SetupTelemetry, not part of Config
 	got[EnvMinClientVersion] = reported(t, cfg, EnvMinClientVersion) // Config holds the parsed Semver (#186)
+	// The git Source settings and the poll interval (#258).
+	_, rec, _ := reportKeys(t, cfg)
+	got[envGitURL] = reported(t, cfg, envGitURL)
+	got[envGitRef] = reported(t, cfg, envGitRef)
+	got[envGitAllowFileURL] = fmt.Sprint(rec[envGitAllowFileURL])
+	got[envPollInterval] = reported(t, cfg, envPollInterval)
+	for _, name := range []string{envGitToken, envGitSSHKey, envGitSSHKnownHosts} {
+		got[name] = fmt.Sprint(effective(t, cfg, name))
+	}
+	got[envGitCABundle] = "" // reported only as set or unset; it has no default
 	if int(cfg.DrainTimeout.Seconds()) != 25 {
 		t.Errorf("drain default = %v", cfg.DrainTimeout)
 	}
