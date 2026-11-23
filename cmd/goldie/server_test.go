@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -215,6 +216,32 @@ func TestPC01And03BinaryServesProbesAndVersion(t *testing.T) {
 	want := `{"version":"1.2.3","commit":"abc123","date":"2026-01-02"}`
 	if strings.TrimSpace(body) != want {
 		t.Errorf("%s/version = %s, want %s", p.admin, body, want)
+	}
+}
+
+// A connection that is accepted but never sends a request byte (net/http
+// state "new") must not hold the graceful shutdown: with a drain period of
+// zero the process exits well inside net/http's 5 s allowance for such a
+// connection, on both listeners (#617).
+func TestBinaryExitsPromptlyWithSilentConnectionsOpen(t *testing.T) {
+	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
+	for _, addr := range []string{p.app, p.admin} {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			t.Fatalf("dial %s: %v", addr, err)
+		}
+		defer func() { _ = conn.Close() }()
+	}
+	time.Sleep(200 * time.Millisecond) // let the server accept both
+	start := time.Now()
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.waitExit(t, 10*time.Second); err != nil {
+		t.Fatalf("exit with silent connections open: %v, want 0\n%s", err, p.logs())
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("exited %v after SIGTERM with silent connections open, want under 2s\n%s", took, p.logs())
 	}
 }
 

@@ -234,6 +234,11 @@ func (s *Snapshot) SkillIn(proj, name string, opts ...ReadOptions) (Skill, bool)
 	if !ok {
 		return Skill{}, false
 	}
+	return b.skill(), true
+}
+
+// skill describes the bundle: its file names and sizes, never their bytes.
+func (b skillBundle) skill() Skill {
 	files := make([]string, 0, len(b.files))
 	sizes := make(map[string]int, len(b.files))
 	sync := false
@@ -244,27 +249,39 @@ func (s *Snapshot) SkillIn(proj, name string, opts ...ReadOptions) (Skill, bool)
 	}
 	slices.Sort(files)
 	return Skill{Name: b.name, Scope: b.scope, Files: files, Sizes: sizes,
-		Status: b.status, Description: b.description, RequiresSync: sync}, true
+		Status: b.status, Description: b.description, RequiresSync: sync}
 }
 
 // Skills returns the skills that answer in proj's view, sorted by name: one
 // per name, the bundle SkillIn returns. Drafts are left out unless opts asks
 // for them.
 func (s *Snapshot) Skills(proj string, opts ...ReadOptions) []Skill {
-	o := readOpts(opts)
+	bundles := s.skillBundles(proj, readOpts(opts))
+	out := make([]Skill, 0, len(bundles))
+	for _, b := range bundles {
+		out = append(out, b.skill())
+	}
+	return out
+}
+
+// skillBundles returns, sorted by name, the one bundle per name that answers
+// in proj's view: the bundle skillBundleFor returns. Each name is looked up
+// once, so a caller that needs more than the Skill listing (Search) does not
+// look every name up a second time.
+func (s *Snapshot) skillBundles(proj string, o ReadOptions) []skillBundle {
 	names := map[string]bool{}
 	for _, scope := range s.skillScopes(proj) {
 		for n := range scope {
 			names[n] = true
 		}
 	}
-	out := make([]Skill, 0, len(names))
+	out := make([]skillBundle, 0, len(names))
 	for n := range names {
-		if sk, ok := s.SkillIn(proj, n, o); ok {
-			out = append(out, sk)
+		if b, ok := s.skillBundleFor(proj, n, o); ok {
+			out = append(out, b)
 		}
 	}
-	slices.SortFunc(out, func(a, b Skill) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out, func(a, b skillBundle) int { return strings.Compare(a.name, b.name) })
 	return out
 }
 
