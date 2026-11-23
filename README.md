@@ -61,7 +61,8 @@ nothing of the page is shown.
 `project: <id>` to `.goldie/config.yaml` at the repository root (the nearest directory with a
 `.git`), then prints the Project and how it was found, the file it wrote, and whether the server
 has the Project registered (`yes`, `no` with a hint on how to register it, or `not checked` with the
-reason: no address, no token, or a rejected token). The check is one `GET /api/v1/projects` and
+reason: no address, no token, a rejected token, or a server that is unreachable, redirects, answers
+with an error status, or whose answer couldn't be read). The check is one `GET /api/v1/projects` and
 ignores case; without a token it sends no request. `init` takes no `--json`. It never overwrites an
 existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.yaml`, and refuses to
 run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
