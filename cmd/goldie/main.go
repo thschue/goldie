@@ -39,6 +39,10 @@ func exitCode(err error, w io.Writer) int {
 		return 2
 	}
 	_, _ = fmt.Fprintln(w, "goldie:", err)
+	if errors.Is(err, cli.ErrNoAddress) {
+		// A first run: nothing to ask, so say how to start something.
+		_, _ = fmt.Fprintln(w, platform.FirstRunHint)
+	}
 	return 1
 }
 

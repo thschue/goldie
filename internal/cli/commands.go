@@ -149,10 +149,6 @@ func (c *commander) status(ctx context.Context) error {
 	given := c.s.token != ""
 	cl, err := c.client(given)
 	if err != nil {
-		if c.s.addr == "" {
-			// First run: nothing to ask, so say how to start something.
-			return fmt.Errorf("%w\n%s", err, platform.FirstRunHint)
-		}
 		return err
 	}
 	probe := probeServer(ctx, cl, given)

@@ -92,6 +92,9 @@ func (c *commander) initProject(ctx context.Context) error {
 func (c *commander) registered(ctx context.Context, id string) (ok bool, why string) {
 	cl, err := c.client(true)
 	if err != nil {
+		if errors.Is(err, ErrNoAddress) {
+			return false, noAddressInit
+		}
 		return false, err.Error()
 	}
 	// A 401 is "token rejected"; contract.Answer reads every other answer, as
