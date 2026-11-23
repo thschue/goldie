@@ -91,7 +91,7 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 		s, err := contract.Answer(raw, err, contract.ParseGetSkillResponse,
 			func(r *contract.GetSkillResponse) *contract.Skill { return r.JSON200 })
 		if err != nil {
-			return wordError(missHint(err, skillMissHint, "List the skills with: goldie skills list, then use a name from its results."), c.local)
+			return wordError(contract.RewordMiss(err, skillMissHint, "List the skills with: goldie skills list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(s)
@@ -136,16 +136,6 @@ const (
 	emptyNextStep = "Check which Project this repository maps to with: goldie status\n"
 )
 
-// missHint rewords the server's plain-miss hint on a not_found; any other
-// error, and any other not_found hint, passes through unchanged.
-func missHint(err error, plain, reworded string) error {
-	var ae *contract.APIError
-	if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plain {
-		ae.Hint = reworded
-	}
-	return err
-}
-
 // writeSkill prints a skill's name and one line per file; each server text is
 // one cleaned line, so none can forge a line of its own.
 func writeSkill(b *strings.Builder, s contract.Skill) {
@@ -170,7 +160,7 @@ func (c *commander) agents(ctx context.Context, verb, name string) error {
 		a, err := contract.Answer(raw, err, contract.ParseGetAgentResponse,
 			func(r *contract.GetAgentResponse) *contract.Agent { return r.JSON200 })
 		if err != nil {
-			return wordError(missHint(err, agentMissHint, "List the agents with: goldie agents list, then use a name from its results."), c.local)
+			return wordError(contract.RewordMiss(err, agentMissHint, "List the agents with: goldie agents list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(a)
