@@ -87,4 +87,9 @@ function onKeydown(e: KeyboardEvent) {
   color: var(--brand-tint-ink);
   font-weight: 700;
 }
+/* The panels are empty until the later slices fill them; a minimum height
+   keeps the selected one a real region on the page, not a zero-size box. */
+[role='tabpanel'] {
+  min-height: var(--target-min);
+}
 </style>
