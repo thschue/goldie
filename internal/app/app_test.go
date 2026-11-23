@@ -268,9 +268,17 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 			}
 			path = concrete
 		}
-		resp, _ := do(t, method, srv.URL+path, bearer(testToken))
-		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
-			t.Errorf("%s answers %d at %s: the operation is in the spec but the router does not serve it", o, resp.StatusCode, path)
+		var status int
+		if method == http.MethodGet && streamsEvents(t, o) {
+			// An event stream never ends on its own: read its status only.
+			resp, _, _ := openStream(t, t.Context(), http.DefaultClient, srv.URL+path, bearer(testToken))
+			status = resp.StatusCode
+		} else {
+			resp, _ := do(t, method, srv.URL+path, bearer(testToken))
+			status = resp.StatusCode
+		}
+		if status == http.StatusNotFound || status == http.StatusMethodNotAllowed {
+			t.Errorf("%s answers %d at %s: the operation is in the spec but the router does not serve it", o, status, path)
 		}
 	}
 }
