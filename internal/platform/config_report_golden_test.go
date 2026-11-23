@@ -10,6 +10,10 @@ import (
 // type or the redaction of a Secret row (PC-06). #258 appends the git Source
 // settings and GOLDIE_POLL_INTERVAL after the existing rows, so the #207 bytes
 // stay a prefix of every line.
+// #398 registers GOLDIE_ACTIVITY_PEERS and GOLDIE_ACTIVITY_REORDER_WINDOW
+// after GOLDIE_MIN_CLIENT_VERSION, so every line gains them there (approved by
+// the loop: the registry contract requires it), and the last case pins them
+// as written.
 
 // reportTS matches the timestamp of a log line, the one part that varies.
 var reportTS = regexp.MustCompile(`"ts":"[^"]*",`)
@@ -23,7 +27,7 @@ func TestStartupReportGolden(t *testing.T) {
 		{
 			name: "defaults",
 			env:  nil,
-			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"1m"}` + "\n",
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_ACTIVITY_PEERS":"","GOLDIE_ACTIVITY_REORDER_WINDOW":"2s","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"1m"}` + "\n",
 		},
 		{
 			name: "every setting set",
@@ -41,12 +45,12 @@ func TestStartupReportGolden(t *testing.T) {
 				envGitAllowFileURL:     "true",
 				envPollInterval:        "90s",
 			},
-			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":"127.0.0.1:9000","GOLDIE_ADMIN_ADDR":"127.0.0.1:9001","GOLDIE_LOG_LEVEL":"debug","GOLDIE_DRAIN_SECONDS":7,"GOLDIE_SWAGGER_UI_ENABLED":false,"GOLDIE_CONTENT_DIR":"/srv/content","GOLDIE_API_TOKEN":"(redacted)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"5/m","GOLDIE_MIN_CLIENT_VERSION":"1.4.0-rc.2","GOLDIE_TELEMETRY_CLIENT_INFO":true,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":true,"GOLDIE_POLL_INTERVAL":"90s"}` + "\n",
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":"127.0.0.1:9000","GOLDIE_ADMIN_ADDR":"127.0.0.1:9001","GOLDIE_LOG_LEVEL":"debug","GOLDIE_DRAIN_SECONDS":7,"GOLDIE_SWAGGER_UI_ENABLED":false,"GOLDIE_CONTENT_DIR":"/srv/content","GOLDIE_API_TOKEN":"(redacted)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"5/m","GOLDIE_MIN_CLIENT_VERSION":"1.4.0-rc.2","GOLDIE_ACTIVITY_PEERS":"","GOLDIE_ACTIVITY_REORDER_WINDOW":"2s","GOLDIE_TELEMETRY_CLIENT_INFO":true,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":true,"GOLDIE_POLL_INTERVAL":"90s"}` + "\n",
 		},
 		{
 			name: "named tokens",
 			env:  map[string]string{EnvAPITokens: "ci:reader:golden-token-0123456789abcdef0123456789"},
-			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(redacted)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"1m"}` + "\n",
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(redacted)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_ACTIVITY_PEERS":"","GOLDIE_ACTIVITY_REORDER_WINDOW":"2s","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"1m"}` + "\n",
 		},
 		{
 			name: "git source",
@@ -56,7 +60,15 @@ func TestStartupReportGolden(t *testing.T) {
 				envGitToken:     "glpat-golden-token-0123456789",
 				envPollInterval: "10s",
 			},
-			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"https://git.example.com/org/content.git","GOLDIE_GIT_REF":"main","GOLDIE_GIT_TOKEN":"(redacted)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"10s"}` + "\n",
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_ACTIVITY_PEERS":"","GOLDIE_ACTIVITY_REORDER_WINDOW":"2s","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"https://git.example.com/org/content.git","GOLDIE_GIT_REF":"main","GOLDIE_GIT_TOKEN":"(redacted)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"10s"}` + "\n",
+		},
+		{
+			name: "activity peers",
+			env: map[string]string{
+				envActivityPeers:         "goldie-headless.goldie.svc",
+				envActivityReorderWindow: "1m0s",
+			},
+			want: `{"level":"info","msg":"config","component":"server","version":"` + Version + `","GOLDIE_ADDR":":8080","GOLDIE_ADMIN_ADDR":":8081","GOLDIE_LOG_LEVEL":"info","GOLDIE_DRAIN_SECONDS":25,"GOLDIE_SWAGGER_UI_ENABLED":true,"GOLDIE_CONTENT_DIR":"","GOLDIE_API_TOKEN":"(unset)","GOLDIE_API_TOKENS":"(unset)","GOLDIE_RATE_LIMIT":"20/s,burst=40","GOLDIE_MIN_CLIENT_VERSION":"","GOLDIE_ACTIVITY_PEERS":"goldie-headless.goldie.svc","GOLDIE_ACTIVITY_REORDER_WINDOW":"1m0s","GOLDIE_TELEMETRY_CLIENT_INFO":false,"GOLDIE_GIT_URL":"","GOLDIE_GIT_REF":"","GOLDIE_GIT_TOKEN":"(unset)","GOLDIE_GIT_SSH_KEY":"(unset)","GOLDIE_GIT_SSH_KNOWN_HOSTS":"(unset)","GOLDIE_GIT_CA_BUNDLE":"(unset)","GOLDIE_GIT_ALLOW_FILE_URL":false,"GOLDIE_POLL_INTERVAL":"1m"}` + "\n",
 		},
 	}
 	for _, c := range cases {
