@@ -108,15 +108,16 @@ func firstItem(lists ...[]Article) *Article {
 	return nil
 }
 
-// firstSkill returns the first bundle name in order, or "" for none.
+// firstSkill returns the directory name, as written, of the bundle with the
+// smallest lower-cased name, or "" for none.
 func firstSkill(skills map[string]skillBundle) string {
-	first := ""
-	for n := range skills {
-		if first == "" || n < first {
-			first = n
+	first, name := "", ""
+	for k, b := range skills {
+		if first == "" || k < first {
+			first, name = k, b.name
 		}
 	}
-	return first
+	return name
 }
 
 func unclaimed(a *Article, what string) error {

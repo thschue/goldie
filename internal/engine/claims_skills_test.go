@@ -21,3 +21,11 @@ func TestClaimsCoverSkillBundles(t *testing.T) {
 	claimLoad(t, engine.Claim{Global: true, Projects: []string{"github.com/other/*"}},
 		map[string]string{globalSkill: "# D\n", projSkill: "# D\n"})
 }
+
+// The error names the bundle's directory as written, not its lower-cased key.
+func TestClaimErrorNamesMixedCaseSkillDirectoryAsWritten(t *testing.T) {
+	claimLoadErr(t, engine.Claim{}, map[string]string{"global/skills/Foo/SKILL.md": "# F\n"}, "global/skills/Foo")
+	claimLoadErr(t, engine.Claim{Global: true, Projects: []string{claimAcmeGlob}},
+		map[string]string{"projects/github.com/other/x/skills/Foo/SKILL.md": "# F\n"},
+		"projects/github.com/other/x/skills/Foo")
+}
