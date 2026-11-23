@@ -8,11 +8,12 @@ import "errors"
 // Suppression's not_found, whose hint names the entry to remove, is untouched.
 const ArticleMissHint = "Search for the article, then use an id from its results."
 
-// SkillMissHint and AgentMissHint are the API's hints for a skill or agent
+// SkillMissHint, AgentMissHint and LoopMissHint are the API's hints for a skill, agent or loop
 // name that answers nothing in the view; the CLI rewords them the same way.
 const (
 	SkillMissHint = "List the skills, then use a name from the list."
 	AgentMissHint = "List the agents, then use a name from the list."
+	LoopMissHint  = "List the loops, then use a name from the list."
 )
 
 // RewordMiss sets the hint of a not_found APIError in err to reworded when it
