@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import GoldieMark from './GoldieMark.vue';
 import SideNav from './SideNav.vue';
 import ThemeToggle from './ThemeToggle.vue';
@@ -7,7 +8,10 @@ import ThemeToggle from './ThemeToggle.vue';
 // AppShell (handoff §3.1, §4, §7): the top bar, the side nav and main. From
 // 1024 px up the nav is inline; below, it is a modal drawer behind the menu
 // button: focus moves in and is trapped, the page behind is inert, and Esc, a
-// link or the scrim closes it and returns focus to the menu button.
+// link or the scrim closes it and returns focus to the menu button. A link is
+// a route change, so there focus moves to the new view's h1 instead (#473,
+// WCAG 2.4.3). Only a click on an in-app link does that: the initial load and
+// browser back or forward leave focus where it is.
 withDefaults(defineProps<{ role?: 'reader' | 'operator' }>(), { role: 'reader' });
 
 const open = ref(false);
@@ -15,6 +19,9 @@ const menuButton = ref<HTMLButtonElement>();
 const drawer = ref<HTMLElement>();
 const main = ref<HTMLElement>();
 let wide: MediaQueryList | undefined;
+const router = useRouter();
+let linkClicked = false;
+let removeAfterEach: (() => void) | undefined;
 
 const focusables = () => Array.from(drawer.value?.querySelectorAll<HTMLElement>('a[href], button') ?? []);
 
@@ -52,7 +59,39 @@ function onKeydown(e: KeyboardEvent) {
 
 // A link in the open drawer closes it once the router has taken the click.
 function onDrawerClick(e: MouseEvent) {
-  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer();
+  if (open.value && e.target instanceof Element && e.target.closest('a[href]')) void closeDrawer(!linkClicked);
+}
+
+// An unmodified click on an in-app link to another route marks the next route
+// change as one the user asked for. Captured, so it is set before the router
+// takes the click. A link to the current route, or one the browser follows
+// itself (protocol-relative, a target or download), is no route change and
+// leaves no mark behind to steal focus from a later one.
+function onShellClick(e: MouseEvent) {
+  const a = e.target instanceof Element ? e.target.closest('a[href^="/"]') : null;
+  const href = a?.getAttribute('href') ?? '';
+  linkClicked =
+    !!a &&
+    !href.startsWith('//') &&
+    !e.defaultPrevented &&
+    e.button === 0 &&
+    !(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) &&
+    !a.getAttribute('target') &&
+    !a.hasAttribute('download') &&
+    router.resolve(href).fullPath !== router.currentRoute.value.fullPath;
+}
+
+// Back and forward are not link clicks: drop a mark a modified click left.
+function onPopState() {
+  linkClicked = false;
+}
+
+async function focusHeading() {
+  await nextTick(); // the drawer has closed and main is no longer inert
+  const h1 = main.value?.querySelector('h1');
+  if (!h1) return;
+  h1.tabIndex = -1;
+  h1.focus();
 }
 
 // Growing past 1024 px puts the nav inline: close the drawer, keep focus.
@@ -68,16 +107,24 @@ onMounted(() => {
   document.addEventListener('keydown', onKeydown);
   wide = window.matchMedia('(min-width: 1024px)');
   wide.addEventListener('change', onWide);
+  window.addEventListener('popstate', onPopState);
+  removeAfterEach = router.afterEach(() => {
+    const requested = linkClicked;
+    linkClicked = false;
+    if (requested) void focusHeading();
+  });
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown);
   wide?.removeEventListener('change', onWide);
+  window.removeEventListener('popstate', onPopState);
+  removeAfterEach?.();
 });
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" @click.capture="onShellClick">
     <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
       <RouterLink to="/" class="brand"><GoldieMark /><span>goldie</span></RouterLink>

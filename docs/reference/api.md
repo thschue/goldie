@@ -295,8 +295,17 @@ minutes without use (each `GET` or `HEAD` extends it) and 7 days after
 sign-in at the latest, ends when the token is removed or given a new
 value, and authenticates `GET` and `HEAD` only; a bearer
 token beats it. This operation takes no bearer token, and a
-cross-origin request is refused with a 403. Sign-in is not rate
-limited. The response is `Cache-Control: no-store`.
+cross-origin request is refused with a 403. Failed sign-ins are
+capped per remote address: past the cap within a window, every
+sign-in from that address, a valid token included, is refused with a
+429 until the window ends. The key is the connection's remote
+address (an IPv6 address by its /64); `X-Forwarded-For` and similar
+headers are ignored, so clients behind a reverse proxy share one key
+and one lockout. The cap is per server process, and successful
+sign-ins do not count. The server tracks a bounded number of
+addresses; past it, new addresses share one count, so a flood of
+addresses can lock sign-in for addresses not yet tracked. The
+response is `Cache-Control: no-store`.
 
 Operation ID: `postSession`
 
@@ -305,6 +314,7 @@ Operation ID: `postSession`
 | `200` | The token is valid; the session cookie is in 'Set-Cookie'. | `application/json` (`Session`) |
 | `401` | The body holds no configured token. | `application/json` (`ErrorEnvelope`) |
 | `403` | The request came from another origin. | `application/json` (`ErrorEnvelope`) |
+| `429` | This remote address made too many failed sign-ins. The answer is the same for a valid and an invalid token. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/skills`

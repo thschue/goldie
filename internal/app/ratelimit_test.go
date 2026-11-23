@@ -437,8 +437,9 @@ func TestPublicHandlerAppliesTheTypedLimitAsIs(t *testing.T) {
 	}
 }
 
-// The spec declares the 429 on every /api/ operation: the error envelope and
-// an integer Retry-After header.
+// The spec declares the 429 on every rate-limited /api/ operation, sign-in
+// included (#489) and sign-out excepted: the error envelope and an integer
+// Retry-After header.
 func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 	doc, err := contracttest.Spec()
 	if err != nil {
@@ -457,14 +458,23 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 				continue
 			}
 			if path == "/api/v1/session" && (method == "post" || method == "delete") {
-				// Sign-in and sign-out take no bearer token and skip the rate limiter (ADR 0027).
+				// Sign-in and sign-out take no bearer token (ADR 0027).
 				if sec, ok := o["security"].([]any); !ok || len(sec) != 0 {
-					t.Errorf("%s %s: exempt from the rate limiter but not marked security: []", method, path)
+					t.Errorf("%s %s: takes no bearer token but is not marked security: []", method, path)
 				}
-				if _, has := o["responses"].(map[string]any)["429"]; has {
-					t.Errorf("%s %s: declares a 429 it never sends", method, path)
+				if method == "delete" {
+					// Sign-out skips the rate limiter.
+					if _, has := o["responses"].(map[string]any)["429"]; has {
+						t.Errorf("%s %s: declares a 429 it never sends", method, path)
+					}
+					continue
 				}
-				continue
+				// Sign-in is limited per host (#489): it declares the 429 like any other
+				// limited operation, checked below.
+				if _, has := o["responses"].(map[string]any)["429"]; !has {
+					t.Errorf("%s %s: sign-in is limited per host (#489) but declares no 429", method, path)
+					continue
+				}
 			}
 			n++
 			responses, _ := o["responses"].(map[string]any)
