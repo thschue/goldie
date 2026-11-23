@@ -30,10 +30,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Telemetry is the OpenTelemetry setup: server traces on the public listener,
-// a bridge that copies log records to OTLP and a metrics provider (Meter). It is configured by the
-// standard OTEL_* variables and is a no-op when none selects an exporter. All
-// methods are safe on a nil or disabled Telemetry.
+// Telemetry is the OpenTelemetry setup: server traces on the public listener, a bridge that
+// copies log records to OTLP and a metrics provider (Meter). It is configured by the standard
+// OTEL_* variables and is a no-op when none selects an exporter. All methods are safe on a nil or
+// disabled Telemetry.
 //
 // Only OTLP over http/protobuf is built in: it is the SDK default, needs no
 // separate gRPC exporter modules, and works through plain HTTP proxies.
@@ -196,18 +196,40 @@ func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanE
 		o(&cfg)
 	}
 	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
-	if cfg.metricReader != nil {
-		t.mp = newMeterProvider(res, cfg.metricReader)
-	}
-	if spans != nil {
-		t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
-			sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
-	}
-	if logs != nil {
-		t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
-			sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)))
-	}
+	withoutProcessResourceEnv(func() {
+		if cfg.metricReader != nil {
+			t.mp = newMeterProvider(res, cfg.metricReader)
+		}
+		if spans != nil {
+			t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
+				sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
+		}
+		if logs != nil {
+			t.lp = sdklog.NewLoggerProvider(sdklog.WithResource(res),
+				sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)))
+		}
+	})
 	return t
+}
+
+// resourceEnvMu serialises withoutProcessResourceEnv.
+var resourceEnvMu sync.Mutex
+
+// withoutProcessResourceEnv runs build with OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES
+// removed from the process environment, then restores them. Each SDK provider's WithResource
+// merges resource.Environment() into the resource it is given and offers no way to opt out, so
+// without this the process environment would add attributes the injected lookup never carried
+// (PC-04). It runs once at startup, before any request is served.
+func withoutProcessResourceEnv(build func()) {
+	resourceEnvMu.Lock()
+	defer resourceEnvMu.Unlock()
+	for _, name := range []string{envOTelService, envOTelResAttrs} {
+		if v, ok := os.LookupEnv(name); ok {
+			_ = os.Unsetenv(name)
+			defer os.Setenv(name, v) //nolint:errcheck // restoring a value that was just read
+		}
+	}
+	build()
 }
 
 // Signal selection and validation names (standard OpenTelemetry variables).
