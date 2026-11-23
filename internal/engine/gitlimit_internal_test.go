@@ -231,6 +231,10 @@ func TestGitMemoryPeakChild(t *testing.T) {
 // about 4 seconds; runChild takes the bound as a parameter so a test can use a short one.
 const memPeakChildBound = 2 * time.Minute
 
+// memPeakBound is the bound measurePeakInChild starts from; a test may raise it
+// to see the test's own deadline cut it short.
+var memPeakBound = memPeakChildBound
+
 const memHangChildEnv = "GOLDIE_TEST_GIT_MEMORY_HANG_CHILD"
 
 // TestGitMemoryHangChild is the hanging child TestGitMemoryChildDeadline starts.
@@ -269,19 +273,30 @@ func runChild(test, env string, bound time.Duration) (out []byte, pid int, err e
 		return nil, 0, err
 	}
 	pid = cmd.Process.Pid
-	err = cmd.Wait()
-	if ctx.Err() != nil {
-		return buf.Bytes(), pid, fmt.Errorf("the child %s hit its %v deadline and was killed: %w", test, bound, ctx.Err())
-	}
-	return buf.Bytes(), pid, err
+	waitErr := cmd.Wait() // before buf is read: Wait ends the copying into it
+	return buf.Bytes(), pid, childResult(ctx, test, bound, waitErr)
 }
+
+// childResult turns the child's Wait result into runChild's error. The
+// deadline is reported only for a child that failed with the context done: one
+// that exited cleanly at the last instant succeeded, whatever the clock says.
+func childResult(ctx context.Context, test string, bound time.Duration, waitErr error) error {
+	if waitErr != nil && ctx.Err() != nil {
+		return fmt.Errorf("the child %s hit its %v deadline and was killed: %w", test, bound, ctx.Err())
+	}
+	return waitErr
+}
+
+// runChildFn is the seam measurePeakInChild runs the child through, so
+// the bound test can observe what it passes.
+var runChildFn = runChild
 
 // measurePeakInChild runs TestGitMemoryPeakChild in a new process and returns
 // what it measured. A child that fails, crashes, hangs past its deadline or
 // prints nothing parseable fails the test.
 func measurePeakInChild(t *testing.T) (peak int64, samples int) {
 	t.Helper()
-	out, _, err := runChild("TestGitMemoryPeakChild", memPeakChildEnv, childBound(t, memPeakChildBound))
+	out, _, err := runChildFn("TestGitMemoryPeakChild", memPeakChildEnv, childBound(t, memPeakBound))
 	if err != nil {
 		t.Fatalf("the measuring child failed: %v\n%s", err, out)
 	}
@@ -316,8 +331,73 @@ func TestGitMemoryChildDeadline(t *testing.T) {
 	if pid <= 0 {
 		t.Fatalf("pid = %d", pid)
 	}
+	// The elapsed-time check above is the main evidence the child was killed
+	// at the deadline. This liveness probe is a second look: a pid reused by
+	// another process could in theory fail it spuriously, which is rare enough
+	// that it is not worth more machinery.
 	if p, _ := os.FindProcess(pid); p != nil && p.Signal(syscall.Signal(0)) == nil {
 		t.Fatalf("child %d is still running after the deadline", pid)
+	}
+}
+
+// TestGitMemoryChildResult pins which Wait results runChild reports as a
+// deadline: only a failure with the context done. A clean exit at an expired
+// deadline is a success; a failure with a live context keeps its own error.
+func TestGitMemoryChildResult(t *testing.T) {
+	expired, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-expired.Done()
+	live := context.Background()
+	boom := errors.New("exit status 1")
+
+	if err := childResult(expired, "X", time.Second, nil); err != nil {
+		t.Fatalf("a child that exited cleanly at the deadline failed: %v", err)
+	}
+	err := childResult(expired, "X", time.Second, boom)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "1s") {
+		t.Fatalf("err = %v, want a timeout naming the 1s deadline", err)
+	}
+	if err := childResult(live, "X", time.Second, boom); !errors.Is(err, boom) || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the child's own failure", err)
+	}
+	if err := childResult(live, "X", time.Second, nil); err != nil {
+		t.Fatalf("err = %v for a clean exit", err)
+	}
+}
+
+// TestGitMemoryPeakChildUsesBound checks measurePeakInChild starts the peak
+// child with childBound(t, memPeakBound). The bound is raised far above any
+// test deadline, so a child started with the bound uncut, or with a constant,
+// shows: with a test deadline the child's bound must be cut to it, and without
+// one it must be the bound itself.
+func TestGitMemoryPeakChildUsesBound(t *testing.T) {
+	const huge = 1000 * time.Hour
+	var gotTest, gotEnv string
+	var gotBound time.Duration
+	calls := 0
+	origFn, origBound := runChildFn, memPeakBound
+	runChildFn = func(test, env string, bound time.Duration) ([]byte, int, error) {
+		calls++
+		gotTest, gotEnv, gotBound = test, env, bound
+		return []byte(memPeakLine + "peak=7 samples=3\n"), 1, nil
+	}
+	memPeakBound = huge
+	defer func() { runChildFn, memPeakBound = origFn, origBound }()
+
+	before := time.Now() // the child's bound is measured no earlier than this
+	peak, samples := measurePeakInChild(t)
+	if calls != 1 || peak != 7 || samples != 3 {
+		t.Fatalf("calls = %d, peak = %d, samples = %d", calls, peak, samples)
+	}
+	if gotTest != "TestGitMemoryPeakChild" || gotEnv != memPeakChildEnv {
+		t.Fatalf("started %q with %q, want the peak child", gotTest, gotEnv)
+	}
+	if dl, ok := t.Deadline(); ok {
+		if max := dl.Sub(before); gotBound <= 0 || gotBound > max {
+			t.Fatalf("bound = %v, want it cut to the test's remaining time (at most %v)", gotBound, max)
+		}
+	} else if gotBound != huge {
+		t.Fatalf("bound = %v without a test deadline, want %v", gotBound, huge)
 	}
 }
 
