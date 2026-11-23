@@ -674,9 +674,10 @@ cmd_regen() {
 ts_generate() {
 	command -v npm >/dev/null 2>&1 ||
 		die "npm not found: ./run $1 needs Node. Install Node, or leave this to CI (the regen-ts-check job runs it)."
+	task=$1
 	shift
 	if [ ! -d web/node_modules/openapi-typescript ]; then
-		say "$1: npm ci --ignore-scripts in web/ (first run, this takes a while)"
+		say "$task: npm ci --ignore-scripts in web/ (first run, this takes a while)"
 		(cd web && npm ci --ignore-scripts) || die "npm ci failed in web/"
 	fi
 	tmp=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for openapi-typescript"

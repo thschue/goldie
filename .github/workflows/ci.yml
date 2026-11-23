@@ -150,6 +150,7 @@ jobs:
           TS_TYPES: ${{ needs.regen-ts-check.result }}
         run: |
           echo "check: $CHECK, govulncheck: $VULN, regen-ts-check: $TS_TYPES"
+          [ "$TS_TYPES" = success ] || echo "regen-ts-check failed: see that job's log; fix with ./run regen"
           [ "$CHECK" = success ] && [ "$VULN" = success ] && [ "$TS_TYPES" = success ]
 
   # Informational: whether the PR needs the maintainer (docs/agents/README.md#gates).

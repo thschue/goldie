@@ -100,3 +100,22 @@ func TestRunRegenStaysQuietAboutInstallingWhenDependenciesExist(t *testing.T) {
 		}
 	}
 }
+
+// The announcement names the task that runs, not the spec path.
+func TestRunRegenInstallLineNamesTheTask(t *testing.T) {
+	for _, task := range []string{"regen", "regen-ts-check"} {
+		t.Run(task, func(t *testing.T) {
+			out := regenInScratch(t, task, false)
+			want := "==> " + task + ": npm ci"
+			var found bool
+			for _, line := range strings.Split(out, "\n") {
+				if strings.HasPrefix(line, want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("no line starting with %q:\n%s", want, out)
+			}
+		})
+	}
+}
