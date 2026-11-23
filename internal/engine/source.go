@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // articlesDir is where a Source keeps its global articles, relative to its root.
