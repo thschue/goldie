@@ -185,7 +185,9 @@ func TokenName(ctx context.Context) (string, bool) {
 
 // TokenRole is the Role of the token that authenticated the request. A
 // Require guard sets it on every request it lets through; without one there
-// is no Role, and a caller checking for a Role must refuse.
+// is no Role, and a caller checking for a Role must refuse. A Role rule for a
+// whole operation goes in operatorPaths (internal/app/app.go); TokenRole is
+// for a rule on one parameter value, such as drafts=true.
 func TokenRole(ctx context.Context) (Role, bool) {
 	role, ok := ctx.Value(tokenRoleKey{}).(Role)
 	return role, ok

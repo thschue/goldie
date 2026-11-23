@@ -186,8 +186,8 @@ One article.
 | `id` | `string` | yes | The article id, its path under 'articles/' without '.md'. |
 | `keywords` | `array` | yes | The keywords from the article's frontmatter, lower case. |
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
-| `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Absent when none is set. It comes from a Source and is untrusted: clean it before printing it. |
-| `status` | `string` | no | The article's lifecycle when it is not published: 'deprecated' (still served; read 'replaced_by' instead when present) or 'draft' (only with 'drafts=true', for operators). Absent for a published article. Clients ignore values they do not know. |
+| `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
+| `status` | `ItemStatus` | no |  |
 
 ### `Error`
 
@@ -218,6 +218,13 @@ The body of every error response.
 |---|---|---|---|
 | `error` | `Error` | yes |  |
 
+### `ItemStatus`
+
+An Item's lifecycle when it is not published: `deprecated` (still
+served; read `replaced_by` instead when present) or `draft` (only with
+`drafts=true`, for operators). Absent for a published Item. Clients
+ignore values they do not know.
+
 ### `ProjectId`
 
 A Project: exactly three segments `host/org/repo` (ADR 0020). The host
@@ -244,10 +251,10 @@ One article that matched a search.
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
 | `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
 | `name` | `string` | yes | The display title from the frontmatter. |
-| `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Absent when none is set. It comes from a Source and is untrusted. |
+| `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
 | `score` | `integer` | yes | The relevance score; higher is better. |
-| `status` | `string` | no | The Item's lifecycle when it is not published: 'deprecated' (still served; prefer 'replaced_by' when present) or 'draft' (only with 'drafts=true', for operators). Absent for a published Item. Clients ignore values they do not know. |
+| `status` | `ItemStatus` | no |  |
 
 ### `SearchResults`
 

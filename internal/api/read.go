@@ -85,17 +85,26 @@ func readOptions(ctx context.Context, drafts *bool) (engine.ReadOptions, bool) {
 	return engine.ReadOptions{Drafts: true}, true
 }
 
+// wireStatus maps each engine status a client may see to its ItemStatus.
+// Published is not on the wire, and a status missing here is never sent.
+var wireStatus = map[string]contract.ItemStatus{
+	engine.StatusDeprecated: contract.ItemStatusDeprecated,
+	engine.StatusDraft:      contract.ItemStatusDraft,
+}
+
 // lifecycle is an Item's status and replaced_by as the contract sends them: a
-// published Item carries neither, so its answer stays what it was (ADR 0011),
-// and replaced_by is absent when it is not set.
-func lifecycle(status, replacedBy string) (*string, *string) {
-	if status == "" || status == engine.StatusPublished {
+// published Item, or one whose status has no wire value, carries neither, so
+// its answer stays what it was (ADR 0011), and replaced_by is absent when it
+// is not set.
+func lifecycle(status, replacedBy string) (*contract.ItemStatus, *string) {
+	s, ok := wireStatus[status]
+	if !ok {
 		return nil, nil
 	}
 	if replacedBy == "" {
-		return &status, nil
+		return &s, nil
 	}
-	return &status, &replacedBy
+	return &s, &replacedBy
 }
 
 // searchPattern is the pattern the generated router registers the search

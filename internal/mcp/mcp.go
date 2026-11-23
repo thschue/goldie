@@ -212,13 +212,23 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	if err != nil {
 		return failure(wordError(err, t.local))
 	}
-	notice := contract.DeprecationNotice(*a)
-	if notice != "" {
-		notice += "\n"
-	}
-	return success(notice + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
+	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
 		strings.TrimRight(contract.CleanText(a.Content), "\n")) + hintLine(a.Hint))
+}
+
+// deprecationLine is the notice get_article starts with for a deprecated
+// article, ending in a newline, or "". It says what goldie lookup prints on
+// stderr, from the cleaned replacement contract.Deprecation gives.
+func deprecationLine(a contract.Article) string {
+	ref, deprecated := contract.Deprecation(a)
+	switch {
+	case !deprecated:
+		return ""
+	case ref == "":
+		return "Warning: this article is deprecated.\n"
+	}
+	return "Warning: this article is deprecated. Use " + ref + " instead.\n"
 }
 
 func (t *tools) projects(ctx context.Context) *sdk.CallToolResult {

@@ -39,6 +39,24 @@ func (e ActivityEventKind) Valid() bool {
 	}
 }
 
+// Defines values for ItemStatus.
+const (
+	ItemStatusDeprecated ItemStatus = "deprecated"
+	ItemStatusDraft      ItemStatus = "draft"
+)
+
+// Valid indicates whether the value is a known member of the ItemStatus enum.
+func (e ItemStatus) Valid() bool {
+	switch e {
+	case ItemStatusDeprecated:
+		return true
+	case ItemStatusDraft:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActivityDropped The `data` of an SSE event of type `dropped`: this subscriber lost
 // events because it did not keep up. Clients ignore fields they do not
 // know.
@@ -134,22 +152,23 @@ type Article struct {
 	Name string `json:"name"`
 
 	// ReplacedBy The reference to the Item that replaces this article, as written
-	// in its frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is
-	// set. It comes from a Source and is untrusted: clean it before
-	// printing it.
+	// in its frontmatter, `<kind>:<name>` (ADR 0021). Present only when
+	// the article is not published (deprecated or draft) and names a
+	// replacement. It comes from a Source and is untrusted: clean it
+	// before printing it.
 	//
 	//
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
-	// Status The article's lifecycle when it is not published: `deprecated`
-	// (still served; read `replaced_by` instead when present) or `draft`
-	// (only with `drafts=true`, for operators). Absent for a published
-	// article. Clients ignore values they do not know.
+	// Status An Item's lifecycle when it is not published: `deprecated` (still
+	// served; read `replaced_by` instead when present) or `draft` (only with
+	// `drafts=true`, for operators). Absent for a published Item. Clients
+	// ignore values they do not know.
 	//
 	//
 	// Examples: deprecated
-	Status *string `json:"status,omitempty"`
+	Status *ItemStatus `json:"status,omitempty"`
 }
 
 // Error One error. It never contains addresses, paths or stack traces.
@@ -184,6 +203,14 @@ type ErrorEnvelope struct {
 	// Error One error. It never contains addresses, paths or stack traces.
 	Error Error `json:"error"`
 }
+
+// ItemStatus An Item's lifecycle when it is not published: `deprecated` (still
+// served; read `replaced_by` instead when present) or `draft` (only with
+// `drafts=true`, for operators). Absent for a published Item. Clients
+// ignore values they do not know.
+//
+// Examples: deprecated
+type ItemStatus string
 
 // ProjectId A Project: exactly three segments `host/org/repo` (ADR 0020). The host
 // is a lower-case DNS name that starts with a letter or digit; the org and
@@ -231,8 +258,9 @@ type SearchHit struct {
 	Name string `json:"name"`
 
 	// ReplacedBy The reference to the Item that replaces this one, as written in its
-	// frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is set.
-	// It comes from a Source and is untrusted.
+	// frontmatter, `<kind>:<name>` (ADR 0021). Present only when the Item
+	// is not published (deprecated or draft) and names a replacement. It
+	// comes from a Source and is untrusted.
 	//
 	//
 	// Examples: article:platform/deploy-v2
@@ -248,14 +276,14 @@ type SearchHit struct {
 	// Examples: 6
 	Score int `json:"score"`
 
-	// Status The Item's lifecycle when it is not published: `deprecated` (still
-	// served; prefer `replaced_by` when present) or `draft` (only with
+	// Status An Item's lifecycle when it is not published: `deprecated` (still
+	// served; read `replaced_by` instead when present) or `draft` (only with
 	// `drafts=true`, for operators). Absent for a published Item. Clients
 	// ignore values they do not know.
 	//
 	//
 	// Examples: deprecated
-	Status *string `json:"status,omitempty"`
+	Status *ItemStatus `json:"status,omitempty"`
 }
 
 // SearchResults The result of a search.

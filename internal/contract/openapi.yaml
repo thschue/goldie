@@ -487,23 +487,32 @@ components:
             - - kubernetes
               - name
         status:
-          type: string
-          description: |
-            The Item's lifecycle when it is not published: `deprecated` (still
-            served; prefer `replaced_by` when present) or `draft` (only with
-            `drafts=true`, for operators). Absent for a published Item. Clients
-            ignore values they do not know.
-          examples:
-            - deprecated
+          $ref: "#/components/schemas/ItemStatus"
         replaced_by:
           x-lint-ignore: camel-case-properties
           type: string
           description: |
             The reference to the Item that replaces this one, as written in its
-            frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is set.
-            It comes from a Source and is untrusted.
+            frontmatter, `<kind>:<name>` (ADR 0021). Present only when the Item
+            is not published (deprecated or draft) and names a replacement. It
+            comes from a Source and is untrusted.
           examples:
             - article:platform/deploy-v2
+    ItemStatus:
+      type: string
+      description: |
+        An Item's lifecycle when it is not published: `deprecated` (still
+        served; read `replaced_by` instead when present) or `draft` (only with
+        `drafts=true`, for operators). Absent for a published Item. Clients
+        ignore values they do not know.
+      enum:
+        - deprecated
+        - draft
+      x-enum-varnames:
+        - ItemStatusDeprecated
+        - ItemStatusDraft
+      examples:
+        - deprecated
     Article:
       type: object
       description: One article.
@@ -545,22 +554,16 @@ components:
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
         status:
-          type: string
-          description: |
-            The article's lifecycle when it is not published: `deprecated`
-            (still served; read `replaced_by` instead when present) or `draft`
-            (only with `drafts=true`, for operators). Absent for a published
-            article. Clients ignore values they do not know.
-          examples:
-            - deprecated
+          $ref: "#/components/schemas/ItemStatus"
         replaced_by:
           x-lint-ignore: camel-case-properties
           type: string
           description: |
             The reference to the Item that replaces this article, as written
-            in its frontmatter, `<kind>:<name>` (ADR 0021). Absent when none is
-            set. It comes from a Source and is untrusted: clean it before
-            printing it.
+            in its frontmatter, `<kind>:<name>` (ADR 0021). Present only when
+            the article is not published (deprecated or draft) and names a
+            replacement. It comes from a Source and is untrusted: clean it
+            before printing it.
           examples:
             - article:platform/deploy-v2
     ActivityEvent:

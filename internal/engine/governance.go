@@ -225,8 +225,8 @@ func (s *Snapshot) checkEnforced() error {
 		if a.Scope == ScopeGlobal || !a.published() {
 			continue
 		}
-		if g := s.index[a.key()]; g != nil && g.Enforced && g.published() {
-			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(g))
+		if key := a.key(); s.enforces(key) {
+			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(s.index[key]))
 		}
 	}
 	return nil
