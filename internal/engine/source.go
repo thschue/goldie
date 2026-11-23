@@ -93,6 +93,15 @@ type Revisioner interface {
 
 var _ Source = DirSource{}
 
+// ErrContentDirUnreadable is the load error for a content directory that is
+// missing, not a directory or not readable. It never names the path. Callers
+// that print it to a person add ContentDirUnreadableHint; the server's startup
+// line stays as it is.
+var ErrContentDirUnreadable = errors.New("content directory is not readable")
+
+// ContentDirUnreadableHint is the next step for ErrContentDirUnreadable.
+const ContentDirUnreadableHint = "check that the path you passed exists and is a readable directory"
+
 // DirSource is a Source backed by a directory on disk.
 type DirSource struct {
 	root string
@@ -130,7 +139,7 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 	// directory cannot lead the walk out of it.
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
-		return nil, errors.New("content directory is not readable")
+		return nil, ErrContentDirUnreadable
 	}
 	defer func() { _ = root.Close() }()
 	return NewRootSource(root).Load(ctx)

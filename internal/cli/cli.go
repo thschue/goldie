@@ -261,7 +261,7 @@ func (f *ClientFlags) open(ctx context.Context, env Env, tm tokenMode) (*command
 	// The config.yaml directory arrives already open, through the repository root.
 	if dir != "" && content == nil {
 		if content, err = os.OpenRoot(dir); err != nil {
-			return nil, nil, errors.New("content does not load: content directory is not readable")
+			return nil, nil, errors.New("content does not load: " + unreadableContentDir)
 		}
 	}
 	var addr, token string
@@ -443,3 +443,8 @@ func (c *commander) client(withToken bool) (*contract.ClientWithResponses, error
 	}
 	return contract.NewAPIClient(c.s.addr, token, platform.Version, c.env.Client)
 }
+
+// unreadableContentDir is engine.ErrContentDirUnreadable and its hint. cli may
+// not import engine, so the wording is repeated here; the tests in cmd/goldie
+// hold both to the same text.
+const unreadableContentDir = "content directory is not readable: check that the path you passed exists and is a readable directory"
