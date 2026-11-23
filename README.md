@@ -88,7 +88,8 @@ goldie lookup platform/deploy
 the working directory) with a random token made for this run, and prints the line that points the
 client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
 API token variables, so the same shell can run it again. The token is printed only in that line,
-never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
+never logged. A directory with no content serves the example content built into the binary, and says
+so on stderr; a directory with content is served as it is. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
 [configuration reference](docs/reference/configuration.md#goldie-server--dev).
 
 ```sh
