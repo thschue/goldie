@@ -65,7 +65,7 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 }
 
 // serverMode is the server's goldie.mode; the client roles have their own
-// (ClientMode).
+// (ModeCLI, ModeMCP).
 const serverMode = "all"
 
 // modeResource is telemetryResource with goldie.mode set to mode.
@@ -248,13 +248,13 @@ var secretOTelNames = secretSet(TelemetrySettings)
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
 func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
-	return setupTelemetry(ctx, lookup, serverMode)
+	return setupTelemetry(ctx, lookup, serverMode, false)
 }
 
 // setupTelemetry is SetupTelemetry for the role whose goldie.mode is mode. A
-// client role (any mode but serverMode) reads and exports traces only.
-func setupTelemetry(ctx context.Context, lookup Lookup, mode string) (*Telemetry, error) {
-	server := mode == serverMode
+// client role (client true) reads and exports traces only.
+func setupTelemetry(ctx context.Context, lookup Lookup, mode string, client bool) (*Telemetry, error) {
+	server := !client
 	var errs []error
 	get := func(name string) string {
 		var v string
@@ -627,8 +627,7 @@ func (t *Telemetry) WrapLogger(l *slog.Logger, component string) *slog.Logger {
 	if !t.Enabled() {
 		return l
 	}
-	t.notice.install()
-	t.notice.attach(l)
+	t.RouteNoticesTo(l)
 	if t.lp == nil {
 		return l
 	}

@@ -82,7 +82,7 @@ func clientEnv(out io.Writer, mode string) (env cli.Env, flush func(), err error
 	if tel.Enabled() {
 		// The SDK's notices go to stderr: stdout carries the command's
 		// output, or for goldie mcp only MCP messages.
-		tel.WrapLogger(platform.NewLogger(os.Stderr, slog.LevelInfo, mode), mode)
+		tel.RouteNoticesTo(platform.NewLogger(os.Stderr, slog.LevelInfo, mode))
 		env.Client = &http.Client{Transport: tel.WrapTransport(http.DefaultTransport)}
 	}
 	return env, func() { flushTelemetry(tel, clientFlush) }, nil
