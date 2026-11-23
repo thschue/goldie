@@ -295,8 +295,12 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	total := time.Since(start)
 	transfer := sent().Sub(start)
 	unpack := total - transfer
-	if unpack < 200*time.Millisecond || unpack < 4*transfer {
-		t.Skipf("unpacking took %s after a %s transfer; the machine is too loaded or too fast to place a deadline inside unpacking", unpack, transfer)
+	if unpack < 200*time.Millisecond {
+		// Load only inflates the transfer, so this is fixture rot, not load.
+		t.Fatalf("fixture: unpacking took only %s; the pack no longer takes long to unpack", unpack)
+	}
+	if unpack < 4*transfer {
+		t.Skipf("unpacking took %s after a %s transfer; the machine is too loaded to place a deadline inside unpacking", unpack, transfer)
 	}
 
 	// The deadline falls a quarter of the way into unpacking. The timings of
@@ -304,9 +308,16 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	// deadline cannot show the property: it is run again, and the test skips
 	// when no run can. The property itself is asserted without a tight bound:
 	// the Load fails with the timeout error well before a full unpack (the
-	// slack is half the unpack time, at least 100ms) and not at its end.
+	// slack is a quarter of the unpack time, at least 500ms) and not at its end.
+	//
+	// A run counts only when the server finished writing the pack before the
+	// deadline. Under load the Load can instead fail while fetching, before
+	// any pack arrives, with an error that is not the timeout error ("fetch
+	// failed"): the server has not finished writing, so that run is a miss and
+	// is retried, then skipped. Once the pack arrived in time, any error but
+	// the exact timeout error, and a nil error, fail the test.
 	deadline := (transfer + unpack/4).Round(time.Millisecond)
-	limit := deadline + unpack/2
+	limit := deadline + max(unpack/4, 500*time.Millisecond)
 	var err error
 	var elapsed time.Duration
 	placed := false
