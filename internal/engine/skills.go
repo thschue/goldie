@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
-	"strings"
 )
 
 // skillsDir is where a Source keeps its global skill bundles, relative to its
@@ -144,7 +143,7 @@ func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
 // loaded), is an error.
 func (s *Snapshot) SkillFile(proj, name, file string) ([]byte, error) {
 	b, ok := s.skillBundleFor(proj, name)
-	if !ok || strings.ContainsRune(file, 0) {
+	if !ok {
 		return nil, errNoSkillFile
 	}
 	raw, ok := b.files[file]

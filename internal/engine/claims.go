@@ -74,6 +74,9 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		if a := firstItem(snap.articles, snap.agents); a != nil {
 			return nil, unclaimed(a, "global Items")
 		}
+		if name := firstSkill(snap.skills); name != "" {
+			return nil, fmt.Errorf("%s/%s: the Source does not claim global Items", skillsDir, name)
+		}
 	}
 	for _, id := range snap.Projects() {
 		p, _ := snap.lookupProject(id)
@@ -82,6 +85,10 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		}
 		if a := firstItem(p.articles, p.agents); a != nil {
 			return nil, unclaimed(a, "Project "+p.scope)
+		}
+		if name := firstSkill(p.skills); name != "" {
+			return nil, fmt.Errorf("%s/%s/skills/%s: the Source does not claim Project %s",
+				projectsDir, p.scope, name, p.scope)
 		}
 		if len(p.suppressions) > 0 {
 			return nil, fmt.Errorf("%s/%s/%s: the Source does not claim Project %s",
@@ -99,6 +106,17 @@ func firstItem(lists ...[]Article) *Article {
 		}
 	}
 	return nil
+}
+
+// firstSkill returns the first bundle name in order, or "" for none.
+func firstSkill(skills map[string]skillBundle) string {
+	first := ""
+	for n := range skills {
+		if first == "" || n < first {
+			first = n
+		}
+	}
+	return first
 }
 
 func unclaimed(a *Article, what string) error {
