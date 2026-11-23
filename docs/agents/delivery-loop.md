@@ -75,7 +75,7 @@ reason), consults, test change requests, and harness feedback filed.
    - Send every blocking and every `fix: now` LOW finding to the **same implementer**
      (`SendMessage`; a fresh one after a restart), also when only `now` LOWs are left (a polish
      pass). Then go to step 3 with only the reviewers that had findings, on the new commits.
-   - At most **2** fix rounds. A blocking finding still open after that becomes
+   - At most **3** fix rounds. A blocking finding still open after that becomes
      `needs-info reason=round-cap` with the findings and a recommendation. LOWs found after a
      polish pass are dropped; `fix: follow-up` LOWs go into one `needs-triage` issue.
 5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
