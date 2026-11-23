@@ -64,7 +64,6 @@ func noArgs(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// helpTemplate is the help of a command: its usage, flags and examples.
 const helpTemplate = `{{.Long}}
 
 Usage:
@@ -126,8 +125,7 @@ func newRoot(out io.Writer) *cobra.Command {
 	return root
 }
 
-// dashedWord returns the first single-dash word of more than one letter, such
-// as -dev, which someone used for a long flag.
+// dashedWord returns the first single-dash multi-letter word, such as -dev.
 func dashedWord(args []string) string {
 	for _, a := range args {
 		if len(a) > 2 && a[0] == '-' && a[1] != '-' && !strings.ContainsAny(a, "= ") {
