@@ -486,6 +486,8 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | requires_sync | Contains scripts, so agents won't run it from text. Run `goldie pull` to install it. |
 | Reader nav note | Reader view: Activity and Sources are for operators and aren't shown. |
 | Empty state | Nothing to show yet. Content appears here as goldie's pages come online. (A neutral `role="status"` panel under the page's `h1`, on every §2.2 route whose screen isn't built yet; Home's `h1` is the *Home question*.) |
+| Not found | **Page not found** — There's no page at this address. Check the link, or start again from Home. — link: Go to Home (to `/`). The `h1` is the first line; no other chrome changes. |
+| Operators only | This page is for operators. (The 403 page a reader gets on Activity and Sources, §5.3.) |
 | Sign-in lead | The golden path for **`<org>`** — the same guidance your coding agents get. |
 | Token help | Exchanged once for a secure session. The token is never stored in your browser. |
 | Wrong token | That token wasn't accepted. Check it and try again, or ask your platform team for a new one. (A danger `Alert` with `role="alert"`, followed by the error envelope's `details.hint`, tied to the token field with `aria-describedby`.) |
@@ -539,7 +541,7 @@ Greeting: "Good morning / afternoon / evening, `<first name>`", taken from the G
 | A5 | 4.1.3 Status messages | The live feed must not be an `aria-live` region (it would chatter). | No live region on the feed. A polite `role="status"` announces only Miss-count changes, at most every 30 s, plus the partial-view banner when it appears. |
 | A6 | 1.4.1 Use of colour | The "Sources" nav dot is colour-only (it has an `aria-label`, but sighted users get only red). | Show a count: "Sources **1 failing**". |
 | A7 | 1.1.1 Non-text content | The live stream is `role="img"`; its label must stay meaningful as it changes. | Throttle label updates to every 10 s. The feed is the full text equivalent. |
-| A8 | 2.4.3 Focus order | Live updates must not move focus. | New rows insert above without stealing focus. The selection is kept by event id, not row index. |
+| A8 | 2.4.3 Focus order | Live updates must not move focus. | New rows insert above without stealing focus. The selection is kept by event id, not row index. Only user navigation moves focus: after a click on a nav, drawer or in-page link the new view's `h1` (`tabindex="-1"`) takes focus, with the ring only where §6.4's `:focus-visible` shows one. The initial load and browser back/forward leave focus at the page start. |
 | A9 | 1.4.10 Reflow | Stream and feed at 320 px. | Per §7: drop the Project column, scroll the feed inside its panel, never the page. |
 | A10 | 1.3.1 / 4.1.2 | The decision history must convey order and the current item, not only by colour. | `<ol>` with `aria-current="step"`. Each status is written out ("superseded · 2023-05-02"). |
 | A11 | 4.1.3 Status messages | The sampling chip changes under load. | `role="status"`, throttled to 1 per second; it never takes focus. |
