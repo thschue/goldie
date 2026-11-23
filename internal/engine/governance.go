@@ -29,6 +29,10 @@ func keyOf(kind, name string) itemKey {
 
 func (a Article) key() itemKey { return keyOf(KindArticle, a.ID) }
 
+// published reports whether the Item is served by default: every status but
+// draft. A deprecated Item is still served.
+func (a Article) published() bool { return a.Status != StatusDraft }
+
 // lifecycleMeta is the governance part of an Item's frontmatter. The fields are
 // nodes, not typed values, because yaml.v3 decodes yes, on and "true" into a
 // bool, and those must fail the load.
@@ -166,7 +170,7 @@ func (s *Snapshot) checkReplacements() error {
 			return fmt.Errorf("%s: replaced_by %s does not resolve to an Item this one can see", articleFile(a), quoteRef(a.ReplacedBy))
 		case target == a:
 			return fmt.Errorf("%s: replaced_by names the Item itself", articleFile(a))
-		case target.Status == StatusDraft:
+		case !target.published():
 			return fmt.Errorf("%s: replaced_by %s names a draft", articleFile(a), quoteRef(a.ReplacedBy))
 		}
 		next[a] = target
@@ -188,6 +192,22 @@ func (s *Snapshot) checkReplacements() error {
 		}
 		for _, a := range path {
 			state[a] = ends
+		}
+	}
+	return nil
+}
+
+// checkEnforced fails when a Project article shadows a published enforced
+// global Item (ADR 0021). A deprecated enforced Item still enforces; a draft
+// does not, and a draft Project copy is left out of Resolution (#353), so it
+// shadows nothing. Identity ignores case (ADR 0015).
+func (s *Snapshot) checkEnforced() error {
+	for _, a := range s.allArticles() {
+		if a.Scope == ScopeGlobal || !a.published() {
+			continue
+		}
+		if g := s.index[a.key()]; g != nil && g.Enforced && g.published() {
+			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(g))
 		}
 	}
 	return nil
