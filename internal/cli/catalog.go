@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -49,7 +50,7 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 		s, err := contract.Answer(raw, err, contract.ParseGetSkillResponse,
 			func(r *contract.GetSkillResponse) *contract.Skill { return r.JSON200 })
 		if err != nil {
-			return wordError(err, c.local)
+			return wordError(missHint(err, skillMissHint, "List the skills with: goldie skills list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(s)
@@ -71,7 +72,7 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 	}
 	var b strings.Builder
 	if len(l.Skills) == 0 {
-		b.WriteString("No skills.\n")
+		b.WriteString("No skills.\n" + emptyNextStep)
 	}
 	for _, s := range l.Skills {
 		writeSkill(&b, s)
@@ -81,6 +82,26 @@ func (c *commander) skills(ctx context.Context, verb, name string) error {
 	}
 	writeHint(&b, l.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
+	return err
+}
+
+// The server's plain-miss hints for an unknown skill or agent (api/items.go);
+// show words them with the CLI's list command, as lookup does for articles.
+const (
+	skillMissHint = "List the skills, then use a name from the list."
+	agentMissHint = "List the agents, then use a name from the list."
+	// emptyNextStep follows an empty list, which the server explains only for
+	// an unregistered Project.
+	emptyNextStep = "Check which Project this repository maps to with: goldie status\n"
+)
+
+// missHint rewords the server's plain-miss hint on a not_found; any other
+// error, and any other not_found hint, passes through unchanged.
+func missHint(err error, plain, reworded string) error {
+	var ae *contract.APIError
+	if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plain {
+		ae.Hint = reworded
+	}
 	return err
 }
 
@@ -108,7 +129,7 @@ func (c *commander) agents(ctx context.Context, verb, name string) error {
 		a, err := contract.Answer(raw, err, contract.ParseGetAgentResponse,
 			func(r *contract.GetAgentResponse) *contract.Agent { return r.JSON200 })
 		if err != nil {
-			return wordError(err, c.local)
+			return wordError(missHint(err, agentMissHint, "List the agents with: goldie agents list, then use a name from its results."), c.local)
 		}
 		if c.s.json {
 			return c.printJSON(a)
@@ -130,7 +151,7 @@ func (c *commander) agents(ctx context.Context, verb, name string) error {
 	}
 	var b strings.Builder
 	if len(l.Agents) == 0 {
-		b.WriteString("No agents.\n")
+		b.WriteString("No agents.\n" + emptyNextStep)
 	}
 	for _, a := range l.Agents {
 		fmt.Fprintf(&b, "%s  %s\n", contract.CleanLine(a.Name), contract.CleanLine(a.Description))
