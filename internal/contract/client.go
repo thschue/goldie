@@ -52,6 +52,16 @@ func CheckBaseURL(baseURL string) error {
 // gets requestTimeout unless httpc sets a Timeout. A baseURL CheckBaseURL
 // rejects is ErrBaseURL.
 func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, ClientHeaderPrefix+version, httpc)
+}
+
+// NewMCPAPIClient is NewAPIClient for goldie mcp: the header reads
+// goldie/<version> mcp (ClientViaMCP), so the server counts its requests as MCP.
+func NewMCPAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, ClientHeaderPrefix+version+" "+ClientViaMCP, httpc)
+}
+
+func newAPIClient(baseURL, token, clientValue string, httpc *http.Client) (*ClientWithResponses, error) {
 	if err := CheckBaseURL(baseURL); err != nil {
 		return nil, err
 	}
@@ -66,7 +76,7 @@ func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWi
 	hardened.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	opts := []ClientOption{WithHTTPClient(&hardened),
 		WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
-			r.Header.Set(ClientHeader, ClientHeaderPrefix+version)
+			r.Header.Set(ClientHeader, clientValue)
 			if token != "" {
 				r.Header.Set("Authorization", "Bearer "+token)
 			}

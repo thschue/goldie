@@ -127,6 +127,7 @@ other instruments: there are no HTTP server duration or runtime metrics.
 |---|---|---|---|
 | `goldie.searches` | `{request}` | `result`: `hit` or `miss` | Searches answered; a miss is a search with no results. |
 | `goldie.lookups` | `{request}` | `result`: `hit` or `miss` | Article lookups answered; a miss is an id that was not found. |
+| `goldie.skill.gets` | `{request}` | `name`: the skill; `scope`: `global` or `project`; `via`: `cli`, `mcp` or `other` | Skill gets that hit. A get that answers 404 is not counted, so a name a caller makes up never becomes a label. `via` is read from `X-Goldie-Client`: `goldie/<version>` is `cli`, `goldie/<version> mcp` (sent by `goldie mcp`) is `mcp`, anything else is `other`. |
 | `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |
 
 ## Client commands

@@ -12,10 +12,14 @@ import (
 
 // ClientHeader names the goldie client and its version on every request the
 // goldie CLI sends, as ClientHeaderPrefix followed by the version, such as
-// goldie/1.4.0. The server's minimum client version gate reads it.
+// goldie/1.4.0. The server's minimum client version gate reads it. goldie mcp
+// appends a space and ClientViaMCP (goldie/1.4.0 mcp), so the server can tell
+// its traffic from the CLI's; the version stays parseable and a value without
+// the token stays valid.
 const (
 	ClientHeader       = "X-Goldie-Client"
 	ClientHeaderPrefix = "goldie/"
+	ClientViaMCP       = "mcp"
 )
 
 // specYAML is the OpenAPI 3.1 document, the source of truth for the API.

@@ -194,6 +194,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("| Metric | Unit | Attributes | Meaning |\n|---|---|---|---|\n")
 	b.WriteString("| `goldie.searches` | `{request}` | `result`: `hit` or `miss` | Searches answered; a miss is a search with no results. |\n")
 	b.WriteString("| `goldie.lookups` | `{request}` | `result`: `hit` or `miss` | Article lookups answered; a miss is an id that was not found. |\n")
+	b.WriteString("| `goldie.skill.gets` | `{request}` | `name`: the skill; `scope`: `global` or `project`; `via`: `cli`, `mcp` or `other` | Skill gets that hit. A get that answers 404 is not counted, so a name a caller makes up never becomes a label. `via` is read from `X-Goldie-Client`: `goldie/<version>` is `cli`, `goldie/<version> mcp` (sent by `goldie mcp`) is `mcp`, anything else is `other`. |\n")
 	b.WriteString("| `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |\n")
 	b.WriteString("\n## Client commands\n\n")
 	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")

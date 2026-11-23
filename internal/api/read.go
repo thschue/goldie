@@ -128,16 +128,17 @@ var notReady = envelope("not_ready", "content is still loading",
 // parameters; these methods return the spec's response types. It carries no
 // auth: the caller wraps /api/ in RequireToken.
 type Server struct {
-	provider func() *engine.Snapshot
-	specJSON []byte
-	activity *Activity               // see RecordInto, nil records nothing
-	searches *platform.ResultCounter // see CountResults, nil counts nothing
-	lookups  *platform.ResultCounter
-	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
-	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
-	fedDown  downSet      // peers already logged as down
-	sync     SyncControl  // see WithSync, nil lists no Source
-	tokens   *Tokens      // see WithSessions, nil: no sign-in
+	provider  func() *engine.Snapshot
+	specJSON  []byte
+	activity  *Activity               // see RecordInto, nil records nothing
+	searches  *platform.ResultCounter // see CountResults, nil counts nothing
+	lookups   *platform.ResultCounter
+	skillGets *platform.SkillGetCounter // see CountSkillGets, nil counts nothing
+	fed       *Federation               // see FederateActivity, nil serves ?replicas=all as the local stream
+	fedOpen   atomic.Int32              // merged streams open, at most MaxFederatedSubscribers
+	fedDown   downSet                   // peers already logged as down
+	sync      SyncControl               // see WithSync, nil lists no Source
+	tokens    *Tokens                   // see WithSessions, nil: no sign-in
 
 	instructionVars engine.InstructionVars // see WithInstructionVars
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -23,6 +24,32 @@ func CountResults(searches, lookups *platform.ResultCounter) ServerOption {
 	return func(s *Server) { s.searches, s.lookups = searches, lookups }
 }
 
+// CountSkillGets makes the Server count every skill get that hits
+// (goldie.skill.gets). A nil counter counts nothing.
+func CountSkillGets(c *platform.SkillGetCounter) ServerOption {
+	return func(s *Server) { s.skillGets = c }
+}
+
+// skillScopeKey carries the skillScope GetSkill fills for record.
+type skillScopeKey struct{}
+
+// skillScope is the metric's scope value for the skill a get answered with:
+// global, or project for any other Scope, so a Project id is never a label
+// (PC-12).
+type skillScope struct{ scope string }
+
+func withSkillScope(ctx context.Context) (context.Context, *skillScope) {
+	got := &skillScope{}
+	return context.WithValue(ctx, skillScopeKey{}, got), got
+}
+
+// noteSkillScope tells record which Scope answered a get of a skill.
+func noteSkillScope(ctx context.Context, scope string) {
+	if got, ok := ctx.Value(skillScopeKey{}).(*skillScope); ok {
+		got.scope = platform.SkillScopeLabel(scope == engine.ScopeGlobal)
+	}
+}
+
 // record is the recording point: a strict middleware that records the
 // searches and lookups the operations answered. Only an answer the Snapshot
 // gave is recorded: a request a guard rejected (401, 426, 429) never reaches
@@ -31,7 +58,12 @@ func CountResults(searches, lookups *platform.ResultCounter) ServerOption {
 // goes to the Activity only, never to a log, a metric or a span.
 func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
+		ctx, got := withSkillScope(ctx)
 		resp, err := next(ctx, w, r, req)
+		if _, hit := resp.(contract.GetSkill200JSONResponse); hit {
+			get, _ := req.(contract.GetSkillRequestObject)
+			s.skillGets.Add(ctx, get.Name, got.scope, clientVia(r.Header.Values(contract.ClientHeader)))
+		}
 		if e, ok := recorded(req, resp); ok {
 			switch e.Kind {
 			case KindSearch:
@@ -52,7 +84,7 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 }
 
 // recorded is the Event for an answered search, lookup or get: its words, the
-// article id or the skill or agent name asked for, the project as sent
+// article id, or skill:<name> or agent:<name> for a get (ADR 0021), the project as sent
 // (record stores its spelling), and whether it is a Miss (a search with zero
 // results, or a lookup or get answering 404). Any other answer is not
 // recorded.
@@ -68,11 +100,11 @@ func recorded(req, resp any) (Event, bool) {
 	case contract.GetSkill200JSONResponse, contract.GetSkill404JSONResponse:
 		r, _ := req.(contract.GetSkillRequestObject)
 		_, miss := resp.(contract.GetSkill404JSONResponse)
-		return Event{Kind: KindGet, Query: r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
+		return Event{Kind: KindGet, Query: "skill:" + r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
 	case contract.GetAgent200JSONResponse, contract.GetAgent404JSONResponse:
 		r, _ := req.(contract.GetAgentRequestObject)
 		_, miss := resp.(contract.GetAgent404JSONResponse)
-		return Event{Kind: KindGet, Query: r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
+		return Event{Kind: KindGet, Query: "agent:" + r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
 	}
 	return Event{}, false
 }

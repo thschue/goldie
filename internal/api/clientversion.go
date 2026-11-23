@@ -50,15 +50,48 @@ func (g *ClientVersionGate) Require(next http.Handler) http.Handler {
 }
 
 // clientVersion reads the version from exactly one X-Goldie-Client value of
-// the form goldie/<semver>, where a leading v (a release tag's) is skipped.
+// the form goldie/<semver>, where a leading v (a release tag's) is skipped. A
+// trailing " mcp" (goldie/<semver> mcp, from goldie mcp) is not part of the version.
 func clientVersion(values []string) (platform.Semver, bool) {
-	if len(values) != 1 || len(values[0]) > maxClientHeader {
-		return platform.Semver{}, false
-	}
-	raw, ok := strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
+	raw, ok := goldieClient(values)
 	if !ok {
 		return platform.Semver{}, false
 	}
+	raw = strings.TrimSuffix(raw, " "+contract.ClientViaMCP)
 	v, err := platform.ParseSemver(strings.TrimPrefix(raw, "v"))
 	return v, err == nil
+}
+
+// Client kinds, the via attribute of goldie.skill.gets.
+const (
+	viaCLI   = "cli"
+	viaMCP   = "mcp"
+	viaOther = "other"
+)
+
+// clientVia is the kind of client the header names: viaMCP for
+// goldie/<version> mcp, viaCLI for goldie/<version>, and viaOther for anything
+// else (no header, several, an oversized or foreign one, any other token). The
+// version is not parsed, so a dev build counts too. It returns one of three
+// constants, never a value derived from the request (PC-12).
+func clientVia(values []string) string {
+	rest, ok := goldieClient(values)
+	switch {
+	case !ok:
+		return viaOther
+	case strings.HasSuffix(rest, " "+contract.ClientViaMCP) && !strings.ContainsRune(strings.TrimSuffix(rest, " "+contract.ClientViaMCP), ' '):
+		return viaMCP
+	case !strings.ContainsRune(rest, ' '):
+		return viaCLI
+	}
+	return viaOther
+}
+
+// goldieClient is what follows goldie/ in exactly one header value of at most
+// maxClientHeader bytes.
+func goldieClient(values []string) (string, bool) {
+	if len(values) != 1 || len(values[0]) > maxClientHeader {
+		return "", false
+	}
+	return strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
 }
