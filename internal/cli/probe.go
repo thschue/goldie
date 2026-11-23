@@ -11,9 +11,12 @@ import (
 type tokenState int
 
 const (
+	// tokenUnset: no probe ran. The zero value, so a serverProbe nobody filled
+	// in never reads as an answer.
+	tokenUnset tokenState = iota
 	// tokenUnchecked: the document answered, so the server is up, but it does
 	// not say whether the token is good for the rest of the API.
-	tokenUnchecked tokenState = iota
+	tokenUnchecked
 	// tokenMissing: the server wants a token and none was given.
 	tokenMissing
 	// tokenRejected: the server refused the token that was given.
@@ -52,10 +55,10 @@ func probeServer(ctx context.Context, cl *contract.ClientWithResponses, given bo
 	spec, err := contract.Answer(raw, err, contract.ParseGetOpenAPIJSONResponse,
 		func(r *contract.GetOpenAPIJSONResponse) *map[string]any { return r.JSON200 })
 	if err != nil {
-		return serverProbe{err: err}
+		return serverProbe{tokenState: tokenUnset, err: err}
 	}
 	info, _ := (*spec)["info"].(map[string]any)
 	title, _ := info["title"].(string)
 	apiVersion, _ := info["version"].(string)
-	return serverProbe{title: title, apiVersion: apiVersion}
+	return serverProbe{title: title, apiVersion: apiVersion, tokenState: tokenUnchecked}
 }
