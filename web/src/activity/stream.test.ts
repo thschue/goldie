@@ -1,0 +1,52 @@
+import { describe, expect, it } from 'vitest';
+import { add, maxRows, resultText } from './rows';
+import { split, type ActivityEvent } from './stream';
+
+const ev = (id: number, o: Partial<ActivityEvent> = {}): ActivityEvent => ({
+  id,
+  time: '2026-11-23T10:00:00Z',
+  kind: 'search',
+  query: `q${id}`,
+  project: '',
+  token: 'ci',
+  client_version: '',
+  trace_id: '',
+  miss: false,
+  replica: 'goldie-0',
+  late: false,
+  ...o,
+});
+
+describe('split', () => {
+  it('cuts whole frames and keeps the unfinished rest', () => {
+    const out = split(`data: ${JSON.stringify(ev(1))}\n\nevent: live\ndata: {}\n\ndata: {"id`);
+    expect(out.frames.map((f) => f.type)).toEqual(['event', 'live']);
+    expect(out.rest).toBe('data: {"id');
+  });
+
+  it('reads CRLF, a dropped frame, and ignores comments, unknown types and bad data', () => {
+    const out = split(': keep-alive\r\n\r\nevent: dropped\r\ndata: {"dropped":3}\r\n\r\nevent: other\r\ndata: {}\r\n\r\ndata: nope\r\n\r\n');
+    expect(out.frames).toEqual([{ type: 'dropped', count: 3 }]);
+  });
+
+  it('drops an event that is not an ActivityEvent', () => {
+    expect(split('data: {"id":"1"}\n\n').frames).toEqual([]);
+  });
+});
+
+describe('rows', () => {
+  it('puts the newest first and keeps the newest maxRows', () => {
+    const rows = add([], Array.from({ length: maxRows + 5 }, (_, i) => ev(i + 1)));
+    expect(rows).toHaveLength(maxRows);
+    expect(rows[0].id).toBe(maxRows + 5);
+    expect(add(rows, [ev(9999)])[0].id).toBe(9999);
+  });
+
+  it('words a miss by what was asked for', () => {
+    expect(resultText(ev(1))).toBe('Served');
+    expect(resultText(ev(1, { miss: true, kind: 'get', query: 'skill:x' }))).toMatch(/skill/);
+    expect(resultText(ev(1, { miss: true, kind: 'get', query: 'agent:x' }))).toMatch(/agent/);
+    expect(resultText(ev(1, { miss: true, kind: 'lookup', query: 'a/b' }))).toMatch(/article/);
+    expect(resultText(ev(1, { miss: true }))).not.toMatch(/skill|agent|article/);
+  });
+});
