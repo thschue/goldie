@@ -292,8 +292,8 @@ func TestBytesOutsideTheMarkersAreUntouched(t *testing.T) {
 
 	// Hostile bytes: a BOM, lone CR, NUL, invalid UTF-8, bidi and zero-width
 	// characters, trailing spaces, mixed endings, and no final newline.
-	prefix := []byte("\xef\xbb\xbf# t‮​ \r\n\rlone cr\x00 \xff\xfe bad\nmixed lf \r\n")
-	suffix := []byte("\r\n tail  \r\n\r\n\ttab\nno newline at end  ")
+	prefix := []byte("\xef\xbb\xbf# t\u202e\u200b \r\n\rlone cr\x00 \xff\xfe bad\nmixed lf \r\n")
+	suffix := []byte("\r\n tail  \r\n\r\n\ttab\nno newline at end \u2028")
 	file := bytes.Join([][]byte{prefix, block, suffix}, nil)
 
 	out, err := cli.ApplyBlock(file, content)
@@ -312,8 +312,8 @@ func TestBytesOutsideTheMarkersAreUntouched(t *testing.T) {
 func TestMarkerLookalikesAreText(t *testing.T) {
 	content := blockFixture(t, "content.md")
 	for name, file := range map[string]string{
-		"zero-width inside begin": "<!-- goldie:begin​ v1 digest=" + digestNew + " -->\nx\n",
-		"zero-width inside end":   "<!-- goldie:end​ -->\n",
+		"zero-width inside begin": "<!-- goldie:begin\u200b v1 digest=" + digestNew + " -->\nx\n",
+		"zero-width inside end":   "<!-- goldie:end\u200b -->\n",
 		"upper-case digest":       "<!-- goldie:begin v1 digest=sha256:" + strings.ToUpper(digestNew[7:]) + " -->\nx\n",
 		"leading text":            "x <!-- goldie:end -->\n",
 		"trailing text":           "<!-- goldie:end --> x\n",
