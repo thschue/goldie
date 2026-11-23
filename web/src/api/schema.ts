@@ -138,7 +138,9 @@ export interface paths {
         /**
          * List the agents
          * @description Returns the agents that answer in the Project's view, sorted by name,
-         *     one per name: the nearest Scope wins.
+         *     one per name: the nearest Scope wins. Each carries its `scope` and
+         *     `status`. A draft agent is listed only with `drafts=true` and the
+         *     operator role.
          */
         get: operations["listAgents"];
         put?: never;
@@ -675,6 +677,21 @@ export interface components {
              * @example Reviews code
              */
             description: string;
+            /**
+             * @description Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+             *     `host/org/repo` or `local`. Sent by `listAgents` only; `getAgent`
+             *     omits it, and a missing value means unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
+             * @description The agent's status: `published`, `draft` or `deprecated`. Sent by
+             *     `listAgents` only; `getAgent` omits it, and a missing value means
+             *     unknown. Draft agents are hidden unless `drafts=true` is asked for
+             *     with the operator role.
+             * @example draft
+             */
+            status?: string;
             /**
              * @description Present when the request named a Project that is not registered: the
              *     agent answer is the global one, and this says what to do next.

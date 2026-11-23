@@ -86,7 +86,9 @@ Operation ID: `getActivity`
 List the agents
 
 Returns the agents that answer in the Project's view, sorted by name,
-one per name: the nearest Scope wins.
+one per name: the nearest Scope wins. Each carries its `scope` and
+`status`. A draft agent is listed only with `drafts=true` and the
+operator role.
 
 Operation ID: `listAgents`
 
@@ -579,6 +581,8 @@ One agent definition.
 | `description` | `string` | yes | The frontmatter description. It comes from a Source and is untrusted. |
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the agent answer is the global one, and this says what to do next. |
 | `name` | `string` | yes | The agent's name, its file name without '.md'. |
+| `scope` | `string` | no | Where the winning copy lives, as 'SearchHit.scope' says it: 'global', 'host/org/repo' or 'local'. Sent by 'listAgents' only; 'getAgent' omits it, and a missing value means unknown. |
+| `status` | `string` | no | The agent's status: 'published', 'draft' or 'deprecated'. Sent by 'listAgents' only; 'getAgent' omits it, and a missing value means unknown. Draft agents are hidden unless 'drafts=true' is asked for with the operator role. |
 
 ### `AgentList`
 

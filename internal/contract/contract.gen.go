@@ -261,6 +261,23 @@ type Agent struct {
 	//
 	// Examples: reviewer
 	Name string `json:"name"`
+
+	// Scope Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+	// `host/org/repo` or `local`. Sent by `listAgents` only; `getAgent`
+	// omits it, and a missing value means unknown.
+	//
+	//
+	// Examples: global
+	Scope *string `json:"scope,omitempty"`
+
+	// Status The agent's status: `published`, `draft` or `deprecated`. Sent by
+	// `listAgents` only; `getAgent` omits it, and a missing value means
+	// unknown. Draft agents are hidden unless `drafts=true` is asked for
+	// with the operator role.
+	//
+	//
+	// Examples: draft
+	Status *string `json:"status,omitempty"`
 }
 
 // AgentList The agents that answer in a view.
@@ -1097,7 +1114,9 @@ type ClientInterface interface {
 	// ListAgents List the agents
 	//
 	// Returns the agents that answer in the Project's view, sorted by name,
-	// one per name: the nearest Scope wins.
+	// one per name: the nearest Scope wins. Each carries its `scope` and
+	// `status`. A draft agent is listed only with `drafts=true` and the
+	// operator role.
 	//
 	// Corresponds with GET /api/v1/agents (the `ListAgents` operationId).
 	ListAgents(ctx context.Context, params *ListAgentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1430,7 +1449,9 @@ func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, req
 // ListAgents List the agents
 //
 // Returns the agents that answer in the Project's view, sorted by name,
-// one per name: the nearest Scope wins.
+// one per name: the nearest Scope wins. Each carries its `scope` and
+// `status`. A draft agent is listed only with `drafts=true` and the
+// operator role.
 //
 // Corresponds with GET /api/v1/agents (the `ListAgents` operationId).
 func (c *Client) ListAgents(ctx context.Context, params *ListAgentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3005,7 +3026,9 @@ type ClientWithResponsesInterface interface {
 	// ListAgentsWithResponse List the agents
 	//
 	// Returns the agents that answer in the Project's view, sorted by name,
-	// one per name: the nearest Scope wins.
+	// one per name: the nearest Scope wins. Each carries its `scope` and
+	// `status`. A draft agent is listed only with `drafts=true` and the
+	// operator role.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5109,7 +5132,9 @@ func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, param
 // ListAgentsWithResponse List the agents
 //
 // Returns the agents that answer in the Project's view, sorted by name,
-// one per name: the nearest Scope wins.
+// one per name: the nearest Scope wins. Each carries its `scope` and
+// `status`. A draft agent is listed only with `drafts=true` and the
+// operator role.
 //
 // Returns a wrapper object for the known response body format(s).
 //
