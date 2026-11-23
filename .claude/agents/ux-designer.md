@@ -61,8 +61,8 @@ For a UI change:
 1. **Evidence:** the Playwright screenshots from CI at each breakpoint, light and dark, compared with
    `docs/design/screenshots/`. Missing evidence for a changed screen is blocking.
 2. **Handoff:** check layout, components, states, tokens, breakpoints and copy. A deviation is
-   blocking: either the code is fixed, or the PR changes the handoff, which the gate sends to the
-   maintainer.
+   blocking: either the code is fixed, or the PR changes the handoff, which you judge in this
+   review (a hard-to-reverse change also needs an ADR).
 3. **Accessibility** (`design:accessibility-review`):
    - zero axe violations;
    - a keyboard-only path with visible focus;

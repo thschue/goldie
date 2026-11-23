@@ -69,7 +69,7 @@ one. `scripts/frontier` ranks the claimable issues (never re-rank them) by prior
 `main`'s copy, so a PR can't loosen the gate that judges it.
 
 - **`gate:`** (hard, exit 1 or 2): agent guardrails and instructions; the knowledge served to
-  agents; the decision record; CI, release and Renovate config; architecture enforcement; the loop
+  agents; the decision record (`docs/adr/`, `CONTEXT.md`, `LICENSE`); CI, release and Renovate config; architecture enforcement; the loop
   tooling (`scripts/`) and its fixtures; a new direct dependency, web dependency or pinned tool; a
   `go.mod` directive or downgrade; a breaking contract change (ADR 0011).
 - **`review:`** (judgement): a change to `run`, and lines only added to `NOTICE`. A change is
@@ -80,6 +80,11 @@ one. `scripts/frontier` ranks the claimable issues (never re-rank them) by prior
   - can't be judged.
 
   The clean marker must say why each `review:` reason isn't significant (ADR 0013).
+
+The platform contract (`docs/platform-contract.md`) and the design record (`docs/design/`) are living
+specs that feature PRs keep current, so they are reviewed, not gated: the `architect` judges a
+contract change and the `ux-designer` a design change, with the code. A hard-to-reverse decision in
+either still needs an ADR, and an ADR is gated.
 
 ## Dependency brief
 
