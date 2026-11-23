@@ -627,3 +627,36 @@ func TestMCPReadmeStatesTheTrustModelOfPromptTextBesideTheQuotingRule(t *testing
 	}
 	t.Error("README.md no longer says prompt text is cleaned but not quoted")
 }
+
+// A failed prompts/list says the prompts could not be listed and to list them
+// again, not that a prompt could not be read (#568 review).
+func TestMCPFailedPromptListSaysListNotRead(t *testing.T) {
+	servers := map[string]func(*testing.T) string{
+		"unreachable API": mcpDeadAddr,
+		"429 with wait": func(t *testing.T) string {
+			return mcpStub(t, mcpEnvelope(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}, ""))
+		},
+		"429 without wait": func(t *testing.T) string { return mcpStub(t, mcpEnvelope(http.StatusTooManyRequests, nil, "")) },
+	}
+	for label, mk := range servers {
+		t.Run(label, func(t *testing.T) {
+			cs := session(t, mk(t), readerToken)
+			_, err := cs.ListPrompts(context.Background(), nil)
+			if err == nil {
+				t.Fatal("prompts/list: want an error")
+			}
+			m := strings.ToLower(protocolMessage(err))
+			if !strings.Contains(m, "could not be listed") || strings.Contains(m, "tool") || strings.Contains(m, "get the prompt") {
+				t.Errorf("the list error is worded for something else: %v", err)
+			}
+			if strings.Contains(m, "wait") && !strings.Contains(m, "list the prompts again") {
+				t.Errorf("the wait hint does not say to list the prompts again: %v", err)
+			}
+			for _, bad := range promptResourceLeaks {
+				if strings.Contains(err.Error(), bad) {
+					t.Errorf("the error leaks %q: %v", bad, err)
+				}
+			}
+		})
+	}
+}

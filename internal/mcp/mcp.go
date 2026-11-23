@@ -350,22 +350,23 @@ func wordError(err error, local bool) error { return wordErrorFor(err, local, su
 
 // surface is what the agent asked the server for: a tool call, a prompt or a
 // resource read. Its errors name it, so a failed prompt does not read as a tool.
-type surface struct{ noun, retry string }
+type surface struct{ failed, retry string }
 
 var (
 	surfaceTool     = surface{"", "call the tool again"}
-	surfacePrompt   = surface{"prompt", "get the prompt again"}
-	surfaceResource = surface{"resource", "read the resource again"}
+	surfacePrompt   = surface{"the prompt could not be read", "get the prompt again"}
+	surfacePrompts  = surface{"the prompts could not be listed", "list the prompts again"}
+	surfaceResource = surface{"the resource could not be read", "read the resource again"}
 )
 
 // wordErrorFor is wordError for one surface. A tool's wording is unchanged; a
 // prompt's or resource's names the prompt or resource and its retry step.
 func wordErrorFor(err error, local bool, s surface) error {
 	werr := wordErrorOf(err, local, s)
-	if s.noun == "" {
+	if s.failed == "" {
 		return werr
 	}
-	return errors.New("the " + s.noun + " could not be read: " + werr.Error())
+	return errors.New(s.failed + ": " + werr.Error())
 }
 
 func wordErrorOf(err error, local bool, s surface) error {
