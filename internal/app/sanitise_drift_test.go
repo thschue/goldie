@@ -120,14 +120,31 @@ func TestCLIAndMCPCleanArticleTextIdentically(t *testing.T) {
 				t.Fatalf("mcp get_article: tool error %q", mcpOut)
 			}
 			gotCLI, gotMCP := fields(cliOut), fields(mcpOut)
-			if !slices.Equal(gotCLI, gotMCP) {
+			if len(gotMCP) != 2 {
+				t.Fatalf("mcp name and content = %q, want two fields", gotMCP)
+			}
+			// get_article quotes every line of the content with "| " and
+			// breaks it at U+2028 and U+2029 (#557). Undo exactly that: every
+			// line break inside the content must carry the quote, and the
+			// CLI side gets the same break. Nothing else is normalised.
+			if n := strings.Count(gotMCP[1], "\n"); n != strings.Count(gotMCP[1], "\n| ") {
+				t.Errorf("mcp content has an unquoted line: %q", gotMCP[1])
+			}
+			gotMCP[1] = strings.ReplaceAll(gotMCP[1], "\n| ", "\n")
+			sepToNewline := strings.NewReplacer("\u2028", "\n", "\u2029", "\n")
+			wantMCP := []string{c.line, sepToNewline.Replace(c.text)}
+			wantCLI := slices.Clone(gotCLI)
+			if len(wantCLI) == 2 {
+				wantCLI[1] = sepToNewline.Replace(wantCLI[1])
+			}
+			if !slices.Equal(wantCLI, gotMCP) {
 				t.Errorf("cli and mcp drift:\ncli %q\nmcp %q", gotCLI, gotMCP)
 			}
 			if !slices.Equal(gotCLI, want) {
 				t.Errorf("cli name and content = %q, want %q", gotCLI, want)
 			}
-			if !slices.Equal(gotMCP, want) {
-				t.Errorf("mcp name and content = %q, want %q", gotMCP, want)
+			if !slices.Equal(gotMCP, wantMCP) {
+				t.Errorf("mcp name and content = %q, want %q", gotMCP, wantMCP)
 			}
 		})
 	}

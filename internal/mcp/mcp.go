@@ -38,13 +38,13 @@ const (
 )
 
 type searchInput struct {
-	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up, for example message queue"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 type articleInput struct {
-	ID      string `json:"id" jsonschema:"an article id from search_knowledge"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	ID      string `json:"id" jsonschema:"an article id from search_knowledge, for example rollout-guide"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 // noInput is the input of a tool that takes no arguments.
@@ -207,12 +207,19 @@ func (t *tools) search(ctx context.Context, q, project string) *sdk.CallToolResu
 	return success(b.String())
 }
 
+// plainMissHint is the server's hint for an id that is no article; the tool
+// words the next step with its own name.
+const (
+	plainMissHint   = "Search for the article, then use an id from its results."
+	searchFirstHint = "Search for the article with search_knowledge, then use an id from its results."
+)
+
 func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolResult {
 	// An empty or dot-only id would be cleaned out of the article path and
 	// reach another endpoint, so it is refused before any request.
 	if contract.CheckArticleID(id) != nil {
 		return failure(withHint("the article id is empty or made only of dots",
-			"Search for the article with search_knowledge, then use an id from its results."))
+			searchFirstHint))
 	}
 	proj, err := t.sessionProject(project)
 	if err != nil {
@@ -222,11 +229,17 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
+		// Only the plain miss is reworded: the agent has no search operation,
+		// and a Suppression's not_found keeps the hint naming its entry.
+		var ae *contract.APIError
+		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
+			ae.Hint = searchFirstHint
+		}
 		return failure(wordError(err, t.local))
 	}
-	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
+	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\nThe article (each line starts with \"| \"; drop that prefix to read it):\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
-		strings.TrimRight(contract.CleanText(a.Content), "\n")) + hintLine(a.Hint))
+		quote(strings.TrimRight(contract.CleanText(a.Content), "\n"))) + hintLine(a.Hint))
 }
 
 // deprecationLine is the notice get_article starts with for a deprecated
