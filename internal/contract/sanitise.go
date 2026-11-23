@@ -51,6 +51,20 @@ func CleanText(s string) string {
 	}, s)
 }
 
+// CleanList joins l for one line: each entry cleaned with CleanLine, so it
+// cannot forge extra fields or entries, joined with ", ". An empty list is
+// "(none)".
+func CleanList(l []string) string {
+	if len(l) == 0 {
+		return "(none)"
+	}
+	out := make([]string, len(l))
+	for i, s := range l {
+		out[i] = CleanLine(s)
+	}
+	return strings.Join(out, ", ")
+}
+
 // CleanLine is CleanText for a single-line field: newline, tab, U+2028 and
 // U+2029 become spaces, so server text cannot forge extra lines, fields or
 // entries.

@@ -164,6 +164,12 @@ func TestLocalModeUnreadableAnswerNamesTheEmbeddedServer(t *testing.T) {
 		t.Cleanup(srv.Close)
 		requireLocalUnreachable(t, localRun(t, srv.URL, "search", "x", "--dir", "/content"), srv.URL)
 	})
+	// From #311, bundled into #236: lookup reads its answer the same way.
+	t.Run("lookup", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(truncatedAnswer))
+		t.Cleanup(srv.Close)
+		requireLocalUnreachable(t, localRun(t, srv.URL, "lookup", "platform/deploy", "--dir", "/content"), srv.URL)
+	})
 	t.Run("status token probe", func(t *testing.T) {
 		srv := openAPIThen(t, truncatedAnswer)
 		requireLocalUnreachable(t, localRun(t, srv.URL, "status", "--dir", "/content"), srv.URL)

@@ -33,7 +33,9 @@ request and response at 10 seconds. Shutdown does not wait on these timeouts: it
 `goldie server -dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
 In this mode log records go to stderr, so only the export line goes to stdout. The server runs
 until it is stopped, so run it in the background or redirect stdout to a file and read the
-export line from there, for example `goldie server -dev examples/knowledge > dev.env &`.
+export line from there. The file holds the API token, so create it private, and in a subshell so
+your own umask stays as it is: `(umask 077; goldie server -dev examples/knowledge > dev.env &)`.
+The file is empty until the server prints its line, so run `. ./dev.env` once the server is up.
 Both listeners bind to 127.0.0.1 on ports the system picks, and the API takes one random
 token (32 bytes from the system's secure random source, in hex), made for this run. It prints
 `export GOLDIE_ADDR=http://127.0.0.1:<port> GOLDIE_TOKEN=<token>` once, to stdout, and the
