@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -110,6 +111,43 @@ func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenE
 	return e, time.Unix(i, 0), true
 }
 
+// CSRFHeader carries the CSRF token: the response of a sign-in and of a
+// session GET hands it out, and a cookie-authenticated unsafe request must
+// send it back.
+const CSRFHeader = "X-Goldie-CSRF"
+
+// csrf is the double-submit token of the session of e that began at issued
+// (Unix seconds): an HMAC under the session key over the token's name, its
+// digest and the sign-in time. It is the same for the life of the session,
+// across cookie re-issues, and for no other session, key or token value.
+func (s *Sessions) csrf(e tokenEntry, issued int64) string {
+	h := hmac.New(sha256.New, s.key)
+	_, _ = fmt.Fprintf(h, "goldie-csrf\n%s\n%x\n%d", e.name, e.digest, issued) // a hash.Hash never errors
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}
+
+// csrfOK reports whether r carries the CSRF token of the session of e.
+func (s *Sessions) csrfOK(r *http.Request, e tokenEntry, issued time.Time) bool {
+	return hmac.Equal([]byte(r.Header.Get(CSRFHeader)), []byte(s.csrf(e, issued.Unix())))
+}
+
+var crossOrigin = http.NewCrossOriginProtection()
+
+// crossSite reports a request whose Origin or Sec-Fetch-Site says another
+// site sent it. A request with neither header (a non-browser client) passes;
+// the CSRF token is what it needs. The Origin scheme is compared too when the
+// request came over TLS, which http.CrossOriginProtection leaves out.
+func crossSite(r *http.Request) bool {
+	if crossOrigin.Check(r) != nil {
+		return true
+	}
+	if o := r.Header.Get("Origin"); o != "" && r.TLS != nil {
+		u, err := url.Parse(o)
+		return err != nil || u.Scheme != "https"
+	}
+	return false
+}
+
 // plain reports a plain-http request to the dev server, where a browser would
 // drop a Secure or __Host- cookie. Any other server keeps both.
 func (s *Sessions) plain(r *http.Request) bool { return s.dev && r.TLS == nil }
@@ -147,10 +185,14 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 	if !ok {
 		return false // not a session: the usual 401
 	}
+	safe := r.Method == http.MethodGet || r.Method == http.MethodHead
 	switch {
-	case r.Method != http.MethodGet && r.Method != http.MethodHead:
-		WriteError(w, http.StatusForbidden, "forbidden", "a session cookie only authenticates GET and HEAD requests",
-			"Send the API token as a bearer token for this request.")
+	case !safe && crossSite(r):
+		WriteError(w, http.StatusForbidden, "forbidden", "cross-origin requests with a session cookie are refused",
+			"Send the request from the same origin.")
+	case !safe && !t.sessions.csrfOK(r, e, issued):
+		WriteError(w, http.StatusForbidden, "forbidden", "a session cookie needs a valid CSRF token for this request",
+			"Send the token from GET /api/v1/session in the "+CSRFHeader+" header, or send the API token as a bearer token.")
 	case e.role < minRole:
 		WriteError(w, http.StatusForbidden, "forbidden", "the API token's role does not allow this operation",
 			"Use a token with the operator role.")
@@ -159,6 +201,9 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 		w.Header().Add("Vary", "Cookie")
 		w.Header().Set("Cache-Control", "private, no-store")
 		t.sessions.setCookie(w, r, v, now, expires)
+		if r.URL.Path == SessionPath {
+			w.Header().Set(CSRFHeader, t.sessions.csrf(e, issued.Unix()))
+		}
 		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))
 	}
@@ -263,6 +308,7 @@ func (s *Server) sessionCookies(next contract.StrictHandlerFunc, op string) cont
 			e, _ := s.tokens.byName(resp.Name) // the entry the sign-in just matched
 			v, expires := s.tokens.sessions.value(e, now, now)
 			s.tokens.sessions.setCookie(w, r, v, now, expires)
+			w.Header().Set(CSRFHeader, s.tokens.sessions.csrf(e, now.Unix()))
 		case contract.DeleteSession204Response:
 			if s.tokens != nil && s.tokens.sessions != nil {
 				s.tokens.sessions.setCookie(w, r, "", now, time.Time{})
