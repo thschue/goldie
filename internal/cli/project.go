@@ -77,6 +77,13 @@ func workingProject(lookup platform.Lookup, flagValue string) (project.Detected,
 	if err != nil {
 		return project.Detected{}, errors.New("cannot read the working directory")
 	}
+	return projectIn(dir, lookup, flagValue)
+}
+
+// projectIn detects the Project of dir from flagValue, then GOLDIE_PROJECT
+// from lookup, then the checkout. goldie init uses it with the directory it
+// also finds the repository root from.
+func projectIn(dir string, lookup platform.Lookup, flagValue string) (project.Detected, error) {
 	envValue, _ := lookup(EnvProject)
 	return detectProject(dir, flagValue, envValue)
 }

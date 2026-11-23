@@ -50,11 +50,22 @@ against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, a
 `--addr`, or `GOLDIE_DIR` and `GOLDIE_ADDR` both set in the environment, is an error naming both.
 Content that does not load stops the command with `content does not load: <reason>`. When
 `search`, `lookup`, `status` or an `mcp` tool cannot reach the embedded server, the error says so and
-does not mention `--addr` or `GOLDIE_ADDR`. `version` ignores `--dir`.
+does not mention `--addr` or `GOLDIE_ADDR`. `version` and `init` ignore `--dir`: `init` checks
+registration only against a running server.
 
 A `200 OK` that is not a goldie API answer, such as a proxy's login page, is reported as "the
 server's answer isn't a goldie API answer; check the address", by the CLI and by `mcp` alike, and
 nothing of the page is shown.
+
+`goldie init [--project ID]` sets a repository up: it finds the Project as `status` does and writes
+`project: <id>` to `.goldie/config.yaml` at the repository root (the nearest directory with a
+`.git`), then prints the Project and how it was found, the file it wrote, and whether the server
+has the Project registered (`yes`, `no` with a hint on how to register it, or `not checked` with the
+reason: no address, no token, or a rejected token). The check is one `GET /api/v1/projects` and
+ignores case; without a token it sends no request. `init` takes no `--json`. It never overwrites an
+existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.yaml`, and refuses to
+run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
+root); a refusal writes nothing.
 
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
