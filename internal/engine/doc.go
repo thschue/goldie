@@ -9,7 +9,8 @@
 // Snapshot. It loads agents/<name>.md (global/agents/, a Project's agents/ and
 // .goldie/agents/) as Items of Kind agent, served by AgentIn and Agents and
 // kept apart from articles. It loads instructions/<name>.md the same way as
-// Items of Kind instruction, rendered by Snapshot.Instructions. Every Source shares one loader over an fs.FS: DirSource hands it
+// Items of Kind instruction, rendered by Snapshot.Instructions. Every Source
+// shares one loader over an fs.FS: DirSource hands it
 // the os.Root-confined directory, and a read-only fs.FS over a git tree lets a
 // commit load the same way without a working tree. That tree fs.FS never
 // follows a symlink, rejects entry names that could traverse and trees with
