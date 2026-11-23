@@ -60,13 +60,12 @@ var activityKeepalive = api.DefaultActivityKeepalive
 // builds the public listener with it, and the tests build the bare router
 // with it, so the route table they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	srv, err := api.NewServer(provider)
+	activity := api.NewActivity(activityCapacity, "", nil)
+	srv, err := api.NewServer(provider, api.RecordInto(activity))
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
-		activity: api.NewActivity(activityCapacity, "", nil)}
-	srv.RecordInto(m.activity)
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity}
 	srv.KeepStreamsAlive(activityKeepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
