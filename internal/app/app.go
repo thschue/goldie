@@ -42,6 +42,8 @@ type publicMux struct {
 	operatorPaths map[string]bool
 	// anonymous are the operations the spec marks `security: []`, as "METHOD /path".
 	anonymous map[string]bool
+	// signIn caps failed sign-ins per remote host (#489).
+	signIn *api.SignInLimiter
 	// sync serves the sync operations; newPublic binds it to the Source's
 	// Syncer.
 	sync   *syncControl
@@ -79,7 +81,7 @@ func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens,
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths, anonymous: anonymous, sync: ctl}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths, anonymous: anonymous, signIn: api.NewSignInLimiter(), sync: ctl}
 	srv.KeepStreamsAlive(keepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
@@ -117,6 +119,9 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 func (m *publicMux) guardOperation(method, path string, h http.Handler) http.Handler {
 	switch {
 	case m.anonymous[method+" "+path]:
+		if method == http.MethodPost && path == api.SessionPath {
+			h = m.signIn.Limit(h)
+		}
 		return api.SessionEntry(h)
 	case path == api.SessionPath:
 		return api.NoStore(m.guard(path, h))

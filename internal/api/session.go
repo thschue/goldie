@@ -209,9 +209,9 @@ func SessionEntry(next http.Handler) http.Handler {
 // which must have been through Tokens.WithSessions.
 func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.tokens = tokens } }
 
-// Sign-in and sign-out are deliberately unthrottled: sign-in is the same
-// constant-time compare of a high-entropy token as any bearer request, and
-// neither operation reaches the rate limiter or the version gate (ADR 0027).
+// Sign-in and sign-out take no token, so neither reaches the per-token rate
+// limiter or the version gate (ADR 0027); failed sign-ins are capped per
+// remote host by SignInLimiter.
 var (
 	unauthorizedSignIn = envelope("unauthorized", "missing or invalid API token",
 		"Send the API token in the body: {\"token\": \"<token>\"}.")

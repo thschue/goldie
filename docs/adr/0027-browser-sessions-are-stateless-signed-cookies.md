@@ -24,8 +24,8 @@ once.
 - The cookie authenticates `GET` and `HEAD` only. An unsafe method with only a cookie is refused
   (403), so a cookie cannot be used to change anything. A bearer token beats a cookie.
 - Sign-in and sign-out take no bearer token; a cross-origin request to them is refused. They are
-  deliberately unthrottled: sign-in is the same constant-time compare of a high-entropy token as any
-  bearer request, and neither reaches the rate limiter.
+  outside the per-token rate limiter, which needs a token name. Failed sign-ins are capped per
+  remote host instead (10 per minute, then 429 with Retry-After; #489).
 - A session ends after a short idle time, which each use extends, and at an absolute limit from
   sign-in.
 - The signing key is `GOLDIE_SESSION_KEY` (or its `_FILE` form). Without one, each process makes a

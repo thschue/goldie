@@ -615,8 +615,12 @@ paths:
         sign-in at the latest, ends when the token is removed or given a new
         value, and authenticates `GET` and `HEAD` only; a bearer
         token beats it. This operation takes no bearer token, and a
-        cross-origin request is refused with a 403. Sign-in is not rate
-        limited. The response is `Cache-Control: no-store`.
+        cross-origin request is refused with a 403. After 10 failed sign-ins
+        from one remote host within a minute, every sign-in from it, a valid
+        token included, is refused with a 429 until the minute ends. The host
+        is the connection's remote address (an IPv6 address by its /64);
+        `X-Forwarded-For` and similar headers are ignored. The limit is per
+        server process, and successful sign-ins do not count. The response is `Cache-Control: no-store`.
       requestBody:
         required: true
         description: The API token to sign in with.
@@ -644,6 +648,18 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
           description: The request came from another origin.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: |
+            This host made too many failed sign-ins. The answer is the same
+            for a valid and an invalid token. Wait the seconds in
+            `Retry-After`, then retry.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
           content:
             application/json:
               schema:
