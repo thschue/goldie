@@ -38,7 +38,7 @@ func addInstructionsResource(s *sdk.Server, t *tools) {
 // instructions reads the rendered block for the default Project through the
 // API and cleans it: it is derived from Source content.
 func (t *tools) instructions(ctx context.Context, s surface) (string, error) {
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", s)
 	if err != nil {
 		return "", err
 	}

@@ -2,7 +2,7 @@
 name: product
 description: Keep the delivery sessions fed with small, clear, valuable issues. Decide product calls the record allows, refine with architect and UX input, audit merged work, and keep the maintainer inbox. Never writes code.
 keywords: [product owner, refinement, triage, backlog, slicing, ready buffer, maintainer inbox, audit, metrics]
-interval: self-paced
+dynamic: true
 agents: [product-owner, architect, ux-designer, reviewer]
 skills: []
 stop: "The maintainer stops the loop."

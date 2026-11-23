@@ -14,7 +14,7 @@ func TestSearchTieBreakAndRepeats(t *testing.T) {
 		{ID: "alpha", Name: "Alpha", Keywords: []string{"sql"}},
 	}
 	// Indexed like newSnapshot does, but not sorted, which newSnapshot would.
-	snap := &Snapshot{articles: articles, index: indexArticles(articles)}
+	snap := &Snapshot{scopeItems: scopeItems{articles: articles, index: indexArticles(articles)}}
 	type hit struct {
 		id      string
 		score   int

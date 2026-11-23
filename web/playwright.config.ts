@@ -9,6 +9,15 @@ if (!baseURL) {
 }
 const out = process.env.UX_DIR ?? '../ux';
 
+// The signed-in session cookie the setup project saves. It lives with the
+// server's temporary files (./run ux sets GOLDIE_UX_STATE), never in the ux/
+// artifact.
+const state = process.env.GOLDIE_UX_STATE;
+if (!state) {
+  throw new Error('GOLDIE_UX_STATE is not set: run the specs with ./run ux, which keeps the session state in its own temporary directory');
+}
+export const statePath = state;
+
 export default defineConfig({
   testDir: './e2e',
   outputDir: `${out}/results`,
@@ -22,5 +31,8 @@ export default defineConfig({
     reducedMotion: 'reduce',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium' }],
+  projects: [
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    { name: 'chromium', testIgnore: /auth\.setup\.ts/, dependencies: ['setup'], use: { storageState: statePath } },
+  ],
 });
