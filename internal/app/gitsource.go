@@ -13,8 +13,7 @@ import (
 
 // minPollInterval is the floor newPublic applies to GOLDIE_POLL_INTERVAL, so a
 // Config built by hand never busy-loops. It is platform's floor, which only
-// the process tests' binary lowers; a variable so tests can shorten it, like
-// activityKeepalive.
+// the process tests' binary lowers; a variable so tests can shorten it.
 var minPollInterval = platform.PollIntervalFloor()
 
 // The readiness checks of the Sources (PC-02).

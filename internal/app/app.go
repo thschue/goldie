@@ -50,22 +50,7 @@ type publicMux struct {
 // in its Activity.
 const activityCapacity = 1000
 
-// activityKeepalive is how often a served activity stream with nothing to
-// send writes a keepalive comment. PublicHandler and Local pass it to
-// newPublic, and the router takes it as a parameter (newPublicMuxKeepalive).
-//
-// Deprecated: still a variable only because the #357 acceptance tests set it
-// (test_change_request on #366). Once they pass the keepalive to the
-// constructors, make it a const and delete newPublicMuxWith.
-var activityKeepalive = api.DefaultActivityKeepalive
-
-// newPublicMuxWith is newPublicMuxKeepalive with the activityKeepalive
-// default. It exists for the #357 tests; see activityKeepalive.
-func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	return newPublicMuxKeepalive(provider, tokens, limiter, gate, activityKeepalive)
-}
-
-// newPublicMuxWith returns the router with the spec's operations over the
+// newPublicMuxKeepalive returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
 // set, a minimum client version (nil for none) and a rate limiter, and
 // recording every search and lookup in a bounded Activity named after this
@@ -433,7 +418,7 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	return newPublic(cfg, tokens, src, logger, activityKeepalive)
+	return newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive)
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;
