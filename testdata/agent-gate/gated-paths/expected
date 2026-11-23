@@ -2,6 +2,6 @@ gate: CI or release configuration changed: .github/workflows/ci.yml, renovate.js
 gate: agent guardrail changed: .claude/commands/loop.md, .mcp.json, CLAUDE.md and 4 more
 gate: architecture enforcement changed: testdata/depguard/README
 gate: build or diff configuration changed: .gitattributes
-gate: decision record changed: docs/adr/0099-x.md
+gate: decision record changed: docs/adr/0099-x.md, docs/platform-contract.md
 gate: loop tooling changed: scripts/agent-gate, testdata/test-lock/README
 gate: unusual file name (quoted by git): "internal/\303\251.txt"

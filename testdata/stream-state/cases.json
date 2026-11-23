@@ -122,6 +122,46 @@
   "want": "red"
  },
  {
+  "name": "a cancelled run superseded by a later success is not red (#227)",
+  "pr": {
+   "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "labels": [],
+   "comments": [
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "01",
+     "body": "Claimed.\n\n<!-- goldie-loop:claim session=w1 -->"
+    },
+    {
+     "author": {
+      "login": "loop"
+     },
+     "createdAt": "05",
+     "body": "Review.\n\n<!-- goldie-loop:review sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reason=clean rounds=0 -->"
+    }
+   ],
+   "mergeStateStatus": "BLOCKED",
+   "autoMergeRequest": {
+    "enabledAt": "x"
+   },
+   "statusCheckRollup": [
+    {
+     "name": "lint-pr-title",
+     "conclusion": "CANCELLED",
+     "startedAt": "2026-11-22T20:30:00Z"
+    },
+    {
+     "name": "lint-pr-title",
+     "conclusion": "SUCCESS",
+     "startedAt": "2026-11-22T20:30:05Z"
+    }
+   ]
+  },
+  "want": "waiting"
+ },
+ {
   "name": "head moved past the clean marker with auto-merge armed (#195)",
   "pr": {
    "headRefOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

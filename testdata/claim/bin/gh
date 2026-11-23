@@ -1,11 +1,13 @@
 #!/bin/sh
 # A fake gh for the claim fixture (./run claim-fixture). It answers
-# `gh issue view` from $FAKE_GH_DIR/issue.json and records every write in
+# `gh issue view` from $FAKE_GH_DIR/issue.json, `gh pr list` with the PR
+# states in $FAKE_GH_DIR/prs (none when absent), and records every write in
 # $FAKE_GH_DIR/gh.log.
 set -eu
 printf '%s\n' "$*" >>"$FAKE_GH_DIR/gh.log"
 case "$1 $2" in
 "issue view") cat "$FAKE_GH_DIR/issue.json" ;;
+"pr list") cat "$FAKE_GH_DIR/prs" 2>/dev/null || : ;;
 "pr create") printf 'https://github.invalid/o/r/pull/7\n' ;;
 "pr comment" | "issue edit") ;;
 *) printf 'fake gh: unexpected call: %s\n' "$*" >&2; exit 1 ;;

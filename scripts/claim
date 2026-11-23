@@ -11,6 +11,7 @@
 # $GOLDIE_SESSION (default: the short node name), and sets `in-progress` and
 # the assignee.
 #
+# A branch left by a closed PR doesn't block a new claim (see below).
 # Prints "branch=<branch> pr=<number>" and exits 0 on a claim, 3 when the
 # issue isn't claimable or another session won, 2 on a usage or tool error
 # (an unreachable origin included: a failed push counts as lost only when the
@@ -55,9 +56,16 @@ branch="$type/issue-$n-$slug"
 
 git fetch -q origin main || die "cannot fetch origin main"
 heads=$(git ls-remote --heads origin) || die "cannot list the branches on origin"
-if printf '%s\n' "$heads" | grep -q "/issue-$n-"; then
-	lost "a branch for issue $n already exists"
-fi
+# A branch whose PRs are all closed is a released claim (a parked or
+# superseded draft): claim again on the next "-r<k>" branch. A branch with an
+# open PR, or with none yet (a claim in progress), holds the issue.
+existing=$(printf '%s\n' "$heads" | sed -n "s#^[0-9a-f]*[[:space:]]refs/heads/\(.*/issue-$n-.*\)#\1#p")
+for b in $existing; do
+	states=$(gh pr list --head "$b" --state all --json state --jq '[.[].state] | join(" ")') ||
+		die "cannot list the PRs of $b"
+	case " $states " in *" OPEN "* | "  ") lost "issue $n is held by $b" ;; esac
+done
+[ -z "$existing" ] || branch="$branch-r$(($(printf '%s\n' "$existing" | wc -l) + 1))"
 commit=$(git commit-tree "origin/main^{tree}" -p origin/main -m "chore: claim #$n ($session)") ||
 	die "cannot create the claim commit"
 if ! git push -q origin "$commit:refs/heads/$branch" 2>/dev/null; then

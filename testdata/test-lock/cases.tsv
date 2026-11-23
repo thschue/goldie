@@ -4,6 +4,7 @@
 # Rows of one case run in order; consecutive rows with the same <commit> form one
 # commit. "base" is on main, later commits on a branch; commits named *-author are
 # test-author commits. Contents are placeholders: only paths and lines matter.
+# A violation names the first locked line missing at the head.
 added-tests	base	a_test.go	assert a == 1
 added-tests	base	a.go	a = 0
 added-tests	1-author	a_test.go	assert a == 1\nassert a + 1 == 2
@@ -12,11 +13,11 @@ added-tests	2-impl	b_test.go	assert a > 0
 added-tests	2-impl	a_test.go	assert a == 1\nassert a + 1 == 2\nassert a != 0
 modified-base	base	a_test.go	setup\nassert a == 1
 modified-base	1-impl	a_test.go	setup\nassert a >= 0
-modified-base	want	locked: a_test.go changed by "1-impl"
+modified-base	want	locked: a_test.go: assert a == 1
 modified-acceptance	base	a_test.go	assert a == 1
 modified-acceptance	1-author	a_test.go	assert a == 1\nassert a + 1 == 2
 modified-acceptance	2-impl	a_test.go	assert a == 1\nassert a + 1 > 0
-modified-acceptance	want	locked: a_test.go changed by "2-impl"
+modified-acceptance	want	locked: a_test.go: assert a + 1 == 2
 approved-change	base	a_test.go	assert a == 1
 approved-change	1-author	a_test.go	assert a == 1\nassert a + 1 == 2
 approved-change	2-impl	a.go	a = 1
@@ -27,15 +28,18 @@ own-test-edit	2-impl	e_test.go	assert e == 1
 moved-test	base	a_test.go	assert a == 1\ncheck b == 2
 moved-test	1-impl	a_test.go	assert a == 1
 moved-test	1-impl	b_test.go	check b == 2
-moved-test	want	locked: a_test.go changed by "1-impl"
+moved-test	want	locked: a_test.go: check b == 2
 whitespace-only	base	testdata/data.txt	alpha\n  beta
 whitespace-only	1-impl	testdata/data.txt	alpha\n\tbeta
 testdata-modified	base	testdata/data.txt	alpha\nbeta
 testdata-modified	1-impl	testdata/data.txt	alpha\ngamma
-testdata-modified	want	locked: testdata/data.txt changed by "1-impl"
+testdata-modified	want	locked: testdata/data.txt: beta
 deleted-test-file	base	c_test.go	assert c == 1
 deleted-test-file	1-impl	c_test.go	-
-deleted-test-file	want	locked: c_test.go changed by "1-impl"
+deleted-test-file	want	locked: c_test.go: assert c == 1
+own-line-renamed	base	a_test.go	assert a == 1
+own-line-renamed	1-impl	a_test.go	assert a == 1\nstub GetStatus
+own-line-renamed	2-impl	a_test.go	assert a == 1\nstub GetSync
 author-touches-code	base	a.go	a = 0
 author-touches-code	1-author	a.go	a = 1
 author-touches-code	want	test-author commit "1-author" touches a non-test file: a.go

@@ -31,9 +31,12 @@ def answered($me):
            or ((.body | sub("\\s+$"; "") | split("\n") | last) | test("goldie-loop:") | not)));
 
 # failing: a PR with a failed check on its head (needs .statusCheckRollup).
+# Only the latest run of each check counts: a run cancelled because a later
+# one superseded it (marking a draft ready reruns lint-pr-title) is not red.
 def failing:
-  any(.statusCheckRollup[]?; (.conclusion // .state)
-    | IN("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"));
+  [.statusCheckRollup[]?] | group_by(.name // .context)
+  | any(.[]; max_by(.startedAt // "") | (.conclusion // .state)
+      | IN("FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"));
 
 # stream_state($me): what an open stream PR needs this tick (docs/agents/delivery-loop.md):
 #   parked    held for the maintainer or waiting on an answer: nothing to do

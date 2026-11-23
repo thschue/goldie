@@ -54,20 +54,23 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 
 # tool <package>@<version>: print the path of the pinned tool's binary,
-# installing it first. Each version gets its own directory under .tools/
-# (or $GOLDIE_TOOLS), so a bump never runs a stale binary. The tools' module
+# installing it first. Each version gets its own directory under .tools/ of
+# the main checkout, shared by its worktrees (or $GOLDIE_TOOLS), so a bump
+# never runs a stale binary. The tools' module
 # downloads go to .tools/mod rather than the shared module cache, so one CI
 # cache of .tools holds the binaries and every module they are built from;
 # after a bump only the changed modules are downloaded. -modcacherw keeps
-# that directory removable with rm -rf.
+# that directory removable with rm -rf. A failed install exits 2, so a caller
+# can tell "could not run" from the tool's own verdict.
 tool() {
 	pkg=${1%@*}
 	ver=${1##*@}
-	tools="${GOLDIE_TOOLS:-$ROOT/.tools}"
+	common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=$ROOT/.git
+	tools="${GOLDIE_TOOLS:-$(dirname "$common")/.tools}"
 	dir="$tools/${pkg##*/}-$ver"
 	if [ ! -x "$dir/${pkg##*/}" ]; then
 		GOBIN="$dir" GOMODCACHE="$tools/mod" GOFLAGS="${GOFLAGS:+$GOFLAGS }-modcacherw" \
-			go install "$1" >&2 || die "cannot install $1"
+			go install "$1" >&2 || { printf 'run: cannot install %s\n' "$1" >&2; exit 2; }
 	fi
 	printf '%s\n' "$dir/${pkg##*/}"
 }
@@ -291,7 +294,8 @@ cmd_stream_state_fixture() {
 # with a fake gh (testdata/claim/bin): exactly one must win, with an area
 # prefix ("mcp: …") turned into the PR title's scope; a later claim and an
 # unclaimable issue must be refused with exit 3, and an unreachable origin
-# with exit 2, never as a lost race.
+# with exit 2, never as a lost race; once the PR is closed, the issue is
+# claimed again on the -r2 branch.
 cmd_claim_fixture() {
 	say "claim fixture (the first branch push wins)"
 	work=$(mktemp -d) || die "cannot create a temporary directory"
@@ -325,6 +329,10 @@ cmd_claim_fixture() {
 		cp "$ROOT/testdata/claim/in-progress.json" issue.json
 		s=0; claim b || s=$?
 		[ "$s" = 3 ] || die "a claim of an in-progress issue: want exit 3, got $s"
+		cp "$ROOT/testdata/claim/ready.json" issue.json && echo CLOSED >prs
+		s=0; claim b || s=$?
+		[ "$s" = 0 ] && git --git-dir=origin.git rev-parse -q --verify refs/heads/feat/issue-42-project-aware-search-r2 >/dev/null ||
+			die "a claim after a closed PR: want exit 0 on the -r2 branch, got $s"
 	) || { rm -rf "$work"; exit 1; }
 	rm -rf "$work"
 }
@@ -343,13 +351,16 @@ cmd_harness_budget() {
 }
 
 # size [base]: changed lines against the merge base with <base> (default
-# origin/main), not counting tests, testdata, generated code and go.sum.
+# origin/main), not counting tests (Go and web/e2e), testdata, generated code,
+# lockfiles, fonts and attributions.
 # About 400 is the budget; over 600 fails, and the PR is sliced.
 cmd_size() {
 	base=${1:-origin/main}
 	mb=$(git merge-base "$base" HEAD) || die "no merge base with $base"
 	n=$(git diff --numstat --no-renames "$mb" -- . ':(exclude)*_test.go' ':(exclude)testdata' \
 		':(exclude)**/testdata/**' ':(exclude)go.sum' ":(exclude)$CONTRACT_GEN" \
+		':(exclude)web/e2e' ':(exclude)*.spec.ts' ':(exclude)*package-lock.json' ':(exclude)*.woff2' \
+		':(exclude)NOTICE' ':(exclude)*VENDORED.md' \
 		":(exclude)$CONTRACT_DOCS" ":(exclude)$CONFIG_DOCS" | awk '$1 != "-" { s += $1 + $2 } END { print s + 0 }')
 	say "size: $n changed lines (budget about 400)"
 	[ "$n" -le 600 ] || die "size: $n changed lines is over 600; slice the change"
