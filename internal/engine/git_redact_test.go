@@ -12,7 +12,9 @@ import (
 
 // TestGitOptionsNeverPrintAQueryOrFragment formats and logs GitOptions whose
 // URL carries a token in its query string or fragment. NewGitSource refuses
-// such a URL, but the options can be logged before they are validated.
+// such a URL, but the options can be logged before they are validated. Since
+// #96 GitOptions never prints the URL at all, only whether it is set: the
+// host and path are gone too, and the Ref stays.
 func TestGitOptionsNeverPrintAQueryOrFragment(t *testing.T) {
 	const secret = "glpat-query0123456789"
 	for _, raw := range []string{
@@ -25,9 +27,9 @@ func TestGitOptionsNeverPrintAQueryOrFragment(t *testing.T) {
 		slog.New(slog.NewTextHandler(&logs, nil)).Info("source", "opts", opts)
 		slog.New(slog.NewJSONHandler(&logs, nil)).Info("source", "opts", opts)
 		for _, s := range []string{fmt.Sprintf("%v %+v %#v %s", opts, opts, opts, opts), logs.String()} {
-			assertNoSecret(t, s, secret)
-			if !strings.Contains(s, "git.example.invalid/r.git") || !strings.Contains(s, "main") {
-				t.Fatalf("redaction dropped the non-secret fields: %q", s)
+			assertNoSecret(t, s, secret, "git.example.invalid", "r.git")
+			if !strings.Contains(s, "main") {
+				t.Fatalf("redaction dropped the Ref: %q", s)
 			}
 		}
 	}
