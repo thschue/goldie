@@ -78,8 +78,9 @@ These fail the load, and the reason names `project.yaml`:
 - a `project.yaml` that is a symlink or a directory.
 
 A reference that names nothing the Project can see (a deleted article, a draft, or another Project's
-article) does not fail the load. The server reports it as a warning in its sync status, one per
-reference and file, and suppresses the article once it exists and is published.
+article) does not fail the load, and the article is suppressed once it exists and is published. The
+engine records a warning in its sync status, one per reference and file, but no API, CLI command or
+`goldie validate` shows it yet (#367).
 
 Only the file directly in a Project directory counts. A `project.yaml` directly under `projects/`,
 a host or an org directory is a layout error; one deeper inside a Project is ignored.

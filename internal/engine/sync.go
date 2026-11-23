@@ -12,7 +12,9 @@ import (
 // no paths, URLs or credentials, and is empty after a successful poll.
 // Warnings are the findings of the last successful load that did not fail it,
 // such as a suppress reference that names nothing. Each names a file relative
-// to the Source root, is printable ASCII, and redacts what the Source wrote.
+// to the Source root, is printable ASCII and at most 1 KiB. A warning is not
+// redacted: what the Source wrote (a well-formed reference) is escaped to
+// ASCII and cut, not stripped.
 type SyncStatus struct {
 	Revision    string
 	LastPoll    time.Time

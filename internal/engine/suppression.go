@@ -54,7 +54,7 @@ func readProjectFile(fsys fs.FS, dir string) ([]string, error) {
 	case !fi.Mode().IsRegular():
 		return nil, fmt.Errorf("%s: is not a regular file; project.yaml must be one", p)
 	}
-	raw, err := readLimited(fsys, p)
+	raw, err := readLimited(fsys, p, projectFileName)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}

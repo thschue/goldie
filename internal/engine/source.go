@@ -233,7 +233,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 		if !d.Type().IsRegular() || path.Ext(p) != ".md" {
 			return nil
 		}
-		raw, err := readLimited(fsys, p)
+		raw, err := readLimited(fsys, p, "article")
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
@@ -253,8 +253,9 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 	return articles, err
 }
 
-// readLimited reads at most maxArticleBytes of a file and fails if it is larger.
-func readLimited(fsys fs.FS, p string) ([]byte, error) {
+// readLimited reads at most maxArticleBytes of a file and fails if it is larger;
+// what names the file in that error, such as "article".
+func readLimited(fsys fs.FS, p, what string) ([]byte, error) {
 	f, err := fsys.Open(p)
 	if err != nil {
 		return nil, readErr(err)
@@ -265,7 +266,7 @@ func readLimited(fsys fs.FS, p string) ([]byte, error) {
 		return nil, readErr(err)
 	}
 	if len(raw) > maxArticleBytes {
-		return nil, fmt.Errorf("article is larger than %d bytes", maxArticleBytes)
+		return nil, fmt.Errorf("%s is larger than %d bytes", what, maxArticleBytes)
 	}
 	return raw, nil
 }
