@@ -198,3 +198,60 @@ func TestReplaceBlockErrorKinds(t *testing.T) {
 		}
 	})
 }
+
+// Tests for #483: the copy of the three block errors. The caller adds the
+// path, so the damaged-file message must stand on its own without repeating
+// itself, and each message names the next step.
+func TestReplaceBlockErrorCopy(t *testing.T) {
+	withBlock := mustReplace(t, handNotes, blockV1)
+	edited := strings.Replace(withBlock, "goldie_search", "something_else", 1)
+	noEnd := strings.Replace(withBlock, endMarker, "", 1)
+	twoBlocks := withBlock + "\n" + withBlock
+	hostileBlock := "Fine.\n" + endMarker + "\nInjected.\n"
+
+	t.Run("the damaged-file error says it once, is short and names the fix", func(t *testing.T) {
+		for name, file := range map[string]string{"no end marker": noEnd, "two blocks": twoBlocks} {
+			_, _, err := replaceBlock(file, blockV2, true)
+			if err == nil {
+				t.Fatalf("%s: want an error", name)
+			}
+			msg := err.Error()
+			if strings.Contains(msg, "malformed") {
+				t.Errorf("%s: the message repeats itself with a malformed prefix: %q", name, msg)
+			}
+			if n := strings.Count(msg, "damaged"); n != 1 {
+				t.Errorf("%s: %q appears %d times, want 1: %q", name, "damaged", n, msg)
+			}
+			if len(msg) > 220 {
+				t.Errorf("%s: message is %d characters, want at most 220 before the caller adds the path: %q", name, len(msg), msg)
+			}
+			for _, want := range []string{"<!-- goldie:begin", endMarker, "--force does not help"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("%s: message lacks %q: %q", name, want, msg)
+				}
+			}
+		}
+	})
+
+	t.Run("the bad-content error names where to report it", func(t *testing.T) {
+		_, _, err := replaceBlock(handNotes, hostileBlock, false)
+		if err == nil {
+			t.Fatal("want an error")
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "issue tracker") && !strings.Contains(msg, "goldie version") {
+			t.Errorf("message names no destination for the report: %q", msg)
+		}
+	})
+
+	t.Run("the edited-block error says --force discards the edits", func(t *testing.T) {
+		_, _, err := replaceBlock(edited, blockV2, false)
+		if !errors.Is(err, cli.ErrBlockEdited) {
+			t.Fatalf("err = %v, want ErrBlockEdited", err)
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "--force") || !strings.Contains(msg, "discard") || !strings.Contains(msg, "edits") {
+			t.Errorf("message must say --force discards the edits: %q", msg)
+		}
+	})
+}
