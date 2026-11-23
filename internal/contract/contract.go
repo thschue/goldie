@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // ClientHeader names the goldie client and its version on every request the
