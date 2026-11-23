@@ -82,7 +82,12 @@ suppress:
 The suppressed articles are left out of that Project's search and lookup, drafts included. Other
 Projects and the global view still see them. A reference is the same `<kind>:<name>` as
 `replaced_by`, compared ignoring case, and it resolves in the Project's view: its own published
-articles, then published global ones.
+articles, then published global ones. A draft project copy neither shadows the global article nor
+stops its suppression.
+
+The Project's own articles see the same view: a lookup line or a `replaced_by` in one of them that
+names a suppressed article fails the load, and the error names the article and `project.yaml`. A
+global article, and another Project's, still resolve it.
 
 These fail the load, and the reason names `project.yaml`:
 
@@ -91,12 +96,13 @@ These fail the load, and the reason names `project.yaml`:
 - a malformed reference, or an entry that is not a string;
 - a `suppress` that is not a list, more than 1000 entries, or a file larger than 1 MiB;
 - an unknown key (such as `supress:`), a duplicate key, more than one YAML document, or invalid YAML;
-- a `project.yaml` that is a symlink or a directory.
+- a `project.yaml` that is a symlink, a directory, or anything else but a regular file, such as a
+  FIFO.
 
 A reference that names nothing the Project can see (a deleted article, a draft, or another Project's
 article) does not fail the load, and the article is suppressed once it exists and is published. The
 engine records a warning in its sync status, one per reference and file, but no API, CLI command or
-`goldie validate` shows it yet (#367).
+`goldie validate` shows it yet (#274).
 
 Only the file directly in a Project directory counts. A `project.yaml` directly under `projects/`,
 a host or an org directory is a layout error; one deeper inside a Project is ignored.

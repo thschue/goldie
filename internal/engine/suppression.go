@@ -188,6 +188,19 @@ func (s *Snapshot) Suppressions(project string) []string {
 	return append([]string{}, p.suppressions...)
 }
 
+// suppressingFile returns proj's project.yaml, relative to the root, when
+// proj suppresses the global Item key, so a reference from one of its articles
+// can name why key is hidden. A draft Project copy neither shadows nor stops
+// the suppression, and applySuppressions fails the load on a published one.
+// The path is built from validated Project segments, so it is printable ASCII.
+func (s *Snapshot) suppressingFile(proj string, key itemKey) (string, bool) {
+	p, ok := s.lookupProject(proj)
+	if !ok || !p.suppressed[key] {
+		return "", false
+	}
+	return projectsDir + "/" + p.scope + "/" + projectFileName, true
+}
+
 // suppressedIn returns the global Items proj hides, or nil.
 func (s *Snapshot) suppressedIn(proj string) map[itemKey]bool {
 	p, _ := s.lookupProject(proj)
