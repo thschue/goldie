@@ -33,6 +33,10 @@ func TestRedactGitURLKeepsOnlySchemeHostAndPath(t *testing.T) {
 		"1https://u@h/c.git":                    "(redacted)@h/c.git",
 		"https://bücher.example/c.git":          "https://b(redacted)",
 		"file:///srv/content.git":               "file:///srv/content.git",
+		// #392: the shapes engine's old redactor leaked; there is one
+		// redactor now, and it keeps neither password.
+		"deploy:/pw@host:org/r.git": "(redacted)@host:org/r.git",
+		"https://u:123/w@host/x":    "https://(redacted)@host/x",
 	} {
 		if got := redactGitURL(raw); got != want {
 			t.Errorf("redactGitURL(%q) = %q, want %q", raw, got, want)
