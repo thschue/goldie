@@ -61,7 +61,7 @@ func (s *Server) GetActivity(ctx context.Context, _ contract.GetActivityRequestO
 	default:
 	}
 	if call, _ := ctx.Value(activityCallKey{}).(activityCall); call.all && s.fed != nil {
-		return s.federatedStream(ctx, call.token)
+		return s.federatedStream(ctx, call.cred)
 	}
 	history, live, cancel, ok := s.activity.TrySubscribe()
 	if !ok {

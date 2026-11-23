@@ -83,13 +83,17 @@ export async function signIn(token: string): Promise<SignInResult> {
   return { ok: false, kind: 'failed', hint };
 }
 
-// signOut clears the cookie; the local session goes either way.
-export async function signOut(): Promise<void> {
+// signOut clears the cookie and then the local session. True when the server
+// confirmed; on a failed request the person stays signed in (the cookie may
+// still be valid) and the caller offers a retry.
+export async function signOut(): Promise<boolean> {
   try {
-    await fetch(endpoint, { method: 'DELETE' });
+    const res = await fetch(endpoint, { method: 'DELETE' });
+    if (!res.ok) return false;
   } catch {
-    // The cookie then ends by itself; the person is signed out of this view.
+    return false;
   }
   session.value = null;
   ended.value = false;
+  return true;
 }

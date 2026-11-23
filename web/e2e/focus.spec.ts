@@ -31,7 +31,7 @@ test.describe('a nav link in the inline nav (1280 px)', () => {
     await page.goto('/');
     for (const name of ['Skills', 'Agents']) {
       await sideNav(page).getByRole('link', { name, exact: true }).click();
-      await expect(h1(page)).toHaveText(name);
+      await expect(h1(page)).toHaveText('Agent assets');
       await expect(h1(page)).toBeFocused();
     }
   });

@@ -29,7 +29,6 @@ const readerLinks = [
   'Decisions /decisions',
   'Skills /assets/skills',
   'Agents /assets/agents',
-  'Loops /assets/loops',
   'Instructions /assets/instructions',
 ];
 

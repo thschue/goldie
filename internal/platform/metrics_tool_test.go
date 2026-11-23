@@ -20,7 +20,7 @@ func TestToolCallCounterRecordsByToolAndResult(t *testing.T) {
 	c := tel.ToolCallCounter("goldie.mcp.tool.calls", "MCP tool calls, by tool and result.")
 	ctx := context.Background()
 	for _, tool := range []string{"search_knowledge", "get_article", "list_projects", "current_context",
-		"find_skills", "get_skill", "list_skills", "list_agents"} {
+		"find_skills", "get_skill", "list_skills", "list_agents", "list_loops", "get_loop"} {
 		c.Add(ctx, tool, false)
 	}
 	c.Add(ctx, "search_knowledge", true)
@@ -60,6 +60,7 @@ func TestToolCallCounterRecordsByToolAndResult(t *testing.T) {
 		"search_knowledge|ok": 1, "search_knowledge|error": 1,
 		"get_article|ok": 1, "list_projects|ok": 1, "current_context|ok": 1,
 		"find_skills|ok": 1, "get_skill|ok": 1, "list_skills|ok": 1, "list_agents|ok": 1,
+		"list_loops|ok": 1, "get_loop|ok": 1,
 		"other|ok": 2, "other|error": 1,
 	}
 	for k, v := range want {
