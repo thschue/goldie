@@ -111,12 +111,18 @@ async function focusHeading() {
   if (found) return focusElement(found);
   // A view that loads data first renders its h1 later: wait for it, but stop
   // on the next navigation, on unmount, or after a bounded wait.
+  // Take focus only while it is still where the click left it (the body or
+  // the element focused now, normally the clicked link): a user who has moved
+  // it meanwhile keeps it.
   stopWaiting();
+  const origin = document.activeElement;
   const observer = new MutationObserver(() => {
     const late = target.querySelector('h1');
     if (!late) return;
+    const active = document.activeElement;
+    const unmoved = !active || active === document.body || active === document.documentElement || active === origin;
     stopWaiting();
-    focusElement(late);
+    if (unmoved) focusElement(late);
   });
   const timer = window.setTimeout(stopWaiting, HEADING_WAIT_MS);
   stopWaiting = () => {
