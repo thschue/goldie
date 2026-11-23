@@ -512,3 +512,123 @@ func schemaProps(doc map[string]any, s any) map[string]any {
 	props, _ := schemaOf(doc, s)["properties"].(map[string]any)
 	return props
 }
+
+// Acceptance tests for #480. The view is encoded once and the bytes written,
+// so the trailing newline the generated handler's encoder adds can no longer
+// push a view that sits at the cap one byte over it.
+
+// sizedView writes n Items whose content sizes sum to what makes the view's
+// compact JSON exactly want bytes, and returns a server for them. The
+// overhead per view is measured from the same server with small Items, so the
+// test does not hard-code the field layout.
+func sizedView(t *testing.T, want int) *httptest.Server {
+	t.Helper()
+	const n, small = 18, 100
+	probe := t.TempDir()
+	for i := 0; i < n; i++ {
+		writeArticle(t, probe, fmt.Sprintf("big/item-%02d", i), "Big", strings.Repeat("x", small))
+	}
+	resp, body := apiGet(t, newServerWith(t, platform.Config{ContentDir: probe}).URL+shopItems)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("probe: status %d: %.200s", resp.StatusCode, body)
+	}
+	extra := want - len(strings.TrimRight(string(body), "\n"))
+	if extra < 0 || extra/n+small > 1_000_000 {
+		t.Fatalf("cannot size a view to %d bytes (extra %d)", want, extra)
+	}
+	dir := t.TempDir()
+	for i := 0; i < n; i++ {
+		size := small + extra/n
+		if i == 0 {
+			size += extra % n
+		}
+		writeArticle(t, dir, fmt.Sprintf("big/item-%02d", i), "Big", strings.Repeat("x", size))
+	}
+	return newServerWith(t, platform.Config{ContentDir: dir})
+}
+
+func TestProjectItemsAtTheCapGoOutWithinTheCapIncludingTheNewline(t *testing.T) {
+	// One byte under the cap as compact JSON: it fits, and with the newline
+	// it is exactly the cap.
+	resp, body := apiGet(t, sizedView(t, contract.MaxResponseBytes-1).URL+shopItems)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d, want 200 for a view that fits: %.200s", resp.StatusCode, body)
+	}
+	if len(body) > contract.MaxResponseBytes {
+		t.Errorf("body is %d bytes, want at most the %d-byte cap", len(body), contract.MaxResponseBytes)
+	}
+	if !json.Valid(body) {
+		t.Error("the body is not JSON")
+	}
+
+	// Exactly the cap as compact JSON: whatever the status, the body on the
+	// wire must not be over the cap.
+	resp, body = apiGet(t, sizedView(t, contract.MaxResponseBytes).URL+shopItems)
+	if len(body) > contract.MaxResponseBytes {
+		t.Errorf("status %d, body %d bytes, want at most the %d-byte cap", resp.StatusCode, len(body), contract.MaxResponseBytes)
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("status %d, want 200 or 422", resp.StatusCode)
+	}
+}
+
+func TestProjectItemsOneByteOverTheCapAreRefusedWith422(t *testing.T) {
+	resp, body := apiGet(t, sizedView(t, contract.MaxResponseBytes+1).URL+shopItems)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422: %.200s", resp.StatusCode, body)
+	}
+	if code, _ := errorHint(t, body); code != "view_too_large" {
+		t.Errorf("code %q, want view_too_large", code)
+	}
+	if len(body) > 4096 {
+		t.Errorf("the refusal carries part of the view (%d bytes)", len(body))
+	}
+}
+
+// ProjectItem.status is the Item status as the one mapping gives it, with
+// published always present: it agrees with the article read for each Item,
+// where published is absent.
+func TestProjectItemStatusAgreesWithTheArticleStatus(t *testing.T) {
+	base := itemsServer(t).URL
+	v, _ := getView(t, base, shopItems)
+	for _, it := range v.Items {
+		resp, body := apiGet(t, base+"/api/v1/articles/"+strings.ReplaceAll(it.ID, "/", "%2F")+"?project=github.com/acme/shop")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("article %s: status %d: %.200s", it.ID, resp.StatusCode, body)
+		}
+		var a struct {
+			Status     *string `json:"status"`
+			ReplacedBy *string `json:"replaced_by"`
+		}
+		if err := json.Unmarshal(body, &a); err != nil {
+			t.Fatal(err)
+		}
+		if it.Status == nil {
+			t.Fatalf("%s has no status in the view", it.ID)
+		}
+		want := "published"
+		if a.Status != nil {
+			want = *a.Status
+		}
+		if *it.Status != want {
+			t.Errorf("%s: view status %q, article status %q", it.ID, *it.Status, want)
+		}
+		if (it.ReplacedBy == nil) != (a.ReplacedBy == nil) || (a.ReplacedBy != nil && *a.ReplacedBy != *it.ReplacedBy) {
+			t.Errorf("%s: view replaced_by %v, article replaced_by %v", it.ID, it.ReplacedBy, a.ReplacedBy)
+		}
+	}
+}
+
+// ProjectItem.enforced carries the CONTEXT.md wording the other schemas use.
+func TestSpecProjectItemEnforcedUsesTheContextWording(t *testing.T) {
+	_, body := apiGet(t, itemsServer(t).URL+"/openapi.json")
+	var doc map[string]any
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	props := schemaProps(doc, map[string]any{"$ref": "#/components/schemas/ProjectItem"})
+	enforced, _ := props["enforced"].(map[string]any)
+	if d, _ := enforced["description"].(string); !strings.Contains(d, "so no narrower Scope can shadow it") {
+		t.Errorf("ProjectItem.enforced description %q lacks \"so no narrower Scope can shadow it\"", d)
+	}
+}
