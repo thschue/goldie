@@ -108,12 +108,23 @@ func TestAssetsHasAnIndexAndBuiltSaysWhichOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Assets() has no index.html: %v", err)
 	}
-	placeholder, err := os.ReadFile("dist/placeholder.html")
+	placeholder, err := os.ReadFile("dist/placeholder/index.html")
 	if err != nil {
-		t.Fatalf("the placeholder is committed at internal/ui/dist/placeholder.html: %v", err)
+		t.Fatalf("the placeholder is committed at internal/ui/dist/placeholder/index.html: %v", err)
 	}
-	if !strings.Contains(string(placeholder), "UI not built: run `./run ui`") {
-		t.Errorf("placeholder.html does not say %q: %s", "UI not built: run `./run ui`", placeholder)
+	for _, want := range []string{
+		"<title>goldie (UI not built)</title>",
+		"<code>./run ui</code>",
+		"Node",
+		`<meta name="viewport" content="width=device-width, initial-scale=1">`,
+		`<meta name="color-scheme" content="light dark">`,
+	} {
+		if !strings.Contains(string(placeholder), want) {
+			t.Errorf("placeholder/index.html does not contain %q: %s", want, placeholder)
+		}
+	}
+	if _, err := os.Stat("dist/placeholder.html"); err == nil {
+		t.Error("dist/placeholder.html still exists: the placeholder moved to dist/placeholder/index.html")
 	}
 	if Built() {
 		if string(index) == string(placeholder) {
