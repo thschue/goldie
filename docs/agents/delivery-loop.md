@@ -40,8 +40,9 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
    - exit 3 means another session won: take the next issue.
 5. **Dispatch** each new or resumed step in the background (`isolation: "worktree"`), then end the
    tick so the session stays responsive.
-6. **Clean up:** remove a subagent's worktree once its work is pushed or its PR closed. Remove `in-progress` from issues
-   whose PR merged or closed. Kill only processes this tick started, by PID.
+6. **Clean up:** remove a subagent's worktree once its work is pushed or its PR closed. Remove
+   `in-progress` and the assignee from issues whose PR merged or closed. Kill only processes this
+   tick started, by PID.
 
 **Report:** streams advanced (step and outcome), claims, merges, PRs held or parked (with
 reason), consults, test change requests, and harness feedback filed.
