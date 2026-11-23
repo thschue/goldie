@@ -17,14 +17,16 @@ import (
 // A Source with many Items that all name the last one must load in about the
 // time it takes to parse them. A check that searches the Items once per
 // reference takes minutes here (N squared lookups) and holds the poll lock
-// for all of it.
+// for all of it. The bound is generous (#317) so a slow CI runner does not
+// fail a linear check, and the test cancels Load and waits for it before it
+// returns, so Load never reads the TempDir while cleanup removes it.
 func TestReplacedByCheckIsLinearInTheNumberOfItems(t *testing.T) {
 	if testing.Short() {
 		t.Skip("writes 20000 files")
 	}
 	const (
 		n     = 20000
-		bound = 10 * time.Second
+		bound = 30 * time.Second
 	)
 	root := t.TempDir()
 	// The target sorts after every referrer, so a search in Item order walks
@@ -36,14 +38,20 @@ func TestReplacedByCheckIsLinearInTheNumberOfItems(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), bound)
-	defer cancel()
 	type result struct {
 		snap *engine.Snapshot
 		err  error
 	}
 	done := make(chan result, 1)
+	finished := make(chan struct{})
+	// Runs before t.TempDir's cleanup on every path, t.Fatalf included.
+	defer func() {
+		cancel()
+		<-finished
+	}()
 	start := time.Now()
 	go func() {
+		defer close(finished)
 		snap, err := engine.NewDirSource(root).Load(ctx)
 		done <- result{snap, err}
 	}()

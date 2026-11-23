@@ -58,6 +58,10 @@ type Article struct {
 	// ReplacedBy is the frontmatter replaced_by as written, a reference
 	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
 	ReplacedBy string
+
+	// file is the article's path relative to the Source root, as
+	// loadArticles walked it, for error messages.
+	file string
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
@@ -247,6 +251,7 @@ func loadArticles(fsys fs.FS, dir, scope string) ([]Article, error) {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		a.Scope = scope
+		a.file = p
 		articles = append(articles, a)
 		return nil
 	})
@@ -401,7 +406,9 @@ func (s *Snapshot) lookupProject(id string) (project, bool) {
 	return p, ok
 }
 
-// Articles returns every global article, sorted by ID.
+// Articles returns every global article, sorted by ID, drafts included. It is
+// not a reader view: it takes no ReadOptions and applies no Resolution, so a
+// caller that serves readers uses Search, Article or their In forms instead.
 func (s *Snapshot) Articles() []Article {
 	out := make([]Article, len(s.articles))
 	for i, a := range s.articles {
