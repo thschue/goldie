@@ -34,8 +34,8 @@ const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: 
 // Commands lists the client commands in help order.
 var Commands = []string{"search", "lookup", "status", "init", "version"}
 
-// IsCommand reports whether name is one of Commands.
-func IsCommand(name string) bool { return slices.Contains(Commands, name) }
+// isCommand reports whether name is one of Commands.
+func isCommand(name string) bool { return slices.Contains(Commands, name) }
 
 // UsageError is a command used wrongly; the dispatcher exits 2 for it.
 type UsageError struct {
@@ -77,7 +77,7 @@ type settings struct {
 // Run runs one client command. args[0] is the command name. Its flags may
 // come before, between or after the positional words.
 func Run(ctx context.Context, args []string, env Env) error {
-	if len(args) == 0 || !IsCommand(args[0]) {
+	if len(args) == 0 || !isCommand(args[0]) {
 		return errors.New("usage: goldie " + strings.Join(Commands, " | "))
 	}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -90,7 +90,7 @@ func Run(ctx context.Context, args []string, env Env) error {
 	return exec(ctx, pos, env)
 }
 
-// Command registers the flags of the client command name (an IsCommand) on fs
+// Command registers the flags of the client command name (an isCommand) on fs
 // and returns what runs it once fs is parsed, by Run or by cmd/goldie.
 func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []string, env Env) error {
 	f := BindClientFlags(fs)

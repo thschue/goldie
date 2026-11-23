@@ -109,7 +109,7 @@ func newRoot(out io.Writer) *cobra.Command {
 		msg := err.Error()
 		// pflag reads -dev as the shorthands -d -e -v and names the word: "... in -dev".
 		if rest, ok := strings.CutPrefix(msg, "unknown shorthand flag: "); ok {
-			if _, word, ok := strings.Cut(rest, " in -"); ok && len(word) > 1 {
+			if _, word, ok := strings.Cut(rest, " in -"); ok && cmd.Flags().Lookup(word) != nil {
 				msg += "; did you mean --" + word + "?"
 			}
 		}
