@@ -457,14 +457,17 @@ func TestSuppressingAnotherProjectsItemIsAWarning(t *testing.T) {
 	}
 }
 
-// A dangling reference is well formed but still written by someone else's
-// repository: the warning escapes it, bounds it, and never carries a
-// credential-looking value, the way LastError does not.
+// A dangling reference has passed the strict <kind>:<name> parse, so the
+// warning shows it, as #358 shows a lookup id (quoteID): ASCII-escaped and cut,
+// never redacted into nothing, so a nested id stays readable. Non-ASCII never
+// appears raw. A reference that fails the parse is a load error and is never
+// echoed (TestMalformedSuppressionIsNotEchoed).
 func TestSuppressionWarningDoesNotEchoHostileText(t *testing.T) {
-	for name, tt := range map[string]struct{ ref, raw string }{
-		"token-like name": {"article:ghp_abcdefghij0123456789", "ghp_abcdefghij0123456789"},
-		"homoglyph":       {`"article:p\u0430yments"`, "\u0430"},
-		"long non-ASCII":  {`"article:` + strings.Repeat(`\u00e9`, 120) + `"`, "\u00e9"},
+	for name, tt := range map[string]struct{ ref, raw, want string }{
+		"nested name":     {"article:team/gone", "", "article:team/gone"},
+		"token-like name": {"article:ghp_abcdefghij0123456789", "", "article:ghp_abcdefghij0123456789"},
+		"homoglyph":       {`"article:p\u0430yments"`, "\u0430", `article:p\u0430yments`},
+		"long non-ASCII":  {`"article:` + strings.Repeat(`\u00e9`, 120) + `"`, "\u00e9", `article:\u00e9`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := writeFiles(t, map[string]string{supFile: suppressYAML(tt.ref)})
@@ -479,7 +482,10 @@ func TestSuppressionWarningDoesNotEchoHostileText(t *testing.T) {
 			if !strings.Contains(w[0], supFile) {
 				t.Errorf("warning %q does not name %s", w[0], supFile)
 			}
-			if strings.Contains(w[0], tt.raw) || strings.Contains(w[0], root) {
+			if !strings.Contains(w[0], tt.want) {
+				t.Errorf("warning %q does not show the reference as %s", w[0], tt.want)
+			}
+			if (tt.raw != "" && strings.Contains(w[0], tt.raw)) || strings.Contains(w[0], root) {
 				t.Errorf("warning %q echoes %+q or the root path", w[0], tt.raw)
 			}
 			if len(w[0]) > 1<<10 {
@@ -490,6 +496,30 @@ func TestSuppressionWarningDoesNotEchoHostileText(t *testing.T) {
 					t.Errorf("warning %q carries %U raw; non-ASCII must be escaped", w[0], r)
 					break
 				}
+			}
+		})
+	}
+}
+
+// A reference that fails the parse can carry anything, so neither the load
+// error nor sync status echoes a secret from it.
+func TestMalformedSuppressionIsNotEchoed(t *testing.T) {
+	for name, tt := range map[string]struct{ ref, secret string }{
+		"credential":       {`"article:token=sk-live-0123456789abcdef x"`, "sk-live-0123456789abcdef"},
+		"url":              {`"https://user:hunter2@example.test/x"`, "hunter2"},
+		"control sequence": {`"article:a\e[31mb"`, "\x1b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			files := map[string]string{supFile: suppressYAML(tt.ref)}
+			if msg := loadErr(t, files, supFile); strings.Contains(msg, tt.secret) {
+				t.Errorf("error %q echoes %q", msg, tt.secret)
+			}
+			s := engine.NewSyncer(engine.NewDirSource(writeFiles(t, files)))
+			if err := s.Poll(t.Context()); err == nil {
+				t.Fatal("Poll succeeded")
+			}
+			if last := s.Status().LastError; last == "" || strings.Contains(last, tt.secret) {
+				t.Errorf("LastError = %q; want the failure recorded without %q", last, tt.secret)
 			}
 		})
 	}
