@@ -56,11 +56,12 @@ var activityKeepalive = api.DefaultActivityKeepalive
 // newPublicMuxWith returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
 // set, a minimum client version (nil for none) and a rate limiter, and
-// recording every search and lookup in a bounded Activity. PublicHandler
-// builds the public listener with it, and the tests build the bare router
-// with it, so the route table they check is the one the server serves.
+// recording every search and lookup in a bounded Activity named after this
+// replica (activityReplicaName). PublicHandler builds the public listener
+// with it, and the tests build the bare router with it, so the route table
+// they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	activity := api.NewActivity(activityCapacity, "", nil)
+	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
 	srv, err := api.NewServer(provider, api.RecordInto(activity))
 	if err != nil {
 		return nil, err

@@ -20,14 +20,17 @@ Stream recent searches and lookups
 
 Streams this server process's recent searches and lookups as
 server-sent events, for operator tokens only. The stream opens with the
-retained events in `id` order, oldest first, then sends each new one as
-it is recorded. It is a live view, not an audit log: the buffer is
-bounded and shared, so any reader's requests push older events out of
-it, and a restart empties it.
+retained events in `id` order, oldest first, then one event of type
+`live` whose `data` is `{}` (an `ActivityLive`), sent even when there
+is no history, then each new event as it is recorded. It is a live
+view, not an audit log: the buffer is bounded and shared, so any
+reader's requests push older events out of it, and a restart empties
+it.
 
 Every event is one SSE event whose `data` is one line of JSON, an
 `ActivityEvent`. Its `id` increases per server process (per replica)
-and starts again at 1 when the process restarts. All text is escaped
+and starts again at 1 when the process restarts; `replica` names the
+replica that recorded it. All text is escaped
 as JSON strings, so no query can end an event or start one. A
 subscriber that cannot keep up loses events and then gets an event of
 type `dropped`, an `ActivityDropped` with the number lost, before the
@@ -35,15 +38,21 @@ next event. Clients must ignore SSE event types and JSON fields they
 do not know.
 
 Events carry no SSE `id:` field and the server does not resume from
-`Last-Event-ID`: a reconnect replays the retained history, so clients
-dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
-seconds. The stream costs one rate-limit token when it opens, and ends
-at the server's first stop signal. At most 32 streams are open per
-server process; one more is a 503 whose hint says to retry later.
+`Last-Event-ID`: a reconnect replays the retained history, so on
+reconnect clients replace their view with the history before `live`.
+Within one connection they dedupe by `replica` and `id`; across
+connections ids are no key, because they start again at 1 when a
+replica restarts under the same name. An idle stream sends the
+comment `: keepalive` every 15 seconds. The stream costs one
+rate-limit token when it opens, and ends at the server's first stop
+signal. At most 32 streams are open per server process; one more is a
+503 whose hint says to retry later. The history before `live` holds at
+most 10,000 events, and the Go client reads at most 16 MiB of the
+stream before `live`.
 
-Go clients use the raw `Client.GetActivity` and read the body as it
-arrives: `GetActivityWithResponse` reads the whole body, so it does
-not return until the stream ends.
+Go clients use `StreamActivity` on the client `NewAPIClient` builds:
+`GetActivityWithResponse` reads the whole body, so it does not return
+until the stream ends.
 
 Operation ID: `getActivity`
 
@@ -215,12 +224,19 @@ when empty. Clients ignore fields they do not know.
 | `client_version` | `string` | yes | The version in 'X-Goldie-Client: goldie/&lt;version&gt;', or '""'. |
 | `id` | `integer` | yes | Increases per server process (per replica); starts again at 1 on restart. |
 | `kind` | `string` | yes | A search or a lookup. |
+| `late` | `boolean` | yes | The event reached a merge of replicas' streams after its reorder window, so it is out of time order. Always 'false' on a replica's own stream. |
 | `miss` | `boolean` | yes | A search with no results, or a lookup answering 404. |
 | `project` | `string` | yes | The registered spelling of the Project, an unregistered id lower-cased, or '""'. |
 | `query` | `string` | yes | The search words, or the article id a lookup asked for, as text. |
+| `replica` | `string` | yes | The name of the replica that recorded the event: the first label of its host name (a StatefulSet pod name), or 'goldie'. Never an address. |
 | `time` | `string` | yes | When the server recorded the request. |
 | `token` | `string` | yes | The name of the token that sent the request, never its secret. |
 | `trace_id` | `string` | yes | The request's trace id, or '""' without a span. |
+
+### `ActivityLive`
+
+The `data` of the one SSE event of type `live`: the events before it
+are the history, the events after it are live.
 
 ### `Article`
 

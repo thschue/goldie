@@ -239,7 +239,8 @@ func openStream(t *testing.T, ctx context.Context, client *http.Client, url stri
 	return a.resp, s, nil
 }
 
-// nextEvent returns the next dispatched event, skipping comments.
+// nextEvent returns the next dispatched event, skipping comments and the live
+// marker that ends the history (#245; activity_live_marker_test.go pins it).
 func nextEvent(t *testing.T, s *sseLive, within time.Duration) sseEvent {
 	t.Helper()
 	deadline := time.After(within)
@@ -249,7 +250,7 @@ func nextEvent(t *testing.T, s *sseLive, within time.Duration) sseEvent {
 			if !ok {
 				t.Fatalf("the stream ended while an event was expected; so far:\n%s", s.bytes())
 			}
-			if !it.comment {
+			if !it.comment && it.event.Type != "live" {
 				return it.event
 			}
 		case <-deadline:
@@ -424,7 +425,8 @@ func TestActivityStreamGivesAnOperatorHistoryThenLiveEventsInIDOrder(t *testing.
 }
 
 // Criterion: an open stream with nothing to send writes a keepalive comment
-// every activityKeepalive, and a comment carries no event.
+// every activityKeepalive, and a comment carries no event. The one event an
+// idle stream sends is the live marker after its (empty) history (#245).
 func TestActivityStreamSendsAKeepaliveCommentEveryInterval(t *testing.T) {
 	shortKeepalive(t, 50*time.Millisecond)
 	pub := streamHandler(t, platform.Config{})
@@ -435,6 +437,7 @@ func TestActivityStreamSendsAKeepaliveCommentEveryInterval(t *testing.T) {
 		t.Fatalf("status %d, want 200: %s", resp.StatusCode, body)
 	}
 	comments := 0
+	sawLive := false
 	deadline := time.After(3 * time.Second)
 	for comments < 4 {
 		select {
@@ -443,6 +446,10 @@ func TestActivityStreamSendsAKeepaliveCommentEveryInterval(t *testing.T) {
 				t.Fatalf("the stream ended after %d keepalives; so far:\n%s", comments, s.bytes())
 			}
 			if !it.comment {
+				if it.event.Type == "live" && !sawLive {
+					sawLive = true
+					continue
+				}
 				t.Errorf("an idle stream dispatched an event: %+v", it.event)
 				continue
 			}
@@ -767,7 +774,7 @@ func TestASlowActivitySubscriberGetsADroppedNoticeAndNeverStallsRequests(t *test
 	var last uint64
 	activity := 0
 	for _, e := range events {
-		if e.Type == "dropped" {
+		if e.Type == "dropped" || e.Type == "live" {
 			continue
 		}
 		activity++

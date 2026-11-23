@@ -339,14 +339,17 @@ paths:
       description: |
         Streams this server process's recent searches and lookups as
         server-sent events, for operator tokens only. The stream opens with the
-        retained events in `id` order, oldest first, then sends each new one as
-        it is recorded. It is a live view, not an audit log: the buffer is
-        bounded and shared, so any reader's requests push older events out of
-        it, and a restart empties it.
+        retained events in `id` order, oldest first, then one event of type
+        `live` whose `data` is `{}` (an `ActivityLive`), sent even when there
+        is no history, then each new event as it is recorded. It is a live
+        view, not an audit log: the buffer is bounded and shared, so any
+        reader's requests push older events out of it, and a restart empties
+        it.
 
         Every event is one SSE event whose `data` is one line of JSON, an
         `ActivityEvent`. Its `id` increases per server process (per replica)
-        and starts again at 1 when the process restarts. All text is escaped
+        and starts again at 1 when the process restarts; `replica` names the
+        replica that recorded it. All text is escaped
         as JSON strings, so no query can end an event or start one. A
         subscriber that cannot keep up loses events and then gets an event of
         type `dropped`, an `ActivityDropped` with the number lost, before the
@@ -354,15 +357,21 @@ paths:
         do not know.
 
         Events carry no SSE `id:` field and the server does not resume from
-        `Last-Event-ID`: a reconnect replays the retained history, so clients
-        dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
-        seconds. The stream costs one rate-limit token when it opens, and ends
-        at the server's first stop signal. At most 32 streams are open per
-        server process; one more is a 503 whose hint says to retry later.
+        `Last-Event-ID`: a reconnect replays the retained history, so on
+        reconnect clients replace their view with the history before `live`.
+        Within one connection they dedupe by `replica` and `id`; across
+        connections ids are no key, because they start again at 1 when a
+        replica restarts under the same name. An idle stream sends the
+        comment `: keepalive` every 15 seconds. The stream costs one
+        rate-limit token when it opens, and ends at the server's first stop
+        signal. At most 32 streams are open per server process; one more is a
+        503 whose hint says to retry later. The history before `live` holds at
+        most 10,000 events, and the Go client reads at most 16 MiB of the
+        stream before `live`.
 
-        Go clients use the raw `Client.GetActivity` and read the body as it
-        arrives: `GetActivityWithResponse` reads the whole body, so it does
-        not return until the stream ends.
+        Go clients use `StreamActivity` on the client `NewAPIClient` builds:
+        `GetActivityWithResponse` reads the whole body, so it does not return
+        until the stream ends.
       responses:
         "200":
           description: |
@@ -375,14 +384,19 @@ paths:
                 type: string
                 description: |
                   SSE events. The `data` of each is one line of JSON, one of
-                  `contentSchema`: an `ActivityEvent`, or an `ActivityDropped`
-                  for an event of type `dropped`.
+                  `contentSchema`: an `ActivityEvent` for an event without a
+                  type, an `ActivityDropped` for `dropped`, and an
+                  `ActivityLive` for `live`.
                 contentSchema:
                   oneOf:
                     - $ref: "#/components/schemas/ActivityEvent"
                     - $ref: "#/components/schemas/ActivityDropped"
+                    - $ref: "#/components/schemas/ActivityLive"
               example: |
-                data: {"id":1,"time":"2026-11-23T10:00:00Z","kind":"search","query":"deploy","project":"","token":"ci","client_version":"1.5.0","trace_id":"","miss":false}
+                data: {"id":1,"time":"2026-11-23T10:00:00Z","kind":"search","query":"deploy","project":"","token":"ci","client_version":"1.5.0","trace_id":"","miss":false,"replica":"goldie-0","late":false}
+
+                event: live
+                data: {}
         "401":
           description: The bearer token is missing or not a configured token.
           content:
@@ -742,6 +756,8 @@ components:
         - client_version
         - trace_id
         - miss
+        - replica
+        - late
       properties:
         id:
           type: integer
@@ -799,6 +815,22 @@ components:
           description: A search with no results, or a lookup answering 404.
           examples:
             - false
+        replica:
+          type: string
+          description: |
+            The name of the replica that recorded the event: the first label of
+            its host name (a StatefulSet pod name), or `goldie`. Never an
+            address.
+          examples:
+            - goldie-0
+        late:
+          type: boolean
+          description: |
+            The event reached a merge of replicas' streams after its reorder
+            window, so it is out of time order. Always `false` on a replica's
+            own stream.
+          examples:
+            - false
     ActivityDropped:
       type: object
       description: |
@@ -816,6 +848,13 @@ components:
           description: How many events were lost before the next one.
           examples:
             - 3
+    ActivityLive:
+      type: object
+      description: |
+        The `data` of the one SSE event of type `live`: the events before it
+        are the history, the events after it are live.
+      additionalProperties: false
+      properties: {}
     ErrorEnvelope:
       type: object
       description: The body of every error response.
