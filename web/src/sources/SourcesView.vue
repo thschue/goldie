@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
 import { plain } from '../assets/api';
@@ -21,6 +21,8 @@ const rows = ref<SourceStatus[]>();
 const syncing = ref(false);
 const syncError = ref('');
 const note = ref('');
+const stillRunning = ref(false);
+const running = 'The sync is still running. Check back in a moment, or resync again.';
 const stop = new AbortController();
 onBeforeUnmount(() => stop.abort());
 watch(data, (v) => {
@@ -32,13 +34,17 @@ async function startSync() {
   if (syncing.value) return;
   syncing.value = true;
   syncError.value = '';
+  stillRunning.value = false;
+  note.value = '';
+  await nextTick(); // a changed text is what a live region announces
   note.value = 'Sync started. Waiting for it to end.';
   try {
     const before = rows.value ?? [];
     await resync();
-    const latest = await waitForSync(before, stop.signal);
-    if (latest) rows.value = latest;
-    note.value = 'Sync finished. Sources updated.';
+    const done = await waitForSync(before, stop.signal);
+    if (done.rows) rows.value = done.rows;
+    stillRunning.value = !done.ended;
+    note.value = done.ended ? 'Sync finished. Sources updated.' : running;
   } catch (e) {
     if (stop.signal.aborted) return;
     note.value = '';
@@ -59,8 +65,9 @@ function syncMessage(e: unknown) {
   <p v-if="!forbidden" class="intro">Failing Sources first. A failing Source keeps serving its last good Snapshot.</p>
   <div v-if="!forbidden" class="actions">
     <button type="button" class="sync" :aria-disabled="syncing" @click="startSync">{{ syncing ? 'Syncing…' : 'Resync' }}</button>
-    <span aria-live="polite" class="sr-only">{{ note }}</span>
+    <span aria-live="polite" aria-atomic="true" class="sr-only">{{ note }}</span>
   </div>
+  <p v-if="stillRunning" class="intro" aria-hidden="true">{{ running }}</p>
   <div v-if="syncError" role="alert" class="box danger sync-error"><p>{{ syncError }}</p></div>
   <div v-if="forbidden" role="status" class="box"><p>This page is for operators.</p></div>
 

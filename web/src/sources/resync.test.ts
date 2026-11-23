@@ -27,12 +27,18 @@ describe('waitForSync', () => {
     const fetchMock = vi.fn().mockImplementationOnce(async () => answer('a')).mockImplementation(async () => answer('b'));
     vi.stubGlobal('fetch', fetchMock);
     const done = await waitForSync([{ last_poll: 'a' }], new AbortController().signal, 1, 1000);
-    expect(done).toEqual([{ last_poll: 'b' }]);
+    expect(done).toEqual({ rows: [{ last_poll: 'b' }], ended: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     fetchMock.mockImplementation(async () => answer('a'));
     const late = await waitForSync([{ last_poll: 'a' }], new AbortController().signal, 1, 20);
-    expect(late).toEqual([{ last_poll: 'a' }]);
+    expect(late).toEqual({ rows: [{ last_poll: 'a' }], ended: false });
+
+    fetchMock.mockRejectedValue(new TypeError('offline'));
+    expect(await waitForSync([{ last_poll: 'a' }], new AbortController().signal, 1, 20)).toEqual({ rows: undefined, ended: false });
+
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ sources: [], warnings: [] })));
+    expect(await waitForSync([], new AbortController().signal, 1, 1000)).toEqual({ rows: [], ended: true });
     vi.unstubAllGlobals();
   });
 

@@ -27,28 +27,29 @@ export const resync = () => post('/api/v1/sync');
 
 const pollTimes = (sources: SourceStatus[]) => sources.map((s) => s.last_poll ?? '').join('|');
 
-// The sync has ended once a Source's last_poll differs from `before`. Polls the status every
-// `every` ms for at most `limit` ms and resolves with the latest list read (undefined when no read
-// worked); an aborted signal rejects with the AbortError.
+// The sync has ended once a Source's last_poll differs from `before` (or, with no Source at all,
+// once a read comes back empty). Polls the status every `every` ms for at most `limit` ms and
+// resolves with the latest list read (undefined when no read worked) and whether the sync ended;
+// an aborted signal rejects with the AbortError.
 export async function waitForSync(before: SourceStatus[], signal: AbortSignal, every = 1000, limit = 45000) {
   const start = pollTimes(before);
   const deadline = Date.now() + limit;
-  let latest: SourceStatus[] | undefined;
+  let rows: SourceStatus[] | undefined;
   while (Date.now() < deadline) {
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(resolve, every);
-      signal.addEventListener('abort', () => (clearTimeout(t), reject(new DOMException('', 'AbortError'))), { once: true });
+      const onAbort = () => (clearTimeout(t), reject(new DOMException('', 'AbortError')));
+      const t = setTimeout(() => (signal.removeEventListener('abort', onAbort), resolve()), every);
+      signal.addEventListener('abort', onAbort, { once: true });
     });
     try {
-      latest = await loadSources(signal);
-      if (pollTimes(latest) !== start) break;
+      rows = await loadSources(signal);
+      if (pollTimes(rows) !== start || (!before.length && !rows.length)) return { rows, ended: true };
     } catch (e) {
       if (signal.aborted) throw e;
     }
   }
-  return latest;
+  return { rows, ended: false };
 }
-
 let pending: Promise<unknown> | undefined;
 
 // The nav's one load: it never throws (a nav count that can't load is just absent) and several
