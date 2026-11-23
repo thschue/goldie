@@ -12,6 +12,7 @@ import (
 var toolNames = map[string]bool{
 	"search_knowledge": true, "get_article": true, "list_projects": true, "current_context": true,
 	"find_skills": true, "get_skill": true, "list_skills": true, "list_agents": true,
+	"list_loops": true, "get_loop": true,
 }
 
 // ToolCallCounter counts MCP tool calls by tool and result, following

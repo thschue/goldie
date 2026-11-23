@@ -173,7 +173,7 @@ func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server,
 // every answered search and lookup is recorded when the Server was built with RecordInto. HEAD on the
 // activity stream sends its headers and ends (headOnly).
 func (s *Server) Register(m contract.ServeMux) {
-	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly, activityRequest, s.sessionCookies},
+	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly, s.activityRequest, s.sessionCookies},
 		contract.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc:  requestError,
 			ResponseErrorHandlerFunc: responseError,

@@ -1,10 +1,13 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { defineComponent, h } from 'vue';
+import { createRouter, createWebHistory, useRoute, type RouteRecordRaw } from 'vue-router';
 import AgentAssetsNotFound from './assets/AgentAssetsNotFound.vue';
 import AgentAssetsView from './assets/AgentAssetsView.vue';
 import { assetTabs } from './assets/tabs';
 import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
 import ProjectHome from './projects/ProjectHome.vue';
+import { projectOf } from './projects/api';
+import HomeView from './search/HomeView.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
 
@@ -18,8 +21,15 @@ const pages: [path: string, title: string][] = [
   ['/ops/sources', 'Sources'],
 ];
 
+// Home is one address: with a Project (`/?project=`) it lists that Project's Items,
+// otherwise it is the search (`/`, `/?q=`).
+const Home = defineComponent(() => {
+  const route = useRoute();
+  return () => h(projectOf(route.query) ? ProjectHome : HomeView);
+});
+
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: ProjectHome, meta: { title: 'Home', heading: 'What are you deciding today?' } },
+  { path: '/', component: Home, meta: { title: 'Home' } },
   // Agent assets (handoff §3.5): one route for the tabs. Matching is
   // case-sensitive and closed over the tab list, so any other tab (Loops
   // included) gets the not-found view under the same h1.

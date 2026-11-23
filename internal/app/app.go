@@ -495,8 +495,26 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	p, err := newPublicCounted(false, cfg, tokens, src, logger, api.DefaultActivityKeepalive, calls, opt)
 	if p != nil {
 		p.polls = tel.PollCounter("goldie.syncs", "Source polls finished, by source and result.", src.name)
+		tel.ItemGauge(itemCounts(src.syncer.Current))
 	}
 	return p, err
+}
+
+// itemCounts reads the counts of the current Snapshot for goldie.items. Before
+// the first Snapshot it returns nil, so nothing is observed.
+func itemCounts(current func() *engine.Snapshot) func() []platform.ItemCount {
+	return func() []platform.ItemCount {
+		snap := current()
+		if snap == nil {
+			return nil
+		}
+		counts := snap.ItemCounts()
+		out := make([]platform.ItemCount, len(counts))
+		for i, c := range counts {
+			out[i] = platform.ItemCount{Scope: c.Scope, Kind: c.Kind, Count: c.Count}
+		}
+		return out
+	}
 }
 
 // resultCounters is the option that counts searches and lookups by result

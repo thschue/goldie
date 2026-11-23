@@ -187,7 +187,7 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
 `search_knowledge`, `get_article`, `list_projects`, `current_context`, `find_skills`, `get_skill`,
-`list_skills` and `list_agents`. `search_knowledge` and `get_article` take an optional `project`
+`list_skills`, `list_agents`, `list_loops` and `get_loop`. `search_knowledge` and `get_article` take an optional `project`
 (`host/org/repo`, as `list_projects` names it; case is ignored) that puts that Project's articles
 first; a value that isn't a Project id, or has any non-ASCII character, is refused before any
 request. For a Project that isn't registered, the answer is global and carries the server's hint. At
@@ -211,6 +211,12 @@ too; the server's own hint stays a plain line after it. Every tool parameter's d
 an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent
 with its description.
 
+`list_loops` lists every loop of the Project's view, sorted, with its description, its interval (or
+that it is dynamic) and its stop sentence; no loop is an answer, not an error. `get_loop` answers one
+loop: its fields, the agents and skills it needs with the Scope that answered, the digest the API
+serves (to compare with a pulled copy), and the iteration prompt quoted with `| `. A miss is a tool
+error that points to `list_loops`.
+
 The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
 instruction block the API renders for the default Project, or the global block without one, with
 `{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
@@ -219,7 +225,10 @@ of hidden characters like any Source content and a failed read is an
 error without the address or token. `current_context` ends with the same clauses, or says they could
 not be read.
 
-The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
+The server also offers prompts and two more resources. Each loop is a prompt named
+`goldie-loop-<loop name>`: it returns the `/loop <interval> <prompt>` command (`/loop <prompt>`
+for a dynamic loop) and, when the loop needs agents or skills, a note to run `goldie pull` first. If a
+skill's prompt has the same name, the skill keeps it. Each skill is a prompt named `goldie-<skill name>`
 (for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
 the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
 with `| `. Prompt text is untrusted: a Source wrote it, and the server inserts it as a user message,

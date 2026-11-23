@@ -1208,7 +1208,8 @@ type ClientInterface interface {
 	// this replica's stream. An event of type `replica_status` (an
 	// `ActivityReplicaStatus`) says a peer is down, and again when it is
 	// back; those for peers that are down when the stream opens come before
-	// the merged history. Each peer is asked with the caller's own token for
+	// the merged history. Each peer is asked with the caller's own token, or its
+	// session cookie when it sent no token, for
 	// its own events only, and checks the operator role itself. A peer is
 	// down when its stream ends or falls silent, or sends no `live` marker.
 	// An event that reached the merge after its reorder window carries
@@ -1564,7 +1565,8 @@ type ClientInterface interface {
 // this replica's stream. An event of type `replica_status` (an
 // `ActivityReplicaStatus`) says a peer is down, and again when it is
 // back; those for peers that are down when the stream opens come before
-// the merged history. Each peer is asked with the caller's own token for
+// the merged history. Each peer is asked with the caller's own token, or its
+// session cookie when it sent no token, for
 // its own events only, and checks the operator role itself. A peer is
 // down when its stream ends or falls silent, or sends no `live` marker.
 // An event that reached the merge after its reorder window carries
@@ -3339,7 +3341,8 @@ type ClientWithResponsesInterface interface {
 	// this replica's stream. An event of type `replica_status` (an
 	// `ActivityReplicaStatus`) says a peer is down, and again when it is
 	// back; those for peers that are down when the stream opens come before
-	// the merged history. Each peer is asked with the caller's own token for
+	// the merged history. Each peer is asked with the caller's own token, or its
+	// session cookie when it sent no token, for
 	// its own events only, and checks the operator role itself. A peer is
 	// down when its stream ends or falls silent, or sends no `live` marker.
 	// An event that reached the merge after its reorder window carries
@@ -5675,7 +5678,8 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // this replica's stream. An event of type `replica_status` (an
 // `ActivityReplicaStatus`) says a peer is down, and again when it is
 // back; those for peers that are down when the stream opens come before
-// the merged history. Each peer is asked with the caller's own token for
+// the merged history. Each peer is asked with the caller's own token, or its
+// session cookie when it sent no token, for
 // its own events only, and checks the operator role itself. A peer is
 // down when its stream ends or falls silent, or sends no `live` marker.
 // An event that reached the merge after its reorder window carries
