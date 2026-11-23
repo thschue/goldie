@@ -705,10 +705,12 @@ func TestFirstLoadFailureKeepsTheServerAliveButNotReady(t *testing.T) {
 // When later polls fail, the last good Snapshot is still served and
 // source:git stays ok (PC-02), and every failed poll logs exactly one warn.
 func TestSourceGitStaysReadyWhileStaleAndAFailedPollLogsOneWarn(t *testing.T) {
-	shortPolls(t)
+	// The interval is long, so the loop's first poll is its only one and the
+	// test starts each later poll itself: the number of failed polls is then
+	// the number of triggers, whatever the machine's load.
 	repo := newBareRepo(t)
 	repo.commit(gitArticle("git-first"))
-	cfg := gitConfig(t, repo.url, 400*time.Millisecond)
+	cfg := gitConfig(t, repo.url, time.Hour)
 	cfg.GitAllowFileURL = true
 	g := startGit(t, cfg)
 	g.readyOnGit(t)
@@ -722,10 +724,19 @@ func TestSourceGitStaysReadyWhileStaleAndAFailedPollLogsOneWarn(t *testing.T) {
 	if err := os.RemoveAll(repo.dir); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, 5*time.Second, "a failed poll logged no warn", func() bool { return g.count(t, "warn") > 0 })
-	time.Sleep(150 * time.Millisecond) // well under one interval: still one failed poll
-	if n := g.count(t, "warn"); n != 1 {
-		t.Errorf("warn records after one failed poll = %d, want exactly 1:\n%s", n, strings.Join(g.logs.lines(), "\n"))
+	for failed := 1; failed <= 3; failed++ {
+		eventually(t, 5*time.Second, "a poll was not started", func() bool {
+			started, ready := g.pub.sync.Trigger()
+			return started && ready
+		})
+		eventually(t, 5*time.Second, "a failed poll logged no warn", func() bool { return g.count(t, "warn") >= failed })
+		// Poll waits for the triggered poll to end, its onPoll included, so
+		// every record that poll logs is written when it returns. It logs
+		// nothing itself.
+		_ = g.pub.sync.syncer.Poll(t.Context())
+		if n := g.count(t, "warn"); n != failed {
+			t.Errorf("warn records after %d failed polls = %d, want exactly %d:\n%s", failed, n, failed, strings.Join(g.logs.lines(), "\n"))
+		}
 	}
 	code, raw, status := g.sourceGit(t)
 	if code != http.StatusOK || status != "ok" {
