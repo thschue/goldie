@@ -188,6 +188,36 @@ func (s *Snapshot) Suppressions(project string) []string {
 	return append([]string{}, p.suppressions...)
 }
 
+// SuppressedIn reports whether a global article is hidden from proj by a
+// Suppression: the Project's own copy would win when visible under opts, and
+// an Item not visible under opts is never found, so only a visible global
+// article the Project suppresses counts. It returns the Suppression as
+// article:<ID> in the ID's loaded spelling and the project.yaml that sets it,
+// relative to the Source root.
+func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file string, ok bool) {
+	o := readOpts(opts)
+	p, registered := s.lookupProject(proj)
+	if !registered {
+		return "", "", false
+	}
+	key := keyOf(KindArticle, id)
+	if own := p.index[key]; own != nil && o.visible(*own) {
+		return "", "", false
+	}
+	a := s.index[key]
+	if a == nil || !o.visible(*a) || !p.suppressed[key] {
+		return "", "", false
+	}
+	return KindArticle + ":" + a.ID, projectsDir + "/" + p.scope + "/" + projectFileName, true
+}
+
+// Warnings returns the load's findings that did not fail it, such as a suppress
+// reference that names nothing, as SyncStatus.Warnings describes them. The
+// caller owns the slice.
+func (s *Snapshot) Warnings() []string {
+	return append([]string{}, s.warnings...)
+}
+
 // suppressingFile returns proj's project.yaml, relative to the root, when
 // proj suppresses the global Item key, so a reference from one of its articles
 // can name why key is hidden. A draft Project copy neither shadows nor stops

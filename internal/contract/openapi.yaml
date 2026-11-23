@@ -28,6 +28,8 @@ tags:
     description: Search and look up articles.
   - name: projects
     description: The Projects whose Scope the server holds.
+  - name: sync
+    description: How the server's content sync is doing, for operators.
   - name: activity
     description: The live view of recent searches and lookups, for operators.
 paths:
@@ -224,6 +226,110 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{id}:
+    get:
+      operationId: getProject
+      tags:
+        - projects
+      summary: Read one registered Project
+      description: |
+        Returns the Project's id, in the case the server stores it, and the
+        global Items its `project.yaml` suppresses (ADR 0021) as
+        `article:<id>`, sorted. A Project that suppresses nothing answers an
+        empty list. A lookup of a suppressed Item answers 404 with a hint that
+        names the Suppression and the file that sets it, and search leaves it
+        out.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: |
+            The Project as one path segment (ADR 0016): the `/` inside
+            `host/org/repo` is sent percent-encoded as `%2F`, so
+            `github.com/acme/shop` is requested as
+            `/api/v1/projects/github.com%2Facme%2Fshop`. Matched ignoring case.
+            A bare-slash path is not a Project detail and answers the not-found
+            envelope; a value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+          example: github.com/acme/shop
+      responses:
+        "200":
+          description: The Project.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDetail"
+        "400":
+          description: The id is not a `ProjectId`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: No bearer token, or a wrong one; the body shows no Suppressions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: The server holds no such Project; the hint says how to register it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/sync:
+    get:
+      operationId: getSync
+      tags:
+        - sync
+      summary: Read the content sync warnings
+      description: |
+        Returns the findings of the last content load that did not fail it, for
+        operator tokens only, such as a `suppress` reference that names nothing
+        in a Project's `project.yaml`. Each warning names a file relative to the
+        Source root and shows what the Source wrote escaped to printable ASCII
+        and cut, which is why only operators read them. `goldie validate` prints
+        the same warnings for a content directory.
+      responses:
+        "200":
+          description: The warnings of the current content, empty when there are none.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatus"
+              example:
+                warnings:
+                  - file: projects/github.com/acme/shop/project.yaml
+                    message: suppress "article:team/gone" names no published Item this Project can see
+        "401":
+          description: No bearer token was sent for the sync status, or it is not a configured token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: A reader token was sent for the sync status; only an operator token may read it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/activity:
     get:
       operationId: getActivity
@@ -351,7 +457,7 @@ components:
         enforces it on every `/api/` path, where a missing or wrong token is a
         401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
         token over its limit is a 429 with `Retry-After`. An operation for
-        operators only, such as `/api/v1/activity`, answers other tokens with a
+        operators only, such as `/api/v1/activity` and `/api/v1/sync`, answers other tokens with a
         403. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
   schemas:
@@ -420,6 +526,59 @@ components:
             $ref: "#/components/schemas/ProjectId"
           examples:
             - - github.com/acme/shop
+    ProjectDetail:
+      type: object
+      description: One registered Project and what its `project.yaml` suppresses.
+      required:
+        - id
+        - suppressions
+      properties:
+        id:
+          $ref: "#/components/schemas/ProjectId"
+        suppressions:
+          type: array
+          description: |
+            The global Items the Project suppresses, as `article:<id>`, sorted.
+            A reference that names nothing is not listed. Empty when there are none.
+          items:
+            type: string
+          examples:
+            - - article:platform/notes
+              - article:style
+    SyncStatus:
+      type: object
+      description: How the last content load went, for operators.
+      required:
+        - warnings
+      properties:
+        warnings:
+          type: array
+          description: Load findings that did not fail the load, in load order.
+          items:
+            $ref: "#/components/schemas/ContentWarning"
+          examples:
+            - - file: projects/github.com/acme/shop/project.yaml
+                message: suppress "article:team/gone" names no published Item this Project can see
+    ContentWarning:
+      type: object
+      description: |
+        One finding of a content load that did not fail it, such as a `suppress`
+        reference that names nothing. It shows what a Source wrote, escaped to
+        printable ASCII and cut, which is why only operators read it.
+      required:
+        - file
+        - message
+      properties:
+        file:
+          type: string
+          description: The file the finding is about, relative to the Source root.
+          examples:
+            - projects/github.com/acme/shop/project.yaml
+        message:
+          type: string
+          description: What is wrong, printable ASCII, at most 1 KiB with the file.
+          examples:
+            - suppress "article:team/gone" names no published Item this Project can see
     SearchHit:
       type: object
       description: One article that matched a search.
