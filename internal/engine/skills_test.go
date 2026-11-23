@@ -499,7 +499,7 @@ func TestSymlinksInASkillAreNotFollowed(t *testing.T) {
 			return symlink(t, "../y/SKILL.md", filepath.Join(root, "global/skills/x/link.txt"))
 		},
 		"file inside the skill": func(t *testing.T, root string) error {
-			writeTo(t, root, globalSkillFile("x", "real.md"), "TOP-SECRET")
+			writeTo(t, root, globalSkillFile("x", "real.md"), "inside")
 			return symlink(t, "real.md", filepath.Join(root, "global/skills/x/link.txt"))
 		},
 		"directory to outside the root": func(t *testing.T, root string) error {
