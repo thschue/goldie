@@ -15,7 +15,9 @@
 // With the Local option (goldie mcp --dir) a server that cannot be reached is
 // named the embedded server, with no address hint.
 // Text from the API is untrusted, so it is cleaned and only ever returned as
-// tool output, never as tool metadata.
+// tool output, never as tool metadata. get_article of a deprecated article
+// starts with the notice goldie lookup prints on stderr, naming the cleaned
+// replacement. MCP never asks for drafts.
 //
 // The integration tests are in internal/app, because this package may not
 // import the API or the composition root, not even in tests.

@@ -171,7 +171,10 @@ func validName(name string) bool {
 	return true
 }
 
-type tokenNameKey struct{}
+type (
+	tokenNameKey struct{}
+	tokenRoleKey struct{}
+)
 
 // TokenName is the name of the token that authenticated the request, never
 // its secret. A Require guard sets it on every request it lets through.
@@ -180,10 +183,20 @@ func TokenName(ctx context.Context) (string, bool) {
 	return name, ok
 }
 
+// TokenRole is the Role of the token that authenticated the request. A
+// Require guard sets it on every request it lets through; without one there
+// is no Role, and a caller checking for a Role must refuse. A Role rule for a
+// whole operation goes in operatorPaths (internal/app/app.go); TokenRole is
+// for a rule on one parameter value, such as drafts=true.
+func TokenRole(ctx context.Context) (Role, bool) {
+	role, ok := ctx.Value(tokenRoleKey{}).(Role)
+	return role, ok
+}
+
 // Require lets a request through to next only when it carries
 // "Authorization: Bearer <token>" with a configured token whose Role is at
-// least minRole, and puts the token's name in the request context
-// (TokenName). A missing or unknown token is a 401 and too low a Role a 403,
+// least minRole, and puts the token's name and Role in the request context
+// (TokenName, TokenRole). A missing or unknown token is a 401 and too low a Role a 403,
 // both in the error envelope. The presented token is hashed and compared with
 // every configured digest in constant time, whatever its length or content,
 // and it is never logged or echoed.
@@ -213,7 +226,8 @@ func (t *Tokens) Require(minRole Role, next http.Handler) http.Handler {
 				"Use a token with the operator role.")
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), tokenNameKey{}, e.name)))
+		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))
 	})
 }
 

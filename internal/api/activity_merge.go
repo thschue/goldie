@@ -49,8 +49,10 @@ type MergeConfig struct {
 	Clock        MergeClock    // nil means the real clock
 }
 
-// MergeInput is one replica's feed. Name identifies it in status items.
-// History is that replica's retained events; Live is its live stream, and a
+// MergeInput is one replica's feed. Name identifies it in status items and is
+// the only replica name its events may carry. It is the peer's replica
+// identity as the operator configured it: never the peer's address and never
+// a name the peer reports about itself. History is that replica's retained events; Live is its live stream, and a
 // nil Live means the replica is unreachable.
 type MergeInput struct {
 	Name    string
@@ -97,6 +99,12 @@ type heldEvent struct {
 // Time: its new events are newer than the mark, so they pass even with small
 // IDs. The mark trusts the input's own timestamps, so a peer that sends a far
 // future Time only hides its own older replays, never another replica's.
+//
+// The mark has two limits. Live events the Merger dropped (a full output or
+// buffer) are not recovered when the input re-attaches, because the mark
+// already moved past them. And a peer that restarts with reset IDs while its
+// clock lags behind the mark loses that one replay: its new events are at or
+// below the mark in both ID and Time, so they are skipped as already taken.
 type mergeInputState struct {
 	up       bool
 	lastSeen time.Time
@@ -157,17 +165,18 @@ func compareEvents(a, b Event) int {
 	return 0
 }
 
-// MergeHistories merges the given histories sorted by Time, then Replica, then
-// ID, keeping the first copy of each Replica+ID. Events pass the same check
-// as live ones (normalizeEvent): invalid ones are left out and queries are cut.
-// It does not modify its arguments.
-func MergeHistories(histories ...[]Event) []Event {
+// mergeHistories merges the inputs' histories sorted by Time, then Replica,
+// then ID, keeping the first copy of each Replica+ID. Events pass the same
+// checks as live ones: normalizeEvent, and Replica must equal the input's
+// Name. Events that fail are left out and counted in rejected, once. It does
+// not modify its arguments.
+func mergeHistories(inputs []MergeInput) (out []Event, rejected uint64) {
 	seen := map[eventKey]struct{}{}
-	var out []Event
-	for _, h := range histories {
-		for _, e := range h {
+	for _, in := range inputs {
+		for _, e := range in.History {
 			e, ok := normalizeEvent(e)
-			if !ok {
+			if !ok || e.Replica != in.Name {
+				rejected++
 				continue
 			}
 			k := eventKey{e.Replica, e.ID}
@@ -179,7 +188,7 @@ func MergeHistories(histories ...[]Event) []Event {
 		}
 	}
 	slices.SortStableFunc(out, compareEvents)
-	return out
+	return out, rejected
 }
 
 // Merger merges the activity of several replicas into one stream. Live events
@@ -251,7 +260,6 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 	// first one wins.
 	var kept []MergeInput
 	names := map[string]bool{}
-	histories := make([][]Event, 0, len(inputs))
 	for _, in := range inputs {
 		if names[in.Name] {
 			m.rejected++
@@ -259,14 +267,9 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 		}
 		names[in.Name] = true
 		kept = append(kept, in)
-		for _, e := range in.History {
-			if _, ok := normalizeEvent(e); !ok {
-				m.rejected++
-			}
-		}
-		histories = append(histories, in.History)
 	}
-	history := MergeHistories(histories...)
+	history, rejected := mergeHistories(kept)
+	m.rejected += rejected
 	m.seenMax = max(m.seenMax, 2*len(history))
 	now := m.clock.Now()
 	for _, e := range history {
@@ -334,7 +337,9 @@ func (m *Merger) Dropped() uint64 { return m.counter(&m.dropped) }
 // Duplicates counts events discarded as already seen.
 func (m *Merger) Duplicates() uint64 { return m.counter(&m.duplicates) }
 
-// Rejected counts events discarded as invalid (empty Replica or ID 0).
+// Rejected counts events discarded as invalid (empty Replica or ID 0), events
+// whose Replica differs from their input's Name, and inputs ignored because an
+// earlier one already had their name (each counted once).
 func (m *Merger) Rejected() uint64 { return m.counter(&m.rejected) }
 
 func (m *Merger) counter(c *uint64) uint64 {
@@ -403,13 +408,16 @@ func (m *Merger) receiveLocked(from string, e Event, now time.Time, replay bool)
 		m.rejected++
 		return
 	}
-	if st := m.inputs[from]; e.Replica == from {
-		if replay && st.atOrBelowMark(e) {
-			m.duplicates++
-			return
-		}
-		st.raiseMark(e)
+	if e.Replica != from {
+		m.rejected++
+		return
 	}
+	st := m.inputs[from]
+	if replay && st.atOrBelowMark(e) {
+		m.duplicates++
+		return
+	}
+	st.raiseMark(e)
 	k := eventKey{e.Replica, e.ID}
 	if _, dup := m.seen[k]; dup {
 		m.duplicates++

@@ -104,6 +104,11 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	if err != nil {
 		return wordError(err, c.local)
 	}
+	// Only the warning goes to stderr, so stdout stays the article alone and
+	// --json stays one machine-readable document, lifecycle fields included.
+	if ref, deprecated := contract.Deprecation(*a); deprecated {
+		_, _ = fmt.Fprintln(c.errOut, deprecationNotice(ref))
+	}
 	if c.s.json {
 		return c.printJSON(a)
 	}
@@ -113,6 +118,15 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	writeHint(&b, a.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
 	return err
+}
+
+// deprecationNotice is the stderr line for a deprecated article; ref is the
+// cleaned replacement contract.Deprecation gives, or "".
+func deprecationNotice(ref string) string {
+	if ref == "" {
+		return "Warning: this article is deprecated."
+	}
+	return "Warning: this article is deprecated. Use " + ref + " instead."
 }
 
 // writeHint adds the server's hint for an unregistered Project, if any.

@@ -59,7 +59,14 @@ Two more checks fail the load:
   not scanned.
 
 An article with `status: draft` is left out of search and lookup, and a draft project article does
-not shadow the global article with the same id.
+not shadow the global article with the same id. An operator token can ask for drafts with
+`drafts=true` on search and lookup; a reader token asking for them gets a 403, and MCP never asks.
+Even then a draft project article never shadows an enforced global one.
+
+Search and lookup answer `status` and `replaced_by` for a deprecated article (and `status: draft`
+for a draft an operator asked for); a published article carries neither. `goldie lookup` of a
+deprecated article prints `Warning: this article is deprecated. Use <replaced_by> instead.` on
+stderr, and MCP's `get_article` starts with the same line.
 
 ## Suppression in project.yaml
 

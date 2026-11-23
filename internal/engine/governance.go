@@ -225,11 +225,20 @@ func (s *Snapshot) checkEnforced() error {
 		if a.Scope == ScopeGlobal || !a.published() {
 			continue
 		}
-		if g := s.index[a.key()]; g != nil && g.Enforced && g.published() {
-			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(g))
+		if key := a.key(); s.enforces(key) {
+			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(s.index[key]))
 		}
 	}
 	return nil
+}
+
+// enforces reports whether the global Item key is published and enforced, so
+// no Project Item shadows it (ADR 0021). checkEnforced fails a load in which a
+// published Project copy does; reads skip a draft copy, which only the drafts
+// view would otherwise let shadow it (#359).
+func (s *Snapshot) enforces(key itemKey) bool {
+	g := s.index[key]
+	return g != nil && g.Enforced && g.published()
 }
 
 // allArticles lists pointers to every Article in the Snapshot, global first,
