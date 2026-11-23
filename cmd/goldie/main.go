@@ -35,7 +35,7 @@ func run(args []string, out io.Writer) error {
 	if cli.IsCommand(args[0]) {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 		defer stop()
-		env, flush, err := clientEnv(out, platform.ModeCLI)
+		env, flush, err := clientEnv(out, platform.RoleCLI)
 		if err != nil {
 			return err
 		}
@@ -68,21 +68,21 @@ func run(args []string, out io.Writer) error {
 	return usageError()
 }
 
-// clientEnv is the process environment for the client role mode, with the
+// clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
 // embedded server of --dir and GOLDIE_DIR wired in from app, so cli imports
 // neither engine nor app. When OTEL_* selects traces, its client traces every
 // API call. The caller defers flush, which sends the spans within clientFlush.
-func clientEnv(out io.Writer, mode string) (env cli.Env, flush func(), err error) {
+func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error) {
 	env = cli.DefaultEnv(out)
 	env.StartLocal = app.StartLocal
-	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, mode)
+	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role)
 	if err != nil {
 		return env, nil, fmt.Errorf("invalid configuration:\n%w", err)
 	}
 	if tel.Enabled() {
 		// The SDK's notices go to stderr: stdout carries the command's
 		// output, or for goldie mcp only MCP messages.
-		tel.RouteNoticesTo(platform.NewLogger(os.Stderr, slog.LevelInfo, mode))
+		tel.RouteNoticesTo(platform.NewLogger(os.Stderr, slog.LevelInfo, role))
 		env.Client = &http.Client{Transport: tel.WrapTransport(http.DefaultTransport)}
 	}
 	return env, func() { flushTelemetry(tel, clientFlush) }, nil
@@ -104,7 +104,7 @@ const devNote = "server -dev serves dir (else GOLDIE_CONTENT_DIR, else the worki
 func runMCP(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	env, flush, err := clientEnv(io.Discard, platform.ModeMCP)
+	env, flush, err := clientEnv(io.Discard, platform.RoleMCP)
 	if err != nil {
 		return err
 	}

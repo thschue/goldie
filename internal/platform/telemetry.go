@@ -65,8 +65,8 @@ func telemetryResource(serviceName string, extra map[string]string) *resource.Re
 	return roleResource(RoleServer, serviceName, extra)
 }
 
-// RoleServer is the goldie.role of the server. The client roles are ModeCLI
-// and ModeMCP (telemetry_client.go).
+// RoleServer is the goldie.role of the server. The client roles are RoleCLI
+// and RoleMCP (telemetry_client.go).
 const RoleServer = "server"
 
 // serverMode is the server's goldie.mode; client roles carry no goldie.mode.
@@ -278,13 +278,13 @@ var secretOTelNames = secretSet(TelemetrySettings)
 // returns a disabled Telemetry when nothing selects one, and an error naming
 // the variable (never its value, PC-04, PC-05) when a value is invalid.
 func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
-	return setupTelemetry(ctx, lookup, RoleServer, false)
+	return setupTelemetry(ctx, lookup, RoleServer)
 }
 
 // setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
-// client role (client true) reads and exports traces only.
-func setupTelemetry(ctx context.Context, lookup Lookup, role string, client bool) (*Telemetry, error) {
-	server := !client
+// client role (any role but RoleServer) reads and exports traces only.
+func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+	server := role == RoleServer
 	var errs []error
 	get := func(name string) string {
 		var v string

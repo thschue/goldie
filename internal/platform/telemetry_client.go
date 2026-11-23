@@ -15,21 +15,21 @@ import (
 
 // The goldie.role of each client role's telemetry, for SetupClientTelemetry.
 const (
-	ModeCLI = "cli" // the client commands
-	ModeMCP = "mcp" // goldie mcp over stdio
+	RoleCLI = "cli" // the client commands
+	RoleMCP = "mcp" // goldie mcp over stdio
 )
 
 // SetupClientTelemetry is SetupTelemetry for a client role: traces only, with
-// goldie.role set to mode (ModeCLI or ModeMCP), and no goldie.mode. Logs and metrics are never
+// goldie.role set to role (RoleCLI or RoleMCP), and no goldie.mode. Logs and metrics are never
 // exported, whatever their variables say, and GOLDIE_TELEMETRY_CLIENT_INFO
 // does not apply. It is off unless an endpoint or OTEL_TRACES_EXPORTER
-// selects traces. mode is a plain string because callers range over the
-// modes as strings; any other value is an error.
-func SetupClientTelemetry(ctx context.Context, lookup Lookup, mode string) (*Telemetry, error) {
-	if mode != ModeCLI && mode != ModeMCP {
-		return nil, errors.New("client telemetry: the mode must be cli or mcp")
+// selects traces. role is a plain string because callers range over the
+// roles as strings; any other value is an error.
+func SetupClientTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+	if role != RoleCLI && role != RoleMCP {
+		return nil, errors.New("client telemetry: the role must be cli or mcp")
 	}
-	return setupTelemetry(ctx, lookup, mode, true)
+	return setupTelemetry(ctx, lookup, role)
 }
 
 // RouteNoticesTo sends what the OpenTelemetry SDK reports to l, as one fixed
