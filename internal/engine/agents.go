@@ -41,8 +41,6 @@ type Agent struct {
 // Kind is KindAgent.
 func (a Agent) Kind() string { return KindAgent }
 
-func (a Agent) key() itemKey { return keyOf(a.Kind(), a.Name) }
-
 // An agent is held in the Snapshot as an Article record of kind agent: the
 // record carries the lifecycle, so winner, checkEnforced, checkReplacements
 // and suppression resolve it by its itemKey, with no second copy of those
