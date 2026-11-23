@@ -111,6 +111,27 @@ func (e GetActivityParamsReplicas) Valid() bool {
 	}
 }
 
+// Defines values for SearchArticlesParamsKind.
+const (
+	SearchArticlesParamsKindAgent   SearchArticlesParamsKind = "agent"
+	SearchArticlesParamsKindArticle SearchArticlesParamsKind = "article"
+	SearchArticlesParamsKindSkill   SearchArticlesParamsKind = "skill"
+)
+
+// Valid indicates whether the value is a known member of the SearchArticlesParamsKind enum.
+func (e SearchArticlesParamsKind) Valid() bool {
+	switch e {
+	case SearchArticlesParamsKindAgent:
+		return true
+	case SearchArticlesParamsKindArticle:
+		return true
+	case SearchArticlesParamsKindSkill:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActivityDropped The `data` of an SSE event of type `dropped`: this subscriber lost
 // events because it did not keep up. Clients ignore fields they do not
 // know.
@@ -500,7 +521,7 @@ type ProjectView struct {
 	Suppressions []string `json:"suppressions"`
 }
 
-// SearchHit One article that matched a search.
+// SearchHit One Item that matched a search.
 //
 // Examples: {"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","overrides":["global"],"scope":"global","score":6}
 type SearchHit struct {
@@ -509,12 +530,12 @@ type SearchHit struct {
 	// Examples: false
 	Enforced *bool `json:"enforced,omitempty"`
 
-	// Id The article id, for a lookup.
+	// Id The Item's id, an article id for a lookup or a skill or agent name.
 	//
 	// Examples: platform/deploy
 	Id string `json:"id"`
 
-	// Keywords The article's keywords, lower case.
+	// Keywords The Item's keywords, lower case.
 	//
 	// Examples: ["kubernetes","deploy"]
 	Keywords []string `json:"keywords"`
@@ -529,7 +550,9 @@ type SearchHit struct {
 	// Examples: ["kubernetes","name"]
 	Matched []string `json:"matched"`
 
-	// Name The display title from the frontmatter.
+	// Name The display title from the frontmatter of an article. A skill's or
+	// agent's name is its id.
+	//
 	//
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
@@ -587,7 +610,7 @@ type SearchResults struct {
 	// Examples: deploy kubernetes
 	Query string `json:"query"`
 
-	// Results The matching articles, best first, then by id.
+	// Results The matching Items, best first, then by id.
 	//
 	// Examples: []
 	Results []SearchHit `json:"results"`
@@ -807,6 +830,10 @@ type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
 	Q string `form:"q" json:"q"`
 
+	// Kind The Kind of Item to search: `article` (the default), `skill` or
+	// `agent`. Any other value is a 400.
+	Kind *SearchArticlesParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+
 	// Project Resolve for this Project (ADR 0020): its articles come before the
 	// global ones and win on an equal id. Matched ignoring case. A Project
 	// that is not registered answers the global results with a `hint`; a
@@ -821,6 +848,9 @@ type SearchArticlesParams struct {
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
+
+// SearchArticlesParamsKind defines parameters for SearchArticles.
+type SearchArticlesParamsKind string
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
@@ -845,6 +875,23 @@ type GetSkillParams struct {
 	// global one with the same name. Matched ignoring case. An
 	// unregistered Project answers the global view with a `hint`; a value
 	// that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
+// GetSkillFileParams defines parameters for GetSkillFile.
+type GetSkillFileParams struct {
+	// Project Resolve the skill for this Project (ADR 0020): its bundle answers
+	// whole, so a file only the global bundle has is a miss. Matched
+	// ignoring case. An unregistered Project answers the global bundle; a
+	// value that is not a `ProjectId` is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 
 	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
@@ -1064,12 +1111,17 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
 	GetProjectItems(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// SearchArticles Search articles by keyword
+	// SearchArticles Search articles, skills and agents by keyword
 	//
-	// Returns the articles that match the search words, best first. An exact
-	// keyword match scores 4, a keyword containing the word 1, and a name
-	// containing the word 2. Ties are ordered by id. No match is an empty
-	// list, not an error.
+	// Returns the Items of one Kind that match the search words, best first.
+	// Without `kind` only articles are searched, so a client that follows a hit
+	// with an article lookup keeps working. An exact keyword match scores 4, a
+	// keyword containing the word 1, and a name containing the word 2. A skill
+	// or agent matches on its name and keywords only, never on its
+	// description (ADR 0005); a skill's keywords are the `keywords` in the
+	// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+	// empty list, not an error. A skill or agent hit's `id` is its name: read
+	// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1164,12 +1216,26 @@ type ClientInterface interface {
 
 	// GetSkill Read one skill
 	//
-	// Returns one skill by name with its file list. A miss is a 404 whose hint
-	// points to the list. The digest and the executable bit are not part of
-	// the answer yet.
+	// Returns one skill by name with its file list. A client reads each listed
+	// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+	// 404 whose hint points to the list. The digest and the executable bit
+	// are not part of the answer yet.
 	//
 	// Corresponds with GET /api/v1/skills/{name} (the `GetSkill` operationId).
 	GetSkill(ctx context.Context, name string, params *GetSkillParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSkillFile Read one file of a skill
+	//
+	// Returns the bytes of one file of the skill's bundle exactly as written,
+	// for a path listed in the skill's `files`. Every file is served with the
+	// one content type `application/octet-stream` and
+	// `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+	// client or browser never runs or renders it. A name or path that is not a
+	// file of the bundle that answers, one that leaves the bundle, and an
+	// absolute path are all the same 404.
+	//
+	// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
+	GetSkillFile(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSync Read the content sync status and warnings
 	//
@@ -1424,12 +1490,17 @@ func (c *Client) GetProjectItems(ctx context.Context, id ProjectId, reqEditors .
 	return c.Client.Do(req)
 }
 
-// SearchArticles Search articles by keyword
+// SearchArticles Search articles, skills and agents by keyword
 //
-// Returns the articles that match the search words, best first. An exact
-// keyword match scores 4, a keyword containing the word 1, and a name
-// containing the word 2. Ties are ordered by id. No match is an empty
-// list, not an error.
+// Returns the Items of one Kind that match the search words, best first.
+// Without `kind` only articles are searched, so a client that follows a hit
+// with an article lookup keeps working. An exact keyword match scores 4, a
+// keyword containing the word 1, and a name containing the word 2. A skill
+// or agent matches on its name and keywords only, never on its
+// description (ADR 0005); a skill's keywords are the `keywords` in the
+// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+// empty list, not an error. A skill or agent hit's `id` is its name: read
+// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 //
 // Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1584,13 +1655,37 @@ func (c *Client) ListSkills(ctx context.Context, params *ListSkillsParams, reqEd
 
 // GetSkill Read one skill
 //
-// Returns one skill by name with its file list. A miss is a 404 whose hint
-// points to the list. The digest and the executable bit are not part of
-// the answer yet.
+// Returns one skill by name with its file list. A client reads each listed
+// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+// 404 whose hint points to the list. The digest and the executable bit
+// are not part of the answer yet.
 //
 // Corresponds with GET /api/v1/skills/{name} (the `GetSkill` operationId).
 func (c *Client) GetSkill(ctx context.Context, name string, params *GetSkillParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSkillRequest(c.Server, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSkillFile Read one file of a skill
+//
+// Returns the bytes of one file of the skill's bundle exactly as written,
+// for a path listed in the skill's `files`. Every file is served with the
+// one content type `application/octet-stream` and
+// `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+// client or browser never runs or renders it. A name or path that is not a
+// file of the bundle that answers, one that leaves the bundle, and an
+// absolute path are all the same 404.
+//
+// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
+func (c *Client) GetSkillFile(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSkillFileRequest(c.Server, name, path, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2141,6 +2236,18 @@ func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*htt
 			}
 		}
 
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Project != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -2356,6 +2463,86 @@ func NewGetSkillRequest(server string, name string, params *GetSkillParams) (*ht
 	}
 
 	operationPath := "/api/v1/skills/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSkillFileRequest constructs an http.Request for the GetSkillFile method
+func NewGetSkillFileRequest(server string, name string, path string, params *GetSkillFileParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "path", path, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/skills/" + pathParam0 + "/files/" + pathParam1
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -2711,12 +2898,17 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
 	GetProjectItemsWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectItemsResponse, error)
 
-	// SearchArticlesWithResponse Search articles by keyword
+	// SearchArticlesWithResponse Search articles, skills and agents by keyword
 	//
-	// Returns the articles that match the search words, best first. An exact
-	// keyword match scores 4, a keyword containing the word 1, and a name
-	// containing the word 2. Ties are ordered by id. No match is an empty
-	// list, not an error.
+	// Returns the Items of one Kind that match the search words, best first.
+	// Without `kind` only articles are searched, so a client that follows a hit
+	// with an article lookup keeps working. An exact keyword match scores 4, a
+	// keyword containing the word 1, and a name containing the word 2. A skill
+	// or agent matches on its name and keywords only, never on its
+	// description (ADR 0005); a skill's keywords are the `keywords` in the
+	// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+	// empty list, not an error. A skill or agent hit's `id` is its name: read
+	// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -2819,14 +3011,30 @@ type ClientWithResponsesInterface interface {
 
 	// GetSkillWithResponse Read one skill
 	//
-	// Returns one skill by name with its file list. A miss is a 404 whose hint
-	// points to the list. The digest and the executable bit are not part of
-	// the answer yet.
+	// Returns one skill by name with its file list. A client reads each listed
+	// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+	// 404 whose hint points to the list. The digest and the executable bit
+	// are not part of the answer yet.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/skills/{name} (the `GetSkill` operationId).
 	GetSkillWithResponse(ctx context.Context, name string, params *GetSkillParams, reqEditors ...RequestEditorFn) (*GetSkillResponse, error)
+
+	// GetSkillFileWithResponse Read one file of a skill
+	//
+	// Returns the bytes of one file of the skill's bundle exactly as written,
+	// for a path listed in the skill's `files`. Every file is served with the
+	// one content type `application/octet-stream` and
+	// `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+	// client or browser never runs or renders it. A name or path that is not a
+	// file of the bundle that answers, one that leaves the bundle, and an
+	// absolute path are all the same 404.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
+	GetSkillFileWithResponse(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*GetSkillFileResponse, error)
 
 	// GetSyncWithResponse Read the content sync status and warnings
 	//
@@ -4145,6 +4353,103 @@ func (r GetSkillResponse) ContentType() string {
 	return ""
 }
 
+// GetSkillFileResponse429Headers the declared response headers of an HTTP 429 response for GetSkillFile
+type GetSkillFileResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetSkillFileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSkillFileResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSkillFileResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSkillFileResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSkillFileResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSkillFileResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSkillFileResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSkillFileResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetSkillFileResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSkillFileResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSkillFileResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSkillFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSkillFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSkillFileResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetSyncResponse429Headers the declared response headers of an HTTP 429 response for GetSync
 type GetSyncResponse429Headers struct {
 	RetryAfter *int
@@ -4616,12 +4921,17 @@ func (c *ClientWithResponses) GetProjectItemsWithResponse(ctx context.Context, i
 	return ParseGetProjectItemsResponse(rsp)
 }
 
-// SearchArticlesWithResponse Search articles by keyword
+// SearchArticlesWithResponse Search articles, skills and agents by keyword
 //
-// Returns the articles that match the search words, best first. An exact
-// keyword match scores 4, a keyword containing the word 1, and a name
-// containing the word 2. Ties are ordered by id. No match is an empty
-// list, not an error.
+// Returns the Items of one Kind that match the search words, best first.
+// Without `kind` only articles are searched, so a client that follows a hit
+// with an article lookup keeps working. An exact keyword match scores 4, a
+// keyword containing the word 1, and a name containing the word 2. A skill
+// or agent matches on its name and keywords only, never on its
+// description (ADR 0005); a skill's keywords are the `keywords` in the
+// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+// empty list, not an error. A skill or agent hit's `id` is its name: read
+// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -4760,9 +5070,10 @@ func (c *ClientWithResponses) ListSkillsWithResponse(ctx context.Context, params
 
 // GetSkillWithResponse Read one skill
 //
-// Returns one skill by name with its file list. A miss is a 404 whose hint
-// points to the list. The digest and the executable bit are not part of
-// the answer yet.
+// Returns one skill by name with its file list. A client reads each listed
+// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+// 404 whose hint points to the list. The digest and the executable bit
+// are not part of the answer yet.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -4773,6 +5084,27 @@ func (c *ClientWithResponses) GetSkillWithResponse(ctx context.Context, name str
 		return nil, err
 	}
 	return ParseGetSkillResponse(rsp)
+}
+
+// GetSkillFileWithResponse Read one file of a skill
+//
+// Returns the bytes of one file of the skill's bundle exactly as written,
+// for a path listed in the skill's `files`. Every file is served with the
+// one content type `application/octet-stream` and
+// `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+// client or browser never runs or renders it. A name or path that is not a
+// file of the bundle that answers, one that leaves the bundle, and an
+// absolute path are all the same 404.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
+func (c *ClientWithResponses) GetSkillFileWithResponse(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*GetSkillFileResponse, error) {
+	rsp, err := c.GetSkillFile(ctx, name, path, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSkillFileResponse(rsp)
 }
 
 // GetSyncWithResponse Read the content sync status and warnings
@@ -5986,6 +6318,94 @@ func ParseGetSkillResponse(rsp *http.Response) (*GetSkillResponse, error) {
 	return response, nil
 }
 
+// ParseGetSkillFileResponse parses an HTTP response from a GetSkillFileWithResponse call
+func ParseGetSkillFileResponse(rsp *http.Response) (*GetSkillFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSkillFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetSkillFileResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetSyncResponse parses an HTTP response from a GetSyncWithResponse call
 func ParseGetSyncResponse(rsp *http.Response) (*GetSyncResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6240,7 +6660,7 @@ type ServerInterface interface {
 	// GetProjectItems Export a Project's resolved view
 	// (GET /api/v1/projects/{id}/items)
 	GetProjectItems(w http.ResponseWriter, r *http.Request, id ProjectId)
-	// SearchArticles Search articles by keyword
+	// SearchArticles Search articles, skills and agents by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
 	// DeleteSession Sign out
@@ -6258,6 +6678,9 @@ type ServerInterface interface {
 	// GetSkill Read one skill
 	// (GET /api/v1/skills/{name})
 	GetSkill(w http.ResponseWriter, r *http.Request, name string, params GetSkillParams)
+	// GetSkillFile Read one file of a skill
+	// (GET /api/v1/skills/{name}/files/{path})
+	GetSkillFile(w http.ResponseWriter, r *http.Request, name string, path string, params GetSkillFileParams)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(w http.ResponseWriter, r *http.Request)
@@ -6604,6 +7027,19 @@ func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "project" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -6775,6 +7211,70 @@ func (siw *ServerInterfaceWrapper) GetSkill(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetSkill(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSkillFile operation middleware
+func (siw *ServerInterfaceWrapper) GetSkillFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "path" -------------
+	var path string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "path", r.PathValue("path"), &path, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSkillFileParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSkillFile(w, r, name, path, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6964,6 +7464,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills", wrapper.ListSkills)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}", wrapper.GetSkill)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}/files/{path}", wrapper.GetSkillFile)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents", wrapper.ListAgents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
@@ -8726,6 +9227,160 @@ func (response GetSkilldefaultJSONResponse) VisitGetSkillResponse(w http.Respons
 	return err
 }
 
+type GetSkillFileRequestObject struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Params GetSkillFileParams
+}
+
+type GetSkillFileResponseObject interface {
+	VisitGetSkillFileResponse(w http.ResponseWriter) error
+}
+
+type GetSkillFile200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response GetSkillFile200ApplicationoctetStreamResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetSkillFile400JSONResponse ErrorEnvelope
+
+func (response GetSkillFile400JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile401JSONResponse ErrorEnvelope
+
+func (response GetSkillFile401JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile403JSONResponse ErrorEnvelope
+
+func (response GetSkillFile403JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile404JSONResponse ErrorEnvelope
+
+func (response GetSkillFile404JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetSkillFile426JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetSkillFile429JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFile503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetSkillFile503JSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillFiledefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSkillFiledefaultJSONResponse) VisitGetSkillFileResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSyncRequestObject struct {
 }
 
@@ -9075,7 +9730,7 @@ type StrictServerInterface interface {
 	// GetProjectItems Export a Project's resolved view
 	// (GET /api/v1/projects/{id}/items)
 	GetProjectItems(ctx context.Context, request GetProjectItemsRequestObject) (GetProjectItemsResponseObject, error)
-	// SearchArticles Search articles by keyword
+	// SearchArticles Search articles, skills and agents by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
 	// DeleteSession Sign out
@@ -9093,6 +9748,9 @@ type StrictServerInterface interface {
 	// GetSkill Read one skill
 	// (GET /api/v1/skills/{name})
 	GetSkill(ctx context.Context, request GetSkillRequestObject) (GetSkillResponseObject, error)
+	// GetSkillFile Read one file of a skill
+	// (GET /api/v1/skills/{name}/files/{path})
+	GetSkillFile(ctx context.Context, request GetSkillFileRequestObject) (GetSkillFileResponseObject, error)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
@@ -9508,6 +10166,34 @@ func (sh *strictHandler) GetSkill(w http.ResponseWriter, r *http.Request, name s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSkillResponseObject); ok {
 		if err := validResponse.VisitGetSkillResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSkillFile operation middleware
+func (sh *strictHandler) GetSkillFile(w http.ResponseWriter, r *http.Request, name string, path string, params GetSkillFileParams) {
+	var request GetSkillFileRequestObject
+
+	request.Name = name
+	request.Path = path
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSkillFile(ctx, request.(GetSkillFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSkillFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSkillFileResponseObject); ok {
+		if err := validResponse.VisitGetSkillFileResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

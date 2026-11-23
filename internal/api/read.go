@@ -182,6 +182,23 @@ func (s *Server) Register(m contract.ServeMux) {
 	})
 }
 
+// badKind is the 400 envelope for a kind that is none of article, skill or
+// agent. It does not echo the value.
+var badKind = envelope("bad_request", "invalid kind",
+	"Use kind=article, kind=skill or kind=agent, or leave it out to search articles.")
+
+// searchKind is the Kind a search asks for: an article when kind is absent.
+func searchKind(k *contract.SearchArticlesParamsKind) (string, bool) {
+	if k == nil {
+		return engine.KindArticle, true
+	}
+	switch kind := string(*k); kind {
+	case engine.KindArticle, engine.KindSkill, engine.KindAgent:
+		return kind, true
+	}
+	return "", false
+}
+
 // SearchArticles answers GET /api/v1/search.
 func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticlesRequestObject) (contract.SearchArticlesResponseObject, error) {
 	// A request that can never succeed is a 403 or 400 before and after the
@@ -194,6 +211,10 @@ func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticles
 	if strings.TrimSpace(q) == "" || len(q) > maxQueryBytes {
 		return contract.SearchArticles400JSONResponse(badSearch), nil
 	}
+	kind, ok := searchKind(req.Params.Kind)
+	if !ok {
+		return contract.SearchArticles400JSONResponse(badKind), nil
+	}
 	project, ok := validProject(req.Params.Project)
 	if !ok {
 		return contract.SearchArticles400JSONResponse(badProject), nil
@@ -204,7 +225,7 @@ func (s *Server) SearchArticles(ctx context.Context, req contract.SearchArticles
 	}
 	proj, hint := scopeHint(snap, project)
 	res := contract.SearchArticles200JSONResponse{Query: q, Results: []contract.SearchHit{}, Hint: hint}
-	for _, h := range snap.SearchIn(proj, q, opts) {
+	for _, h := range snap.SearchKindIn(proj, kind, q, opts) {
 		status, replacedBy := lifecycle(h.Status, h.ReplacedBy)
 		res.Results = append(res.Results, contract.SearchHit{
 			Id:         h.ID,

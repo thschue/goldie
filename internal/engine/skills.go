@@ -6,7 +6,12 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
+
+// KindSkill is the Kind of a skill bundle: the directory skills/<name>/.
+const KindSkill = "skill"
 
 // skillsDir is where a Source keeps its global skill bundles, relative to its
 // root. A Project's are in <project dir>/skills and the local Scope's in
@@ -34,6 +39,25 @@ type Skill struct {
 type skillBundle struct {
 	scope string
 	files map[string][]byte
+	// keywords are the keywords in the frontmatter of SKILL.md, lower case.
+	keywords []string
+}
+
+// skillKeywords reads the keywords from the frontmatter of a SKILL.md. A
+// SKILL.md without well-formed frontmatter has none: the file is served as
+// written either way, so it never fails a load.
+func skillKeywords(raw []byte) []string {
+	front, _, err := splitFrontmatter(raw)
+	if err != nil {
+		return nil
+	}
+	var meta struct {
+		Keywords yaml.Node `yaml:"keywords"`
+	}
+	if yaml.Unmarshal(front, &meta) != nil {
+		return nil
+	}
+	return lenientKeywords(meta.Keywords)
 }
 
 // errNoSkillFile is what SkillFile returns for anything that is not a file of
@@ -66,10 +90,11 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 		if err := readBundle(fsys, p, "", files); err != nil {
 			return nil, err
 		}
-		if _, ok := files[skillFileName]; !ok {
+		skill, ok := files[skillFileName]
+		if !ok {
 			return nil, fmt.Errorf("%s: has no %s", p, skillFileName)
 		}
-		bundles[e.Name()] = skillBundle{scope: scope, files: files}
+		bundles[e.Name()] = skillBundle{scope: scope, files: files, keywords: skillKeywords(skill)}
 	}
 	return bundles, nil
 }

@@ -46,12 +46,17 @@ paths:
       operationId: searchArticles
       tags:
         - articles
-      summary: Search articles by keyword
+      summary: Search articles, skills and agents by keyword
       description: |
-        Returns the articles that match the search words, best first. An exact
-        keyword match scores 4, a keyword containing the word 1, and a name
-        containing the word 2. Ties are ordered by id. No match is an empty
-        list, not an error.
+        Returns the Items of one Kind that match the search words, best first.
+        Without `kind` only articles are searched, so a client that follows a hit
+        with an article lookup keeps working. An exact keyword match scores 4, a
+        keyword containing the word 1, and a name containing the word 2. A skill
+        or agent matches on its name and keywords only, never on its
+        description (ADR 0005); a skill's keywords are the `keywords` in the
+        frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+        empty list, not an error. A skill or agent hit's `id` is its name: read
+        it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
       parameters:
         - name: q
           in: query
@@ -62,6 +67,18 @@ paths:
             minLength: 1
             maxLength: 1024
           example: deploy kubernetes
+        - name: kind
+          in: query
+          required: false
+          description: |
+            The Kind of Item to search: `article` (the default), `skill` or
+            `agent`. Any other value is a 400.
+          schema:
+            type: string
+            enum:
+              - article
+              - skill
+              - agent
         - name: project
           in: query
           required: false
@@ -75,13 +92,13 @@ paths:
         - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
-          description: The matching articles, best first.
+          description: The matching Items, best first.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResults"
         "400":
-          description: The search words are missing or longer than 1024 bytes, or `project` is not a `ProjectId`.
+          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`.
           content:
             application/json:
               schema:
@@ -243,9 +260,10 @@ paths:
         - skills
       summary: Read one skill
       description: |
-        Returns one skill by name with its file list. A miss is a 404 whose hint
-        points to the list. The digest and the executable bit are not part of
-        the answer yet.
+        Returns one skill by name with its file list. A client reads each listed
+        `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+        404 whose hint points to the list. The digest and the executable bit
+        are not part of the answer yet.
       parameters:
         - name: name
           in: path
@@ -293,6 +311,93 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: No skill has this name; the hint points to the skill list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{name}/files/{path}:
+    get:
+      operationId: getSkillFile
+      tags:
+        - skills
+      summary: Read one file of a skill
+      description: |
+        Returns the bytes of one file of the skill's bundle exactly as written,
+        for a path listed in the skill's `files`. Every file is served with the
+        one content type `application/octet-stream` and
+        `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+        client or browser never runs or renders it. A name or path that is not a
+        file of the bundle that answers, one that leaves the bundle, and an
+        absolute path are all the same 404.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The skill name, one path segment. A name that is not one is a miss, as is one that no skill has.
+          schema:
+            type: string
+            minLength: 1
+          example: deploy
+        - name: path
+          in: path
+          required: true
+          description: |
+            The file's path relative to the bundle, one path segment (ADR 0016).
+            A `/` inside it is sent percent-encoded as `%2F`: `scripts/run.sh`
+            is requested as `/api/v1/skills/deploy/files/scripts%2Frun.sh`. A
+            bare slash does not match this operation and answers the not-found
+            envelope.
+          schema:
+            type: string
+            minLength: 1
+          example: SKILL.md
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the skill for this Project (ADR 0020): its bundle answers
+            whole, so a file only the global bundle has is a miss. Matched
+            ignoring case. An unregistered Project answers the global bundle; a
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The file's bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: 'For the skill file, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the skill file, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the skill file, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files.
           content:
             application/json:
               schema:
@@ -1120,7 +1225,7 @@ components:
             - deploy kubernetes
         results:
           type: array
-          description: The matching articles, best first, then by id.
+          description: The matching Items, best first, then by id.
           items:
             $ref: "#/components/schemas/SearchHit"
           examples:
@@ -1532,7 +1637,7 @@ components:
             - suppress "article:team/gone" names no published Item this Project can see
     SearchHit:
       type: object
-      description: One article that matched a search.
+      description: One Item that matched a search.
       examples:
         - id: platform/deploy
           name: Deploying to Kubernetes
@@ -1559,12 +1664,14 @@ components:
       properties:
         id:
           type: string
-          description: The article id, for a lookup.
+          description: The Item's id, an article id for a lookup or a skill or agent name.
           examples:
             - platform/deploy
         name:
           type: string
-          description: The display title from the frontmatter.
+          description: |
+            The display title from the frontmatter of an article. A skill's or
+            agent's name is its id.
           examples:
             - Deploying to Kubernetes
         kind:
@@ -1579,7 +1686,7 @@ components:
             - global
         keywords:
           type: array
-          description: The article's keywords, lower case.
+          description: The Item's keywords, lower case.
           items:
             type: string
           examples:

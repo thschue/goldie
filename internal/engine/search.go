@@ -82,11 +82,46 @@ func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
 // opts asks for them. Deprecated Items are served and shadow. Which copy of
 // each Item answers is winner's rule.
 func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
-	o := readOpts(opts)
+	return s.SearchKindIn(proj, KindArticle, query, opts...)
+}
+
+// SearchKindIn is SearchIn for one Kind: KindArticle, KindAgent or KindSkill.
+// Skills and agents match on their name and keywords only, never on the
+// description (ADR 0005). A skill's keywords are those in its SKILL.md. Any
+// other kind finds nothing.
+func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
+	switch kind {
+	case KindSkill:
+		hits = s.searchSkills(proj, words)
+	case KindArticle, KindAgent:
+		hits = s.searchItems(proj, kind, words, readOpts(opts))
+	}
+	sortHits(hits)
+	return hits
+}
+
+// searchSkills scores the skills that answer in proj's view. Skills have no
+// lifecycle: each is published and shadows nothing.
+func (s *Snapshot) searchSkills(proj string, words []string) []Hit {
+	var hits []Hit
+	for _, sk := range s.Skills(proj) {
+		b, _ := s.skillBundleFor(proj, sk.Name)
+		h := Hit{ID: sk.Name, Name: sk.Name, Kind: KindSkill, Scope: b.scope, Keywords: append([]string(nil), b.keywords...), Status: StatusPublished}
+		scoreWords(&h, sk.Name, b.keywords, words)
+		if h.Score > 0 {
+			hits = append(hits, h)
+		}
+	}
+	return hits
+}
+
+// searchItems scores the articles or agents that answer in proj's view.
+func (s *Snapshot) searchItems(proj, kind string, words []string, o ReadOptions) []Hit {
+	var hits []Hit
 	seen := map[itemKey]bool{}
-	for _, list := range s.resolutionOrder(proj, KindArticle) {
+	for _, list := range s.resolutionOrder(proj, kind) {
 		for i := range list {
 			key := list[i].key()
 			if seen[key] {
@@ -101,6 +136,10 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 			}
 		}
 	}
+	return hits
+}
+
+func sortHits(hits []Hit) {
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].Score != hits[j].Score {
 			return hits[i].Score > hits[j].Score
@@ -110,7 +149,6 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 		}
 		return hits[i].ID < hits[j].ID
 	})
-	return hits
 }
 
 // scopeRank orders Scopes on equal score: local, then Project, then global
@@ -127,9 +165,16 @@ func scopeRank(scope string) int {
 
 func scoreArticle(a Article, words []string) Hit {
 	h := Hit{ID: a.ID, Name: a.Name, Kind: a.Kind(), Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy, Enforced: a.Enforced}
-	name := strings.ToLower(a.Name)
+	scoreWords(&h, a.Name, a.Keywords, words)
+	return h
+}
+
+// scoreWords adds to h the score of the words against an Item's name and
+// keywords.
+func scoreWords(h *Hit, itemName string, keywords, words []string) {
+	name := strings.ToLower(itemName)
 	for _, w := range words {
-		for _, k := range a.Keywords {
+		for _, k := range keywords {
 			switch {
 			case k == w:
 				h.Score += scoreExactKeyword
@@ -144,7 +189,6 @@ func scoreArticle(a Article, words []string) Hit {
 			h.Matched = addOnce(h.Matched, "name")
 		}
 	}
-	return h
 }
 
 func addOnce(s []string, v string) []string {
