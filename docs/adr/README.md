@@ -26,3 +26,4 @@ Consequences.
 - [0020. Project identity is exactly host/org/repo, matched case-insensitively](0020-project-identity-is-host-org-repo-matched-case-insensitively.md)
 - [0021. Item references are `<kind>:<name>`, resolved in the referrer's view](0021-item-references-resolve-in-the-referrers-view.md)
 - [0022. Federated activity across replicas](0022-federated-activity-across-replicas.md)
+- [0023. Git Source URLs are operator-trusted](0023-git-source-urls-are-operator-trusted.md)
