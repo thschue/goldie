@@ -213,8 +213,8 @@ reads an agent's name and description. The session's default Project picks the b
 URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
 is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
 step. A failed prompt or resource read says it was a prompt or resource, not a tool.
-When the default Project has a problem, a prompt or resource error names the problem and says to fix
-it and restart the MCP server: those surfaces take no `project` argument, so it does not point at
+When the default Project has a problem, a prompt or resource error names the problem and tells the agent
+to ask the user to fix it and restart the MCP server: those surfaces take no `project` argument, so it does not point at
 `list_projects`.
 
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
