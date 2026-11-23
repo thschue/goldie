@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"regexp"
 )
 
@@ -39,19 +38,33 @@ func (s BlockStatus) String() string {
 
 var (
 	// ErrBlockEdited is returned for a hand-edited block when not forced.
-	ErrBlockEdited = errors.New("the goldie block was edited by hand; use --force to replace it")
+	ErrBlockEdited = errors.New("the goldie block was edited by hand. To replace it and discard those edits, use --force")
 	// ErrBlockMalformed is returned for a file whose markers do not form
 	// exactly one block, or for block content that holds a marker.
 	ErrBlockMalformed = errors.New("the goldie block markers are malformed")
 )
 
-// errDamagedFile and errBadContent wrap ErrBlockMalformed with the cause and
-// the next step; forcing does not help in either case.
+// editedError is an ErrBlockEdited that carries the caller's message: the file
+// name and the next command.
+type editedError string
+
+func (e editedError) Error() string        { return string(e) }
+func (e editedError) Is(target error) bool { return target == ErrBlockEdited }
+
+// malformedError is an ErrBlockMalformed that carries its own message, so the
+// text is not prefixed with the sentinel's and does not say the same thing twice.
+type malformedError string
+
+func (e malformedError) Error() string        { return string(e) }
+func (e malformedError) Is(target error) bool { return target == ErrBlockMalformed }
+
+// errDamagedFile and errBadContent are ErrBlockMalformed with the cause and the
+// next step; forcing does not help in either case. The caller adds the path.
 var (
-	errDamagedFile = fmt.Errorf("%w: the goldie block in this file is damaged (a begin marker without an end, or more than one block); "+
-		"fix or delete the lines between `<!-- goldie:begin` and `<!-- goldie:end -->` by hand, then run the command again; --force does not help", ErrBlockMalformed)
-	errBadContent = fmt.Errorf("%w: the block goldie wants to write contains a goldie marker; this is a goldie bug, not a problem in your file, "+
-		"so leave the file as it is and report it", ErrBlockMalformed)
+	errDamagedFile = malformedError("the goldie block in this file is damaged (a begin marker with no end, or more than one block). " +
+		"Fix or delete the lines from \"<!-- goldie:begin\" to \"<!-- goldie:end -->\" by hand, then run again. --force does not help.")
+	errBadContent = malformedError("the block goldie wants to write contains a goldie marker. This is a goldie bug, not a problem in your file: " +
+		"leave the file as it is and report it on the goldie issue tracker, with the output of `goldie version`.")
 )
 
 const (

@@ -17,6 +17,7 @@ import (
 	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/cli"
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -240,6 +241,11 @@ func validateCmd() *cobra.Command {
 			for _, w := range warnings {
 				fmt.Fprintln(os.Stderr, "goldie: warning:", w)
 			}
+			if errors.Is(err, engine.ErrContentDirUnreadable) {
+				// Only here, where a person reads it: server --dev ends with the
+				// same error without the hint, and ValidateDir must equal it.
+				err = fmt.Errorf("%w: %s", err, engine.ContentDirUnreadableHint)
+			}
 			return err
 		},
 	}
@@ -275,6 +281,16 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"Print one article. Find ids with goldie search.",
 		"  goldie lookup platform/deploy",
 	},
+	"skills": {
+		"skills list|show <name> [flags]", "List skills or show one with its files",
+		"List the skills, show one skill and the files in its bundle, or read one file with show <name> --file <path>.",
+		"  goldie skills list\n  goldie skills show deploy\n  goldie skills show deploy --file SKILL.md",
+	},
+	"agents": {
+		"agents list|show <name> [flags]", "List agents or show one with its description",
+		"List the agents, or show one agent and its description.",
+		"  goldie agents list\n  goldie agents show reviewer",
+	},
 	"status": {
 		"status [flags]", "Check that a server answers and accepts the token",
 		"Report whether the server answers, whether it accepts the token and which\nProject the repository maps to.",
@@ -287,7 +303,7 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 	},
 	"instructions": {
 		"instructions apply|check [flags]", "Write or check goldie's instruction block in CLAUDE.md or AGENTS.md",
-		"Keep goldie's instruction block in CLAUDE.md or AGENTS.md current.\n\napply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set. check exits\nnon-zero when the block is missing, outdated or edited, and writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is overwritten.",
+		"Keep goldie's instruction block in CLAUDE.md or AGENTS.md current.\n\napply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set, which discards\nthe edits. check exits non-zero when the block is missing, outdated or edited,\nand writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is overwritten.",
 		"  goldie instructions apply\n  goldie instructions apply --target agents --force\n  goldie instructions check --target agents",
 	},
 	"version": {

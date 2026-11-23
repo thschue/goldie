@@ -198,8 +198,10 @@ func TestValidateUnusableDirectories(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			stdout, stderr, code := runValidate(t, t.TempDir(), validateEnv(), "validate", dir)
 			reason := wantInvalid(t, stdout, stderr, code, dir, "s3cret", base)
-			if reason != "content directory is not readable" {
-				t.Errorf("reason = %q, want %q", reason, "content directory is not readable")
+			// #485: the reason is the message plus the next step, nothing else.
+			const want = "content directory is not readable: check that the path you passed exists and is a readable directory"
+			if reason != want {
+				t.Errorf("reason = %q, want exactly %q", reason, want)
 			}
 		})
 	}

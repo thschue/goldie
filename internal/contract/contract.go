@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 
 	"go.yaml.in/yaml/v3"
@@ -12,11 +13,20 @@ import (
 
 // ClientHeader names the goldie client and its version on every request the
 // goldie CLI sends, as ClientHeaderPrefix followed by the version, such as
-// goldie/1.4.0. The server's minimum client version gate reads it.
+// goldie/1.4.0. The server's minimum client version gate reads it. goldie mcp
+// and the server's own /mcp add ViaHeader with ViaMCP (MarkMCP), so the server
+// can tell MCP traffic from the CLI's; ClientHeader is the same for both, and
+// the gate does not read ViaHeader.
 const (
 	ClientHeader       = "X-Goldie-Client"
 	ClientHeaderPrefix = "goldie/"
+	ViaHeader          = "X-Goldie-Via"
+	ViaMCP             = "mcp"
 )
+
+// MarkMCP marks a request as sent for an MCP client, the one way to set
+// ViaHeader.
+func MarkMCP(h http.Header) { h.Set(ViaHeader, ViaMCP) }
 
 // specYAML is the OpenAPI 3.1 document, the source of truth for the API.
 //

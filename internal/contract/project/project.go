@@ -12,7 +12,6 @@ package project
 
 import (
 	"errors"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -139,7 +138,7 @@ func projectFromConfigFile(dir, root string) (string, error) {
 		}
 	}
 	for _, d := range dirs {
-		b, err := readCapped(filepath.Join(d, ".goldie", "config.yaml"))
+		b, err := readConfigIn(d)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -210,44 +209,19 @@ var errNotRegular = errors.New("not a regular file")
 // errFileTooLarge refuses a Project file above maxProjectFile.
 var errFileTooLarge = errors.New("file too large")
 
-// readCapped reads a regular file of at most maxProjectFile bytes. It checks
-// the type before opening, because opening a FIFO (or a symlink to one, or to
-// /dev/tty) planted in a checkout blocks, and so that no device is opened.
-func readCapped(path string) ([]byte, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, errNotRegular
-	}
-	return openCapped(path)
-}
-
-// openCapped opens path without blocking (openFlags) and checks the type of
-// what it opened, so a FIFO swapped in after readCapped's check is refused
-// rather than read.
+// openCapped reads the regular file path names, of at most maxProjectFile
+// bytes. It follows a symlink, as the version control tool does for its own
+// metadata (a config linked into a dotfiles repository). The open is
+// non-blocking (openFlags) and the type is checked on what was opened, so a
+// FIFO planted in a checkout is refused rather than read, and no device is
+// opened.
 func openCapped(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, errNotRegular
-	}
-	b, err := io.ReadAll(io.LimitReader(f, maxProjectFile+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(b) > maxProjectFile {
-		return nil, errFileTooLarge
-	}
-	return b, nil
+	return readOpened(f)
 }
 
 // findGitConfig walks up from dir to the repository root, the nearest
@@ -265,7 +239,7 @@ func findGitConfig(dir string) (root, cfg string, inRepo bool) {
 		}
 		gitDir := dotGit
 		if !fi.IsDir() {
-			b, err := readCapped(dotGit)
+			b, err := openCapped(dotGit)
 			if err != nil {
 				return d, "", true
 			}
@@ -275,10 +249,10 @@ func findGitConfig(dir string) (root, cfg string, inRepo bool) {
 			}
 			gitDir = resolveFrom(d, strings.TrimSpace(target))
 		}
-		if b, err := readCapped(filepath.Join(gitDir, "commondir")); err == nil {
+		if b, err := openCapped(filepath.Join(gitDir, "commondir")); err == nil {
 			gitDir = resolveFrom(gitDir, strings.TrimSpace(string(b)))
 		}
-		b, err := readCapped(filepath.Join(gitDir, "config"))
+		b, err := openCapped(filepath.Join(gitDir, "config"))
 		if err != nil {
 			return d, "", true
 		}

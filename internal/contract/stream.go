@@ -167,7 +167,7 @@ func activityEvent(typ string, data []byte) (ActivityEvent, bool) {
 	return e, true
 }
 
-// redirectRefusal refuses every 3xx answer, like limitTransport, without
+// redirectRefusal refuses every 3xx answer except 304, like limitTransport, without
 // capping the body: a stream runs for hours.
 type redirectRefusal struct{ base http.RoundTripper }
 

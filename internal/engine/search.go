@@ -94,7 +94,7 @@ func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) [
 	var hits []Hit
 	switch kind {
 	case KindSkill:
-		hits = s.searchSkills(proj, words)
+		hits = s.searchSkills(proj, words, readOpts(opts))
 	case KindArticle, KindAgent:
 		hits = s.searchItems(proj, kind, words, readOpts(opts))
 	}
@@ -102,13 +102,17 @@ func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) [
 	return hits
 }
 
-// searchSkills scores the skills that answer in proj's view. Skills have no
-// lifecycle: each is published and shadows nothing.
-func (s *Snapshot) searchSkills(proj string, words []string) []Hit {
+// searchSkills scores the skills that answer in proj's view. Drafts are left
+// out unless o asks for them.
+func (s *Snapshot) searchSkills(proj string, words []string, o ReadOptions) []Hit {
 	var hits []Hit
-	for _, sk := range s.Skills(proj) {
-		b, _ := s.skillBundleFor(proj, sk.Name)
-		h := Hit{ID: sk.Name, Name: sk.Name, Kind: KindSkill, Scope: b.scope, Keywords: append([]string(nil), b.keywords...), Status: StatusPublished}
+	for _, sk := range s.Skills(proj, o) {
+		b, _ := s.skillBundleFor(proj, sk.Name, o)
+		status := StatusPublished
+		if sk.Status != "" {
+			status = sk.Status
+		}
+		h := Hit{ID: sk.Name, Name: sk.Name, Kind: KindSkill, Scope: b.scope, Keywords: append([]string(nil), b.keywords...), Status: status}
 		scoreWords(&h, sk.Name, b.keywords, words)
 		if h.Score > 0 {
 			hits = append(hits, h)

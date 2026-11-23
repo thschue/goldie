@@ -302,10 +302,10 @@ func (s *Snapshot) enforces(key itemKey) bool {
 // allArticles lists pointers to every Article in the Snapshot, global first,
 // then each Project's in Project order, so errors are deterministic.
 func (s *Snapshot) allItems() []*Article {
-	out := pointers(nil, s.articles, s.agents)
+	out := s.items()
 	for _, id := range s.Projects() {
 		p, _ := s.lookupProject(id)
-		out = pointers(out, p.articles, p.agents)
+		out = append(out, p.items()...)
 	}
 	return out
 }

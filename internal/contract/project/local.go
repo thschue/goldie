@@ -44,26 +44,16 @@ func LocalRoot(dir string) (root string, ok bool) {
 // GoldieDir is the absolute path of the .goldie directory of a repository root.
 func GoldieDir(root string) string { return filepath.Join(root, ".goldie") }
 
-// ConfigContentDir returns the content directory that root's
-// .goldie/config.yaml names with `dir:`, as an absolute path, or "" when it
-// names none (no file, no `dir:` key or a null one). Only the dir key is read.
-// The value is untrusted: it must be a non-empty string without control
-// characters, a relative path that stays inside root, and name a directory,
-// which is opened through os.Root so a symlink cannot lead out of root. Every
-// error names .goldie/config.yaml and holds no path and no part of the value.
-func ConfigContentDir(root string) (string, error) {
-	d, rel, err := openConfigContentDir(root)
-	if err != nil || d == nil {
-		return "", err
-	}
-	_ = d.Close()
-	return filepath.Join(root, rel), nil
-}
-
-// OpenConfigContentDir is ConfigContentDir that returns the directory opened
-// through the repository root, so the caller reads through the handle and a
-// path swapped for a symlink after the check cannot redirect it. It returns a
-// nil handle when config.yaml names no directory. The caller closes it.
+// OpenConfigContentDir returns the content directory that root's
+// .goldie/config.yaml names with `dir:`, opened through the repository root, so
+// the caller reads through the handle and a path swapped for a symlink after
+// the check cannot redirect it. It returns a nil handle when config.yaml names
+// none (no file, no `dir:` key or a null one). The caller closes it. Only the
+// dir key is read. The value is untrusted: it must be a non-empty string
+// without control characters, a relative path that stays inside root, and name
+// a directory, which is opened through os.Root so a symlink cannot lead out of
+// root. Every error names .goldie/config.yaml and holds no path and no part of
+// the value.
 func OpenConfigContentDir(root string) (*os.Root, error) {
 	d, _, err := openConfigContentDir(root)
 	return d, err
@@ -107,20 +97,49 @@ func openConfigContentDir(root string) (*os.Root, string, error) {
 	return d, rel, nil
 }
 
-// readConfig reads .goldie/config.yaml through r, as a regular file of at most
-// maxProjectFile bytes, opened without blocking.
+// readConfigIn reads dir's .goldie/config.yaml through an os.Root opened at dir.
+// A .goldie that is a symlink holds no config for detection: nothing is read
+// through it, and the walk goes on, as it did when the link dangled.
+func readConfigIn(dir string) ([]byte, error) {
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	if fi, err := r.Lstat(".goldie"); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return nil, fs.ErrNotExist
+	}
+	return readConfig(r)
+}
+
+// readConfig reads .goldie/config.yaml through r, the one reader of that file:
+// a symlink is refused, and it must be a regular file of at most maxProjectFile
+// bytes, opened without blocking.
 func readConfig(r *os.Root) ([]byte, error) {
-	if fi, err := r.Lstat(".goldie/config.yaml"); err != nil || fi.Mode()&fs.ModeSymlink != 0 {
+	const name = ".goldie/config.yaml"
+	if fi, err := r.Lstat(name); err != nil || fi.Mode()&fs.ModeSymlink != 0 {
 		if err == nil {
 			err = errNotRegular
 		}
 		return nil, err
 	}
-	f, err := r.OpenFile(".goldie/config.yaml", os.O_RDONLY|openFlags, 0)
+	return readRegular(r, name)
+}
+
+// readRegular opens name through r without blocking and reads it with
+// readOpened.
+func readRegular(r *os.Root, name string) ([]byte, error) {
+	f, err := r.OpenFile(name, os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	return readOpened(f)
+}
+
+// readOpened checks the type of the file f opened and reads at most
+// maxProjectFile bytes of it.
+func readOpened(f *os.File) ([]byte, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err
