@@ -80,9 +80,12 @@ type eventKey struct {
 	id      uint64
 }
 
+// seenEntry is one key in the order it was seen; seq tells it apart from the
+// same key seen again after Add forgot it.
 type seenEntry struct {
 	key eventKey
 	at  time.Time
+	seq uint64
 }
 
 type heldEvent struct {
@@ -206,11 +209,12 @@ type Merger struct {
 	started  bool
 	stopped  bool
 	inputs   map[string]*mergeInputState
-	held     []heldEvent // sorted by event key
-	seen     map[eventKey]struct{}
+	held     []heldEvent         // sorted by event key
+	seen     map[eventKey]uint64 // the seq of the key's newest seenFIFO entry
 	seenFIFO []seenEntry
 	seenHead int
 	seenMax  int
+	seenSeq  uint64
 
 	dropped, duplicates, rejected uint64
 }
@@ -233,7 +237,7 @@ func NewMerger(cfg MergeConfig) *Merger {
 		window: cfg.Window, maxBuf: cfg.MaxBuffered, clock: cfg.Clock,
 		out:  make(chan MergedItem, cfg.OutputBuffer),
 		done: make(chan struct{}), kick: make(chan struct{}, 1),
-		inputs: map[string]*mergeInputState{}, seen: map[eventKey]struct{}{},
+		inputs: map[string]*mergeInputState{}, seen: map[eventKey]uint64{},
 		seenMax: seenPerBuffered * cfg.MaxBuffered,
 	}
 }
@@ -299,8 +303,13 @@ func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-ch
 // Add attaches an input, or re-attaches one that is down (one up status).
 // Its History is treated as live events (deduped, late if old), except that
 // events at or below the input's high-water mark are skipped as already taken,
-// however long ago. A brand-new name emits no up status: up is the initial
-// state. It returns false, changing nothing,
+// however long ago. Only the mark decides that for a re-attached input: its
+// keys are dropped from the dedup set, so a peer that restarted with ids
+// from 1 again is not taken for its old self. Its replayed old events are
+// still skipped by the mark, and its keys seen after the re-attach dedup as
+// usual. A brand-new
+// name emits no up status: up is the initial state. It returns false, changing
+// nothing,
 // for an empty Name, an input that is up, a down input given no Live, or a
 // stopped Merger.
 func (m *Merger) Add(in MergeInput) bool {
@@ -309,8 +318,16 @@ func (m *Merger) Add(in MergeInput) bool {
 	if !m.started || m.stopped || in.Name == "" || m.ctx.Err() != nil {
 		return false
 	}
-	if st, ok := m.inputs[in.Name]; ok && (st.up || in.Live == nil) {
+	st, ok := m.inputs[in.Name]
+	if ok && (st.up || in.Live == nil) {
 		return false
+	}
+	if ok {
+		for k := range m.seen {
+			if k.replica == in.Name {
+				delete(m.seen, k)
+			}
+		}
 	}
 	m.attachLocked(in, m.clock.Now(), true)
 	return true
@@ -447,15 +464,21 @@ func minTime(a, b time.Time) time.Time {
 }
 
 // markSeen remembers k and evicts keys that are too old or over the bound.
+// The bound is on the queue, not the set: Add forgets keys from seen but
+// leaves their entries queued, and every key in seen has an entry, so a
+// bounded queue bounds both.
 func (m *Merger) markSeen(k eventKey, now time.Time) {
-	m.seen[k] = struct{}{}
-	m.seenFIFO = append(m.seenFIFO, seenEntry{k, now})
+	m.seenSeq++
+	m.seen[k] = m.seenSeq
+	m.seenFIFO = append(m.seenFIFO, seenEntry{k, now, m.seenSeq})
 	for m.seenHead < len(m.seenFIFO) {
 		old := m.seenFIFO[m.seenHead]
-		if len(m.seen) <= m.seenMax && now.Sub(old.at) <= seenRetentionWindows*m.window {
+		if len(m.seenFIFO)-m.seenHead <= m.seenMax && now.Sub(old.at) <= seenRetentionWindows*m.window {
 			break
 		}
-		delete(m.seen, old.key)
+		if m.seen[old.key] == old.seq { // not the same key seen again since Add forgot it
+			delete(m.seen, old.key)
+		}
 		m.seenHead++
 	}
 	if m.seenHead > 1024 && m.seenHead > len(m.seenFIFO)/2 {

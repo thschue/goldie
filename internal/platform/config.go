@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ const (
 	EnvRateLimit = "GOLDIE_RATE_LIMIT"
 
 	EnvMinClientVersion = "GOLDIE_MIN_CLIENT_VERSION"
+
+	// Federated activity (ADR 0022).
+	EnvActivityPeers         = "GOLDIE_ACTIVITY_PEERS"
+	EnvActivityReorderWindow = "GOLDIE_ACTIVITY_REORDER_WINDOW"
 
 	// The git Source (#96). Its URL is operator-trusted (ADR-0023).
 	EnvGitURL           = "GOLDIE_GIT_URL" // logged with userinfo, query and fragment redacted
@@ -61,6 +66,10 @@ func PollIntervalFloor() time.Duration {
 	return MinPollInterval
 }
 
+// MaxActivityReorderWindow is the longest GOLDIE_ACTIVITY_REORDER_WINDOW: no
+// live event of a merged activity stream waits longer than this.
+const MaxActivityReorderWindow = time.Minute
+
 // Config is the effective server configuration. It is read once at startup
 // by LoadConfig and never changes afterwards.
 type Config struct {
@@ -78,6 +87,10 @@ type Config struct {
 
 	MinClientVersion     Semver // the oldest X-Goldie-Client version served (ParseSemver); zero for no gate
 	minClientVersionText string // MinClientVersion as written, for the startup report
+
+	ActivityPeers             string        // the peers' headless-Service DNS name as written; "" for no peers
+	ActivityReorderWindow     time.Duration // the merged activity stream's reorder window, default applied
+	activityReorderWindowText string        // ActivityReorderWindow as written, for the startup report
 
 	// SetupTelemetry owns GOLDIE_TELEMETRY_CLIENT_INFO and fails startup on a
 	// bad value; this copy is only for the startup report.
@@ -162,6 +175,18 @@ func LoadConfig(lookup Lookup) (Config, error) {
 			cfg.MinClientVersion = v
 		}
 	}
+	cfg.ActivityPeers = str(EnvActivityPeers, def(EnvActivityPeers))
+	if cfg.ActivityPeers != "" && !isDNSName(cfg.ActivityPeers) {
+		errs = append(errs, fmt.Errorf("%s: must be a DNS name, such as a headless Service's name, without a scheme, port or path", EnvActivityPeers))
+		cfg.ActivityPeers = ""
+	}
+	cfg.activityReorderWindowText = str(EnvActivityReorderWindow, def(EnvActivityReorderWindow))
+	if d, err := time.ParseDuration(cfg.activityReorderWindowText); err != nil || d <= 0 || d > MaxActivityReorderWindow {
+		// The value is never echoed: time.ParseDuration's error quotes it.
+		errs = append(errs, fmt.Errorf("%s: must be a Go duration above 0 and at most %s, such as 2s or 500ms", EnvActivityReorderWindow, MaxActivityReorderWindow))
+	} else {
+		cfg.ActivityReorderWindow = d
+	}
 	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
@@ -229,6 +254,44 @@ func CheckOneSource(contentDir, gitURL string) error {
 		return fmt.Errorf("%s and %s are both set: for now a process serves one Source, so set only one", EnvContentDir, EnvGitURL)
 	}
 	return nil
+}
+
+// isDNSName reports whether s is a DNS name as written: dot-separated
+// IsDNSLabel labels, at most 253 bytes, without a trailing dot, and not an
+// address: neither an IP literal nor a name whose last label is all digits
+// (no top-level domain is), such as 10.0.0.1.
+func isDNSName(s string) bool {
+	if len(s) > 253 || net.ParseIP(s) != nil {
+		return false
+	}
+	last := s[strings.LastIndexByte(s, '.')+1:]
+	if strings.Trim(last, "0123456789") == "" {
+		return false
+	}
+	for label := range strings.SplitSeq(s, ".") {
+		if !IsDNSLabel(label) {
+			return false
+		}
+	}
+	return true
+}
+
+// IsDNSLabel reports whether s is one DNS label as written: 1 to 63 ASCII
+// letters, digits and hyphens, neither first nor last a hyphen. It is the one
+// DNS-label rule: GOLDIE_ACTIVITY_PEERS, a replica's own name and a peer's
+// PTR name all use it. Check it before lower-casing: strings.ToLower maps
+// some non-ASCII runes, such as the Kelvin sign U+212A, to ASCII letters.
+func IsDNSLabel(s string) bool {
+	if len(s) == 0 || len(s) > 63 || s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // Setting resolves one variable that may also be given as NAME_FILE (PC-05).
