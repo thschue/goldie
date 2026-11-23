@@ -324,6 +324,13 @@ func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
 	return &commander{s: s, out: env.Out, errOut: errOut, env: env}, nil
 }
 
+// ErrNoAddress is the missing address. Its text names the two settings; the
+// entry point adds the next command (platform.FirstRunHint) on its own line,
+// as it does for the server. init words the reason itself, without --dir.
+var ErrNoAddress = errors.New("no server address: set --addr or " + EnvAddr + ", or read a content directory with --dir")
+
+const noAddressInit = "no server address: set --addr or " + EnvAddr
+
 // commander holds what the commands share.
 type commander struct {
 	s      settings
@@ -337,7 +344,7 @@ type commander struct {
 // token.
 func (c *commander) check(withToken bool) error {
 	if c.s.addr == "" {
-		return fmt.Errorf("no server address: set --addr or %s", EnvAddr)
+		return ErrNoAddress
 	}
 	if err := contract.CheckBaseURL(c.s.addr); err != nil {
 		return err
