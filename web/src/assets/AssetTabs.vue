@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { assetTabs, type AssetTab } from './tabs';
 
@@ -12,14 +12,16 @@ const props = defineProps<{ selected: AssetTab }>();
 
 const route = useRoute();
 const router = useRouter();
-const tabEls = ref<HTMLButtonElement[]>([]);
 const index = computed(() => assetTabs.findIndex((t) => t.slug === props.selected));
 
-function go(i: number, replace: boolean) {
-  const at = (i + assetTabs.length) % assetTabs.length;
-  const to = { path: `/assets/${assetTabs[at]!.slug}`, query: route.query };
-  void (replace ? router.replace(to) : router.push(to));
-  tabEls.value[at]?.focus();
+// App.vue keys the view by route.path, so a tab change remounts this component
+// and the old button is gone: focus the new tab by id once the route has settled.
+async function go(i: number, replace: boolean) {
+  const slug = assetTabs[(i + assetTabs.length) % assetTabs.length]!.slug;
+  const to = { path: `/assets/${slug}`, query: route.query };
+  await (replace ? router.replace(to) : router.push(to));
+  await nextTick();
+  document.getElementById(`asset-tab-${slug}`)?.focus();
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -27,7 +29,7 @@ function onKeydown(e: KeyboardEvent) {
   const target = { ArrowRight: index.value + 1, ArrowLeft: index.value - 1, Home: 0, End: assetTabs.length - 1 }[e.key];
   if (target === undefined) return;
   e.preventDefault();
-  go(target, true);
+  void go(target, true);
 }
 </script>
 
@@ -37,13 +39,12 @@ function onKeydown(e: KeyboardEvent) {
       v-for="(t, i) in assetTabs"
       :id="`asset-tab-${t.slug}`"
       :key="t.slug"
-      ref="tabEls"
       type="button"
       role="tab"
       :aria-selected="t.slug === selected"
       :aria-controls="`asset-panel-${t.slug}`"
       :tabindex="t.slug === selected ? 0 : -1"
-      @click="go(i, false)"
+      @click="void go(i, false)"
     >
       {{ t.name }}
     </button>

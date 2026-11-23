@@ -28,7 +28,7 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: 'Agent assets' },
     sensitive: true,
   },
-  { path: '/assets/:rest(.*)*', component: AgentAssetsNotFound, meta: { title: 'Agent assets' } },
+  { path: '/assets/:rest(.*)*', component: AgentAssetsNotFound, meta: { title: 'Page not found' } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
   { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: 'Page not found' } },
 ];
