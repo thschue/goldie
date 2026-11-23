@@ -313,6 +313,62 @@ func (s *Server) ListProjects(context.Context, contract.ListProjectsRequestObjec
 	return contract.ListProjects200JSONResponse{Projects: list(snap.Projects())}, nil
 }
 
+// maxViewBytes is the most a Project's exported view may weigh as JSON: what
+// the hardened client reads, so the server never sends a view its own client
+// would refuse. A variable so a test can lower it.
+var maxViewBytes = contract.MaxResponseBytes
+
+// viewTooLarge is the 422 envelope for a view over maxViewBytes.
+var viewTooLarge = envelope("view_too_large", "the Project's view is too large to export",
+	"This Project's content is over the export limit; split it across Projects or Sources.")
+
+// GetProjectItems answers GET /api/v1/projects/{id}/items: the winning
+// articles in the Project's view, sorted by id, with their Scope and Enforced
+// flag, and never a draft. An unregistered Project gets the global view and
+// the usual hint. A view over maxViewBytes is refused whole (422), never cut.
+func (s *Server) GetProjectItems(_ context.Context, req contract.GetProjectItemsRequestObject) (contract.GetProjectItemsResponseObject, error) {
+	project, ok := validProject(&req.Id)
+	if !ok {
+		return contract.GetProjectItems400JSONResponse(envelope("bad_request", "invalid project",
+			"Pass the Project as host/org/repo in one path segment, for example github.com%2Facme%2Fshop.")), nil
+	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetProjectItems503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, hint := scopeHint(snap, project)
+	view := snap.View(proj)
+	// Content alone is a lower bound of the body: refuse before encoding a
+	// view that cannot fit.
+	size := 0
+	for _, a := range view {
+		if size += len(a.Content); size > maxViewBytes {
+			return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
+		}
+	}
+	res := contract.GetProjectItems200JSONResponse{Items: make([]contract.ProjectItem, 0, len(view)),
+		Suppressions: list(snap.Suppressions(proj)), Hint: hint}
+	for _, a := range view {
+		item := contract.ProjectItem{Id: a.ID, Name: a.Name, Keywords: list(a.Keywords), Content: a.Content,
+			Status: contract.ProjectItemStatusPublished, Scope: a.Scope, Enforced: a.Enforced}
+		if a.Status == engine.StatusDeprecated {
+			item.Status = contract.ProjectItemStatusDeprecated
+		}
+		if a.ReplacedBy != "" {
+			item.ReplacedBy = &a.ReplacedBy
+		}
+		res.Items = append(res.Items, item)
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxViewBytes {
+		return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
+	}
+	return res, nil
+}
+
 // GetOpenAPIYAML answers GET /openapi.yaml with the embedded document.
 func (s *Server) GetOpenAPIYAML(context.Context, contract.GetOpenAPIYAMLRequestObject) (contract.GetOpenAPIYAMLResponseObject, error) {
 	return specDocument{"application/yaml", contract.SpecYAML()}, nil

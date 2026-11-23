@@ -145,6 +145,38 @@ Operation ID: `getProject`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/projects/{id}/items`
+
+Export a Project's resolved view
+
+Returns the articles that win in the Project's view (Resolution): the
+Project's own copy over the global one with the same id, every global
+Item the Project does not shadow or suppress, and no draft. Only
+winners are sent: nothing of another Project and no shadowed copy.
+Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+is `enforced`, so an embedded server can build on this view and check
+that a local Item does not shadow an enforced one. The Project's
+Suppressions (ADR 0021) are listed as in `getProject`.
+
+A Project the server does not hold is answered with the global view and
+a `hint`, as search and lookup do. A view over the export limit, the
+same 16 MiB the goldie client reads, is refused whole with 422
+`view_too_large`; it is never truncated, because a partial view would
+hide enforced Items.
+
+Operation ID: `getProjectItems`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The Project's resolved view. | `application/json` (`ProjectView`) |
+| `400` | The id sent is not a valid 'ProjectId'; the body does not repeat it. | `application/json` (`ErrorEnvelope`) |
+| `401` | No bearer token, or a wrong one; the body shows no Item. | `application/json` (`ErrorEnvelope`) |
+| `422` | The view is over the export limit; the error code is 'view_too_large'. Nothing of the view is sent. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/search`
 
 Search articles by keyword
@@ -368,6 +400,21 @@ is a lower-case DNS name that starts with a letter or digit; the org and
 the repo use letters, digits, `.`, `_` and `-` and do not start with a
 dot. Clients send it lower-cased; the server matches it ignoring case.
 
+### `ProjectItem`
+
+One winning Item of a Project's view.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `content` | `string` | yes | The Markdown body of the Item, after the frontmatter. Untrusted, it comes from a Source; render it without raw HTML. |
+| `enforced` | `boolean` | yes | Whether the Item is enforced, as its frontmatter says. |
+| `id` | `string` | yes | The Item id, its path under 'articles/' without '.md'. |
+| `keywords` | `array` | yes | The Item keywords from its frontmatter, lower case. |
+| `name` | `string` | yes | The Item display title, from its frontmatter. |
+| `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item names a replacement. It comes from a Source and is untrusted. |
+| `scope` | `string` | yes | 'global', or the Project ('host/org/repo') whose copy won. |
+| `status` | `string` | yes | The Item's lifecycle, always present. Clients ignore values they do not know. |
+
 ### `ProjectList`
 
 The Projects the server holds Scope for.
@@ -375,6 +422,16 @@ The Projects the server holds Scope for.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `projects` | `array` | yes | The Projects, sorted. |
+
+### `ProjectView`
+
+A Project's resolved view, the winning Items and what it suppresses.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the view is the global one, and this says what to do next. |
+| `items` | `array` | yes | The winning Items, sorted by 'id', ascending. No draft. |
+| `suppressions` | `array` | yes | The global Items the Project suppresses, as '&lt;kind&gt;:&lt;id&gt;', sorted. Empty when there are none. |
 
 ### `SearchHit`
 
