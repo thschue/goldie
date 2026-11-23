@@ -101,6 +101,11 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	switch name {
 	case "version":
 		c, err = f.commander(env, false)
+		if err == nil && c.s.token == "" {
+			// As status does, but a broken token setting is not an error here:
+			// the version is still reported, without the server's API version.
+			c.s.token, _ = platform.Setting(env.Lookup, env.ReadFile, EnvToken)
+		}
 	case "init":
 		c, err = f.commander(env, true)
 	default:

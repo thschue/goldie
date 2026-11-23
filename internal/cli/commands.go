@@ -399,7 +399,15 @@ func wordAPIError(e *contract.APIError) (note, hint string) {
 		note = fmt.Sprintf("the server answered %d %s", e.Status, status)
 	}
 	hint = e.Hint
+	// The API words some hints for HTTP clients; the CLI replaces them by
+	// status (the API's 401 is its unauthorized code, 404 its not_found) with
+	// its own ways to fix the call: APIError carries no code. A 404 hint that
+	// is not the lookup one (a Project that suppresses the Item) is kept.
 	switch {
+	case e.Status == http.StatusUnauthorized:
+		hint = "Set --token, " + EnvToken + " or " + EnvToken + "_FILE to a valid API token."
+	case e.Status == http.StatusNotFound && strings.Contains(e.Hint, "search operation"):
+		hint = "Search for the article with: goldie search <words>, then use an id from its results."
 	case e.Wait() != "":
 		hint = "Wait " + e.Wait() + ", then retry."
 	case e.Status == http.StatusTooManyRequests:
