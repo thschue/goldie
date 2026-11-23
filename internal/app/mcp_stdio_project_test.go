@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,8 +29,9 @@ import (
 // git checkout, against the real public handler with the Project content of
 // testdata/content (github.com/acme/shop).
 //
-// It also pins #341: an empty project counts as omitted, and a
-// whitespace-only one is refused before any request.
+// It also pins #341 with a default: an empty project counts as omitted, so
+// the default applies, and a whitespace-only one is refused before any
+// request. Without a default, #345's mcp_project_empty_test.go pins it.
 
 // The words `goldie status` prints for each source (internal/cli/project.go).
 const (
@@ -641,19 +643,22 @@ func TestMCPStdioExplicitProjectBeatsTheDefault(t *testing.T) {
 	assertProjectAnswer(t, "unregistered default", q.cs, nil, "github.com/acme/none")
 }
 
-// whitespaceProjects are project values made only of whitespace.
-var whitespaceProjects = map[string]string{
-	"one space":   " ",
-	"spaces":      "    ",
-	"tab":         "\t",
-	"newline":     "\n",
-	"mixed":       " \t\r\n ",
-	"long spaces": strings.Repeat(" ", 4096),
+// stdioWhitespaceProjects are #345's whitespaceProjects, ASCII and Unicode,
+// plus the values this file refused before #345 merged that its set lacks in
+// this exact form.
+func stdioWhitespaceProjects() map[string]string {
+	m := maps.Clone(whitespaceProjects)
+	m["four spaces"] = "    "
+	m["mixed with CR"] = " \t\r\n "
+	m["4 KiB of spaces"] = strings.Repeat(" ", 4096)
+	return m
 }
 
 // Criterion 6: with a stdio default, an empty project counts as omitted, so
 // the default applies; a whitespace-only one is refused before any request,
-// with the hint naming list_projects.
+// with the hint naming list_projects, and does not fall back to the default.
+// Without a default the same pins are #345's tests in
+// mcp_project_empty_test.go.
 func TestMCPStdioEmptyProjectTakesTheDefaultAndWhitespaceIsRefused(t *testing.T) {
 	addr := projectServer(t)
 	p := stdioIn(t, projectCheckout(t), addr, nil)
@@ -664,7 +669,7 @@ func TestMCPStdioEmptyProjectTakesTheDefaultAndWhitespaceIsRefused(t *testing.T)
 		_, _ = w.Write([]byte(`{"query":"x","results":[]}`))
 	})
 	q := stdioIn(t, projectCheckout(t), stub, nil)
-	for name, ws := range whitespaceProjects {
+	for name, ws := range stdioWhitespaceProjects() {
 		for tool, args := range map[string]map[string]any{
 			"search_knowledge": {"query": "kubernetes", "project": ws},
 			"get_article":      {"id": "platform/deploy", "project": ws},
@@ -678,89 +683,30 @@ func TestMCPStdioEmptyProjectTakesTheDefaultAndWhitespaceIsRefused(t *testing.T)
 	}
 }
 
-// queryStub is a stub API that records the query of every request.
-func queryStub(t *testing.T) (string, func() []string) {
-	t.Helper()
-	var mu sync.Mutex
-	var queries []string
-	addr := mcpStub(t, func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		queries = append(queries, r.URL.RawQuery)
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "/search") {
-			_, _ = w.Write([]byte(`{"query":"x","results":[]}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{"id":"a","name":"A","keywords":[],"content":"body"}`))
-	})
-	return addr, func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]string(nil), queries...)
-	}
-}
-
-// Criterion 6 (#341): without a default, an empty project sends the request
-// with no project parameter and no error; a whitespace-only one is refused
-// before any request, with the hint naming list_projects.
-func TestMCPEmptyProjectWithoutADefaultSendsNoProject(t *testing.T) {
-	addr, queries := queryStub(t)
-	cs := projectSession(t, addr, testToken)
-	for tool, args := range map[string]map[string]any{
-		"search_knowledge": {"query": "kubernetes", "project": ""},
-		"get_article":      {"id": "a", "project": ""},
-	} {
-		if text, isErr := call(t, cs, tool, args); isErr {
-			t.Errorf("%s with an empty project: tool error %s", tool, text)
-		}
-	}
-	got := queries()
-	if len(got) != 2 {
-		t.Fatalf("the API got %d requests, want 2: %q", len(got), got)
-	}
-	for _, q := range got {
-		if strings.Contains(q, "project") {
-			t.Errorf("an empty project was sent as a parameter: %q", q)
-		}
-	}
-	for name, ws := range whitespaceProjects {
-		for tool, args := range map[string]map[string]any{
-			"search_knowledge": {"query": "kubernetes", "project": ws},
-			"get_article":      {"id": "a", "project": ws},
-		} {
-			text, isErr := call(t, cs, tool, args)
-			assertInvalidProjectError(t, "without a default/"+name+"/"+tool, text, isErr)
-		}
-	}
-	if n := len(queries()); n != 2 {
-		t.Errorf("the API got %d requests after the whitespace-only projects, want still 2", n)
-	}
-}
-
 // Criterion 6: the omitted-project fallback lives with current_context: a
 // server given a default by gmcp.WithProject answers search_knowledge and
 // get_article without project for it, sends it as the project parameter, and
-// current_context no longer tells the agent to pass project explicitly.
+// current_context no longer tells the agent to pass project explicitly. An
+// empty project takes the default; an explicit one beats it.
 func TestMCPWithProjectIsTheFallbackForAnOmittedProject(t *testing.T) {
 	cs := projectSession(t, projectServer(t), testToken, gmcp.WithProject("github.com/acme/shop", wordsConfig))
 	text, isErr := call(t, cs, "current_context", map[string]any{})
 	assertDefaultContext(t, "WithProject", text, isErr, "github.com/acme/shop", wordsConfig)
 	assertProjectAnswer(t, "WithProject", cs, nil, "github.com/acme/shop")
 
-	addr, queries := queryStub(t)
+	addr, requests := queryRecorder(t)
 	cs = projectSession(t, addr, testToken, gmcp.WithProject("github.com/acme/shop", wordsConfig))
 	call(t, cs, "search_knowledge", map[string]any{"query": "kubernetes"})
-	call(t, cs, "get_article", map[string]any{"id": "a", "project": ""})
-	call(t, cs, "get_article", map[string]any{"id": "a", "project": "github.com/acme/none"})
-	want := []string{"project=github.com%2Facme%2Fshop", "project=github.com%2Facme%2Fshop", "project=github.com%2Facme%2Fnone"}
-	got := queries()
+	call(t, cs, "get_article", map[string]any{"id": "platform/deploy", "project": ""})
+	call(t, cs, "get_article", map[string]any{"id": "platform/deploy", "project": "github.com/acme/none"})
+	want := []string{"github.com/acme/shop", "github.com/acme/shop", "github.com/acme/none"}
+	got := requests()
 	if len(got) != len(want) {
-		t.Fatalf("the API got %d requests, want %d: %q", len(got), len(want), got)
+		t.Fatalf("the API got %d requests, want %d: %v", len(got), len(want), got)
 	}
 	for i, q := range got {
-		if !strings.Contains(q, want[i]) && !strings.Contains(q, strings.ReplaceAll(want[i], "%2F", "/")) {
-			t.Errorf("request %d: query %q, want %q", i+1, q, want[i])
+		if len(q["project"]) != 1 || q.Get("project") != want[i] {
+			t.Errorf("request %d: project=%q, want exactly one project=%s", i+1, q["project"], want[i])
 		}
 	}
 }
