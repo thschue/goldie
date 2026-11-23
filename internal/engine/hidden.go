@@ -1,6 +1,9 @@
 package engine
 
-import "unicode"
+import (
+	"errors"
+	"unicode"
+)
 
 // HiddenRune reports the runes an Item reference may not hold, because a
 // reader cannot see them or they drive a terminal: C0 controls, DEL, C1
@@ -27,4 +30,16 @@ func HiddenRune(r rune) bool {
 		return true
 	}
 	return unicode.Is(unicode.Cf, r)
+}
+
+// checkBody fails on a hidden rune in body text an author wrote, which an agent
+// reads as instructions. Tabs and line breaks stay. The error never echoes the
+// body or the rune.
+func checkBody(body []byte) error {
+	for _, r := range string(body) {
+		if r != '\n' && r != '\r' && r != '\t' && HiddenRune(r) {
+			return errors.New("body holds a hidden or control character")
+		}
+	}
+	return nil
 }
