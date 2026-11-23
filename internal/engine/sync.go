@@ -21,6 +21,9 @@ type SyncStatus struct {
 	LastSuccess time.Time
 	LastError   string
 	Warnings    []string
+	// Duration is how long the last poll's Source load took, success or not.
+	// It is zero before the first poll.
+	Duration time.Duration
 }
 
 // Syncer polls one Source and serves the latest good Snapshot. Current is safe
@@ -113,14 +116,18 @@ func (s *Syncer) pollReport(ctx context.Context, onPoll func(SyncStatus)) {
 
 // pollLocked is poll for a caller that holds pollMu.
 func (s *Syncer) pollLocked(ctx context.Context) (SyncStatus, error) {
+	began := s.now()
 	snap, rev, err := s.load(ctx)
+	// One read ends the load and stamps the poll, taken before mu so lock
+	// contention is not counted as Source time.
+	now := s.now()
 	if err == nil && snap == nil {
 		err = errNilSnapshot
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := s.now()
 	s.status.LastPoll = now
+	s.status.Duration = now.Sub(began)
 	if err != nil {
 		s.status.LastError = redact(err.Error())
 		return s.statusCopy(), err

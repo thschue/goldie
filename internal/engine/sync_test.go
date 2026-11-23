@@ -114,6 +114,55 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 	}
 }
 
+// clockedSource moves a fake clock by step during each Load, so a poll takes
+// exactly step on that clock.
+type clockedSource struct {
+	clock *time.Time
+	step  time.Duration
+	snap  *Snapshot
+	err   error
+}
+
+func (c *clockedSource) Load(context.Context) (*Snapshot, error) {
+	*c.clock = c.clock.Add(c.step)
+	return c.snap, c.err
+}
+
+// Criterion (#604): with a fake now, a poll's Duration is the clock delta
+// between before and after the Source load, for a successful and a failed
+// poll, in Status and in the Status handed to onPoll.
+func TestSyncStatusDurationIsTheClockDeltaOfTheLoad(t *testing.T) {
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	src := &clockedSource{clock: &clock, step: 3 * time.Second, snap: snapOf("a")}
+	s := NewSyncer(src)
+	s.now = func() time.Time { return clock }
+
+	if err := s.Poll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Status().Duration; got != 3*time.Second {
+		t.Errorf("Duration after an ok poll = %v, want 3s", got)
+	}
+
+	src.step, src.snap, src.err = 7500*time.Millisecond, nil, errors.New("boom")
+	var handed []SyncStatus
+	s.Run(t.Context(), 0, func(st SyncStatus) { handed = append(handed, st) })
+	if got := s.Status().Duration; got != 7500*time.Millisecond {
+		t.Errorf("Duration after a failed poll = %v, want 7.5s", got)
+	}
+	if len(handed) != 1 || handed[0].Duration != 7500*time.Millisecond {
+		t.Errorf("onPoll got %+v, want one Status with Duration 7.5s", handed)
+	}
+
+	src.step = 0
+	if err := s.Poll(t.Context()); err == nil {
+		t.Fatal("want error")
+	}
+	if got := s.Status().Duration; got != 0 {
+		t.Errorf("Duration of an instant poll = %v, want 0 (not the previous poll's)", got)
+	}
+}
+
 func TestSyncerNilSnapshotIsFailure(t *testing.T) {
 	s := NewSyncer(&fakeSource{})
 	if err := s.Poll(t.Context()); err == nil || s.Current() != nil {
