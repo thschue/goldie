@@ -207,19 +207,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/SkillList"
         "400":
-          description: '`project` is not a `ProjectId`.'
+          description: 'For the skill list, `project` is not a `ProjectId`.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
-          description: No bearer token, or a wrong one.
+          description: 'For the skill list, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: The request asked for drafts with a token whose role is not operator.
+          description: 'For the skill list, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:
@@ -255,7 +255,7 @@ paths:
           in: query
           required: false
           description: |
-            Resolve for this Project (ADR 0020): its own entry wins over the
+            Resolve the skill for this Project (ADR 0020): its own entry wins over the
             global one with the same name. Matched ignoring case. An
             unregistered Project answers the global view with a `hint`; a value
             that is not a `ProjectId` is a 400.
@@ -270,25 +270,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/Skill"
         "400":
-          description: '`project` is not a `ProjectId`.'
+          description: 'For the skill read, `project` is not a `ProjectId`.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
-          description: No bearer token, or a wrong one.
+          description: 'For the skill read, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: The request asked for drafts with a token whose role is not operator.
+          description: 'For the skill read, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: No skill has this name; the hint points to the list.
+          description: No skill has this name; the hint points to the skill list.
           content:
             application/json:
               schema:
@@ -315,7 +315,7 @@ paths:
           in: query
           required: false
           description: |
-            Resolve for this Project (ADR 0020): its own entry wins over the
+            Resolve the agent list for this Project (ADR 0020): its own entry wins over the
             global one with the same name. Matched ignoring case. An
             unregistered Project answers the global view with a `hint`; a value
             that is not a `ProjectId` is a 400.
@@ -330,19 +330,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AgentList"
         "400":
-          description: '`project` is not a `ProjectId`.'
+          description: 'For the agent list, `project` is not a `ProjectId`.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
-          description: No bearer token, or a wrong one.
+          description: 'For the agent list, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: The request asked for drafts with a token whose role is not operator.
+          description: 'For the agent list, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:
@@ -376,7 +376,7 @@ paths:
           in: query
           required: false
           description: |
-            Resolve for this Project (ADR 0020): its own entry wins over the
+            Resolve the agent for this Project (ADR 0020): its own entry wins over the
             global one with the same name. Matched ignoring case. An
             unregistered Project answers the global view with a `hint`; a value
             that is not a `ProjectId` is a 400.
@@ -391,25 +391,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/Agent"
         "400":
-          description: '`project` is not a `ProjectId`.'
+          description: 'For the agent read, `project` is not a `ProjectId`.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
-          description: No bearer token, or a wrong one.
+          description: 'For the agent read, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "403":
-          description: The request asked for drafts with a token whose role is not operator.
+          description: 'For the agent read, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: No agent has this name; the hint points to the list.
+          description: No agent has this name; the hint points to the agent list.
           content:
             application/json:
               schema:
@@ -996,12 +996,17 @@ components:
           description: The bundle's files, sorted by path, SKILL.md included.
           items:
             $ref: "#/components/schemas/SkillFile"
+          examples:
+            - - path: SKILL.md
+                size: 16
         hint:
           type: string
           minLength: 1
           description: |
             Present when the request named a Project that is not registered: the
-            answer is the global one, and this says what to do next.
+            skill answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     SkillList:
       type: object
       description: The skills that answer in a view.
@@ -1013,12 +1018,19 @@ components:
           description: The skills, sorted by name.
           items:
             $ref: "#/components/schemas/Skill"
+          examples:
+            - - name: deploy
+                files:
+                  - path: SKILL.md
+                    size: 16
         hint:
           type: string
           minLength: 1
           description: |
             Present when the request named a Project that is not registered: the
-            answer is the global one, and this says what to do next.
+            skill list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     Agent:
       type: object
       description: One agent definition.
@@ -1041,7 +1053,9 @@ components:
           minLength: 1
           description: |
             Present when the request named a Project that is not registered: the
-            answer is the global one, and this says what to do next.
+            agent answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     AgentList:
       type: object
       description: The agents that answer in a view.
@@ -1053,12 +1067,17 @@ components:
           description: The agents, sorted by name.
           items:
             $ref: "#/components/schemas/Agent"
+          examples:
+            - - name: reviewer
+                description: Reviews code
         hint:
           type: string
           minLength: 1
           description: |
             Present when the request named a Project that is not registered: the
-            answer is the global one, and this says what to do next.
+            agent list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     ProjectDetail:
       type: object
       description: One registered Project and what its `project.yaml` suppresses.

@@ -93,9 +93,9 @@ Operation ID: `listAgents`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The agents. | `application/json` (`AgentList`) |
-| `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
-| `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
-| `403` | The request asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `400` | For the agent list, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the agent list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the agent list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -112,10 +112,10 @@ Operation ID: `getAgent`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The agent. | `application/json` (`Agent`) |
-| `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
-| `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
-| `403` | The request asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
-| `404` | No agent has this name; the hint points to the list. | `application/json` (`ErrorEnvelope`) |
+| `400` | For the agent read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the agent read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the agent read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `404` | No agent has this name; the hint points to the agent list. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -252,9 +252,9 @@ Operation ID: `listSkills`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The skills. | `application/json` (`SkillList`) |
-| `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
-| `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
-| `403` | The request asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `400` | For the skill list, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the skill list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the skill list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -273,10 +273,10 @@ Operation ID: `getSkill`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The skill. | `application/json` (`Skill`) |
-| `400` | 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
-| `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
-| `403` | The request asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
-| `404` | No skill has this name; the hint points to the list. | `application/json` (`ErrorEnvelope`) |
+| `400` | For the skill read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the skill read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the skill read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `404` | No skill has this name; the hint points to the skill list. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -413,7 +413,7 @@ One agent definition.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `description` | `string` | yes | The frontmatter description. It comes from a Source and is untrusted. |
-| `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the agent answer is the global one, and this says what to do next. |
 | `name` | `string` | yes | The agent's name, its file name without '.md'. |
 
 ### `AgentList`
@@ -423,7 +423,7 @@ The agents that answer in a view.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `agents` | `array` | yes | The agents, sorted by name. |
-| `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the agent list answer is the global one, and this says what to do next. |
 
 ### `Article`
 
@@ -568,7 +568,7 @@ One skill bundle.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `files` | `array` | yes | The bundle's files, sorted by path, SKILL.md included. |
-| `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the skill answer is the global one, and this says what to do next. |
 | `name` | `string` | yes | The bundle's directory name. |
 
 ### `SkillFile`
@@ -586,7 +586,7 @@ The skills that answer in a view.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `hint` | `string` | no | Present when the request named a Project that is not registered: the answer is the global one, and this says what to do next. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the skill list answer is the global one, and this says what to do next. |
 | `skills` | `array` | yes | The skills, sorted by name. |
 
 ### `SourceSyncStatus`

@@ -208,7 +208,10 @@ type Agent struct {
 	Description string `json:"description"`
 
 	// Hint Present when the request named a Project that is not registered: the
-	// answer is the global one, and this says what to do next.
+	// agent answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Name The agent's name, its file name without `.md`.
@@ -220,10 +223,15 @@ type Agent struct {
 // AgentList The agents that answer in a view.
 type AgentList struct {
 	// Agents The agents, sorted by name.
+	//
+	// Examples: [{"description":"Reviews code","name":"reviewer"}]
 	Agents []Agent `json:"agents"`
 
 	// Hint Present when the request named a Project that is not registered: the
-	// answer is the global one, and this says what to do next.
+	// agent list answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 }
 
@@ -522,10 +530,15 @@ type SearchResults struct {
 // Skill One skill bundle.
 type Skill struct {
 	// Files The bundle's files, sorted by path, SKILL.md included.
+	//
+	// Examples: [{"path":"SKILL.md","size":16}]
 	Files []SkillFile `json:"files"`
 
 	// Hint Present when the request named a Project that is not registered: the
-	// answer is the global one, and this says what to do next.
+	// skill answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Name The bundle's directory name.
@@ -550,10 +563,15 @@ type SkillFile struct {
 // SkillList The skills that answer in a view.
 type SkillList struct {
 	// Hint Present when the request named a Project that is not registered: the
-	// answer is the global one, and this says what to do next.
+	// skill list answer is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
 	Hint *string `json:"hint,omitempty"`
 
 	// Skills The skills, sorted by name.
+	//
+	// Examples: [{"files":[{"path":"SKILL.md","size":16}],"name":"deploy"}]
 	Skills []Skill `json:"skills"`
 }
 
@@ -630,7 +648,7 @@ type GetActivityParamsReplicas string
 
 // ListAgentsParams defines parameters for ListAgents.
 type ListAgentsParams struct {
-	// Project Resolve for this Project (ADR 0020): its own entry wins over the
+	// Project Resolve the agent list for this Project (ADR 0020): its own entry wins over the
 	// global one with the same name. Matched ignoring case. An
 	// unregistered Project answers the global view with a `hint`; a value
 	// that is not a `ProjectId` is a 400.
@@ -647,7 +665,7 @@ type ListAgentsParams struct {
 
 // GetAgentParams defines parameters for GetAgent.
 type GetAgentParams struct {
-	// Project Resolve for this Project (ADR 0020): its own entry wins over the
+	// Project Resolve the agent for this Project (ADR 0020): its own entry wins over the
 	// global one with the same name. Matched ignoring case. An
 	// unregistered Project answers the global view with a `hint`; a value
 	// that is not a `ProjectId` is a 400.
@@ -718,7 +736,7 @@ type ListSkillsParams struct {
 
 // GetSkillParams defines parameters for GetSkill.
 type GetSkillParams struct {
-	// Project Resolve for this Project (ADR 0020): its own entry wins over the
+	// Project Resolve the skill for this Project (ADR 0020): its own entry wins over the
 	// global one with the same name. Matched ignoring case. An
 	// unregistered Project answers the global view with a `hint`; a value
 	// that is not a `ProjectId` is a 400.
