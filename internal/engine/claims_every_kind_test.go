@@ -3,6 +3,7 @@ package engine_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,29 +14,41 @@ import (
 // Scope that Claims govern. A Kind added later must be added to this table;
 // the case for it fails until the Claims check covers it.
 var claimKinds = []struct {
-	kind, global, project, globalDir, projectDir string
+	kind, global, project, globalDir, projectDir, body string
 }{
 	{"article", "global/articles/rules.md", "projects/github.com/other/x/articles/rules.md",
-		"global/articles/rules", "projects/github.com/other/x/articles/rules"},
+		"global/articles/rules", "projects/github.com/other/x/articles/rules", article("Rules")},
 	{"agent", "global/agents/bot.md", "projects/github.com/other/x/agents/bot.md",
-		"global/agents/bot", "projects/github.com/other/x/agents/bot"},
+		"global/agents/bot", "projects/github.com/other/x/agents/bot",
+		"---\nname: bot\ndescription: d\n---\n# bot\n"},
 	{"skill", "global/skills/deploy/SKILL.md", "projects/github.com/other/x/skills/deploy/SKILL.md",
-		"global/skills/deploy", "projects/github.com/other/x/skills/deploy"},
+		"global/skills/deploy", "projects/github.com/other/x/skills/deploy",
+		"---\nname: deploy\ndescription: d\n---\n# deploy\n"},
+	{"instruction", "global/instructions/use.md", "projects/github.com/other/x/instructions/use.md",
+		"global/instructions/use.md", "projects/github.com/other/x/instructions/use.md",
+		clause("use", 1, "claude", "text")},
 }
 
-func claimKindBody(kind string) string {
-	if kind == "article" {
-		return article("Rules")
+// A Kind added to the per-Scope holder must get a row in claimKinds: the
+// holder's Kind fields (all but its index) must match the table.
+func TestEveryScopeKindHasAClaimsRow(t *testing.T) {
+	holder := reflect.TypeOf(engine.ScopeItemsForTest{})
+	kinds := 0
+	for i := range holder.NumField() {
+		if holder.Field(i).Name != "index" {
+			kinds++
+		}
 	}
-	name := map[string]string{"agent": "bot", "skill": "deploy"}[kind]
-	return "---\nname: " + name + "\ndescription: d\n---\n# " + name + "\n"
+	if kinds != len(claimKinds) {
+		t.Fatalf("scopeItems holds %d Kinds but claimKinds covers %d: add a row", kinds, len(claimKinds))
+	}
 }
 
 func TestClaimsRejectAnUnclaimedItemOfEveryKind(t *testing.T) {
 	for _, k := range claimKinds {
 		t.Run(k.kind+"/global", func(t *testing.T) {
 			// A Project-only Claim does not accept a global Item.
-			dir := writeFiles(t, map[string]string{k.global: claimKindBody(k.kind)})
+			dir := writeFiles(t, map[string]string{k.global: k.body})
 			_, err := engine.NewClaimedSource(engine.NewDirSource(dir),
 				engine.Claim{Projects: []string{claimAcmeGlob}}).Load(t.Context())
 			if err == nil {
@@ -47,7 +60,7 @@ func TestClaimsRejectAnUnclaimedItemOfEveryKind(t *testing.T) {
 		})
 		t.Run(k.kind+"/project", func(t *testing.T) {
 			// A Claim for another Project does not accept this Project's Item.
-			dir := writeFiles(t, map[string]string{k.project: claimKindBody(k.kind)})
+			dir := writeFiles(t, map[string]string{k.project: k.body})
 			_, err := engine.NewClaimedSource(engine.NewDirSource(dir),
 				engine.Claim{Global: true, Projects: []string{claimAcmeGlob}}).Load(t.Context())
 			if err == nil {
@@ -60,7 +73,7 @@ func TestClaimsRejectAnUnclaimedItemOfEveryKind(t *testing.T) {
 		t.Run(k.kind+"/claimed", func(t *testing.T) {
 			// The same Items load once claimed: the rejection is the Claim, not the Item.
 			claimLoad(t, engine.Claim{Global: true, Projects: []string{"github.com/other/*"}},
-				map[string]string{k.global: claimKindBody(k.kind), k.project: claimKindBody(k.kind)})
+				map[string]string{k.global: k.body, k.project: k.body})
 		})
 	}
 }
