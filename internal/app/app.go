@@ -409,6 +409,13 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 // fixes them all in one restart.
 // Platform stays unaware of the contract: this is where the two meet.
 func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
+	return PublicHandlerWith(cfg, logger, nil)
+}
+
+// PublicHandlerWith is PublicHandler for a server that exports metrics through
+// tel (nil for none): every search and lookup it answers is counted by hit or
+// miss (goldie.searches, goldie.lookups).
+func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.Telemetry) (*Public, error) {
 	var errs []error
 	tokens, err := apiTokens(cfg)
 	if err != nil {
@@ -424,18 +431,25 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	return newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive)
+	return newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive, resultCounters(tel))
+}
+
+// resultCounters is the option that counts searches and lookups through tel.
+func resultCounters(tel *platform.Telemetry) api.ServerOption {
+	return api.CountResults(
+		tel.ResultCounter("goldie.searches", "Searches answered, by result."),
+		tel.ResultCounter("goldie.lookups", "Article lookups answered, by result."))
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;
 // keepalive is the activity stream keepalive; cfg supplies the rate limit, the
 // minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
-func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration) (*Public, error) {
+func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
 	if logger == nil {
 		logger = discardLogger
 	}
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, activityFederation(cfg, logger)...)
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, append(activityFederation(cfg, logger), opts...)...)
 	if err != nil {
 		return nil, err
 	}

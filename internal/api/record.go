@@ -16,6 +16,13 @@ type ServerOption func(*Server)
 // one Event each. A nil a records nothing.
 func RecordInto(a *Activity) ServerOption { return func(s *Server) { s.activity = a } }
 
+// CountResults makes the Server count every search and lookup it answers, by
+// hit or miss: searches into the first counter, lookups into the second
+// (goldie.searches, goldie.lookups). A nil counter counts nothing.
+func CountResults(searches, lookups *platform.ResultCounter) ServerOption {
+	return func(s *Server) { s.searches, s.lookups = searches, lookups }
+}
+
 // record is the recording point: a strict middleware that records the
 // searches and lookups the operations answered. Only an answer the Snapshot
 // gave is recorded: a request a guard rejected (401, 426, 429) never reaches
@@ -26,6 +33,11 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
 		resp, err := next(ctx, w, r, req)
 		if e, ok := recorded(req, resp); ok {
+			if e.Kind == KindSearch {
+				s.searches.Add(ctx, e.Miss)
+			} else {
+				s.lookups.Add(ctx, e.Miss)
+			}
 			e.Token, _ = TokenName(ctx)
 			if v, ok := clientVersion(r.Header.Values(contract.ClientHeader)); ok {
 				e.ClientVersion = v.String()

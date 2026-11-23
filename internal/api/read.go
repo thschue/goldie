@@ -12,6 +12,7 @@ import (
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // maxQueryBytes bounds the search words, as the spec's maxLength on q says.
@@ -125,7 +126,9 @@ var notReady = envelope("not_ready", "content is still loading",
 type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
-	activity *Activity    // see RecordInto, nil records nothing
+	activity *Activity               // see RecordInto, nil records nothing
+	searches *platform.ResultCounter // see CountResults, nil counts nothing
+	lookups  *platform.ResultCounter
 	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
 	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
 	fedDown  downSet      // peers already logged as down
