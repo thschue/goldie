@@ -307,7 +307,7 @@ func (s *Server) GetProject(_ context.Context, req contract.GetProjectRequestObj
 	scope, registered := snap.Project(req.Id)
 	if !registered {
 		return contract.GetProject404JSONResponse(envelope("not_found", "no such Project",
-			"List the registered Projects with the projects operation. To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team.")), nil
+			"List the registered Projects, then use one of them. To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team.")), nil
 	}
 	return contract.GetProject200JSONResponse{Id: scope, Suppressions: list(snap.Suppressions(scope))}, nil
 }
