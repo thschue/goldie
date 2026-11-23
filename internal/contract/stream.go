@@ -20,10 +20,10 @@ const MaxActivityHistory = 10_000
 // streamBuffer is the capacity of the live channel StreamActivity returns.
 const streamBuffer = 64
 
-// errNoLiveMarker is StreamActivity's answer for a stream that ended, fell
+// ErrNoLiveMarker is StreamActivity's answer for a stream that ended, fell
 // silent or passed MaxActivityHistory before its live marker: an older
 // server, or not a goldie server.
-var errNoLiveMarker = errors.New("the server's activity stream sent no live marker")
+var ErrNoLiveMarker = errors.New("the server's activity stream sent no live marker")
 
 // errNotStreamable is StreamActivity on a client NewAPIClient did not build.
 var errNotStreamable = errors.New("the activity stream needs a client built by NewAPIClient")
@@ -69,7 +69,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 		cancel()
 		return nil, nil, err
 	}
-	req, err := NewGetActivityRequest(inner.Server)
+	req, err := NewGetActivityRequest(inner.Server, nil)
 	if err != nil {
 		return fail(errNoAnswer)
 	}
@@ -98,7 +98,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 		typ, data, err := events.next()
 		if err != nil {
 			_ = body.Close()
-			return fail(streamError(parent, errNoLiveMarker))
+			return fail(streamError(parent, ErrNoLiveMarker))
 		}
 		if typ == "live" {
 			break
@@ -109,7 +109,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 		}
 		if len(history) == MaxActivityHistory {
 			_ = body.Close()
-			return fail(errNoLiveMarker)
+			return fail(ErrNoLiveMarker)
 		}
 		history = append(history, e)
 	}
@@ -150,8 +150,8 @@ func streamError(caller context.Context, err error) error {
 		return caller.Err()
 	case errors.Is(err, ErrRedirect):
 		return ErrRedirect
-	case errors.Is(err, errNoLiveMarker):
-		return errNoLiveMarker
+	case errors.Is(err, ErrNoLiveMarker):
+		return ErrNoLiveMarker
 	}
 	return errNoAnswer
 }

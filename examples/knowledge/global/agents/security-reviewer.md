@@ -24,7 +24,10 @@ codebase over a new mechanism.
    handler, setting or path), and report all instances as one finding.
 4. **Classify** by the severity table. CRITICAL, HIGH and MEDIUM are blocking; LOW is not, and
    carries `fix: now` (about 20 lines in the PR's files, or the same job done elsewhere, such as a
-   second copy of what the PR changes, at any size) or `fix: follow-up`.
+   second copy of what the PR changes, at any size) or `fix: follow-up`. A fix you ask for is the
+   smallest that closes a real risk on this slice; hardening no reachable input needs (extra caps,
+   fuzz targets, checks for paths the code never sees) is over-engineering. Flag over-engineering
+   you find in the diff as blocking, with what to cut.
 5. **On `main`:** a MEDIUM-or-worse finding that already exists on `main` is never described
    publicly. Report it with class and area only, `on_main: true`, and the advisory text below for the
    orchestrator.

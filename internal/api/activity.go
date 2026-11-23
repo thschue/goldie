@@ -166,6 +166,14 @@ func (a *Activity) TrySubscribe() (history []Event, live <-chan Event, cancel fu
 	}, true
 }
 
+// Replica is the name its events carry.
+func (a *Activity) Replica() string {
+	if a == nil {
+		return ""
+	}
+	return a.replica
+}
+
 // Dropped counts events a full subscriber channel refused.
 func (a *Activity) Dropped() uint64 {
 	if a == nil {

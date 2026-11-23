@@ -56,12 +56,12 @@ const activityCapacity = 1000
 // recording every search and lookup in a bounded Activity named after this
 // replica (activityReplicaName). An open activity stream with nothing to send
 // writes a keepalive comment every keepalive (zero or less keeps
-// api.DefaultActivityKeepalive). PublicHandler builds the public listener
+// api.DefaultActivityKeepalive); opts go last. PublicHandler builds the public listener
 // with it, and the tests build the bare router with it, so the route table
 // they check is the one the server serves.
-func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration) (*publicMux, error) {
+func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration, opts ...api.ServerOption) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
-	srv, err := api.NewServer(provider, api.RecordInto(activity))
+	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +114,7 @@ var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 // operator` (contract.OperatorPaths) need api.RoleOperator instead, checked
 // before the gate and the rate limit so a reader's 403 costs no token; their
 // other methods' 405 does too.
+// The "/" catch-all (the UI) is public by design and does not go through guard.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -297,19 +298,14 @@ func addSwaggerUI(m *publicMux) error {
 
 // addUI mounts the embedded UI as the catch-all at "/". It is not registered
 // through m.handle: it is no API operation, so it stays out of the route table
-// and the spec. Paths that must never fall back to the UI are claimed first:
-// the Swagger UI prefix (unknown paths, or every path when it is switched off,
-// keep the token and the 404 envelope) and the probe paths, which only the
-// admin listener serves (PC-01), so a monitor pointed at this port never reads
-// a UI page as "ready". Matching is exact and case-sensitive.
+// and the spec. newPublic claims /api and /swagger-ui first, so they never fall
+// back to the UI; addUI claims the probe paths, which only the admin listener
+// serves (PC-01), so a monitor pointed at this port never reads a UI page as
+// "ready". Matching is exact and case-sensitive.
 func addUI(m *publicMux, notFound http.Handler, logger *slog.Logger) {
 	if !ui.Built() {
 		logger.Warn("ui not built: serving the placeholder page; run ./run ui")
 	}
-	if len(m.methods("/swagger-ui")) == 0 {
-		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
-	}
-	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
 	for _, p := range []string{"/livez", "/readyz", "/version"} {
 		m.mux.Handle(p, notFound)
 	}
@@ -431,7 +427,10 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 // minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration) (*Public, error) {
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive)
+	if logger == nil {
+		logger = discardLogger
+	}
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, activityFederation(cfg, logger)...)
 	if err != nil {
 		return nil, err
 	}
@@ -439,9 +438,6 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 		if err := addSwaggerUI(m); err != nil {
 			return nil, err
 		}
-	}
-	if logger == nil {
-		logger = discardLogger
 	}
 	addMCP(m, m, logger)
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -451,6 +447,12 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 	// Unknown /api/ paths need the token too, so they reveal nothing.
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
+	// The Swagger UI prefix: unknown paths, or every path when it is switched
+	// off, keep the token and the 404 envelope instead of falling back to the UI.
+	if len(m.methods("/swagger-ui")) == 0 {
+		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
+	}
+	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
 	addUI(m, notFound, logger)
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {

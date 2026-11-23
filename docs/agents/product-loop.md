@@ -73,10 +73,10 @@ Each step runs only after the steps before it are done.
 
    **Readiness gate** (all must pass):
    - it changes one Go package or Vue feature folder, within about 400 lines;
-   - nothing merged or decided supersedes it;
-   - no other unblocked issue rewrites the same files;
+   - nothing merged or decided supersedes it, and no other unblocked issue rewrites its files;
    - measured claims carry their probe;
-   - every acceptance criterion is testable at a named seam.
+   - every acceptance criterion is testable at a named seam and needed by this slice's user;
+     anything only a later issue needs (caps, digests, flags, edge-case matrices) goes there.
 4. **Flow.** Report stalls:
    - a `priority:P1` issue not merged within a day;
    - `round-cap`, `security` and `human-check` parks;

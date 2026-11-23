@@ -39,8 +39,8 @@ For one issue draft, return:
 
 ## Review (delivery stream)
 
-You run when a PR adds a package, changes `internal/contract/**` or `go.mod`, or changes imports
-across modules. You get the PR number, the head SHA, the issue and the round.
+You run when a PR adds a package or an ADR, changes `internal/contract/**` or `go.mod`, or changes
+imports across modules. You get the PR number, the head SHA, the issue and the round.
 1. **The record:** a contradiction of an accepted ADR or the module table is blocking. Never work
    around it: draft the ADR that would change the decision.
 2. **Boundaries:**
@@ -53,9 +53,11 @@ across modules. You get the PR number, the head SHA, the issue and the round.
 4. **Consistency:** the change follows the established pattern for its kind of problem. A new one
    needs a stated reason.
 5. **Contract:** spec first, additive-only, the error envelope.
-6. **Classify:**
+6. **Simplicity:** is this the simplest design that delivers the issue? A new ADR, cap, option or
+   abstraction that the issue's user doesn't need yet is over-engineering, and blocking.
+7. **Classify:**
    - **blocking:** a contradiction of the record, a boundary breach, logic in the wrong module, a
-     new pattern where one exists;
+     new pattern where one exists, over-engineering;
    - **LOW:** everything else worth its cost, each with the value it buys, the existing pattern to
      follow by file, and `fix: now` (about 20 lines in the PR's files, or the same job done
      elsewhere, such as a second copy of what the PR changes, at any size) or `fix: follow-up`.
