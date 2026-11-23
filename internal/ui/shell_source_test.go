@@ -241,6 +241,53 @@ func TestHandoffSection8HoldsTheEmptyStateCopy(t *testing.T) {
 	}
 }
 
+// #473: the not-found copy and the operators-only 403 copy are in the §8 table
+// with the strings the code uses. The not-found strings are read from the view
+// itself, so the doc cannot drift from the code.
+func TestHandoffSection8HoldsTheNotFoundAndOperatorsOnlyCopy(t *testing.T) {
+	doc := readRepo(t, "../../docs/design/ui-handoff.md")
+	i := strings.Index(doc, "## 8. Copy")
+	j := strings.Index(doc, "## 9. ")
+	if i < 0 || j < i {
+		t.Fatal("handoff §8 and §9 headings not found")
+	}
+	// Typographic and plain apostrophes are the same string for the doc.
+	sec := strings.NewReplacer("’", "'", "**", "").Replace(doc[i:j])
+
+	view := readRepo(t, webDir+"/src/views/NotFoundView.vue")
+	heading := regexp.MustCompile(`<h1>([^<]+)</h1>`).FindStringSubmatch(view)
+	body := regexp.MustCompile(`<p>([^<]+)</p>`).FindStringSubmatch(view)
+	link := regexp.MustCompile(`<RouterLink[^>]*>([^<]+)</RouterLink>`).FindStringSubmatch(view)
+	if heading == nil || body == nil || link == nil {
+		t.Fatalf("NotFoundView.vue has no h1, p and link to read the copy from: %v %v %v", heading, body, link)
+	}
+	for name, m := range map[string][]string{"h1": heading, "body": body, "link": link} {
+		if s := strings.TrimSpace(m[1]); !strings.Contains(sec, s) {
+			t.Errorf("handoff §8 does not hold the not-found %s copy %q the view uses", name, s)
+		}
+	}
+	if heading[1] != "Page not found" {
+		t.Errorf("the not-found h1 is %q, want %q", heading[1], "Page not found")
+	}
+
+	const forbidden = "This page is for operators."
+	if !strings.Contains(sec, forbidden) {
+		t.Errorf("handoff §8 does not hold the operators-only 403 copy %q", forbidden)
+	}
+	// They are table rows, not prose: a key and its copy on one row.
+	for _, want := range []string{"Page not found", forbidden} {
+		found := false
+		for _, line := range strings.Split(sec, "\n") {
+			if strings.HasPrefix(line, "|") && strings.Contains(line, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("handoff §8 has no copy table row holding %q", want)
+		}
+	}
+}
+
 // --- how the built shell is served ------------------------------------------
 
 // shellFS is the shape of a Vite build of the shell: an index with the
