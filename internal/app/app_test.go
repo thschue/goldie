@@ -76,21 +76,6 @@ func testPublicMux(t *testing.T) *publicMux {
 	return m
 }
 
-func get(t *testing.T, url string) (*http.Response, []byte) {
-	t.Helper()
-	resp, err := http.Get(url) //nolint:gosec // test server URL
-	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read %s: %v", url, err)
-	}
-	contracttest.Conforms(t, resp, body)
-	return resp, body
-}
-
 // do sends one request and returns the response with its body read. Every
 // response is validated against the spec.
 func do(t *testing.T, method, url string, mutate func(*http.Request)) (*http.Response, []byte) {
@@ -113,6 +98,17 @@ func do(t *testing.T, method, url string, mutate func(*http.Request)) (*http.Res
 	}
 	contracttest.Conforms(t, resp, body)
 	return resp, body
+}
+
+// The reserved probe path answers the 404 envelope that the OpenAPI document's
+// default error response describes, whatever the UI serves at the other paths.
+func TestReservedProbePathAnswersTheContractedNotFoundEnvelope(t *testing.T) {
+	srv := newServer(t)
+	resp, body := do(t, http.MethodGet, srv.URL+"/livez", nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d, want 404: %s", resp.StatusCode, body)
+	}
+	assertEnvelope(t, body, "not_found")
 }
 
 func TestSpecContentTypes(t *testing.T) {
