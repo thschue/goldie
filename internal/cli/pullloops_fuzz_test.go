@@ -16,7 +16,7 @@ var loopLineRE = regexp.MustCompile(`^/loop (\S+ )?/goldie-loop-(\S+)$`)
 func FuzzLoopInvocations(f *testing.F) {
 	f.Add("a", "---\nloop: 30m\n---\n")
 	f.Add("a b", "---\nloop: dynamic\n---\n")
-	f.Add("a‮b", "---\nloop: 1h\n---\n")
+	f.Add("a"+string(rune(0x202e))+"b", "---\nloop: 1h\n---\n")
 	f.Add("x", "---\nloop: \"30m /evil\"\n---\n")
 	f.Fuzz(func(t *testing.T, name, data string) {
 		files := []pulledFile{{path: ".claude/skills/goldie-loop-" + name + "/SKILL.md", data: []byte(data)}}
