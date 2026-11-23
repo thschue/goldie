@@ -23,6 +23,10 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
      review the new commits (step 3) and re-run `scripts/merge-pr`;
    - `red` or `dirty` after a clean review: disarm, resume the implementer (merge `origin/main`,
      fix), then step 3 for the change;
+   - `dirty` or `red` on a PR held with `needs-maintainer`: the same, keeping the label. The
+     maintainer approves by merging and never gets a conflicted or red PR;
+   - `parked` with `needs-maintainer` after 3 tool errors (exit 2): re-run `scripts/merge-pr`
+     once per tick, and remove the label when it exits 0;
    - `answered`: remove `needs-info` and `question`; `merge` finishes as clean, `change` goes to
      step 4 (not a round);
    - `active` with no live subagent: continue at the step its markers show.
@@ -53,8 +57,10 @@ reason), consults, test change requests, and harness feedback filed.
    `ci`, `build` and pure `refactor`. For `test` issues the `test-author` makes every test-file
    change here, and step 2 runs only for a remaining non-test change.
    - The `test-author` writes failing tests for every acceptance criterion, at the highest seam,
-     following the existing test patterns, and pushes them as the first commit
-     (`test(acceptance): …`).
+     following the existing test patterns, and commits them (`test(acceptance): …`) on the
+     local ref `tests/<branch>` without pushing: a PR never gets a red commit.
+   - If that commit is missing when a stream resumes (another session adopted it), run step 1
+     again.
    - Record `<!-- goldie-loop:tests sha=<commit> -->` on the PR.
    - On `needs-info` (criteria unclear or contradictory): comment the exact gap with
      `reason=spec`, swap the issue's `ready-for-agent` for `needs-info`, and close the draft.

@@ -81,3 +81,49 @@ func TestLoopClosureIsNotServedWhereAReferenceIsSuppressed(t *testing.T) {
 		t.Errorf("Loops(project) = %+v, want none", got)
 	}
 }
+
+// #614: the loop Kind is in the table of Kinds a reference may name, so a loop
+// can be deprecated with replaced_by: loop:<new> and a Project can suppress it.
+
+func loopNamed(name string, front ...string) string {
+	return "---\nname: " + name + "\ndescription: d\n" + strings.Join(front, "\n") + "\n---\nPrompt.\n"
+}
+
+func loopNameList(ls []engine.Loop) string {
+	names := []string{}
+	for _, l := range ls {
+		names = append(names, l.Name)
+	}
+	return strings.Join(names, ",")
+}
+
+func TestLoopReplacedByALoopLoadsAndShowsAsDeprecated(t *testing.T) {
+	snap := load(t, map[string]string{
+		"global/loops/old.md": loopNamed("old", "interval: 5m", "stop: x", "status: deprecated", "replaced_by: loop:new"),
+		"global/loops/new.md": loopNamed("new", "interval: 5m", "stop: x"),
+	})
+	old, ok := snap.LoopIn("", "old")
+	if !ok || old.Status != engine.StatusDeprecated {
+		t.Fatalf("LoopIn(old) = %+v, %v; want it served as deprecated", old, ok)
+	}
+	if n, ok := snap.LoopIn("", "new"); !ok || n.Status == engine.StatusDeprecated {
+		t.Errorf("LoopIn(new) = %+v, %v; want it served and not deprecated", n, ok)
+	}
+	if got := loopNameList(snap.Loops("")); got != "new,old" {
+		t.Errorf("Loops = %s, want new,old", got)
+	}
+}
+
+func TestSuppressingAnAgentDoesNotHideTheLoopOfThatName(t *testing.T) {
+	snap := load(t, map[string]string{
+		"global/loops/same.md":  loopNamed("same", "interval: 5m", "stop: x"),
+		"global/agents/same.md": agentDoc("same", "d"),
+		supFile:                 suppressYAML("agent:same"),
+	})
+	if _, ok := snap.LoopIn(govProject, "same"); !ok {
+		t.Error("suppressing agent:same hid the loop of that name")
+	}
+	if _, ok := snap.AgentIn(govProject, "same"); ok {
+		t.Error("agent:same is still served in the suppressing Project")
+	}
+}

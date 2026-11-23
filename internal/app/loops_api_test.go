@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thschue/goldie/internal/contract/contracttest"
 	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
@@ -70,6 +71,7 @@ type loopEntry struct {
 	Interval    *string `json:"interval"`
 	Dynamic     bool    `json:"dynamic"`
 	Stop        string  `json:"stop"`
+	Scope       *string `json:"scope"`
 	Content     string  `json:"content"`
 	Digest      string  `json:"digest"`
 	Closure     struct {
@@ -427,5 +429,90 @@ func TestLoopOperationsFollowTheRulesOfAgents(t *testing.T) {
 		if status, body := itemsGet(t, srv, "", p); status != http.StatusUnauthorized {
 			t.Errorf("GET %s without a token: status %d, want 401: %s", p, status, body)
 		}
+	}
+}
+
+// #614: the Loop payload names the Scope of the copy it serves, as Article has
+// since #577 and SearchHit always did.
+
+func wantLoopScope(t *testing.T, what string, got loopEntry, want string) {
+	t.Helper()
+	if got.Scope == nil {
+		t.Errorf("%s: scope is absent, want %q", what, want)
+	} else if *got.Scope != want {
+		t.Errorf("%s: scope = %q, want %q", what, *got.Scope, want)
+	}
+}
+
+// Criterion: the spec declares Loop.scope, optional.
+func TestServedSpecDeclaresAnOptionalScopeOnLoop(t *testing.T) {
+	doc := specDoc(t)
+	components, _ := doc["components"].(map[string]any)
+	schemas, _ := components["schemas"].(map[string]any)
+	loop, _ := schemas["Loop"].(map[string]any)
+	props, _ := loop["properties"].(map[string]any)
+	if contracttest.ResolveRef(doc, props["scope"]) == nil {
+		t.Fatal("Loop declares no scope property")
+	}
+	req, _ := loop["required"].([]any)
+	for _, r := range req {
+		if r == "scope" {
+			t.Error("Loop requires scope; the field is optional (additive, ADR 0011)")
+		}
+	}
+}
+
+// Criterion: list and get carry scope: global, or the Project when its copy wins.
+func TestLoopsNameTheScopeOfTheCopyThatWins(t *testing.T) {
+	shopNightly := loopFile("nightly", "10m", []string{"reviewer"}, []string{"deploy"}, "when shop is green")
+	srv := loopServer(t, loopContent(t, map[string]string{
+		"projects/" + loopsShop + "/loops/nightly.md": shopNightly,
+	}))
+	shop := "?project=" + loopsShop
+
+	wantLoopScope(t, "get nightly, no Project", getLoop(t, srv, readerToken, loopsAPI+"/nightly"), "global")
+	wantLoopScope(t, "get nightly, shop view", getLoop(t, srv, readerToken, loopsAPI+"/nightly"+shop), loopsShop)
+	wantLoopScope(t, "get watcher, shop view", getLoop(t, srv, readerToken, loopsAPI+"/watcher"+shop), "global")
+	// Another Project's view must not show the shop copy's scope.
+	wantLoopScope(t, "get nightly, other view", getLoop(t, srv, readerToken, loopsAPI+"/nightly?project="+loopsOther), "global")
+}
+
+// Criterion: a Source with replaced_by: loop:<new> loads and the loop is served.
+func TestLoopReplacedByALoopLoadsOverHTTP(t *testing.T) {
+	old := "---\nname: old\ndescription: Loop old\ninterval: 5m\nagents: []\nskills: []\nstop: x\nstatus: deprecated\nreplaced_by: loop:nightly\n---\nIterate old.\n"
+	srv := loopServer(t, loopContent(t, map[string]string{"global/loops/old.md": old}))
+	if got := loopNames(listLoops(t, srv, readerToken, loopsAPI)); !slices.Equal(got, []string{"nightly", "old", "watcher"}) {
+		t.Errorf("list = %v, want the deprecated loop old served beside the rest", got)
+	}
+	if got := getLoop(t, srv, readerToken, loopsAPI+"/old"); got.Name != "old" {
+		t.Errorf("get old = %+v", got)
+	}
+
+	// A replacement that does not exist fails a fresh start and names the file.
+	dangling := strings.Replace(old, "loop:nightly", "loop:ghost", 1)
+	dir := loopContent(t, map[string]string{"global/loops/old.md": dangling})
+	if _, err := engine.NewDirSource(dir).Load(t.Context()); err == nil ||
+		!strings.Contains(err.Error(), "global/loops/old.md") || strings.Contains(err.Error(), dir) {
+		t.Errorf("replaced_by: loop:ghost: err = %v, want a load error naming global/loops/old.md and not the content path", err)
+	}
+}
+
+// Criterion: a Project that suppresses a loop no longer lists it.
+func TestProjectSuppressingALoopHidesItInThatProjectOnly(t *testing.T) {
+	srv := loopServer(t, loopContent(t, map[string]string{
+		"projects/" + loopsShop + "/project.yaml": "suppress: [loop:watcher]\n",
+	}))
+	shop := "?project=" + loopsShop
+	if got := loopNames(listLoops(t, srv, readerToken, loopsAPI+shop)); !slices.Equal(got, []string{"nightly", "shop-release"}) {
+		t.Errorf("shop view lists %v, want watcher suppressed", got)
+	}
+	if status, body := itemsGet(t, srv, readerToken, loopsAPI+"/watcher"+shop); status != http.StatusNotFound {
+		t.Errorf("get a suppressed loop: status %d, want 404: %s", status, body)
+	}
+	if got := loopNames(listLoops(t, srv, readerToken, loopsAPI)); !slices.Equal(got, []string{"nightly", "watcher"}) {
+		t.Errorf("global view lists %v, want watcher", got)
+	}
+	if got := loopNames(listLoops(t, srv, readerToken, loopsAPI+"?project="+loopsOther)); !slices.Contains(got, "watcher") {
+		t.Errorf("another Project lists %v, want watcher", got)
 	}
 }

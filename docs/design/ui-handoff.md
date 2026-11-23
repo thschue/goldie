@@ -159,7 +159,7 @@ From top to bottom:
 6. **Feed + detail**:
    - The feed has surface pills, a removable project chip, and "Misses only". Columns: Time · Event · Query → Item · Result · Via · Project · Replica.
    - Events that arrive after the reorder window (`late: true`, Q50) are inserted at their timestamp with a small gold **LATE** marker under the time (tooltip: "Arrived after the reorder window").
-   - The detail panel shows the result, query, either the served Item or "No Item matched" with nearest keywords and "Start this article in the Source repo ↗", then Via, Project, Token, Who (only with `GOLDIE_ACTIVITY_SHOW_IDENTITY`), Replica and Latency, plus "Try this search" and "Open trace ↗". The trace link is rendered from `GOLDIE_TRACE_URL_TEMPLATE` with the event's `trace_id`, and hidden when the template is unset.
+   - The detail panel shows the result, query, either the served Item or "No Item matched" with nearest keywords and "Start this article in the Source repo ↗", then Via, Project, Token, Who (only with `GOLDIE_ACTIVITY_SHOW_IDENTITY`), Replica and Latency, plus "Try this search" and "Open trace ↗". The panel varies by Kind: for skill and agent gets "Try this search" is hidden (there is no query to run) and nothing replaces it; "Open trace ↗" stays. The trace link is rendered from `GOLDIE_TRACE_URL_TEMPLATE` with the event's `trace_id`, and hidden when the template is unset.
 
 ### 3.7 Sources (`/ops/sources`, operator)
 
@@ -497,6 +497,9 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |
 | Miss detail | No Item matched · `<nearest keywords>` · Start this article in the Source repo ↗ |
+| Skill or agent get, Query → Item | `skill:<name>` or `agent:<name>` |
+| Skill or agent miss, result | No skill named `<name>` / No agent named `<name>` |
+| Skill or agent miss, detail | Add it to the Source repo ↗ |
 | Source failing | Validation failed at `<rev>` — `<n>` error(s). Fix in the Source and merge — or run `goldie validate` locally before pushing. |
 | Sources intro | Failing Sources first. The number is preference order: on a collision within a Scope, the lower number wins. A failing Source keeps serving its last good Snapshot. |
 | Grafana links | Trends in Grafana ↗ · Usage over time in Grafana ↗ (hidden without `GOLDIE_GRAFANA_URL`) |

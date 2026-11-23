@@ -18,3 +18,7 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          # A push with GITHUB_TOKEN starts no workflows, so the release PR would get no CI.
+          # RELEASE_PLEASE_TOKEN (a fine-grained token or App token with contents and
+          # pull-requests write) makes CI run on it.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}

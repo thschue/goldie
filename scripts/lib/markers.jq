@@ -40,10 +40,12 @@ def failing:
 
 # stream_state($me): what an open stream PR needs this tick (docs/agents/delivery-loop.md):
 #   parked    held for the maintainer or waiting on an answer: nothing to do
+#             (a held PR is still dirty or red first: the maintainer never
+#             gets a conflicted or red PR to approve)
 #   answered  its decision got an answer: act on it
 #   disarm    auto-merge is armed but the head moved past the clean marker
-#   dirty     reviewed clean, then a conflict with main
-#   red       reviewed clean, then a failed check on the head
+#   dirty     reviewed clean or held, then a conflict with main
+#   red       reviewed clean or held, then a failed check on the head
 #   waiting   reviewed clean at the head, merging: nothing to do
 #   active    in progress (no review for the head yet)
 # Needs .labels, .comments, .headRefOid, .mergeStateStatus, .autoMergeRequest
@@ -52,7 +54,10 @@ def stream_state($me):
   own_markers($me) as $m
   | ($m | latest("review") | .line // "") as $review
   | ([.labels[].name]) as $labels
-  | if ($labels | index("needs-maintainer")) then "parked"
+  | if ($labels | index("needs-maintainer")) then
+      (if .mergeStateStatus == "DIRTY" then "dirty"
+       elif failing then "red"
+       else "parked" end)
     elif ($review | attr("reason")) == "decision" and ($review | attr("sha")) == .headRefOid then
       (if answered($me) then "answered" else "parked" end)
     elif ($labels | index("needs-info")) then "parked"

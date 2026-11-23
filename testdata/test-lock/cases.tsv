@@ -43,3 +43,12 @@ own-line-renamed	2-impl	a_test.go	assert a == 1\nstub GetSync
 author-touches-code	base	a.go	a = 0
 author-touches-code	1-author	a.go	a = 1
 author-touches-code	want	test-author commit "1-author" touches a non-test file: a.go
+web-tests-locked	base	web/src/components/A.test.ts	expect(a).toBe(1)
+web-tests-locked	base	web/e2e/shell.spec.ts	await expect(nav).toBeVisible()
+web-tests-locked	1-impl	web/src/components/A.test.ts	expect(a).toBe(2)
+web-tests-locked	1-impl	web/e2e/shell.spec.ts	await expect(nav).toBeVisible()\nawait expect(main).toBeVisible()
+web-tests-locked	want	locked: web/src/components/A.test.ts: expect(a).toBe(1)
+web-test-author	base	web/src/a.ts	a = 0
+web-test-author	1-author	web/e2e/drawer.spec.ts	await expect(drawer).toBeVisible()
+web-test-author	1-author	web/src/components/B.test.ts	expect(b).toBe(1)
+web-test-author	2-impl	web/src/a.ts	a = 1
