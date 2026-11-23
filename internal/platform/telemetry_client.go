@@ -5,8 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"path"
-	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
@@ -25,11 +23,11 @@ const (
 // does not apply. It is off unless an endpoint or OTEL_TRACES_EXPORTER
 // selects traces. role is a plain string because callers range over the
 // roles as strings; any other value is an error.
-func SetupClientTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+func SetupClientTelemetry(ctx context.Context, lookup Lookup, role string, opts ...telemetryOption) (*Telemetry, error) {
 	if role != RoleCLI && role != RoleMCP {
 		return nil, errors.New("client telemetry: the role must be cli or mcp")
 	}
-	return setupTelemetry(ctx, lookup, role)
+	return setupTelemetry(ctx, lookup, role, opts...)
 }
 
 // RouteNoticesTo sends what the OpenTelemetry SDK reports to l, as one fixed
@@ -47,7 +45,7 @@ func (t *Telemetry) RouteNoticesTo(l *slog.Logger) {
 // WrapTransport traces each request through rt as a client span and sends it
 // as W3C traceparent (TraceContext only, never baggage). The server starts its
 // own trace and links to the client span (WrapHandler). The span is built from
-// clientSpanView, so it carries no query, header, userinfo or article id; the
+// clientSpanView, so it carries no query, header, userinfo or id; the
 // request on the wire is unchanged but for traceparent. rt nil means
 // http.DefaultTransport. Without traces it returns rt as is.
 func (t *Telemetry) WrapTransport(rt http.RoundTripper) http.RoundTripper {
@@ -65,7 +63,7 @@ func (t *Telemetry) WrapTransport(rt http.RoundTripper) http.RoundTripper {
 		otelhttp.WithSpanNameFormatter(spanName),
 	)
 	return roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return traced.RoundTrip(clientSpanView(r))
+		return traced.RoundTrip(t.clientSpanView(r))
 	})
 }
 
@@ -73,29 +71,15 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// articleRoute is the article lookup's path, up to the id.
-const articleRoute = "/api/v1/articles/"
-
-// templatePath is p, cleaned, with an article id cut to the route template
-// /api/v1/articles/{id}. The route may follow a prefix (a base URL's path).
-// It is the one place a span's path is templated.
-func templatePath(p string) string {
-	p = path.Clean("/" + p)
-	if i := strings.Index(p, articleRoute); i >= 0 {
-		p = p[:i] + articleRoute + "{id}"
-	}
-	return p
-}
-
 // clientSpanView returns the request otelhttp builds the client span from: no
 // headers (Authorization among them), no userinfo, query or fragment, and the
-// path from templatePath. The original request rides in its context for
+// path from spanURLPath. The original request rides in its context for
 // restoreClientRequest.
-func clientSpanView(r *http.Request) *http.Request {
+func (t *Telemetry) clientSpanView(r *http.Request) *http.Request {
 	v := r.WithContext(context.WithValue(r.Context(), originalKey{}, r))
 	u := *r.URL
 	u.User, u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = nil, "", false, "", ""
-	u.Path, u.RawPath = templatePath(u.Path), ""
+	u.Path, u.RawPath = t.spanURLPath(r.URL), ""
 	v.URL = &u
 	v.Header = http.Header{}
 	return v
