@@ -162,12 +162,21 @@ type activityPeerFinder struct {
 
 	// ttl, when above zero, shares one lookup between the callers within it:
 	// every reconnect of every merged stream asks for the peers, and each
-	// lookup is an A query and up to maxActivityPeers PTR queries.
-	ttl     time.Duration
-	mu      sync.Mutex
-	at      time.Time
-	cached  []activityPeer
-	cachedE error
+	// lookup is an A query and up to maxActivityPeers PTR queries. Only a
+	// successful lookup is kept, and it runs on its own context, so a caller
+	// that gives up neither cuts it short nor leaves a partial result.
+	ttl    time.Duration
+	mu     sync.Mutex
+	at     time.Time
+	cached []activityPeer
+	flight *peerLookup // the lookup under way, if any
+}
+
+// peerLookup is one shared lookup: done closes when peers and err are set.
+type peerLookup struct {
+	done  chan struct{}
+	peers []activityPeer
+	err   error
 }
 
 // find resolves the peers; err is lookupActivityPeers'.
@@ -176,13 +185,32 @@ func (f *activityPeerFinder) find(ctx context.Context) ([]activityPeer, error) {
 		return f.lookup(ctx)
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if !f.at.IsZero() && time.Since(f.at) < f.ttl {
-		return f.cached, f.cachedE
+		defer f.mu.Unlock()
+		return f.cached, nil
 	}
-	f.cached, f.cachedE = f.lookup(ctx)
-	f.at = time.Now()
-	return f.cached, f.cachedE
+	l := f.flight
+	if l == nil {
+		l = &peerLookup{done: make(chan struct{})}
+		f.flight = l
+		go func() {
+			l.peers, l.err = f.lookup(context.WithoutCancel(ctx))
+			f.mu.Lock()
+			if l.err == nil {
+				f.cached, f.at = l.peers, time.Now()
+			}
+			f.flight = nil
+			f.mu.Unlock()
+			close(l.done)
+		}()
+	}
+	f.mu.Unlock()
+	select {
+	case <-l.done:
+		return l.peers, l.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (f *activityPeerFinder) lookup(ctx context.Context) ([]activityPeer, error) {

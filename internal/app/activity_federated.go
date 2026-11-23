@@ -73,25 +73,25 @@ func activityFederation(cfg platform.Config, logger *slog.Logger) []api.ServerOp
 	}
 	httpc := &http.Client{Transport: transport}
 	idle := activityPeerIdle
-	find := func(ctx context.Context) ([]activityPeer, error) {
-		if resolveActivityPeers != nil { // tests stand in for DNS, and swap the stand-in while a replica runs
-			return resolveActivityPeers(ctx, cfg.ActivityPeers)
-		}
-		return finder.find(ctx)
-	}
 	return []api.ServerOption{api.FederateActivity(api.Federation{
 		Window: cfg.ActivityReorderWindow,
 		Logger: logger,
-		Resolve: func(ctx context.Context) ([]api.Peer, error) {
-			found, err := find(ctx)
-			if err != nil {
-				return nil, errPeerUnavailable // the resolver's error may name a DNS server
+		Resolver: func() func(context.Context) ([]api.Peer, error) {
+			find := finder.find
+			if stub := resolveActivityPeers; stub != nil { // tests stand in for DNS; read here, on the request's goroutine
+				find = func(ctx context.Context) ([]activityPeer, error) { return stub(ctx, cfg.ActivityPeers) }
 			}
-			peers := make([]api.Peer, 0, len(found))
-			for _, p := range found {
-				peers = append(peers, api.Peer{Name: p.Name, Open: peerOpener(httpc, p.URL, idle)})
+			return func(ctx context.Context) ([]api.Peer, error) {
+				found, err := find(ctx)
+				if err != nil {
+					return nil, errPeerUnavailable // the resolver's error may name a DNS server
+				}
+				peers := make([]api.Peer, 0, len(found))
+				for _, p := range found {
+					peers = append(peers, api.Peer{Name: p.Name, Open: peerOpener(httpc, p.URL, idle)})
+				}
+				return peers, nil
 			}
-			return peers, nil
 		},
 	})}
 }

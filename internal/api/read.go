@@ -128,6 +128,7 @@ type Server struct {
 	activity *Activity    // see RecordInto, nil records nothing
 	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
 	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
+	fedDown  downSet      // peers already logged as down
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
