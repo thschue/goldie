@@ -96,9 +96,9 @@ eachViewport((width, theme) => {
     const nav = await withNav(page);
     await expect(nav).toHaveAttribute('aria-label', /.+/);
     const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Instructions']);
     const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
-    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
+    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
       (s) => text.indexOf(s),
     );
     expect(at.every((i) => i >= 0), `all entries present in: ${text}`).toBe(true);
@@ -151,7 +151,6 @@ test.describe('routes and the current page', () => {
     ['Decisions', '/decisions'],
     ['Skills', '/assets/skills'],
     ['Agents', '/assets/agents'],
-    ['Loops', '/assets/loops'],
     ['Instructions', '/assets/instructions'],
   ];
 
@@ -164,7 +163,9 @@ test.describe('routes and the current page', () => {
       await expect(link).toHaveAttribute('href', path);
       await link.click();
       await expect(page).toHaveURL((u) => u.pathname === path);
-      await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
+      // The assets pages show the Agent assets frame (#584), not the empty state.
+      if (path.startsWith('/assets/')) await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agent assets');
+      else await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
       nav = await withNav(page);
       const current = nav.getByRole('link', { name, exact: true });
       await expect(current).toHaveAttribute('aria-current', 'page');
@@ -182,7 +183,7 @@ test.describe('routes and the current page', () => {
     });
   }
 
-  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/loops', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
+  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
     test(`GET ${path} is 200 and renders the shell, not a 404`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(200);
@@ -194,7 +195,7 @@ test.describe('routes and the current page', () => {
 
   test('every route has its own h1 and only Home asks the Home question', async ({ page }) => {
     const seen = new Map<string, string>();
-    for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/loops', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/no/such/route']) {
+    for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/no/such/route']) {
       await page.goto(path);
       const h1 = page.getByRole('heading', { level: 1 });
       await expect(h1, path).toHaveCount(1);
@@ -204,7 +205,8 @@ test.describe('routes and the current page', () => {
       else expect(text, `h1 of ${path} is not the Home question`).not.toBe('What are you deciding today?');
       seen.set(path, text);
     }
-    const nav = ['/decisions', '/assets/skills', '/assets/agents', '/assets/loops', '/assets/instructions'].map((p) => seen.get(p));
+    // The three Agent assets tabs share one h1 (#584).
+    const nav = ['/decisions', '/assets/skills'].map((p) => seen.get(p));
     expect(new Set(nav).size, `h1s of the nav routes are distinct: ${nav}`).toBe(nav.length);
   });
 

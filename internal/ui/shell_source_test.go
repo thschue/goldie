@@ -308,7 +308,7 @@ func TestEveryRouteOfTheShellGetsTheIndexWith200AndNoLongCache(t *testing.T) {
 	// §2.2 routes, including /assets/:tab, which shares its prefix with the
 	// hashed build output and must not be cached as immutable.
 	for _, p := range []string{
-		"/", "/signin", "/decisions", "/assets/skills", "/assets/agents", "/assets/loops", "/assets/instructions",
+		"/", "/signin", "/decisions", "/assets", "/assets/skills", "/assets/agents", "/assets/loops", "/assets/instructions",
 		"/ops/activity", "/ops/sources", "/items/skill/some-name", "/no/such/route",
 	} {
 		rec := get(t, h, p)
