@@ -403,6 +403,14 @@ eachViewport((width, theme) => {
 
     test('Sign in with a wrong token is captured and axe-clean', async ({ page, baseURL }) => {
       const seen = await problems(page, baseURL ?? '');
+      // Stubbed: six real failures here would trip the sign-in limiter (10 per address per minute)
+      // together with the real failures of the other tests, and the 429 renders a status, not an alert.
+      // The real 401 path is exercised by the tests above.
+      await page.route('**/api/v1/session', (route) =>
+        route.request().method() === 'POST'
+          ? route.fulfill({ status: 401, contentType: 'application/json', body: envelope('unauthorized', 'missing or invalid API token', 'Tokens are case-sensitive, so copy yours exactly as issued.') })
+          : route.continue(),
+      );
       await page.goto('/signin');
       await signIn(page, wrongToken);
       await expect(page.getByRole('alert')).toBeVisible();
