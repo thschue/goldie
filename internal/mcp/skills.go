@@ -124,9 +124,7 @@ func (t *tools) skill(ctx context.Context, name, project string) *sdk.CallToolRe
 	if err != nil {
 		return failure(t.skillError(err))
 	}
-	rawFile, err := t.client.GetSkillFile(ctx, name, "SKILL.md", &contract.GetSkillFileParams{Project: proj})
-	file, err := contract.Answer(rawFile, err, contract.ParseGetSkillFileResponse,
-		func(r *contract.GetSkillFileResponse) *[]byte { return &r.Body })
+	file, err := t.skillFile(ctx, name, "SKILL.md", proj)
 	if err != nil {
 		return failure(t.skillError(err))
 	}
@@ -136,9 +134,20 @@ func (t *tools) skill(ctx context.Context, name, project string) *sdk.CallToolRe
 		fmt.Fprintf(&b, "\n- %s (%d bytes)", contract.CleanLine(f.Path), f.Size)
 	}
 	b.WriteString("\nOnly SKILL.md can be read through this tool.\n\nSKILL.md (each line starts with \"| \"; drop that prefix to read the file):\n\n")
-	b.WriteString(quote(strings.TrimRight(contract.CleanText(string(*file)), "\n")))
+	b.WriteString(quote(strings.TrimRight(contract.CleanText(string(file)), "\n")))
 	b.WriteString(hintLine(sk.Hint))
 	return success(b.String())
+}
+
+// skillFile reads one file of a skill's bundle for proj, as bytes.
+func (t *tools) skillFile(ctx context.Context, name, path string, proj *contract.ProjectId) ([]byte, error) {
+	raw, err := t.client.GetSkillFile(ctx, name, path, &contract.GetSkillFileParams{Project: proj})
+	file, err := contract.Answer(raw, err, contract.ParseGetSkillFileResponse,
+		func(r *contract.GetSkillFileResponse) *[]byte { return &r.Body })
+	if err != nil {
+		return nil, err
+	}
+	return *file, nil
 }
 
 // quote starts every line of text with "| ", so that a line of a Source's file

@@ -89,14 +89,17 @@ func WithRejectedRemote(name string) Option {
 //
 // The tool set is fixed, so the server advertises tools without listChanged:
 // a client cannot park a request waiting for tool-list changes that never
-// come, and hold up a drain with it.
+// come, and hold up a drain with it. The same goes for prompts and resources:
+// the prompt list is fixed when a session starts, and the resource templates
+// never change, so no list_changed notification is ever sent.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
 	for _, o := range opts {
 		o(t)
 	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
-		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}}})
+		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{
+			Tools: &sdk.ToolCapabilities{}, Prompts: &sdk.PromptCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return t.search(ctx, in.Query, in.Project), nil, nil
@@ -114,6 +117,8 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 			return t.currentContext(), nil, nil
 		})
 	addSkillTools(s, t)
+	addPrompts(s, t)
+	addResources(s, t)
 	return s
 }
 

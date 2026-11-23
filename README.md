@@ -181,6 +181,15 @@ quoted with `| `; a name that is empty, dots only or holds a separator is refuse
 request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
 description.
 
+The server also offers prompts and resources. Each skill is a prompt named `goldie-<skill name>`
+(for the session's default Project), and getting it returns the text of its `SKILL.md`. The prompt
+list is fixed when a session starts: a skill added later shows in a new session, and the server
+sends no `list_changed` notification. The resources are two URI templates:
+`goldie://skills/{name}/{path}` reads one file of a skill's bundle, as text with each line quoted
+with `| `, and `goldie://agents/{name}` reads an agent's name and description. The session's
+default Project picks the bundle, never the URI. A skill or file that doesn't exist, a draft agent,
+and a URI that is malformed or leaves the bundle all answer as resource not found.
+
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or
 `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content with `--dir` (or
