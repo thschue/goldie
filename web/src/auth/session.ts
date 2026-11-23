@@ -43,16 +43,22 @@ export async function api(path: string, init?: RequestInit): Promise<Response> {
 // Only a 401 means signed out. Any other failure with no known session sets
 // checkFailed and reports true, so the guard keeps the route and the app shows
 // a retryable notice instead of sending the person to /signin.
+//
+// checkFailed changes only once the answer is in, so a notice stays up while a
+// retry is in flight and the unconfirmed page never mounts meanwhile.
 export async function refresh(): Promise<boolean> {
-  checkFailed.value = false;
   try {
     const res = await api(endpoint);
     if (res.ok) {
       session.value = (await res.json()) as Session;
       ended.value = false;
+      checkFailed.value = false;
       return true;
     }
-    if (res.status === 401) return session.value !== null;
+    if (res.status === 401) {
+      checkFailed.value = false;
+      return session.value !== null;
+    }
   } catch {
     // Offline or the server is down: treated like any other failed check.
   }

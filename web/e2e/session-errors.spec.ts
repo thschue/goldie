@@ -7,6 +7,7 @@
 // stubbed on the load after a reload, the default storageState supplies a valid
 // session, and no error copy is pinned here beyond the Retry control.
 import { expect, test, type Page } from '@playwright/test';
+import { eachViewport, evidence } from './ux';
 
 const envelope = (code: string, message: string) => JSON.stringify({ error: { code, message, details: { hint: 'Try again in a moment.' } } });
 
@@ -63,5 +64,37 @@ test.describe('a reload while the session check is refused or fails', () => {
     await page.reload();
     await expect(page).toHaveURL((u) => u.pathname === '/signin' && u.searchParams.get('next') === '/decisions');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+  });
+});
+
+test('a failed Retry keeps the alert up and focused, and the unconfirmed page never mounts', async ({ page }) => {
+  await page.goto('/decisions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+  await page.route('**/api/v1/session', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return route.fulfill({ status: 503, contentType: 'application/json', body: envelope('unavailable', 'not ready') });
+  });
+  await page.reload();
+  await expect(retry(page)).toBeVisible();
+  await retry(page).click();
+  // In flight: the alert is still up, Retry is busy and the page is not shown.
+  await expect(retry(page)).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.getByRole('heading', { level: 1, name: 'Decisions' })).toHaveCount(0);
+  // Answered with another 503: still the alert, and Retry holds focus.
+  await expect(retry(page)).toHaveAttribute('aria-disabled', 'false');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(retry(page)).toBeFocused();
+  await expect(page.getByRole('heading', { level: 1, name: 'Decisions' })).toHaveCount(0);
+});
+
+eachViewport((width, theme) => {
+  test('the session check failed state is captured and axe-clean', async ({ page }) => {
+    await page.goto('/decisions');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+    await stubSession(page, { status: 503, body: envelope('unavailable', 'not ready') });
+    await page.reload();
+    await expect(retry(page)).toBeVisible();
+    await evidence(page, width, theme, '-check-failed', 'session-errors');
   });
 });

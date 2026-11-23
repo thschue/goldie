@@ -21,11 +21,21 @@ const retry = ref<HTMLButtonElement | null>(null);
 // The session check got no answer: the routed page waits behind a notice, and
 // Retry asks again. A 401 on the retry is a real "signed out".
 const checking = ref(false);
+const checkRetry = ref<HTMLButtonElement | null>(null);
 async function retryCheck() {
+  if (checking.value) return;
   checking.value = true;
   const ok = await refresh();
   checking.value = false;
-  if (!ok) await router.replace({ path: '/signin', query: { next: route.fullPath } });
+  if (!ok) {
+    await router.replace({ path: '/signin', query: { next: route.fullPath } });
+    return;
+  }
+  if (checkFailed.value) {
+    // Still no answer: the alert stays and so does focus.
+    await nextTick();
+    checkRetry.value?.focus();
+  }
 }
 
 async function onSignOut() {
@@ -46,19 +56,20 @@ async function onSignOut() {
   <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
   <AppShell v-else :role="role()" :account="!route.meta.public && !checkFailed" @signout="onSignOut">
     <SessionBanner />
-    <div v-if="signOutFailed" :key="failures" role="alert" class="signout-error">
+    <div v-if="signOutFailed" :key="failures" role="alert" class="page-alert">
       Could not sign you out. You are still signed in.
       <button ref="retry" type="button" @click="onSignOut">Retry</button>
+    </div>
+    <div v-if="checkFailed && !route.meta.public" role="alert" class="page-alert">
+      <h1>Could not check your session</h1>
+      <p>Your sign-in is not affected.</p>
+      <button ref="checkRetry" type="button" :aria-disabled="checking" @click="retryCheck">Retry</button>
     </div>
     <!-- Keyed by path: a route change replaces the view, so the focused h1 of
          the old one is gone and back or forward leaves focus at the page start.
          This also resets per-view state on every path change (intended while
          every route is a stateless view). A view whose state must survive a
          path change needs another key; see docs/design/ui-handoff.md A8. -->
-    <div v-if="checkFailed && !route.meta.public" role="alert" class="signout-error">
-      Could not check your session. Your sign-in is not affected.
-      <button type="button" :disabled="checking" @click="retryCheck">Retry</button>
-    </div>
     <RouterView v-else v-slot="{ Component, route: view }">
       <component :is="Component" :key="view.path" />
     </RouterView>
@@ -66,7 +77,7 @@ async function onSignOut() {
 </template>
 
 <style scoped>
-.signout-error {
+.page-alert {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -78,6 +89,13 @@ async function onSignOut() {
   border-radius: var(--radius-md);
   background: var(--danger-bg);
   color: var(--danger-ink);
+}
+h1 {
+  flex-basis: 100%;
+  margin: 0;
+}
+p {
+  margin: 0;
 }
 button {
   min-height: var(--target-min);

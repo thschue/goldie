@@ -239,7 +239,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 |---|---|---|---|
 | Unauthenticated | Any route redirects to `/signin?next=<route>` and returns there after sign-in. `next` is honoured only as a same-origin path (a single leading `/`, no scheme, host, `//` or `\`); anything else falls back to `/`. Check the value once it is decoded, wherever the redirect is issued (the client router and the OAuth callback alike): reject control characters and whitespace, and a second character of `/` or `\`; then resolve it against goldie's own origin, require the same origin, and redirect only to the resolved path, query and fragment. `next` travels with the OAuth `state` (#25), never inside GitHub's `redirect_uri`. | — | D |
 | Session expired | Non-blocking banner on the next API 401; the current view stays visible. | "Your session ended. **Sign in again** to keep going." | D |
-| Session check failed | The first session check got a 429, a 5xx or no answer: the URL and the sign-in are kept, the page waits behind a danger alert with Retry. Only a 401 signs the person out. | Copy in §8. | D |
+| Session check failed | The first session check got a 429, a 5xx or no answer: the URL and the sign-in are kept, the page waits behind a danger alert (an h1, text, Retry; Retry keeps focus while it runs). Only a 401 signs the person out. | Copy in §8. | D |
 | Not a member | The sign-in page shows a danger alert. | "You're signed in to GitHub as `<login>`, but that account isn't in the `<org>` org. Ask your platform team for access." | C |
 | GitHub not configured | Only the access-token form is shown, with no divider. | — | D |
 | Loading (first paint) | Skeletons that match the final layout (cards, rows, tiles) at blue‑50 / surface‑3. No spinners for under 300 ms. | — | D |
@@ -497,7 +497,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
 | Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
 | Sign out failed | Could not sign you out. You are still signed in. **Retry** (a `role="alert"` above the page; the user stays on the page and signed in until the DELETE succeeds.) |
-| Session check failed | Could not check your session. Your sign-in is not affected. **Retry** (a `role="alert"` in place of the page, no role chip; shown when the first `GET /api/v1/session` answers 429, 5xx or not at all. Only a 401 leads to `/signin?next=`. Retry asks again.) |
+| Session check failed | **Could not check your session** (the page's h1), then "Your sign-in is not affected." and **Retry** (a `role="alert"` in place of the page, no role chip; shown when the first `GET /api/v1/session` answers 429, 5xx or not at all. Only a 401 leads to `/signin?next=`. Retry asks again.) |
 | First load | Loading… (a `main` landmark holding a `role="status"` region with an `h1` (so the page always has one main and one h1; the shell, with its own `main`, replaces it) shown by the app until the first session check settles; no shell, view or chip yet.) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
