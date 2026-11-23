@@ -118,7 +118,7 @@ spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
 
 ### Metrics goldie emits
 
-The server exports these counters when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.
+The server exports these metrics when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.
 Each metric has fixed attributes, so no request value (query text, article id, Project id,
 Source URL) becomes a label, and each metric keeps at most 2000 attribute combinations. goldie registers no
 other instruments: there are no HTTP server duration or runtime metrics.
@@ -129,6 +129,7 @@ other instruments: there are no HTTP server duration or runtime metrics.
 | `goldie.lookups` | `{request}` | `result`: `hit` or `miss` | Article lookups answered; a miss is an id that was not found. |
 | `goldie.skill.gets` | `{request}` | `name`: the skill; `scope`: `global` or `project`; `via`: `cli`, `mcp` or `other` | Skill gets that found the skill. |
 | `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |
+| `goldie.sync.duration` | `s` | `source`: `git` or `dir`; `result`: `ok` or `error` | Histogram of how long each Source poll took, in seconds (buckets 0.05 to 60); a failed poll is recorded with `error`. |
 | `goldie.mcp.tool.calls` | `{call}` | `tool`: one of the eight tool names or `other`; `result`: `ok` or `error` | MCP tool calls answered by the server; error when the tool result is an error, rate-limited calls included. |
 
 A skill get that answers 404 is not counted, so a name a caller makes up never becomes a `name` label; `name` is the skill's own spelling, whatever case the caller used.
