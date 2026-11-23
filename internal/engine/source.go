@@ -406,12 +406,37 @@ func parseArticle(id string, raw []byte) (Article, error) {
 	if err := meta.apply(&a); err != nil {
 		return Article{}, err
 	}
-	for _, k := range meta.Keywords {
-		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
-			a.Keywords = append(a.Keywords, k)
+	a.Keywords = normaliseKeywords(meta.Keywords)
+	return a, nil
+}
+
+// lenientKeywords is the keywords of a skill or agent: the strings of a
+// sequence, normalised. Anything else, a scalar or a map or a non-string
+// entry, gives none, because those files never fail a load over a key the
+// loader does not own.
+func lenientKeywords(n yaml.Node) []string {
+	if n.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var in []string
+	for _, c := range n.Content {
+		if v, ok := scalar(*c, "!!str"); ok {
+			in = append(in, v)
 		}
 	}
-	return a, nil
+	return normaliseKeywords(in)
+}
+
+// normaliseKeywords lower-cases and trims each keyword and drops the empty
+// ones.
+func normaliseKeywords(in []string) []string {
+	var out []string
+	for _, k := range in {
+		if k = strings.ToLower(strings.TrimSpace(k)); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // Snapshot is the validated, immutable view of a Source. Its accessors return

@@ -219,19 +219,24 @@ Operation ID: `getProjectItems`
 
 ### `GET /api/v1/search`
 
-Search articles by keyword
+Search articles, skills and agents by keyword
 
-Returns the articles that match the search words, best first. An exact
-keyword match scores 4, a keyword containing the word 1, and a name
-containing the word 2. Ties are ordered by id. No match is an empty
-list, not an error.
+Returns the Items of one Kind that match the search words, best first.
+Without `kind` only articles are searched, so a client that follows a hit
+with an article lookup keeps working. An exact keyword match scores 4, a
+keyword containing the word 1, and a name containing the word 2. A skill
+or agent matches on its name and keywords only, never on its
+description (ADR 0005); a skill's keywords are the `keywords` in the
+frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+empty list, not an error. A skill or agent hit's `id` is its name: read
+it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 
 Operation ID: `searchArticles`
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | The matching articles, best first. | `application/json` (`SearchResults`) |
-| `400` | The search words are missing or longer than 1024 bytes, or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `200` | The matching Items, best first. | `application/json` (`SearchResults`) |
+| `400` | The search words are missing or longer than 1024 bytes, 'kind' is not 'article', 'skill' or 'agent', or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | The search asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
@@ -337,9 +342,10 @@ Operation ID: `listSkills`
 
 Read one skill
 
-Returns one skill by name with its file list. A miss is a 404 whose hint
-points to the list. The digest and the executable bit are not part of
-the answer yet.
+Returns one skill by name with its file list. A client reads each listed
+`files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+404 whose hint points to the list. The digest and the executable bit
+are not part of the answer yet.
 
 Operation ID: `getSkill`
 
@@ -350,6 +356,32 @@ Operation ID: `getSkill`
 | `401` | For the skill read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | For the skill read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No skill has this name; the hint points to the skill list. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/skills/{name}/files/{path}`
+
+Read one file of a skill
+
+Returns the bytes of one file of the skill's bundle exactly as written,
+for a path listed in the skill's `files`. Every file is served with the
+one content type `application/octet-stream` and
+`X-Content-Type-Options: nosniff`, whatever its name or content, so a
+client or browser never runs or renders it. A name or path that is not a
+file of the bundle that answers, one that leaves the bundle, and an
+absolute path are all the same 404.
+
+Operation ID: `getSkillFile`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The file's bytes. | `application/octet-stream` (`string`) |
+| `400` | For the skill file, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the skill file, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the skill file, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `404` | No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -612,16 +644,16 @@ A Project's resolved view, the winning Items and what it suppresses.
 
 ### `SearchHit`
 
-One article that matched a search.
+One Item that matched a search.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `enforced` | `boolean` | no | Whether the hit is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false. |
-| `id` | `string` | yes | The article id, for a lookup. |
-| `keywords` | `array` | yes | The article's keywords, lower case. |
+| `id` | `string` | yes | The Item's id, an article id for a lookup or a skill or agent name. |
+| `keywords` | `array` | yes | The Item's keywords, lower case. |
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
 | `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
-| `name` | `string` | yes | The display title from the frontmatter. |
+| `name` | `string` | yes | The display title from the frontmatter of an article. A skill's or agent's name is its id. |
 | `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
@@ -636,7 +668,7 @@ The result of a search.
 |---|---|---|---|
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the results are the global ones, and this says what to do next. |
 | `query` | `string` | yes | The search words as received. |
-| `results` | `array` | yes | The matching articles, best first, then by id. |
+| `results` | `array` | yes | The matching Items, best first, then by id. |
 
 ### `Session`
 

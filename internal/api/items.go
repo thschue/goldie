@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -114,4 +115,34 @@ func (s *Server) GetAgent(ctx context.Context, req contract.GetAgentRequestObjec
 		return contract.GetAgent404JSONResponse(noSuchAgent), nil
 	}
 	return contract.GetAgent200JSONResponse{Name: a.Name, Description: a.Description, Hint: hint}, nil
+}
+
+// noSuchSkillFile is the 404 envelope for a skill or a path that answers
+// nothing, so a name that is no skill and a path that leaves the bundle look
+// alike. It echoes nothing of the request.
+var noSuchSkillFile = envelope("not_found", "no such skill file",
+	"List the skills, read the one you want, then use a path from its files list.")
+
+// GetSkillFile answers GET /api/v1/skills/{name}/files/{path}: the file's
+// bytes as written, under the one content type the contract declares and
+// nosniff, whatever the file's name or content. The name and path are looked
+// up as map keys in the engine, never joined to a filesystem path (ADR 0016).
+func (s *Server) GetSkillFile(ctx context.Context, req contract.GetSkillFileRequestObject) (contract.GetSkillFileResponseObject, error) {
+	if _, allowed := readOptions(ctx, req.Params.Drafts); !allowed {
+		return contract.GetSkillFile403JSONResponse(forbiddenDrafts), nil
+	}
+	project, ok := validProject(req.Params.Project)
+	if !ok {
+		return contract.GetSkillFile400JSONResponse(badProject), nil
+	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetSkillFile503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, _ := scopeHint(snap, project)
+	raw, err := snap.SkillFile(proj, req.Name, req.Path)
+	if err != nil {
+		return contract.GetSkillFile404JSONResponse(noSuchSkillFile), nil
+	}
+	return contract.GetSkillFile200ApplicationoctetStreamResponse{Body: bytes.NewReader(raw), ContentLength: int64(len(raw))}, nil
 }
