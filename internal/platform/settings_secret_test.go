@@ -59,7 +59,7 @@ func secretNames(t *testing.T, rows []SettingSpec) []string {
 func TestRegistryMarksExactlyTheSecretSettings(t *testing.T) {
 	server := secretNames(t, Settings)
 	sort.Strings(server)
-	want := []string{EnvAPIToken, EnvAPITokens, envGitSSHKey, envGitSSHKnownHosts, envGitToken}
+	want := []string{EnvAPIToken, EnvAPITokens, "GOLDIE_SESSION_KEY", envGitSSHKey, envGitSSHKnownHosts, envGitToken}
 	sort.Strings(want)
 	if !reflect.DeepEqual(server, want) {
 		t.Errorf("Settings rows marked Secret = %v, want %v", server, want)

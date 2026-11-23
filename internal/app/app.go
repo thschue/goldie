@@ -40,6 +40,8 @@ type publicMux struct {
 	activity *api.Activity
 	// operatorPaths are the paths the spec reserves for operator tokens.
 	operatorPaths map[string]bool
+	// anonymous are the operations the spec marks `security: []`, as "METHOD /path".
+	anonymous map[string]bool
 	// sync serves the sync operations; newPublic binds it to the Source's
 	// Syncer.
 	sync   *syncControl
@@ -65,7 +67,7 @@ const activityCapacity = 1000
 func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration, opts ...api.ServerOption) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
 	ctl := &syncControl{}
-	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity), api.WithSync(ctl)}, opts...)...)
+	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity), api.WithSync(ctl), api.WithSessions(tokens)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +75,11 @@ func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens,
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths, sync: ctl}
+	anonymous, err := contract.AnonymousOperations()
+	if err != nil {
+		return nil, err
+	}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths, anonymous: anonymous, sync: ctl}
 	srv.KeepStreamsAlive(keepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
@@ -101,7 +107,21 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 		m.mux.Handle(path, m.guard(path, m.methodNotAllowed(path)))
 	}
 	m.routes = append(m.routes, route{path, []string{method}})
-	m.mux.Handle(method+" "+path, m.guard(path, h))
+	m.mux.Handle(method+" "+path, m.guardOperation(method, path, h))
+}
+
+// guardOperation is guard for one operation. The session resource's
+// operations the spec marks `security: []` (sign-in and sign-out) take no
+// bearer token and go through api.SessionEntry; its others are guard's, with
+// no caching.
+func (m *publicMux) guardOperation(method, path string, h http.Handler) http.Handler {
+	switch {
+	case m.anonymous[method+" "+path]:
+		return api.SessionEntry(h)
+	case path == api.SessionPath:
+		return api.NoStore(m.guard(path, h))
+	}
+	return m.guard(path, h)
 }
 
 // docPaths are the OpenAPI documents. Like the Swagger UI they take the token
@@ -182,6 +202,16 @@ func checkRateLimit(l platform.RateLimit) error {
 	}
 	if l.Per/time.Duration(l.Requests) <= 0 {
 		return fmt.Errorf("%s: the interval per request rounds to zero; the server does not run without a limit", platform.EnvRateLimit)
+	}
+	return nil
+}
+
+// checkSessionKey fails a GOLDIE_SESSION_KEY the session layer would refuse,
+// so it is reported with the other configuration errors. Unset is fine: the
+// server then makes a random key. The error never contains the key.
+func checkSessionKey(cfg platform.Config) error {
+	if _, err := (*api.Tokens)(nil).WithSessions(cfg.SessionKey, false); err != nil {
+		return fmt.Errorf("%s %w", platform.EnvSessionKey, err)
 	}
 	return nil
 }
@@ -445,6 +475,9 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		errs = append(errs, err)
 	}
+	if err := checkSessionKey(cfg); err != nil {
+		errs = append(errs, err)
+	}
 	src, err := serveSource(cfg)
 	if err != nil {
 		errs = append(errs, err)
@@ -471,8 +504,19 @@ func resultCounters(tel *platform.Telemetry) api.ServerOption {
 // minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
+	return newPublicSessions(false, cfg, tokens, src, logger, keepalive, opts...)
+}
+
+// newPublicSessions is newPublic; dev is true only for the loopback dev
+// server Local starts, whose plain-http session cookies drop Secure and
+// __Host-. It is never read from a request.
+func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
 	if logger == nil {
 		logger = discardLogger
+	}
+	tokens, err := tokens.WithSessions(cfg.SessionKey, dev)
+	if err != nil {
+		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}
 	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, append(activityFederation(cfg, logger), opts...)...)
 	if err != nil {

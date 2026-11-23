@@ -75,6 +75,24 @@ func (e ProjectItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for SessionRole.
+const (
+	Operator SessionRole = "operator"
+	Reader   SessionRole = "reader"
+)
+
+// Valid indicates whether the value is a known member of the SessionRole enum.
+func (e SessionRole) Valid() bool {
+	switch e {
+	case Operator:
+		return true
+	case Reader:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetActivityParamsReplicas.
 const (
 	All GetActivityParamsReplicas = "all"
@@ -489,6 +507,32 @@ type SearchResults struct {
 	Results []SearchHit `json:"results"`
 }
 
+// Session Who a session signs in.
+type Session struct {
+	// Name The name of the token behind the session.
+	//
+	// Examples: ci-reader
+	Name string `json:"name"`
+
+	// Role The token's role, read from the configuration now. Clients ignore values they do not know.
+	//
+	// Examples: reader
+	Role SessionRole `json:"role"`
+}
+
+// SessionRole The token's role, read from the configuration now. Clients ignore values they do not know.
+//
+// Examples: reader
+type SessionRole string
+
+// SessionRequest The token to sign in with.
+type SessionRequest struct {
+	// Token A configured API token, in plain text.
+	//
+	// Examples: replace-with-a-configured-api-token
+	Token string `json:"token"`
+}
+
 // SourceSyncStatus How polling one Source is going.
 type SourceSyncStatus struct {
 	// LastError Why the last poll failed, absent when it succeeded. It names a file
@@ -596,6 +640,9 @@ type SearchArticlesParams struct {
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
+
+// PostSessionJSONRequestBody defines body for PostSession for application/json ContentType.
+type PostSessionJSONRequestBody = SessionRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -784,6 +831,67 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteSession Sign out
+	//
+	// Clears the session cookie. A cross-origin request is refused with a
+	// 403, so another site cannot sign a user out. The response is
+	// `Cache-Control: no-store`.
+	//
+	// Corresponds with DELETE /api/v1/session (the `DeleteSession` operationId).
+	DeleteSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSession Read who the session cookie signs in
+	//
+	// Returns the name and current role of the token behind a valid
+	// session cookie (or a bearer token); a token removed from the
+	// configuration ends its sessions. Any other request is a 401. The
+	// response is `Cache-Control: no-store`.
+	//
+	// Corresponds with GET /api/v1/session (the `GetSession` operationId).
+	GetSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostSessionWithBody Sign in with a token and get a session cookie
+	//
+	// Exchanges a configured API token, sent as `token` in the JSON body,
+	// for a signed session cookie, so a browser never holds the token. The
+	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+	PostSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostSession Sign in with a token and get a session cookie
+	//
+	// Exchanges a configured API token, sent as `token` in the JSON body,
+	// for a signed session cookie, so a browser never holds the token. The
+	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+	PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSync Read the content sync status and warnings
 	//
@@ -991,6 +1099,107 @@ func (c *Client) GetProjectItems(ctx context.Context, id ProjectId, reqEditors .
 // Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSearchArticlesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteSession Sign out
+//
+// Clears the session cookie. A cross-origin request is refused with a
+// 403, so another site cannot sign a user out. The response is
+// `Cache-Control: no-store`.
+//
+// Corresponds with DELETE /api/v1/session (the `DeleteSession` operationId).
+func (c *Client) DeleteSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteSessionRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSession Read who the session cookie signs in
+//
+// Returns the name and current role of the token behind a valid
+// session cookie (or a bearer token); a token removed from the
+// configuration ends its sessions. Any other request is a 401. The
+// response is `Cache-Control: no-store`.
+//
+// Corresponds with GET /api/v1/session (the `GetSession` operationId).
+func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSessionRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostSessionWithBody Sign in with a token and get a session cookie
+//
+// Exchanges a configured API token, sent as `token` in the JSON body,
+// for a signed session cookie, so a browser never holds the token. The
+// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSessionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostSession Sign in with a token and get a session cookie
+//
+// Exchanges a configured API token, sent as `token` in the JSON body,
+// for a signed session cookie, so a browser never holds the token. The
+// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSessionRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,6 +1587,100 @@ func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*htt
 	return req, nil
 }
 
+// NewDeleteSessionRequest constructs an http.Request for the DeleteSession method
+func NewDeleteSessionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSessionRequest constructs an http.Request for the GetSession method
+func NewGetSessionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostSessionRequest calls the generic PostSession builder with application/json body
+func NewPostSessionRequest(server string, body PostSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := runtime.JSONMarshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostSessionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPostSessionRequestWithBody constructs an http.Request for the PostSession method, with any body, and a specified content type
+func NewPostSessionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetSyncRequest constructs an http.Request for the GetSync method
 func NewGetSyncRequest(server string) (*http.Request, error) {
 	var err error
@@ -1655,6 +1958,71 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticlesWithResponse(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*SearchArticlesResponse, error)
+
+	// DeleteSessionWithResponse Sign out
+	//
+	// Clears the session cookie. A cross-origin request is refused with a
+	// 403, so another site cannot sign a user out. The response is
+	// `Cache-Control: no-store`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v1/session (the `DeleteSession` operationId).
+	DeleteSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error)
+
+	// GetSessionWithResponse Read who the session cookie signs in
+	//
+	// Returns the name and current role of the token behind a valid
+	// session cookie (or a bearer token); a token removed from the
+	// configuration ends its sessions. Any other request is a 401. The
+	// response is `Cache-Control: no-store`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/session (the `GetSession` operationId).
+	GetSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSessionResponse, error)
+
+	// PostSessionWithBodyWithResponse Sign in with a token and get a session cookie
+	//
+	// Exchanges a configured API token, sent as `token` in the JSON body,
+	// for a signed session cookie, so a browser never holds the token. The
+	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+	PostSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostSessionResponse, error)
+
+	// PostSessionWithResponse Sign in with a token and get a session cookie
+	//
+	// Exchanges a configured API token, sent as `token` in the JSON body,
+	// for a signed session cookie, so a browser never holds the token. The
+	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+	PostSessionWithResponse(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSessionResponse, error)
 
 	// GetSyncWithResponse Read the content sync status and warnings
 	//
@@ -2274,6 +2642,199 @@ func (r SearchArticlesResponse) ContentType() string {
 	return ""
 }
 
+type DeleteSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteSessionResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteSessionResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetSessionResponse429Headers the declared response headers of an HTTP 429 response for GetSession
+type GetSessionResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Session
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSessionResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSessionResponse) GetJSON200() *Session {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSessionResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSessionResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSessionResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetSessionResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSessionResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PostSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Session
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostSessionResponse) GetJSON200() *Session {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PostSessionResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PostSessionResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostSessionResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetSyncResponse429Headers the declared response headers of an HTTP 429 response for GetSync
 type GetSyncResponse429Headers struct {
 	RetryAfter *int
@@ -2710,6 +3271,95 @@ func (c *ClientWithResponses) SearchArticlesWithResponse(ctx context.Context, pa
 		return nil, err
 	}
 	return ParseSearchArticlesResponse(rsp)
+}
+
+// DeleteSessionWithResponse Sign out
+//
+// Clears the session cookie. A cross-origin request is refused with a
+// 403, so another site cannot sign a user out. The response is
+// `Cache-Control: no-store`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v1/session (the `DeleteSession` operationId).
+func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteSessionResponse, error) {
+	rsp, err := c.DeleteSession(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteSessionResponse(rsp)
+}
+
+// GetSessionWithResponse Read who the session cookie signs in
+//
+// Returns the name and current role of the token behind a valid
+// session cookie (or a bearer token); a token removed from the
+// configuration ends its sessions. Any other request is a 401. The
+// response is `Cache-Control: no-store`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/session (the `GetSession` operationId).
+func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSessionResponse, error) {
+	rsp, err := c.GetSession(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSessionResponse(rsp)
+}
+
+// PostSessionWithBodyWithResponse Sign in with a token and get a session cookie
+//
+// Exchanges a configured API token, sent as `token` in the JSON body,
+// for a signed session cookie, so a browser never holds the token. The
+// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostSessionResponse, error) {
+	rsp, err := c.PostSessionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostSessionResponse(rsp)
+}
+
+// PostSessionWithResponse Sign in with a token and get a session cookie
+//
+// Exchanges a configured API token, sent as `token` in the JSON body,
+// for a signed session cookie, so a browser never holds the token. The
+// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/session (the `PostSession` operationId).
+func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSessionResponse, error) {
+	rsp, err := c.PostSession(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostSessionResponse(rsp)
 }
 
 // GetSyncWithResponse Read the content sync status and warnings
@@ -3299,6 +3949,163 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 	return response, nil
 }
 
+// ParseDeleteSessionResponse parses an HTTP response from a DeleteSessionWithResponse call
+func ParseDeleteSessionResponse(rsp *http.Response) (*DeleteSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSessionResponse parses an HTTP response from a GetSessionWithResponse call
+func ParseGetSessionResponse(rsp *http.Response) (*GetSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Session
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetSessionResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostSessionResponse parses an HTTP response from a PostSessionWithResponse call
+func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Session
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetSyncResponse parses an HTTP response from a GetSyncWithResponse call
 func ParseGetSyncResponse(rsp *http.Response) (*GetSyncResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3547,6 +4354,15 @@ type ServerInterface interface {
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
+	// DeleteSession Sign out
+	// (DELETE /api/v1/session)
+	DeleteSession(w http.ResponseWriter, r *http.Request)
+	// GetSession Read who the session cookie signs in
+	// (GET /api/v1/session)
+	GetSession(w http.ResponseWriter, r *http.Request)
+	// PostSession Sign in with a token and get a session cookie
+	// (POST /api/v1/session)
+	PostSession(w http.ResponseWriter, r *http.Request)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(w http.ResponseWriter, r *http.Request)
@@ -3783,6 +4599,48 @@ func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteSession operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostSession operation middleware
+func (siw *ServerInterfaceWrapper) PostSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetSync operation middleware
 func (siw *ServerInterfaceWrapper) GetSync(w http.ResponseWriter, r *http.Request) {
 
@@ -3964,6 +4822,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}/items", wrapper.GetProjectItems)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/session", wrapper.DeleteSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session", wrapper.GetSession)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/session", wrapper.PostSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sync", wrapper.GetSync)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sync", wrapper.PostSync)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
@@ -4795,6 +5656,222 @@ func (response SearchArticlesdefaultJSONResponse) VisitSearchArticlesResponse(w 
 	return err
 }
 
+type DeleteSessionRequestObject struct {
+}
+
+type DeleteSessionResponseObject interface {
+	VisitDeleteSessionResponse(w http.ResponseWriter) error
+}
+
+type DeleteSession204Response struct {
+}
+
+func (response DeleteSession204Response) VisitDeleteSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSession403JSONResponse ErrorEnvelope
+
+func (response DeleteSession403JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSessiondefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response DeleteSessiondefaultJSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionRequestObject struct {
+}
+
+type GetSessionResponseObject interface {
+	VisitGetSessionResponse(w http.ResponseWriter) error
+}
+
+type GetSession200JSONResponse Session
+
+func (response GetSession200JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession401JSONResponse ErrorEnvelope
+
+func (response GetSession401JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetSession426JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetSession429JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSession503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetSession503JSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessiondefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSessiondefaultJSONResponse) VisitGetSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSessionRequestObject struct {
+	Body *PostSessionJSONRequestBody
+}
+
+type PostSessionResponseObject interface {
+	VisitPostSessionResponse(w http.ResponseWriter) error
+}
+
+type PostSession200JSONResponse Session
+
+func (response PostSession200JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSession401JSONResponse ErrorEnvelope
+
+func (response PostSession401JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSession403JSONResponse ErrorEnvelope
+
+func (response PostSession403JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSessiondefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response PostSessiondefaultJSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSyncRequestObject struct {
 }
 
@@ -5138,6 +6215,15 @@ type StrictServerInterface interface {
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
+	// DeleteSession Sign out
+	// (DELETE /api/v1/session)
+	DeleteSession(ctx context.Context, request DeleteSessionRequestObject) (DeleteSessionResponseObject, error)
+	// GetSession Read who the session cookie signs in
+	// (GET /api/v1/session)
+	GetSession(ctx context.Context, request GetSessionRequestObject) (GetSessionResponseObject, error)
+	// PostSession Sign in with a token and get a session cookie
+	// (POST /api/v1/session)
+	PostSession(ctx context.Context, request PostSessionRequestObject) (PostSessionResponseObject, error)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
@@ -5342,6 +6428,85 @@ func (sh *strictHandler) SearchArticles(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SearchArticlesResponseObject); ok {
 		if err := validResponse.VisitSearchArticlesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSession operation middleware
+func (sh *strictHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
+	var request DeleteSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.DeleteSession(ctx, request.(DeleteSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSessionResponseObject); ok {
+		if err := validResponse.VisitDeleteSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSession operation middleware
+func (sh *strictHandler) GetSession(w http.ResponseWriter, r *http.Request) {
+	var request GetSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSession(ctx, request.(GetSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionResponseObject); ok {
+		if err := validResponse.VisitGetSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PostSession operation middleware
+func (sh *strictHandler) PostSession(w http.ResponseWriter, r *http.Request) {
+	var request PostSessionRequestObject
+
+	var body PostSessionJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PostSession(ctx, request.(PostSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PostSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PostSessionResponseObject); ok {
+		if err := validResponse.VisitPostSessionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

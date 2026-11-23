@@ -30,3 +30,4 @@ Consequences.
 - [0024. API wire names are snake_case](0024-api-wire-names-are-snake-case.md)
 - [0025. Role rules are marked once in the spec, with `x-goldie-role`](0025-role-rules-are-marked-once-in-the-spec.md)
 - [0026. An upstream Source consumes a server's exported view; its transport lives in the composition root](0026-an-upstream-source-consumes-a-servers-exported-view.md)
+- [0027. Browser sessions are stateless signed cookies](0027-browser-sessions-are-stateless-signed-cookies.md)

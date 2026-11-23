@@ -36,6 +36,8 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 		got[name] = fmt.Sprint(effective(t, cfg, name))
 	}
 	got[envGitCABundle] = "" // reported only as set or unset; it has no default
+	// The session key is a secret with no default: unset means a random per-process key.
+	got[EnvSessionKey] = ""
 
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
