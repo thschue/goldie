@@ -95,7 +95,7 @@ func runServer(out io.Writer) error {
 
 	// The public handler gets the server's component logger, so what it logs
 	// reaches the operator's log.
-	public, err := app.PublicHandler(cfg, logger)
+	public, err := app.PublicHandlerWith(cfg, logger, tel)
 	if err != nil {
 		return withDevHint(cfg, handlerError(err))
 	}

@@ -28,7 +28,7 @@ exit 0 with zero warnings. Reviewers use the same list.
       Snapshot keeps serving; archives with absolute paths, `..` or symlinks are rejected.
 - [ ] Markdown is rendered without raw HTML and sanitised.
 - [ ] A new parser of hostile input (Source URL, archive path, Markdown, YAML) has a Go fuzz target.
-- [ ] Query text stays out of metric labels (and out of spans unless `GOLDIE_TELEMETRY_QUERY_TEXT`).
+- [ ] Query text stays out of metric labels.
 
 ## API and contract
 

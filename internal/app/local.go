@@ -137,7 +137,7 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, errors.New("the local token was refused")
 	}
 	logger := l.logger()
-	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger, api.DefaultActivityKeepalive)
+	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger, api.DefaultActivityKeepalive, resultCounters(l.Telemetry))
 	if err != nil {
 		return "", "", nil, err
 	}
