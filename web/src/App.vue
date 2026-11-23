@@ -31,7 +31,10 @@ async function onSignOut() {
       <button type="button" @click="onSignOut">Retry</button>
     </div>
     <!-- Keyed by path: a route change replaces the view, so the focused h1 of
-         the old one is gone and back or forward leaves focus at the page start. -->
+         the old one is gone and back or forward leaves focus at the page start.
+         This also resets per-view state on every path change (intended while
+         every route is a stateless view). A view whose state must survive a
+         path change needs another key; see docs/design/ui-handoff.md A8. -->
     <RouterView v-slot="{ Component, route: view }">
       <component :is="Component" :key="view.path" />
     </RouterView>
