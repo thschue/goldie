@@ -437,20 +437,13 @@ func TestSkillFilesDifferingOnlyInCaseFailTheLoad(t *testing.T) {
 		"nested directory": {"x/Deep/Ref/a.md", "x/Deep/ref/a.md"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			for scope, file := range map[string]func(string, string) string{
-				"global":  globalSkillFile,
-				"project": projectSkillFile,
-				"local":   localSkillFile,
-			} {
-				t.Run(scope, func(t *testing.T) {
-					loadLocalErr(t, map[string]string{
-						file("deploy", "SKILL.md"): "# Deploy\n",
-						file("deploy", files[0]):   "one",
-						file("deploy", files[1]):   "two",
-						file("other", "SKILL.md"):  "# Other\n",
-					}, files[0], files[1], "differ only in case")
-				})
-			}
+			// readBundle does not depend on the Scope, so one Scope is enough.
+			loadLocalErr(t, map[string]string{
+				globalSkillFile("deploy", "SKILL.md"): "# Deploy\n",
+				globalSkillFile("deploy", files[0]):   "one",
+				globalSkillFile("deploy", files[1]):   "two",
+				globalSkillFile("other", "SKILL.md"):  "# Other\n",
+			}, files[0], files[1], "differ only in case")
 		})
 	}
 }
