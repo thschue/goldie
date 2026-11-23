@@ -15,13 +15,17 @@ import (
 //
 //	type ItemCount struct {
 //		Scope string // ScopeGlobal, "project" or ScopeLocal
-//		Kind  string // KindArticle, KindAgent, KindInstruction or KindSkill
+//		Kind  string // KindArticle, KindAgent, KindLoop, KindInstruction or KindSkill
 //		Count int64
 //	}
 //	func (s *Snapshot) ItemCounts() []ItemCount
 //
 // It returns one entry for each of the 12 combinations, with Count 0 for an
 // empty one, so an operator sees every series from the first Snapshot on.
+
+// itemKinds is every Kind an Item can have; ItemCounts has one series per Scope
+// kind and Kind.
+var itemKinds = []string{engine.KindArticle, engine.KindAgent, engine.KindLoop, engine.KindInstruction, engine.KindSkill}
 
 const otherProject = "github.com/acme/other"
 
@@ -30,11 +34,14 @@ func projectFileOf(proj, dir, name string) string {
 }
 
 // countsOf flattens ItemCounts to "scope/kind" -> count, failing on a repeated
-// or unknown series, so every one of the 12 combinations appears exactly once.
+// or unknown series, so every Scope kind and Kind combination appears exactly once.
 func countsOf(t *testing.T, snap *engine.Snapshot) map[string]int64 {
 	t.Helper()
 	scopes := map[string]bool{engine.ScopeGlobal: true, "project": true, engine.ScopeLocal: true}
-	kinds := map[string]bool{engine.KindArticle: true, engine.KindAgent: true, engine.KindInstruction: true, engine.KindSkill: true}
+	kinds := map[string]bool{}
+	for _, k := range itemKinds {
+		kinds[k] = true
+	}
 	out := map[string]int64{}
 	for _, c := range snap.ItemCounts() {
 		if !scopes[c.Scope] || !kinds[c.Kind] {
@@ -46,8 +53,8 @@ func countsOf(t *testing.T, snap *engine.Snapshot) map[string]int64 {
 		}
 		out[key] = c.Count
 	}
-	if len(out) != 12 {
-		t.Errorf("ItemCounts has %d series %v, want all 12", len(out), out)
+	if want := len(scopes) * len(kinds); len(out) != want {
+		t.Errorf("ItemCounts has %d series %v, want all %d", len(out), out, want)
 	}
 	return out
 }
@@ -57,7 +64,7 @@ func countsOf(t *testing.T, snap *engine.Snapshot) map[string]int64 {
 func assertCounts(t *testing.T, got, want map[string]int64) {
 	t.Helper()
 	for _, scope := range []string{engine.ScopeGlobal, "project", engine.ScopeLocal} {
-		for _, kind := range []string{engine.KindArticle, engine.KindAgent, engine.KindInstruction, engine.KindSkill} {
+		for _, kind := range itemKinds {
 			key := scope + "/" + kind
 			if got[key] != want[key] {
 				t.Errorf("%s = %d, want %d", key, got[key], want[key])

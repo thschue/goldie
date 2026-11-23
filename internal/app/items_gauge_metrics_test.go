@@ -198,11 +198,13 @@ func latestGauge(t *testing.T, log *exportLog) (map[string]int64, []string) {
 
 func wantGaugeSeries(t *testing.T, got map[string]int64, nonZero map[string]int64) {
 	t.Helper()
-	if len(got) != 12 {
-		t.Errorf("goldie.items has %d series %v, want all 12", len(got), got)
+	scopes := []string{"global", "project", "local"}
+	kinds := []string{"article", "agent", "loop", "instruction", "skill"}
+	if want := len(scopes) * len(kinds); len(got) != want {
+		t.Errorf("goldie.items has %d series %v, want all %d", len(got), got, want)
 	}
-	for _, scope := range []string{"global", "project", "local"} {
-		for _, kind := range []string{"article", "agent", "instruction", "skill"} {
+	for _, scope := range scopes {
+		for _, kind := range kinds {
 			key := scope + "/" + kind
 			if v, ok := got[key]; !ok || v != nonZero[key] {
 				t.Errorf("goldie.items %s = %d (present %v), want %d", key, v, ok, nonZero[key])
