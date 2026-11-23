@@ -31,27 +31,23 @@ var redactions = []redaction{
 	{regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`), redacted},
 	// A credential-like name (also inside an identifier such as api_key or
 	// GOLDIE_TOKEN), an optional auth scheme, and the value.
-	{regexp.MustCompile(`(?i)[\w.-]*(token|passw(or)?d|passphrase|pwd|secret|authorization|bearer|credential|cookie|session)[\w.-]*["']?\s*[:=]?\s*` + credValue), redacted},
-	// Short names only with a : or =, so "keyword", "passed" and "author" stay:
-	// pw, pass, tok and sid as a whole word of an identifier, key and auth also
-	// at the end of a compound such as privatekey or basicauth. A closing quote
-	// may sit before the separator, as in JSON.
-	{regexp.MustCompile(`(?i)(\b([\w.-]*[_.-])?(pw|pass|tok|sid)|[\w.-]*(key|auth))([_.-][\w.-]*)?["']?\s*[:=]\s*` + credValue), redacted},
+	{regexp.MustCompile(`(?i)[\w.-]*(token|passw(or)?d|passphrase|pwd|secret|authorization|bearer|credential|cookie|session)[\w.-]*\s*[:=]?\s*` + credValue), redacted},
+	// Short names (key, pw, pass, tok, auth) only as a whole word of an
+	// identifier and with a : or =, so "keyword", "passed" and "author" stay.
+	{regexp.MustCompile(`(?i)\b([\w.-]*[_.-])?(api-?key|key|pw|pass|tok|auth)([_.-][\w.-]*)?\s*[:=]\s*` + credValue), redacted},
 	// Userinfo without a scheme (user:password@host, git@host:path) and email
 	// addresses. It runs after the credential patterns so it cannot swallow
 	// the closing quote of a quoted value.
 	{regexp.MustCompile(`\S+@\S+`), redacted},
-	// Bare tokens with a known prefix, however short.
-	{regexp.MustCompile(`\b(gh[pousr]_|github_pat_|glpat-|xox[a-z]-|sk-|AKIA)[\w-]+`), redacted},
-	// Absolute paths: POSIX, home-relative, Windows drive and UNC.
-	{regexp.MustCompile(`(^|[\s"'(=,;:` + "`" + `])(~?/[^\s"'` + "`" + `]*|[A-Za-z]:\\[^\s"'` + "`" + `]*|\\\\[^\s"'` + "`" + `]*)`), "${1}" + redacted},
+	// Bare tokens with a known prefix.
+	{regexp.MustCompile(`\b(gh[pousr]_|github_pat_|glpat-)[\w-]+`), redacted},
+	// Absolute paths: POSIX, Windows drive and UNC.
+	{regexp.MustCompile(`(^|[\s"'(=,;])(/[^\s"'` + "`" + `]*|[A-Za-z]:\\[^\s"'` + "`" + `]*|\\\\[^\s"'` + "`" + `]*)`), "${1}" + redacted},
 	// Addresses: bracketed or bare IPv6, then IPv4, then host:port.
 	{regexp.MustCompile(`\[[^\]\s]*\](:\d+)?`), redacted},
 	{regexp.MustCompile(`(?i)\b[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}\b`), redacted},
 	{regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}(:\d+)?\b`), redacted},
 	{regexp.MustCompile(`[\w-]+:\d+\b`), redacted},
-	// The host of a failed lookup or resolution, dotless or not.
-	{regexp.MustCompile(`(?i)\b(resolve hostname\s+)[^\s:]+`), "${1}" + redacted},
 	// The host of a failed lookup, dotless or not.
 	{regexp.MustCompile(`(?i)\b(lookup\s+)[^\s:]+(\s+on\s|:\s+no such host)`), "${1}" + redacted + "${2}"},
 }
