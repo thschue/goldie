@@ -13,14 +13,15 @@ func TestParseTelemetrySettings(t *testing.T) {
 		headers  string // "k=v" of the first header, "" for none
 	}
 	tests := []struct {
-		name     string
-		role     string
-		env      map[string]string
-		wantErrs []string // each must appear in the error; none for a clean parse
-		disabled bool
-		client   bool
-		service  string
-		signals  map[string]sig
+		name       string
+		role       string
+		env        map[string]string
+		wantErrs   []string // each must appear in the error; none for a clean parse
+		disabled   bool
+		clientInfo bool
+		resAttrs   map[string]string
+		service    string
+		signals    map[string]sig
 	}{
 		{name: "empty selects nothing", role: RoleServer,
 			signals: map[string]sig{"traces": {}, "logs": {}, "metrics": {}}},
@@ -51,9 +52,10 @@ func TestParseTelemetrySettings(t *testing.T) {
 				"OTEL_EXPORTER_OTLP_LOGS_HEADERS": "b=2",
 			},
 			signals: map[string]sig{"traces": {headers: "a=1"}, "logs": {headers: "b=2"}, "metrics": {headers: "a=1"}}},
-		{name: "service name and disabled false", role: RoleServer,
-			env:     map[string]string{"OTEL_SERVICE_NAME": " svc ", "OTEL_SDK_DISABLED": "FALSE"},
-			service: "svc",
+		{name: "service name, resource attributes and client info", role: RoleServer,
+			env: map[string]string{"OTEL_SERVICE_NAME": " svc ", "OTEL_SDK_DISABLED": "FALSE",
+				"OTEL_RESOURCE_ATTRIBUTES": "a=b", "GOLDIE_TELEMETRY_CLIENT_INFO": "true"},
+			service: "svc", clientInfo: true, resAttrs: map[string]string{"a": "b"},
 			signals: map[string]sig{"traces": {}, "logs": {}, "metrics": {}}},
 		{name: "disabled stops the parse", role: RoleServer,
 			env:      map[string]string{"OTEL_SDK_DISABLED": "true", "OTEL_TRACES_EXPORTER": "bogus"},
@@ -107,6 +109,12 @@ func TestParseTelemetrySettings(t *testing.T) {
 			}
 			if s.disabled != tc.disabled {
 				t.Errorf("disabled = %v, want %v", s.disabled, tc.disabled)
+			}
+			if s.clientInfo != tc.clientInfo {
+				t.Errorf("clientInfo = %v, want %v", s.clientInfo, tc.clientInfo)
+			}
+			if len(s.resAttrs) != len(tc.resAttrs) || s.resAttrs["a"] != tc.resAttrs["a"] {
+				t.Errorf("resAttrs = %v, want %v", s.resAttrs, tc.resAttrs)
 			}
 			if s.serviceName != tc.service {
 				t.Errorf("serviceName = %q, want %q", s.serviceName, tc.service)
