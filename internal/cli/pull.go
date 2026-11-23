@@ -122,7 +122,7 @@ func (c *commander) pull(ctx context.Context) error {
 
 // dryRun lists what a pull would write and remove, and writes nothing.
 func (c *commander) dryRun(root *os.Root, files []pulledFile) error {
-	old, err := namespaceEntries(root)
+	old, err := checkedNamespaceEntries(root)
 	if err != nil {
 		return err
 	}
