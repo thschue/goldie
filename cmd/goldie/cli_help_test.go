@@ -123,11 +123,11 @@ var commandHelp = []struct {
 	{"server", []string{"--dev"}, []string{"GOLDIE_CONTENT_DIR", "127.0.0.1", "GOLDIE_ADDR"}},
 	{"validate", nil, []string{"dir"}},
 	{"health", []string{"--ready"}, nil},
-	{"mcp", []string{"--transport", "--addr", "--dir", "--token", "--project"}, []string{"stdio", "process list"}},
+	{"mcp", []string{"--transport", "--addr", "--dir", "--token"}, []string{"stdio", "process list"}},
 	{"search", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"lookup", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
 	{"status", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
-	{"init", []string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list"}},
+	{"init", []string{"--addr", "--dir", "--token", "--project"}, []string{"process list"}},
 	{"version", []string{"--addr", "--dir", "--token", "--json"}, []string{"process list"}},
 }
 
@@ -251,7 +251,11 @@ func wantMisuse(t *testing.T, args []string, stdout, stderr string, code int, na
 func TestUnknownCommandIsAOneLineErrorWithExit2(t *testing.T) {
 	for _, args := range [][]string{{"frobnicate"}, {"frobnicate", "--help"}, {"help", "frobnicate"}, {"Server"}} {
 		stdout, stderr, code := runHelp(t, args...)
-		wantMisuse(t, args, stdout, stderr, code, args[len(args)-1])
+		named := args[0]
+		if named == "help" {
+			named = args[1]
+		}
+		wantMisuse(t, args, stdout, stderr, code, named)
 	}
 }
 

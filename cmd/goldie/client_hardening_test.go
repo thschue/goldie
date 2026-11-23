@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -251,23 +252,24 @@ func tokenRecommendation(t *testing.T, where, text string) {
 	}
 }
 
-// The CLI's usage text recommends GOLDIE_TOKEN or GOLDIE_TOKEN_FILE over
-// --token and says why, and still lists --token.
+// Each client command's help recommends GOLDIE_TOKEN or GOLDIE_TOKEN_FILE over
+// --token and says why, and still lists --token. The note lives with the
+// commands that take --token, not in the root help.
 func TestCLIUsageRecommendsTokenVariables(t *testing.T) {
 	for name, args := range map[string][]string{
-		"no command":  nil,
-		"search help": {"search", "--help"},
-		"status help": {"status", "--help"},
-		"bad flag":    {"lookup", "x", "--bogus"},
+		"search help":  {"search", "--help"},
+		"status help":  {"status", "--help"},
+		"lookup help":  {"lookup", "--help"},
+		"help version": {"help", "version"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := runCLI(t, args...)
-			if err == nil {
-				t.Fatal("expected a usage error")
+			var out bytes.Buffer
+			if err := run(args, &out); err != nil {
+				t.Fatalf("asked-for help is not an error: %v", err)
 			}
-			tokenRecommendation(t, "usage of goldie "+strings.Join(args, " "), err.Error())
-			if !strings.Contains(err.Error(), "--token") {
-				t.Errorf("usage no longer lists --token, which keeps working:\n%s", err)
+			tokenRecommendation(t, "help of goldie "+strings.Join(args, " "), out.String())
+			if !strings.Contains(out.String(), "--token") {
+				t.Errorf("help no longer lists --token, which keeps working:\n%s", out.String())
 			}
 		})
 	}
@@ -280,8 +282,20 @@ func TestMCPUsageRecommendsTokenVariables(t *testing.T) {
 	// timer: this may be the first test to need it, and under -race on a cold
 	// cache the non-race build alone can take longer than that.
 	goldieBinary(t)
+	t.Run("help", func(t *testing.T) {
+		stdout, stderr, code := runHelp(t, "mcp", "--help")
+		if code != 0 || stderr != "" {
+			t.Errorf("goldie mcp --help: exit %d, stderr %q, want 0 and nothing on stderr", code, stderr)
+		}
+		tokenRecommendation(t, "goldie mcp help", stdout)
+		if !strings.Contains(strings.ToLower(stdout), "config") {
+			t.Errorf("goldie mcp help does not say a --token value is saved in the MCP client's config:\n%s", stdout)
+		}
+		if !strings.Contains(stdout, "--token") {
+			t.Errorf("goldie mcp help no longer lists --token, which keeps working:\n%s", stdout)
+		}
+	})
 	for name, transport := range map[string][]string{
-		"help":         {"--help"},
 		"no transport": {},
 	} {
 		t.Run(name, func(t *testing.T) {

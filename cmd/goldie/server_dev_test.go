@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -21,7 +22,7 @@ import (
 	"time"
 )
 
-// #283: goldie server -dev [dir] runs the server on loopback over the dir
+// #283: goldie server --dev [dir] runs the server on loopback over the dir
 // Source at dir, through the same content load as goldie server, with a
 // random token, and prints how to reach it:
 //
@@ -30,7 +31,7 @@ import (
 // That line is printed once, to stdout, and is the only place the token ever
 // appears: never in a log line (stdout, stderr or the OTLP log bridge), never
 // in the startup report. The public and admin listeners bind to
-// 127.0.0.1:0. -dev ignores GOLDIE_ADDR, GOLDIE_ADMIN_ADDR, GOLDIE_API_TOKEN
+// 127.0.0.1:0. --dev ignores GOLDIE_ADDR, GOLDIE_ADMIN_ADDR, GOLDIE_API_TOKEN
 // and GOLDIE_API_TOKENS (and their _FILE forms) from the environment, so a
 // shell that ran the export line can run it again, and logs devIgnoredMsg
 // once when one of them is set. Other settings (GOLDIE_DRAIN_SECONDS, the
@@ -49,7 +50,7 @@ const devIgnoredMsg = "dev mode ignores GOLDIE_ADDR, GOLDIE_ADMIN_ADDR, GOLDIE_A
 // missing or not a directory.
 const devLoadError = "goldie: content does not load: content directory is not readable"
 
-// devProc is a running `goldie server -dev`, with stdout and stderr kept
+// devProc is a running `goldie server --dev`, with stdout and stderr kept
 // apart.
 type devProc struct {
 	cmd         *exec.Cmd
@@ -105,7 +106,7 @@ func (p *devProc) capture(r io.Reader, dst *[]string, done *sync.WaitGroup) {
 	}
 }
 
-// devEnv is a minimal environment for -dev: nothing goldie reads but the
+// devEnv is a minimal environment for --dev: nothing goldie reads but the
 // drain, so tests stop fast.
 func devEnv(extra ...string) []string {
 	return append([]string{"PATH=" + os.Getenv("PATH"), "GOLDIE_DRAIN_SECONDS=0"}, extra...)
@@ -143,7 +144,7 @@ func launchDev(t *testing.T, dir string, env []string, args ...string) *devProc 
 	return p
 }
 
-// startDev runs `goldie server -dev args...` with env and waits for the
+// startDev runs `goldie server --dev args...` with env and waits for the
 // export line and both "listening" lines.
 func startDev(t *testing.T, env []string, args ...string) *devProc {
 	t.Helper()
@@ -152,7 +153,7 @@ func startDev(t *testing.T, env []string, args ...string) *devProc {
 
 func startDevIn(t *testing.T, dir string, env []string, args ...string) *devProc {
 	t.Helper()
-	p := launchDev(t, dir, env, append([]string{"server", "-dev"}, args...)...)
+	p := launchDev(t, dir, env, append([]string{"server", "--dev"}, args...)...)
 	deadline := time.After(10 * time.Second)
 	for {
 		p.scan()
@@ -163,9 +164,9 @@ func startDevIn(t *testing.T, dir string, env []string, args ...string) *devProc
 		case <-p.changed:
 		case err := <-p.exited:
 			p.exited <- err
-			t.Fatalf("goldie server -dev exited early: %v\n%s", err, p.dump())
+			t.Fatalf("goldie server --dev exited early: %v\n%s", err, p.dump())
 		case <-deadline:
-			t.Fatalf("goldie server -dev did not print the export line and start both listeners:\n%s", p.dump())
+			t.Fatalf("goldie server --dev did not print the export line and start both listeners:\n%s", p.dump())
 		}
 	}
 }
@@ -201,14 +202,14 @@ func (p *devProc) stop(t *testing.T) {
 	case err := <-p.exited:
 		p.exited <- err
 		if err != nil {
-			t.Errorf("goldie server -dev exit: %v, want 0\n%s", err, p.dump())
+			t.Errorf("goldie server --dev exit: %v, want 0\n%s", err, p.dump())
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatalf("goldie server -dev did not exit after SIGTERM\n%s", p.dump())
+		t.Fatalf("goldie server --dev did not exit after SIGTERM\n%s", p.dump())
 	}
 }
 
-// devStatus is the status of GET path on the -dev server with the bearer
+// devStatus is the status of GET path on the --dev server with the bearer
 // token (none when empty).
 func devStatus(t *testing.T, base, path, token string) int {
 	t.Helper()
@@ -257,7 +258,7 @@ func assertTokenOnlyInExportLine(t *testing.T, p *devProc) {
 	}
 }
 
-// goldie server -dev prints the export line once, to stdout; the address and
+// goldie server --dev prints the export line once, to stdout; the address and
 // token in it reach the running server, which answers 200 with the token and
 // 401 without or with another one. Both listeners are on 127.0.0.1 with a
 // real port, the admin port serves the probes, and SIGTERM exits 0.
@@ -369,7 +370,7 @@ func TestServerDevTokensDifferPerRun(t *testing.T) {
 	a := startDev(t, devEnv(), contentDir(t))
 	b := startDev(t, devEnv(), contentDir(t))
 	if a.token == b.token {
-		t.Fatal("two runs of goldie server -dev printed the same token")
+		t.Fatal("two runs of goldie server --dev printed the same token")
 	}
 	if got := devStatus(t, b.addr, devArticle, a.token); got != http.StatusUnauthorized {
 		t.Errorf("the first run's token on the second = %d, want 401", got)
@@ -378,7 +379,7 @@ func TestServerDevTokensDifferPerRun(t *testing.T) {
 	b.stop(t)
 }
 
-// Without a dir argument, -dev serves the content in the working directory
+// Without a dir argument, --dev serves the content in the working directory
 // or at GOLDIE_CONTENT_DIR (both point at the same content here: the issue
 // does not choose between them).
 func TestServerDevWithoutADirArgument(t *testing.T) {
@@ -399,7 +400,7 @@ func TestServerDevDirArgumentWinsOverContentDir(t *testing.T) {
 	p.stop(t)
 }
 
-// Re-running -dev in a shell that ran the export line works: GOLDIE_ADDR is a
+// Re-running --dev in a shell that ran the export line works: GOLDIE_ADDR is a
 // URL there, not a listen address, and the old token is not this run's.
 func TestServerDevRunsAgainAfterTheExportLine(t *testing.T) {
 	first := startDev(t, devEnv(), contentDir(t))
@@ -433,7 +434,7 @@ func assertIgnoredOnce(t *testing.T, p *devProc) {
 	}
 }
 
-// A shell set up for a real server, or a broken one, does not stop -dev:
+// A shell set up for a real server, or a broken one, does not stop --dev:
 // bad, conflicting and unreadable token variables and non-loopback or
 // malformed addresses are all ignored, one line says so, the listeners stay
 // on loopback, the printed token works, and no token from the environment is
@@ -508,7 +509,7 @@ func TestServerDevIsNotReachableOnOtherAddresses(t *testing.T) {
 			c, err := net.DialTimeout("tcp", net.JoinHostPort(ip.String(), port), time.Second)
 			if err == nil {
 				_ = c.Close()
-				t.Errorf("the %s port answers on %s: -dev must listen on 127.0.0.1 only", name, ip)
+				t.Errorf("the %s port answers on %s: --dev must listen on 127.0.0.1 only", name, ip)
 			}
 		}
 	}
@@ -549,7 +550,7 @@ func runDevToExit(t *testing.T, env []string, args ...string) (stdout, stderr st
 	return o.String(), e.String(), err
 }
 
-// Content that does not load stops -dev before it prints anything: exit
+// Content that does not load stops --dev before it prints anything: exit
 // non-zero, the fixed error as the last stderr line, no export line, and no
 // path anywhere in the output.
 func TestServerDevUnloadableContentFailsWithoutAPath(t *testing.T) {
@@ -560,7 +561,7 @@ func TestServerDevUnloadableContentFailsWithoutAPath(t *testing.T) {
 	}
 	for name, dir := range map[string]string{"missing directory": missing, "a file": file} {
 		t.Run(name, func(t *testing.T) {
-			stdout, stderr, err := runDevToExit(t, devEnv(), "server", "-dev", dir)
+			stdout, stderr, err := runDevToExit(t, devEnv(), "server", "--dev", dir)
 			if err == nil {
 				t.Fatal("exit 0, want non-zero")
 			}
@@ -591,15 +592,16 @@ func TestServerDevUnloadableContentFailsWithoutAPath(t *testing.T) {
 // no argument.
 func TestServerDevTakesAtMostOneDir(t *testing.T) {
 	for _, args := range [][]string{
-		{"server", "-dev", contentDir(t), contentDir(t)},
+		{"server", "--dev", contentDir(t), contentDir(t)},
 		{"server", contentDir(t)},
 	} {
 		stdout, stderr, err := runDevToExit(t, devEnv(), args...)
-		if err == nil {
-			t.Errorf("goldie %v: exit 0, want a usage error", args)
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 2 {
+			t.Errorf("goldie %v: err = %v, want exit code 2 for misuse", args, err)
 		}
-		if !strings.Contains(stderr, "usage: goldie server") {
-			t.Errorf("goldie %v: stderr = %q, want the usage", args, stderr)
+		if !strings.Contains(stderr, "Run 'goldie server --help'.") {
+			t.Errorf("goldie %v: stderr = %q, want the one-line error and the next step", args, stderr)
 		}
 		if strings.Contains(stdout+stderr, "GOLDIE_TOKEN=") {
 			t.Errorf("goldie %v printed an export line", args)
