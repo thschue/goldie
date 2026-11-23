@@ -260,7 +260,7 @@ func handlerError(err error) error {
 }
 
 // firstRunHint is the next step for someone who ran goldie server with nothing set.
-const firstRunHint = "To try goldie on this machine: goldie server -dev [dir]"
+const firstRunHint = "To try goldie on this machine: goldie server -dev ."
 
 // withDevHint ends err with firstRunHint when cfg names neither a Source nor an
 // API token: a first run, not an operator mid-setup. A value that is set but

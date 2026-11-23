@@ -99,7 +99,7 @@ goldie server -dev examples/knowledge
 Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there.
 
 A plain `goldie server` with no Source and no API token set stops with two configuration errors and
-ends with `To try goldie on this machine: goldie server -dev [dir]`, the command above. With only one
+ends with `To try goldie on this machine: goldie server -dev .`, the command above with `.` as `dir`. With only one
 of the two missing, or a value that is invalid, it shows the errors alone.
 
 `goldie validate [dir]` runs the same content load without starting a server, for a pipeline: it
