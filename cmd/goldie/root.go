@@ -47,7 +47,7 @@ func newUsageErr(path, msg string) *usageErr {
 func misuse(err error) error {
 	var ue *cli.UsageError
 	if errors.As(err, &ue) {
-		msg := ue.Msg
+		msg := ue.Msg // the usage text names goldie again, so drop its prefix
 		if rest, ok := strings.CutPrefix(msg, "usage: "); ok {
 			msg = "wrong arguments: " + rest
 		}
@@ -106,7 +106,18 @@ func newRoot(out io.Writer) *cobra.Command {
 	root.SetErr(io.Discard)
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return newUsageErr(cmd.CommandPath(), err.Error())
+		msg := err.Error()
+		// pflag reads -dev as the shorthands -d -e -v and names the word: "... in -dev".
+		if rest, ok := strings.CutPrefix(msg, "unknown shorthand flag: "); ok {
+			if _, word, ok := strings.Cut(rest, " in -"); ok && len(word) > 1 {
+				msg += "; did you mean --" + word + "?"
+			}
+		}
+		path := cmd.CommandPath()
+		if cmd.Parent() == nil {
+			path += " <command>" // a bad flag of the root: point at a command's help
+		}
+		return newUsageErr(path, msg)
 	})
 	root.AddGroup(
 		&cobra.Group{ID: groupRun, Title: "Run a server"},
@@ -123,16 +134,6 @@ func newRoot(out io.Writer) *cobra.Command {
 	}
 	root.SetHelpTemplate(rootHelpTemplate)
 	return root
-}
-
-// dashedWord returns the first single-dash multi-letter word, such as -dev.
-func dashedWord(args []string) string {
-	for _, a := range args {
-		if len(a) > 2 && a[0] == '-' && a[1] != '-' && !strings.ContainsAny(a, "= ") {
-			return a
-		}
-	}
-	return ""
 }
 
 func firstWord(args []string) string {

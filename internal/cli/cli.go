@@ -78,7 +78,7 @@ type settings struct {
 // come before, between or after the positional words.
 func Run(ctx context.Context, args []string, env Env) error {
 	if len(args) == 0 || !IsCommand(args[0]) {
-		return errors.New("usage: goldie search | lookup | status | init | version")
+		return errors.New("usage: goldie " + strings.Join(Commands, " | "))
 	}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	fs.SetOutput(io.Discard)

@@ -48,6 +48,9 @@ func BindMCP(fs *flag.FlagSet) func(ctx context.Context, pos []string, env cli.E
 		if len(pos) != 0 {
 			return &cli.UsageError{Command: "mcp", Msg: "mcp takes no arguments"}
 		}
+		if *transport == "" {
+			return &cli.UsageError{Command: "mcp", Msg: "--transport must be stdio: goldie mcp --transport stdio"}
+		}
 		if *transport != "stdio" {
 			// The value given is never echoed: it may hold control characters.
 			return &cli.UsageError{Command: "mcp", Msg: "--transport must be stdio, the only transport so far"}

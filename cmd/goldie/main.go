@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -34,9 +33,6 @@ func exitCode(err error, w io.Writer) int {
 		return 0
 	case errors.As(err, &u):
 		next := "Run '" + u.path + " --help'."
-		if u.path == "goldie" {
-			next = "Run 'goldie <command> --help'."
-		}
 		_, _ = fmt.Fprintf(w, "goldie: %s\n%s\n", u.msg, next)
 		return 2
 	}
@@ -55,12 +51,7 @@ func run(args []string, out io.Writer) error {
 		args = []string{} // nil would make cobra read os.Args
 	}
 	root.SetArgs(args)
-	err := root.Execute()
-	var ue *usageErr
-	if w := dashedWord(args); w != "" && errors.As(err, &ue) && strings.Contains(ue.msg, "shorthand flag") {
-		ue.msg += "; did you mean -" + w + "?"
-	}
-	return err
+	return root.Execute()
 }
 
 // clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
