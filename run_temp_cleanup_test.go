@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -192,5 +193,66 @@ func TestRunRemovesItsTempFilesWhenTheGeneratorFails(t *testing.T) {
 	}
 	if strings.Contains(out.String(), tmp) {
 		t.Errorf("the output names the temporary directory")
+	}
+}
+
+// A shell function run in the background must not leave its tool running: the
+// signal goes to ./run alone (not its process group, which would also hit the
+// tool), so the tool stops only if ./run stops it.
+func TestRunStopsTheToolItBackgroundsWhenInterrupted(t *testing.T) {
+	// The stand-in go "installs" a vacuum that records its own pid, so the pid
+	// is that of the tool itself and not of a shell around it.
+	goScript := "mkdir -p \"$GOBIN\"\n" +
+		"printf '#!/bin/sh\\necho $$ >\"$READY_FILE.tmp\"\\nmv \"$READY_FILE.tmp\" \"$READY_FILE\"\\nexec sleep 60\\n' >\"$GOBIN/vacuum\"\n" +
+		"chmod +x \"$GOBIN/vacuum\""
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd, tmp, out := startRun(t, runCase{name: "lint-spec", args: []string{"lint-spec"}, goScript: goScript}, ready)
+
+	var pidText []byte
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if b, err := os.ReadFile(ready); err == nil { //nolint:gosec // a path the test made
+			pidText = b
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the tool never started:\n%s", out.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidText)))
+	if err != nil {
+		t.Fatalf("the tool wrote no pid: %q", pidText)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+
+	if err := syscall.Kill(cmd.Process.Pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _ = cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("./run did not exit after the signal")
+	}
+
+	// ./run waited for the tool, so it has stopped; a zombie counts as stopped.
+	gone := false
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			gone = true
+			break
+		}
+		if b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat"); err == nil && strings.Contains(string(b), ") Z ") { //nolint:gosec // a pid the test read
+			gone = true
+			break
+		}
+	}
+	if !gone {
+		t.Errorf("the tool is still running after ./run was terminated")
+	}
+	if n := leftovers(t, tmp); n != 0 {
+		t.Errorf("temporary files left behind: %d", n)
 	}
 }

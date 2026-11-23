@@ -180,11 +180,11 @@ vacuum() {
 env_vacuum() {
 	bin=$1 cfgdir=$2
 	shift 2
-	(
-		for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
-		exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
-			--no-update-check --no-banner --no-style --details --fail-severity info "$@"
-	)
+	# No inner subshell: bg already runs this function in one, and exec makes
+	# the tool that process, so cleanup's kill reaches the tool itself.
+	for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+	exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
+		--no-update-check --no-banner --no-style --details --fail-severity info "$@"
 }
 
 cmd_lint_spec() {
@@ -448,7 +448,9 @@ cmd_agents_check() {
 red_check_test() {
 	wt=$1
 	shift
-	(cd "$wt" && exec go test -count=1 "$@")
+	# No inner subshell: bg runs this in one, and exec makes go test that
+	# process, so cleanup's kill reaches it before the worktree is removed.
+	cd "$wt" && exec go test -count=1 "$@"
 }
 
 cmd_red_check() {
