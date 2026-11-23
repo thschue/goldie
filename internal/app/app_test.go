@@ -288,7 +288,7 @@ func TestRouterHonoursRegisteredMethods(t *testing.T) {
 	for _, r := range routes {
 		byPath[r.path] = append(byPath[r.path], r.methods...)
 	}
-	srv := newServer(t)
+	srv := newServerWith(t, platform.Config{SwaggerUIEnabled: true, RateLimit: roomyRateLimit})
 	for path, methods := range byPath {
 		want := slices.Clone(methods)
 		if slices.Contains(methods, http.MethodGet) {
