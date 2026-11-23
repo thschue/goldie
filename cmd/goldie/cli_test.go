@@ -154,12 +154,12 @@ func TestCLIErrors(t *testing.T) {
 		{"no token", []string{"search", "agent", "--addr", srv.URL}, []string{"GOLDIE_TOKEN"}},
 		{"bad addr", []string{"search", "agent", "--addr", "ftp://x", "--token", cliToken}, []string{"http"}},
 		{"unreachable", []string{"search", "agent", "--addr", "http://127.0.0.1:1", "--token", cliToken}, []string{"cannot reach"}},
-		{"no words", []string{"search", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
+		{"no words", []string{"search", "--addr", srv.URL, "--token", cliToken}, []string{"goldie search <words>"}},
 		{"status spec not served", []string{"status", "--addr", statusStub(t, http.StatusServiceUnavailable, http.StatusOK).URL}, []string{"503"}},
 		{"status token check fails", []string{"status", "--addr", statusStub(t, http.StatusOK, http.StatusInternalServerError).URL, "--token", cliToken}, []string{"500"}},
-		{"unknown flag", []string{"search", "agent", "--bogus", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
-		{"lookup two ids", []string{"lookup", "a", "b", "--addr", srv.URL, "--token", cliToken}, []string{"usage"}},
-		{"status extra arg", []string{"status", "extra", "--addr", srv.URL}, []string{"usage"}},
+		{"unknown flag", []string{"search", "agent", "--bogus", "--addr", srv.URL, "--token", cliToken}, []string{"--bogus"}},
+		{"lookup two ids", []string{"lookup", "a", "b", "--addr", srv.URL, "--token", cliToken}, []string{"goldie lookup <id>"}},
+		{"status extra arg", []string{"status", "extra", "--addr", srv.URL}, []string{"goldie status"}},
 		{"status bad addr", []string{"status", "--addr", "ftp://x"}, []string{"http"}},
 		{"status unreachable", []string{"status", "--addr", "http://127.0.0.1:1"}, []string{"cannot reach"}},
 	}
@@ -314,19 +314,15 @@ func TestCLICapsResponseSize(t *testing.T) {
 	}
 }
 
-// The usage line names the program once, before the server and client
-// commands alike.
+// The root help lists the server and the client commands alike.
 func TestCLIUsageNamesProgramOnce(t *testing.T) {
-	_, err := runCLI(t)
-	if err == nil {
-		t.Fatal("expected a usage error")
-	}
-	if n := strings.Count(err.Error(), "goldie"); n != 1 {
-		t.Errorf("usage = %q names goldie %d times, want 1", err, n)
+	var out bytes.Buffer
+	if err := run(nil, &out); err != nil {
+		t.Fatalf("root help is not an error: %v", err)
 	}
 	for _, cmd := range []string{"server", "health", "search", "lookup", "status", "version"} {
-		if !strings.Contains(err.Error(), cmd) {
-			t.Errorf("usage = %q lacks %s", err, cmd)
+		if !hasCommandLine(out.String(), cmd) {
+			t.Errorf("root help = %q lacks %s", out.String(), cmd)
 		}
 	}
 }

@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-// #293: with -dev, log records go to stderr and stdout carries exactly one
-// line, the export line, so eval "$(goldie server -dev)" works and anything
-// capturing stdout does not capture logs. Without -dev, logs stay on stdout
+// #293: with --dev, log records go to stderr and stdout carries exactly one
+// line, the export line, so eval "$(goldie server --dev)" works and anything
+// capturing stdout does not capture logs. Without --dev, logs stay on stdout
 // (PC-07).
 
-// assertDevLogsOnStderr checks the stream split of a finished -dev run: stdout
+// assertDevLogsOnStderr checks the stream split of a finished --dev run: stdout
 // is exactly the export line, and stderr holds the log records, each a JSON
 // object with a component, including the startup report and "listening".
 func assertDevLogsOnStderr(t *testing.T, p *devProc) {
@@ -63,7 +63,7 @@ func TestServerDevStdoutIsOnlyTheExportLine(t *testing.T) {
 	assertTokenOnlyInExportLine(t, p)
 }
 
-// The one line saying -dev ignores the address and token variables is a log
+// The one line saying --dev ignores the address and token variables is a log
 // record too: it goes to stderr, not stdout.
 func TestServerDevIgnoredVariablesLineGoesToStderr(t *testing.T) {
 	p := startDev(t, devEnv("GOLDIE_ADDR=0.0.0.0:0", "GOLDIE_API_TOKEN=env-token-0123456789abcdef0123456789abcdef"), contentDir(t))
@@ -95,7 +95,7 @@ func TestServerDevStdoutEvalsInAShell(t *testing.T) {
 		t.Skip("no sh on PATH")
 	}
 	script := `out=$(mktemp) || exit 2
-"$1" server -dev "$2" >"$out" 2>/dev/null &
+"$1" server --dev "$2" >"$out" 2>/dev/null &
 pid=$!
 i=0
 until grep -q '^export GOLDIE_ADDR=' "$out" 2>/dev/null; do
@@ -114,7 +114,7 @@ printf '%s\n%s\n' "$GOLDIE_ADDR" "$GOLDIE_TOKEN"`
 	cmd.Stderr = os.Stderr
 	b, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("eval of goldie server -dev stdout failed: %v\noutput: %s", err, b)
+		t.Fatalf("eval of goldie server --dev stdout failed: %v\noutput: %s", err, b)
 	}
 	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 	if len(lines) != 2 {
@@ -125,7 +125,7 @@ printf '%s\n%s\n' "$GOLDIE_ADDR" "$GOLDIE_TOKEN"`
 	}
 }
 
-// Without -dev nothing moves: every log record is on stdout (PC-07) and
+// Without --dev nothing moves: every log record is on stdout (PC-07) and
 // stderr stays empty.
 func TestServerWithoutDevLogsStayOnStdout(t *testing.T) {
 	env := devEnv(
@@ -149,7 +149,7 @@ func TestServerWithoutDevLogsStayOnStdout(t *testing.T) {
 	p.stop(t)
 	out, errs := p.lines()
 	if len(errs) != 0 {
-		t.Errorf("stderr = %q, want empty without -dev", errs)
+		t.Errorf("stderr = %q, want empty without --dev", errs)
 	}
 	seen := map[string]bool{}
 	for _, l := range out {

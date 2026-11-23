@@ -339,11 +339,15 @@ func TestMCPRejectsAnUnknownTransport(t *testing.T) {
 	}
 }
 
-// The binary's usage lists the new subcommand.
+// The root help lists the subcommand and its help names --transport stdio.
 func TestUsageListsMCPStdio(t *testing.T) {
+	var root bytes.Buffer
+	if err := run(nil, &root); err != nil || !hasCommandLine(root.String(), "mcp") {
+		t.Errorf("root help = %q (err %v), want it to list mcp", root.String(), err)
+	}
 	var out bytes.Buffer
-	err := run([]string{"nope"}, &out)
-	if err == nil || !strings.Contains(err.Error(), "mcp --transport stdio") {
-		t.Errorf("usage = %v, want it to list mcp --transport stdio", err)
+	if err := run([]string{"mcp", "--help"}, &out); err != nil ||
+		!strings.Contains(out.String(), "--transport") || !strings.Contains(out.String(), "stdio") {
+		t.Errorf("mcp help = %q (err %v), want it to name --transport and stdio", out.String(), err)
 	}
 }

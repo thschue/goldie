@@ -18,17 +18,17 @@ import (
 //
 // Decisions fixed here:
 //   - Which dir: the one argument; else GOLDIE_CONTENT_DIR; else the working
-//     directory. This is the order goldie server -dev uses, so an author who
+//     directory. This is the order goldie server --dev uses, so an author who
 //     knows one knows the other.
 //   - Valid content: exit 0, nothing on stderr.
 //   - Invalid content: exit 1, nothing on stdout, and exactly one line on
 //     stderr: "goldie: content does not load: <reason>", where the reason is
 //     the loader's own (a file relative to the dir and the rule, or the fixed
 //     "content directory is not readable"). The line is the same one
-//     goldie server -dev ends with, so the tests compare the two.
+//     goldie server --dev ends with, so the tests compare the two.
 //   - Never a stack trace, goroutine dump or absolute path.
-//   - A second positional argument is a usage error (exit 1, the usage on
-//     stderr, which names "validate [dir]").
+//   - A second positional argument is a usage error (exit 2, the error
+//     and "Run 'goldie validate --help'." on stderr).
 //   - An empty directory is valid, as for the server (no articles, no error).
 
 const validateLoadPrefix = "goldie: content does not load: "
@@ -130,7 +130,7 @@ func TestValidateAcceptsValidContent(t *testing.T) {
 }
 
 func TestValidateNeedsNoTokenOrAddress(t *testing.T) {
-	// A shell holding the -dev export line, or a broken server setting, does
+	// A shell holding the --dev export line, or a broken server setting, does
 	// not change what validate checks.
 	env := validateEnv("GOLDIE_ADDR=not-an-address", "GOLDIE_ADMIN_ADDR=also-bad", "GOLDIE_TOKEN=x")
 	if _, stderr, code := runValidate(t, t.TempDir(), env, "validate", contentDir(t)); code != 0 {
@@ -233,7 +233,7 @@ func TestValidateReportsOneProblemOnOneLine(t *testing.T) {
 }
 
 // Which directory: the argument, else GOLDIE_CONTENT_DIR, else the working
-// directory (the order of goldie server -dev).
+// directory (the order of goldie server --dev).
 func TestValidateChoosesTheDirectory(t *testing.T) {
 	good := t.TempDir()
 	writeArticle(t, good, "global/articles/a.md", goodArticle)
@@ -272,22 +272,28 @@ func TestValidateChoosesTheDirectory(t *testing.T) {
 func TestValidateTakesAtMostOneDir(t *testing.T) {
 	d := contentDir(t)
 	stdout, stderr, code := runValidate(t, t.TempDir(), validateEnv(), "validate", d, d)
-	if code != 1 {
-		t.Errorf("exit code = %d, want 1", code)
+	if code != 2 {
+		t.Errorf("exit code = %d, want 2", code)
 	}
 	if stdout != "" {
 		t.Errorf("stdout = %q, want empty", stdout)
 	}
-	if !strings.Contains(stderr, "usage: goldie") || !strings.Contains(stderr, "validate [dir]") {
-		t.Errorf("stderr = %q, want the usage naming %q", stderr, "validate [dir]")
+	if !strings.Contains(stderr, "Run 'goldie validate --help'.") {
+		t.Errorf("stderr = %q, want the one-line error and the next step", stderr)
 	}
 	noCrashOutput(t, stderr)
 }
 
+// The root help, which a bare `goldie` prints, names validate [dir] in its
+// group, and validate's own help shows its usage.
 func TestUsageNamesValidate(t *testing.T) {
-	_, stderr, code := runValidate(t, t.TempDir(), validateEnv())
-	if code != 1 || !strings.Contains(stderr, "validate [dir]") {
-		t.Errorf("exit %d, stderr %q, want exit 1 and a usage naming %q", code, stderr, "validate [dir]")
+	stdout, stderr, code := runValidate(t, t.TempDir(), validateEnv())
+	if code != 0 || !hasCommandLine(stdout, "validate") {
+		t.Errorf("exit %d, stdout %q, stderr %q, want exit 0 and root help listing validate", code, stdout, stderr)
+	}
+	stdout, _, code = runValidate(t, t.TempDir(), validateEnv(), "validate", "--help")
+	if code != 0 || !strings.Contains(stdout, "validate [dir]") {
+		t.Errorf("exit %d, stdout %q, want exit 0 and a usage naming %q", code, stdout, "validate [dir]")
 	}
 }
 
@@ -320,10 +326,10 @@ func TestValidateFollowsTheServersLoad(t *testing.T) {
 			continue
 		}
 		wantInvalid(t, vOut, vErr, vCode, dir)
-		// server -dev stops at the same load error; it would run on valid content.
-		_, sErr, sExit := runDevToExit(t, devEnv(), "server", "-dev", dir)
+		// server --dev stops at the same load error; it would run on valid content.
+		_, sErr, sExit := runDevToExit(t, devEnv(), "server", "--dev", dir)
 		if sExit == nil {
-			t.Fatalf("%s: server -dev exited 0 on content validate rejects", s.name)
+			t.Fatalf("%s: server --dev exited 0 on content validate rejects", s.name)
 		}
 		sLines := strings.Split(strings.TrimRight(sErr, "\n"), "\n")
 		if last := sLines[len(sLines)-1]; last != strings.TrimRight(vErr, "\n") {
