@@ -142,6 +142,8 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 ![Activity, dark theme](screenshots/activity.png)
 
+**Built so far (#630, slice 2 of #22):** the page shows the header line (naming the local replica), Pause/Resume, "Misses only", a polite miss-count status and the feed as one `<table>`, read from the local replica's stream (`GET /api/v1/activity` without `replicas`, through `api()`). Rows are newest first and the newest 500 are kept; the selected row is kept by event id; a miss reads "Miss" with copy that names what was asked for (skill, agent or article, #576); the Via cell is empty until an event carries `via`. A 403 shows "This page is for operators.", a 401 ends the session as everywhere, and a 503 shows its hint. The miss count changes for screen readers at most every 30 s. The replica switcher, stage, tiles, Miss board, detail panel and trace links below come with later slices.
+
 From top to bottom:
 
 1. **Header**: a live indicator ("Live · merged from all replicas (2 of 3 answering)"), Pause/Resume, and "Trends in Grafana ↗".
