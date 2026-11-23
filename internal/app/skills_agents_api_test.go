@@ -203,7 +203,7 @@ func TestSkillsResolveForTheProjectNearestScopeWinning(t *testing.T) {
 	}
 	// The Project spelling is matched ignoring case, as for articles.
 	wantFiles(t, "upper-case project", itemsOne(t, srv, readerToken,
-		"/api/v1/skills/deploy?project="+url.QueryEscape("GitHub.com/Acme/Shop")), shopDeployFiles)
+		"/api/v1/skills/deploy?project="+url.QueryEscape("github.com/ACME/Shop")), shopDeployFiles)
 }
 
 // Criterion: an unregistered Project gets the global answer and a hint that
