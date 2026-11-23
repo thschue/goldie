@@ -1,0 +1,439 @@
+package api
+
+import (
+	"context"
+	"slices"
+	"sync"
+	"time"
+)
+
+const (
+	// DefaultReorderWindow is how long the Merger holds a live event so that
+	// older events from other replicas can still overtake it.
+	DefaultReorderWindow = 2 * time.Second
+	// DefaultMergeBuffer is the default cap on events held in the window.
+	DefaultMergeBuffer = 1024
+
+	// seenRetentionWindows and seenPerBuffered bound the dedup set. A key is
+	// kept for seenRetentionWindows windows after its event was received (so
+	// it outlives the event's time in the window and covers every event
+	// emitted within the window), and the set never holds more than
+	// seenPerBuffered times MaxBuffered keys, or twice the merged history if
+	// that is larger. The oldest keys go first.
+	seenRetentionWindows = 4
+	seenPerBuffered      = 64
+)
+
+// MergeClock is the Merger's only source of time and timers. NewTimer's
+// channel receives once when d has elapsed; d <= 0 fires at once; stop
+// releases the timer.
+type MergeClock interface {
+	Now() time.Time
+	NewTimer(d time.Duration) (fired <-chan time.Time, stop func())
+}
+
+type realMergeClock struct{}
+
+func (realMergeClock) Now() time.Time { return time.Now() }
+
+func (realMergeClock) NewTimer(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTimer(max(d, 0))
+	return t.C, func() { t.Stop() }
+}
+
+// MergeConfig configures a Merger. Zero values mean the defaults.
+type MergeConfig struct {
+	Window       time.Duration // reorder window; <= 0 means DefaultReorderWindow
+	MaxBuffered  int           // hard cap on events held in the window; <= 0 means DefaultMergeBuffer
+	OutputBuffer int           // capacity of the output channel; <= 0 means ActivitySubscriberBuffer
+	Clock        MergeClock    // nil means the real clock
+}
+
+// MergeInput is one replica's feed. Name identifies it in status items.
+// History is that replica's retained events; Live is its live stream, and a
+// nil Live means the replica is unreachable.
+type MergeInput struct {
+	Name    string
+	History []Event
+	Live    <-chan Event
+}
+
+// ReplicaStatus reports an input going down or coming back up. LastSeen is the
+// merger clock time of the last event received from it, else when it was
+// attached.
+type ReplicaStatus struct {
+	Replica  string
+	Up       bool
+	LastSeen time.Time
+}
+
+// MergedItem is one output item; exactly one field is non-nil.
+type MergedItem struct {
+	Event  *Event
+	Status *ReplicaStatus
+}
+
+type eventKey struct {
+	replica string
+	id      uint64
+}
+
+type seenEntry struct {
+	key eventKey
+	at  time.Time
+}
+
+type heldEvent struct {
+	e   Event
+	due time.Time
+}
+
+type mergeInputState struct {
+	up       bool
+	lastSeen time.Time
+}
+
+// compareEvents orders by Time, then Replica, then ID.
+func compareEvents(a, b Event) int {
+	if c := a.Time.Compare(b.Time); c != 0 {
+		return c
+	}
+	if a.Replica != b.Replica {
+		if a.Replica < b.Replica {
+			return -1
+		}
+		return 1
+	}
+	switch {
+	case a.ID < b.ID:
+		return -1
+	case a.ID > b.ID:
+		return 1
+	}
+	return 0
+}
+
+// MergeHistories merges the given histories sorted by Time, then Replica, then
+// ID, keeping the first copy of each Replica+ID. It does not modify them.
+func MergeHistories(histories ...[]Event) []Event {
+	seen := map[eventKey]struct{}{}
+	var out []Event
+	for _, h := range histories {
+		for _, e := range h {
+			k := eventKey{e.Replica, e.ID}
+			if _, dup := seen[k]; dup {
+				continue
+			}
+			seen[k] = struct{}{}
+			out = append(out, e)
+		}
+	}
+	slices.SortStableFunc(out, compareEvents)
+	return out
+}
+
+// Merger merges the activity of several replicas into one stream. Live events
+// wait in a reorder window so older ones from other replicas can overtake
+// them, duplicates are dropped by Replica+ID, and an event that arrives after
+// its window leaves at once marked Late. It never blocks on its output (a full
+// output drops and counts), a stalled input never delays the others, and it
+// never logs event or query text. Its methods are safe for concurrent use.
+type Merger struct {
+	window time.Duration
+	maxBuf int
+	clock  MergeClock
+	out    chan MergedItem
+	done   chan struct{}
+	kick   chan struct{}
+
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	ctx      context.Context
+	started  bool
+	stopped  bool
+	inputs   map[string]*mergeInputState
+	held     []heldEvent // sorted by event key
+	seen     map[eventKey]struct{}
+	seenFIFO []seenEntry
+	seenHead int
+	seenMax  int
+
+	dropped, duplicates, rejected uint64
+}
+
+// NewMerger returns a Merger; call Start once.
+func NewMerger(cfg MergeConfig) *Merger {
+	if cfg.Window <= 0 {
+		cfg.Window = DefaultReorderWindow
+	}
+	if cfg.MaxBuffered <= 0 {
+		cfg.MaxBuffered = DefaultMergeBuffer
+	}
+	if cfg.OutputBuffer <= 0 {
+		cfg.OutputBuffer = ActivitySubscriberBuffer
+	}
+	if cfg.Clock == nil {
+		cfg.Clock = realMergeClock{}
+	}
+	return &Merger{
+		window: cfg.Window, maxBuf: cfg.MaxBuffered, clock: cfg.Clock,
+		out:  make(chan MergedItem, cfg.OutputBuffer),
+		done: make(chan struct{}), kick: make(chan struct{}, 1),
+		inputs: map[string]*mergeInputState{}, seen: map[eventKey]struct{}{},
+		seenMax: seenPerBuffered * cfg.MaxBuffered,
+	}
+}
+
+// Start attaches the inputs and returns the merged history of all of them
+// (not replayed on the output) and the output channel. Cancelling ctx stops
+// every goroutine, closes the output, then closes Done. Start works once; a
+// second call returns no history and the same output.
+func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) ([]Event, <-chan MergedItem) {
+	m.mu.Lock()
+	if m.started {
+		m.mu.Unlock()
+		return nil, m.out
+	}
+	m.started = true
+	m.ctx = ctx
+	histories := make([][]Event, 0, len(inputs))
+	for _, in := range inputs {
+		histories = append(histories, in.History)
+	}
+	history := MergeHistories(histories...)
+	m.seenMax = max(m.seenMax, 2*len(history))
+	now := m.clock.Now()
+	for _, e := range history {
+		m.markSeen(eventKey{e.Replica, e.ID}, now)
+	}
+	for _, in := range inputs {
+		in.History = nil // already merged
+		if _, dup := m.inputs[in.Name]; !dup {
+			m.attachLocked(in, now)
+		}
+	}
+	m.wg.Add(1)
+	go m.schedule()
+	m.mu.Unlock()
+
+	go func() {
+		<-ctx.Done()
+		m.mu.Lock()
+		m.stopped = true
+		m.mu.Unlock()
+		m.wg.Wait()
+		close(m.out)
+		close(m.done)
+	}()
+	return history, m.out
+}
+
+// Add attaches an input, or re-attaches one that is down (one up status).
+// Its History is treated as live events. It returns false, changing nothing,
+// for an empty Name, an input that is up, a down input given no Live, or a
+// stopped Merger.
+func (m *Merger) Add(in MergeInput) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.started || m.stopped || in.Name == "" || m.ctx.Err() != nil {
+		return false
+	}
+	if st, ok := m.inputs[in.Name]; ok && (st.up || in.Live == nil) {
+		return false
+	}
+	m.attachLocked(in, m.clock.Now())
+	return true
+}
+
+// Done is closed once the output is closed and every goroutine has returned.
+func (m *Merger) Done() <-chan struct{} { return m.done }
+
+// Buffered is the number of events held in the window now.
+func (m *Merger) Buffered() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.held)
+}
+
+// Dropped counts items the full output refused.
+func (m *Merger) Dropped() uint64 { return m.counter(&m.dropped) }
+
+// Duplicates counts events discarded as already seen.
+func (m *Merger) Duplicates() uint64 { return m.counter(&m.duplicates) }
+
+// Rejected counts events discarded as invalid (empty Replica or ID 0).
+func (m *Merger) Rejected() uint64 { return m.counter(&m.rejected) }
+
+func (m *Merger) counter(c *uint64) uint64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return *c
+}
+
+// attachLocked registers in at now. The caller holds mu and has checked that
+// the name is new or down.
+func (m *Merger) attachLocked(in MergeInput, now time.Time) {
+	st, existed := m.inputs[in.Name]
+	if !existed {
+		st = &mergeInputState{}
+		m.inputs[in.Name] = st
+	}
+	st.lastSeen = now
+	if in.Live == nil {
+		st.up = false
+		m.emitLocked(MergedItem{Status: &ReplicaStatus{Replica: in.Name, LastSeen: now}})
+	} else {
+		st.up = true
+		if existed {
+			m.emitLocked(MergedItem{Status: &ReplicaStatus{Replica: in.Name, Up: true, LastSeen: now}})
+		}
+		m.wg.Add(1)
+		go m.read(in.Name, in.Live)
+	}
+	for _, e := range in.History {
+		m.receiveLocked(e, now)
+	}
+}
+
+// read forwards one input until it closes or the Merger stops.
+func (m *Merger) read(name string, live <-chan Event) {
+	defer m.wg.Done()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case e, ok := <-live:
+			m.mu.Lock()
+			now := m.clock.Now()
+			st := m.inputs[name]
+			if !ok {
+				st.up = false
+				m.emitLocked(MergedItem{Status: &ReplicaStatus{Replica: name, LastSeen: st.lastSeen}})
+				m.mu.Unlock()
+				return
+			}
+			st.lastSeen = now
+			m.receiveLocked(e, now)
+			m.mu.Unlock()
+		}
+	}
+}
+
+// receiveLocked takes one event received at now: reject, dedup, then emit it
+// late, or hold it (pushing the oldest held event out first at the cap).
+func (m *Merger) receiveLocked(e Event, now time.Time) {
+	if e.Replica == "" || e.ID == 0 {
+		m.rejected++
+		return
+	}
+	k := eventKey{e.Replica, e.ID}
+	if _, dup := m.seen[k]; dup {
+		m.duplicates++
+		return
+	}
+	m.markSeen(k, now)
+	e.Query = truncateQuery(e.Query)
+	e.Late = false
+	if now.Sub(e.Time) > m.window {
+		e.Late = true
+		m.emitLocked(MergedItem{Event: &e})
+		return
+	}
+	if len(m.held) >= m.maxBuf {
+		oldest := m.held[0].e
+		m.held = slices.Delete(m.held, 0, 1)
+		oldest.Late = true
+		m.emitLocked(MergedItem{Event: &oldest})
+	}
+	h := heldEvent{e: e, due: minTime(e.Time, now).Add(m.window)}
+	i, _ := slices.BinarySearchFunc(m.held, h, func(a, b heldEvent) int { return compareEvents(a.e, b.e) })
+	m.held = slices.Insert(m.held, i, h)
+	select {
+	case m.kick <- struct{}{}:
+	default:
+	}
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
+}
+
+// markSeen remembers k and evicts keys that are too old or over the bound.
+func (m *Merger) markSeen(k eventKey, now time.Time) {
+	m.seen[k] = struct{}{}
+	m.seenFIFO = append(m.seenFIFO, seenEntry{k, now})
+	for m.seenHead < len(m.seenFIFO) {
+		old := m.seenFIFO[m.seenHead]
+		if len(m.seen) <= m.seenMax && now.Sub(old.at) <= seenRetentionWindows*m.window {
+			break
+		}
+		delete(m.seen, old.key)
+		m.seenHead++
+	}
+	if m.seenHead > 1024 && m.seenHead > len(m.seenFIFO)/2 {
+		m.seenFIFO = slices.Clone(m.seenFIFO[m.seenHead:])
+		m.seenHead = 0
+	}
+}
+
+// emitLocked offers it to the output without waiting.
+func (m *Merger) emitLocked(it MergedItem) {
+	select {
+	case m.out <- it:
+	default:
+		m.dropped++
+	}
+}
+
+// releaseLocked emits every held event that is due at now, in key order, and
+// returns the earliest due time of those left (zero when none).
+func (m *Merger) releaseLocked(now time.Time) (next time.Time) {
+	kept := m.held[:0]
+	for _, h := range m.held {
+		if h.due.After(now) {
+			kept = append(kept, h)
+			if next.IsZero() || h.due.Before(next) {
+				next = h.due
+			}
+			continue
+		}
+		e := h.e
+		m.emitLocked(MergedItem{Event: &e})
+	}
+	clear(m.held[len(kept):])
+	m.held = kept
+	return next
+}
+
+// schedule releases held events as they fall due. It trusts only the clock's
+// Now, never a timer value, so a timer firing early or late is harmless.
+func (m *Merger) schedule() {
+	defer m.wg.Done()
+	for {
+		m.mu.Lock()
+		next := m.releaseLocked(m.clock.Now())
+		m.mu.Unlock()
+
+		var fired <-chan time.Time
+		stop := func() {}
+		if !next.IsZero() {
+			fired, stop = m.clock.NewTimer(next.Sub(m.clock.Now()))
+			// The clock may have moved between the two reads above.
+			if !m.clock.Now().Before(next) {
+				stop()
+				continue
+			}
+		}
+		select {
+		case <-m.ctx.Done():
+			stop()
+			return
+		case <-fired:
+		case <-m.kick:
+		}
+		stop()
+	}
+}

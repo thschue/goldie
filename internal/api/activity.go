@@ -24,13 +24,15 @@ const (
 )
 
 // Event is one search or lookup, as the activity feed shows it. Record
-// assigns ID, Replica and Time; the caller sets Kind and Query.
+// assigns ID, Replica and Time; the caller sets Kind and Query. Late is set
+// only by the Merger, for an event that reached it after its reorder window.
 type Event struct {
 	ID      uint64
 	Replica string
 	Time    time.Time
 	Kind    EventKind
 	Query   string
+	Late    bool
 }
 
 // Activity is a fixed-capacity ring of recent Events with a hub that fans new
