@@ -17,6 +17,7 @@ import (
 	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/cli"
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -239,6 +240,11 @@ func validateCmd() *cobra.Command {
 			warnings, err := app.ValidateDirWarnings(context.Background(), dir)
 			for _, w := range warnings {
 				fmt.Fprintln(os.Stderr, "goldie: warning:", w)
+			}
+			if errors.Is(err, engine.ErrContentDirUnreadable) {
+				// Only here, where a person reads it: server --dev ends with the
+				// same error without the hint, and ValidateDir must equal it.
+				err = fmt.Errorf("%w: %s", err, engine.ContentDirUnreadableHint)
 			}
 			return err
 		},
