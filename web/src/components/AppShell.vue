@@ -86,12 +86,21 @@ function onPopState() {
   linkClicked = false;
 }
 
+// Focus the new view's h1 once it is mounted and can take focus: the keyed
+// view has been replaced, the drawer has closed and main is no longer inert.
+// A focus() call before that is dropped by the browser, so check that it held
+// and try again on the next frame, a few times at most.
 async function focusHeading() {
-  await nextTick(); // the drawer has closed and main is no longer inert
-  const h1 = main.value?.querySelector('h1');
-  if (!h1) return;
-  h1.tabIndex = -1;
-  h1.focus();
+  await nextTick();
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const h1 = main.value?.querySelector('h1');
+    if (h1 && !open.value && !h1.closest('[inert]')) {
+      h1.tabIndex = -1;
+      h1.focus();
+      if (document.activeElement === h1) return;
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
 }
 
 // Growing past 1024 px puts the nav inline: close the drawer, keep focus.
