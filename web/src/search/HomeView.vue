@@ -76,11 +76,16 @@ const kinds = computed(() => {
 const shown = computed(() => (kindFilter.value === 'all' ? hits.value : hits.value.filter((h) => h.kind === kindFilter.value)));
 
 // Submit in JavaScript, through the router: the UI runs under form-action 'none'.
+// One navigation at a time: a newer one would cancel an older one still in the
+// guard, and that search would never reach the server or be recorded.
+let navigating: Promise<void> = Promise.resolve();
 function go(q: string) {
-  pending = q === query.value ? undefined : q;
-  return router.push(q ? { path: '/', query: { q } } : { path: '/' }).then((failure) => {
+  navigating = navigating.then(async () => {
+    pending = q === query.value ? undefined : q;
+    const failure = await router.push(q ? { path: '/', query: { q } } : { path: '/' }).catch((e: unknown) => e);
     if (failure && pending === q) pending = undefined;
   });
+  return navigating;
 }
 
 function submit() {
