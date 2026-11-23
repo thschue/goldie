@@ -97,13 +97,37 @@ function onPopState() {
   linkClicked = false;
 }
 
+const HEADING_WAIT_MS = 10_000;
+let stopWaiting = () => {};
+
 async function focusHeading() {
   // The router can finish before the drawer's own click handler runs: close
   // the drawer here, so main is no longer inert, and let the new view render.
   await closeDrawer(false);
   await nextTick();
-  const h1 = main.value?.querySelector('h1');
-  if (!h1) return;
+  const target = main.value;
+  if (!target) return;
+  const found = target.querySelector('h1');
+  if (found) return focusElement(found);
+  // A view that loads data first renders its h1 later: wait for it, but stop
+  // on the next navigation, on unmount, or after a bounded wait.
+  stopWaiting();
+  const observer = new MutationObserver(() => {
+    const late = target.querySelector('h1');
+    if (!late) return;
+    stopWaiting();
+    focusElement(late);
+  });
+  const timer = window.setTimeout(stopWaiting, HEADING_WAIT_MS);
+  stopWaiting = () => {
+    observer.disconnect();
+    window.clearTimeout(timer);
+    stopWaiting = () => {};
+  };
+  observer.observe(target, { childList: true, subtree: true });
+}
+
+function focusElement(h1: HTMLElement) {
   h1.tabIndex = -1;
   h1.focus();
 }
@@ -125,6 +149,7 @@ onMounted(() => {
   removeAfterEach = router.afterEach(() => {
     const requested = linkClicked;
     linkClicked = false;
+    stopWaiting();
     if (requested) void focusHeading();
   });
 });
@@ -134,6 +159,7 @@ onBeforeUnmount(() => {
   wide?.removeEventListener('change', onWide);
   window.removeEventListener('popstate', onPopState);
   removeAfterEach?.();
+  stopWaiting();
 });
 </script>
 

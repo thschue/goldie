@@ -126,3 +126,96 @@ test.describe('a nav link activated with the keyboard (1280 px)', () => {
     expect(await h1(page).evaluate((el) => el.matches(':focus-visible')), 'keyboard navigation shows the ring').toBe(true);
   });
 });
+
+// A view whose h1 only renders after an async load (#550). No routed view does
+// that yet, so the browser stands in for one: lateH1Script pulls the next h1
+// that a render adds to the page out of the DOM and puts it back after delayMs,
+// which is what such a view looks like to the shell.
+const lateH1Script = (delayMs: number) => {
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of Array.from(record.addedNodes)) {
+        if (!(node instanceof Element)) continue;
+        const heading = node.matches('h1') ? node : node.querySelector('h1');
+        const parent = heading?.parentNode;
+        if (!heading || !parent) continue;
+        observer.disconnect();
+        const anchor = heading.nextSibling;
+        parent.removeChild(heading);
+        setTimeout(() => {
+          parent.insertBefore(heading, anchor && anchor.parentNode === parent ? anchor : parent.firstChild);
+        }, delayMs);
+        return;
+      }
+    }
+  });
+  observer.observe(document.querySelector('main') ?? document.body, { childList: true, subtree: true });
+};
+
+const lateH1 = (page: Page, delayMs: number) => page.evaluate(`(${lateH1Script.toString()})(${delayMs})`);
+
+test.describe('a view whose h1 renders late (1280 px)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('moves focus to the h1 once it renders after a nav link click', async ({ page }) => {
+    await page.goto('/');
+    await expect(h1(page)).toBeVisible();
+    await lateH1(page, 600);
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(h1(page), 'the h1 is absent until the view has loaded').toHaveCount(0);
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toHaveAttribute('tabindex', '-1');
+    await expect(h1(page)).toBeFocused();
+  });
+
+  test('does not move focus when the h1 renders late on the initial load', async ({ page }) => {
+    await page.addInitScript(`document.addEventListener('DOMContentLoaded', () => (${lateH1Script.toString()})(500))`);
+    await page.goto('/decisions');
+    await expect(h1(page)).toHaveText('Decisions');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'h1 has focus after the initial load').toBe(false);
+    expect(await focusAtPageStart(page), 'focus is at the page start').toBe(true);
+  });
+
+  test('does not move focus when the h1 renders late after browser back', async ({ page }) => {
+    await page.goto('/');
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toBeFocused();
+    await lateH1(page, 500);
+    await page.goBack();
+    await expect(page).toHaveURL((u) => u.pathname === '/');
+    await expect(h1(page)).toHaveText('What are you deciding today?');
+    await page.waitForTimeout(300);
+    expect(await focusOnH1(page), 'h1 has focus after back').toBe(false);
+    expect(await focusAtPageStart(page), 'focus is at the page start after back').toBe(true);
+  });
+
+  // App.vue keys the routed view by path (#550): a path change remounts it, so
+  // per-view state starts fresh. Pinned until a stateful view needs otherwise.
+  test('a path change renders a new view: the old view and its state are gone', async ({ page }) => {
+    await page.goto('/decisions');
+    await expect(h1(page)).toHaveText('Decisions');
+    await h1(page).evaluate((el) => ((el as HTMLElement & { seen?: boolean }).seen = true));
+    await sideNav(page).getByRole('link', { name: 'Skills', exact: true }).click();
+    await expect(h1(page)).toHaveText('Agent assets');
+    await sideNav(page).getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(h1(page)).toHaveText('Decisions');
+    expect(await h1(page).evaluate((el) => (el as HTMLElement & { seen?: boolean }).seen)).toBeUndefined();
+  });
+});
+
+test.describe('a view whose h1 renders late, from the drawer (375 px)', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('closes the drawer and moves focus to the h1 once it renders', async ({ page }) => {
+    await page.goto('/');
+    const drawer = await openDrawer(page);
+    await lateH1(page, 600);
+    await drawer.getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+    await expect(drawer).toBeHidden();
+    await expect(h1(page)).toHaveText('Decisions');
+    await expect(h1(page)).toBeFocused();
+  });
+});
