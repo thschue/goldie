@@ -1,6 +1,6 @@
 # 22. Federated activity across replicas
 
-Status: proposed
+Status: accepted
 
 ## Context
 

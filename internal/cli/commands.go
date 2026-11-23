@@ -176,6 +176,10 @@ func (c *commander) status(ctx context.Context) error {
 	case probe.tokenState == tokenRejected:
 		auth = "token rejected"
 	}
+	var suppressions []string
+	if accepted && proj.ID != "" {
+		suppressions = projectSuppressions(ctx, cl, proj.ID)
+	}
 	if c.s.json {
 		out := map[string]any{"reachable": true, "api": nil, "apiVersion": nil,
 			"tokenGiven": given, "tokenAccepted": accepted, "project": nil, "projectSource": nil}
@@ -184,6 +188,9 @@ func (c *commander) status(ctx context.Context) error {
 		}
 		if proj.ID != "" {
 			out["project"], out["projectSource"] = proj.ID, sourceWords[proj.Source]
+		}
+		if len(suppressions) > 0 {
+			out["suppressions"] = suppressions
 		}
 		if projectError != "" {
 			out["projectError"] = projectError
@@ -200,14 +207,36 @@ func (c *commander) status(ctx context.Context) error {
 	if probe.answered() {
 		apiLine = contract.CleanLine(probe.title) + " " + contract.CleanLine(probe.apiVersion)
 	}
-	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
-		apiLine, auth, describeProject(proj, projectError))
+	suppressionLine := ""
+	if len(suppressions) > 0 {
+		suppressionLine = "Suppressions: " + strings.Join(suppressions, ", ") + "\n"
+	}
+	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n%s\nSearch with: goldie search <words>\n",
+		apiLine, auth, describeProject(proj, projectError), suppressionLine)
 	if err == nil {
 		var b strings.Builder
 		writeHint(&b, hint)
 		_, err = fmt.Fprint(c.out, b.String())
 	}
 	return err
+}
+
+// projectSuppressions lists the Suppressions the server holds for id, each
+// cleaned to one printable line. It tolerates every failure, a 404 for a
+// Project the server does not hold included: status still reports the rest, so
+// a server without the Project detail route shows no Suppressions.
+func projectSuppressions(ctx context.Context, cl *contract.ClientWithResponses, id string) []string {
+	raw, err := cl.GetProject(ctx, id)
+	detail, err := contract.Answer(raw, err, contract.ParseGetProjectResponse,
+		func(r *contract.GetProjectResponse) *contract.ProjectDetail { return r.JSON200 })
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(detail.Suppressions))
+	for _, ref := range detail.Suppressions {
+		out = append(out, contract.CleanLine(ref))
+	}
+	return out
 }
 
 // probeToken checks the token with one search for project, so status reports

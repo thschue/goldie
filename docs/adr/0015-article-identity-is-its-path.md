@@ -1,6 +1,6 @@
 # 15. Article identity is its path; frontmatter name is the title
 
-Status: proposed
+Status: accepted
 
 ## Context
 

@@ -16,7 +16,8 @@ import (
 // server. Answer reads what a call returns; each client only words what it
 // found.
 
-// requestTimeout bounds every API call of a client NewAPIClient builds itself.
+// requestTimeout bounds every API call of a client NewAPIClient builds, unless
+// the http.Client it was given sets its own Timeout.
 const requestTimeout = 30 * time.Second
 
 // MaxResponseBytes bounds the body of every API answer the client reads.
@@ -46,17 +47,21 @@ func CheckBaseURL(baseURL string) error {
 // NewAPIClient returns the API client for baseURL. Every request names the
 // client as ClientHeaderPrefix+version in ClientHeader and, when token is not
 // empty, sends it as a bearer token. No redirect is followed and every answer
-// body is capped at MaxResponseBytes, whatever httpc says. httpc nil means a
-// client with a timeout; otherwise a copy of httpc is hardened, and httpc is
-// left as it was. A baseURL CheckBaseURL rejects is ErrBaseURL.
+// body is capped at MaxResponseBytes, whatever httpc says. A copy of httpc
+// (nil means a plain client) is hardened, and httpc is left as it was; the copy
+// gets requestTimeout unless httpc sets a Timeout. A baseURL CheckBaseURL
+// rejects is ErrBaseURL.
 func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
 	if err := CheckBaseURL(baseURL); err != nil {
 		return nil, err
 	}
 	if httpc == nil {
-		httpc = &http.Client{Timeout: requestTimeout}
+		httpc = &http.Client{}
 	}
 	hardened := *httpc
+	if hardened.Timeout == 0 {
+		hardened.Timeout = requestTimeout
+	}
 	hardened.Transport = limitTransport{base: httpc.Transport}
 	hardened.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	opts := []ClientOption{WithHTTPClient(&hardened),

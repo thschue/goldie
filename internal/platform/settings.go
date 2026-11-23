@@ -24,8 +24,11 @@ type SettingSpec struct {
 	// Value returns the setting's effective value from Config, which the
 	// startup report logs. Every Settings row has one; TelemetrySettings and
 	// ClientSettings rows are not part of Config and have none. Report
-	// redacts a Secret row's value after calling it, so an accessor returns
-	// the plain field and never redacts on its own.
+	// redacts a Secret row's value after calling it, so a Secret row's
+	// accessor returns the plain field and never redacts on its own. A plain
+	// row whose value may hold a credential or is not fit for a log line
+	// returns the form the report logs: GOLDIE_GIT_URL redacted,
+	// GOLDIE_GIT_CA_BUNDLE as set or unset.
 	Value func(Config) any
 }
 
@@ -44,6 +47,14 @@ var Settings = []SettingSpec{
 	{Name: EnvRateLimit, Value: func(c Config) any { return c.rateLimitText }, Default: "20/s,burst=40", Meaning: "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers, and the rate is at most 1e9 per second (60000000000/m). The burst has no upper bound, so a very large burst effectively disables the limit. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An MCP tool call counts twice: once for the /mcp request and once for the API request it makes. Every client using the GOLDIE_API_TOKEN shorthand shares one bucket, under the token name api-token. A malformed value stops the server and goldie health."},
 	{Name: EnvMinClientVersion, Value: func(c Config) any { return c.minClientVersionText }, Meaning: "The oldest goldie client the server serves, as a semantic version such as 1.4.0 (MAJOR.MINOR.PATCH, optionally -<prerelease>, without a leading v). The goldie CLI sends X-Goldie-Client: goldie/<version> on every request; on every /api/ path and on /mcp, a client whose version is older (semver precedence, so a prerelease is older than its release) is answered 426 in the error envelope, code upgrade_required, with a hint naming this minimum. Requests without the header, or whose header is not goldie/<semver> (curl, other tools, a dev build), are let through: the header is a courtesy, not a credential. Requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. Unset, there is no gate. A value that is not a semantic version stops the server and goldie health."},
 	{Name: EnvTelemetryClientInfo, Value: func(c Config) any { return c.telemetryClientInfo }, Default: "false", Meaning: "true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on."},
+	{Name: EnvGitURL, Value: func(c Config) any { return redactGitURL(c.GitURL) }, Meaning: "Repository of the git Source: https://host/path, ssh://[user@]host[:port]/path, or file:///path when GOLDIE_GIT_ALLOW_FILE_URL is true. Setting it together with GOLDIE_CONTENT_DIR stops the server and goldie health. goldie server does not serve a git Source yet: for now these settings are only validated. Keep credentials out of it: use GOLDIE_GIT_TOKEN or GOLDIE_GIT_SSH_KEY; the startup report logs the URL with its userinfo, query and fragment redacted. The URL is operator-trusted (ADR-0023): any https or ssh host is accepted, private and internal addresses included. Redirects are followed, but credentials are dropped when a redirect leaves the origin, and a redirect to http is refused. file:// is refused unless GOLDIE_GIT_ALLOW_FILE_URL is true. URLs from anyone but the operator need a new decision first."},
+	{Name: EnvGitRef, Value: func(c Config) any { return c.GitRef }, Meaning: "Branch, tag or full ref name (refs/...) the git Source serves. Unset, the remote's HEAD."},
+	{Name: EnvGitToken, Value: func(c Config) any { return c.GitToken }, Secret: true, Meaning: "Access token for an https GOLDIE_GIT_URL, sent as the basic-auth password. A trailing newline in the file is ignored."},
+	{Name: EnvGitSSHKey, Value: func(c Config) any { return c.GitSSHKey }, Secret: true, Meaning: "Unencrypted PEM private key for an ssh GOLDIE_GIT_URL. The file's lines are kept; only the line breaks (LF or CRLF) at its end are dropped."},
+	{Name: EnvGitSSHKnownHosts, Value: func(c Config) any { return c.GitSSHKnownHosts }, Secret: true, Meaning: "known_hosts lines an ssh GOLDIE_GIT_URL's host key is checked against; nothing skips that check. The file's lines are kept; only the line breaks (LF or CRLF) at its end are dropped."},
+	{Name: EnvGitCABundle, Value: func(c Config) any { return setOrUnset(c.GitCABundle) }, Meaning: "PEM certificates to trust, in addition to the system's, for an https GOLDIE_GIT_URL behind an internal CA. The startup report logs only (set) or (unset)."},
+	{Name: EnvGitAllowFileURL, Value: func(c Config) any { return c.GitAllowFileURL }, Default: "false", Meaning: "true or false. true lets GOLDIE_GIT_URL be a file:// URL, a repository on the server's own filesystem."},
+	{Name: EnvPollInterval, Value: func(c Config) any { return c.pollIntervalText }, Default: "1m", Meaning: "How often every Source is polled for changed content, the dir Source and the git Source alike: a Go duration such as 90s, 1m or 1h30m, at least 10s. A value under 10s or not a duration stops the server and goldie health."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
@@ -70,7 +81,7 @@ var TelemetrySettings = []SettingSpec{
 	{Name: "OTEL_TRACES_SAMPLER_ARG", Default: "1", Meaning: "Sampling ratio from 0 to 1, for the traceidratio samplers."},
 	{Name: "OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", Default: "128", Meaning: "Maximum attributes per span (falls back to OTEL_ATTRIBUTE_COUNT_LIMIT). OTEL_SPAN_EVENT_COUNT_LIMIT, OTEL_SPAN_LINK_COUNT_LIMIT, OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT and OTEL_LINK_ATTRIBUTE_COUNT_LIMIT cap events, links and their attributes, 128 each. A value that is not a non-negative integer fails startup."},
 	{Name: "OTEL_SERVICE_NAME", Default: defaultServiceName, Meaning: "Overrides the service.name resource attribute."},
-	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version and goldie.mode (all), which this cannot override."},
+	{Name: "OTEL_RESOURCE_ATTRIBUTES", Meaning: "Extra resource attributes as key=value pairs with percent-encoded values; a malformed value fails startup. goldie always sets service.version, goldie.role (server) and goldie.mode (all), which this cannot override."},
 }
 
 // EnvToken is the API token the client commands send. It is a secret, so it
@@ -153,6 +164,15 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
 	b.WriteString("printed; goldie logs one fixed warning instead. Only the OTLP headers variables\n")
 	b.WriteString("accept a _FILE form; for any other OTEL_* name it is an error.\n\n")
+	b.WriteString("The client commands and `goldie mcp --transport stdio` export traces only, with the resource\n")
+	b.WriteString("attribute `goldie.role` `cli` or `mcp` (the server's is `server`; `goldie.mode` stays a server\n")
+	b.WriteString("mode and is not set on them): one client span per API call, sent to the server as a W3C `traceparent`. The\n")
+	b.WriteString("server starts its own trace and links its span to the client span. A client span records no\n")
+	b.WriteString("query string or header, and an article lookup's path only as /api/v1/articles/{id}, which\n")
+	b.WriteString("appears percent-encoded in `url.full` as /api/v1/articles/%7Bid%7D. The logs and metrics\n")
+	b.WriteString("variables do not apply to them, nor does `" + EnvTelemetryClientInfo + "`. An invalid value of a\n")
+	b.WriteString("variable they read makes them fail at start, naming the variable (PC-04). They send their\n")
+	b.WriteString("spans for at most 2 seconds on exit, and the fixed warning goes to stderr.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
 	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")

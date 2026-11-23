@@ -60,13 +60,12 @@ var activityKeepalive = api.DefaultActivityKeepalive
 // builds the public listener with it, and the tests build the bare router
 // with it, so the route table they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
-	srv, err := api.NewServer(provider)
+	activity := api.NewActivity(activityCapacity, "", nil)
+	srv, err := api.NewServer(provider, api.RecordInto(activity))
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
-		activity: api.NewActivity(activityCapacity, "", nil)}
-	srv.RecordInto(m.activity)
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity}
 	srv.KeepStreamsAlive(activityKeepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
@@ -104,7 +103,7 @@ var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
 // operatorPaths are the operations for operator tokens only. The token check
 // comes before the gate and the rate limit, so a reader's 403 costs no token.
-var operatorPaths = map[string]bool{"/api/v1/activity": true}
+var operatorPaths = map[string]bool{"/api/v1/activity": true, "/api/v1/sync": true}
 
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
@@ -253,13 +252,23 @@ func contentLoadError(err error) error {
 // "content does not load: " and the loader's reason, the words server -dev
 // ends with; it never names dir.
 func ValidateDir(ctx context.Context, dir string) error {
+	_, err := ValidateDirWarnings(ctx, dir)
+	return err
+}
+
+// ValidateDirWarnings is ValidateDir that also returns the load's warnings,
+// the findings that do not fail it, such as a suppress reference that names
+// nothing. Each names a file relative to dir, is printable ASCII and at most
+// 1 KiB, so a caller may print it as it is.
+func ValidateDirWarnings(ctx context.Context, dir string) ([]string, error) {
 	if dir == "" {
 		dir = "."
 	}
-	if _, err := loadDir(ctx, dir); err != nil {
-		return contentLoadError(err)
+	syncer, err := loadDir(ctx, dir)
+	if err != nil {
+		return nil, contentLoadError(err)
 	}
-	return nil
+	return syncer.Status().Warnings, nil
 }
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
@@ -333,9 +342,6 @@ func (e *ConfigError) Unwrap() error { return e.err }
 // sourceDirCheck is the name of the dir Source's readiness check (PC-02).
 const sourceDirCheck = "source:dir"
 
-// dirPollInterval is how often the dir Source is polled for changed content.
-const dirPollInterval = 30 * time.Second
-
 // Public is the handler of the public listener and the owner of its Source's
 // Syncer.
 // It embeds the router, so it is an http.Handler and counts rate limit rejections.
@@ -343,12 +349,13 @@ const dirPollInterval = 30 * time.Second
 type Public struct {
 	*publicMux
 	syncer  *engine.Syncer
+	poll    time.Duration // GOLDIE_POLL_INTERVAL
 	mu      sync.Mutex
 	started bool
 	loops   sync.WaitGroup // the poll loop Start runs
 }
 
-// Start runs the dir Source's poll loop until ctx ends, ends the open activity
+// Start runs the dir Source's poll loop, at GOLDIE_POLL_INTERVAL, until ctx ends, ends the open activity
 // streams when it does, and registers its
 // readiness check, "source:dir", with reg. It does not block. The check is
 // ready while the Syncer holds a Snapshot, so a stale Source stays ready and
@@ -368,7 +375,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		return
 	}
 	p.started = true
-	p.loops.Go(func() { p.syncer.Run(ctx, dirPollInterval, nil) })
+	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, nil) })
 	// The first stop signal ends the activity streams: Shutdown waits for
 	// open requests and never cancels them, so a stream would hold it for
 	// the whole grace period (PC-08).
@@ -409,8 +416,8 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 }
 
 // newPublic builds the public handler over a loaded Syncer and a parsed token
-// set; cfg supplies the rate limit, the minimum client version and the
-// Swagger UI switch. PublicHandler and Local share it, so a local server
+// set; cfg supplies the rate limit, the minimum client version, the Swagger
+// UI switch and the poll interval. PublicHandler and Local share it, so a local server
 // serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, logger *slog.Logger) (*Public, error) {
 	m, err := newPublicMuxWith(syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
@@ -434,5 +441,7 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, l
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
 	addUI(m, notFound, logger)
-	return &Public{publicMux: m, syncer: syncer}, nil
+	// LoadConfig never yields less than the floor; a Config built by hand
+	// (zero) gets it too, never a busy loop.
+	return &Public{publicMux: m, syncer: syncer, poll: max(cfg.PollInterval, platform.MinPollInterval)}, nil
 }

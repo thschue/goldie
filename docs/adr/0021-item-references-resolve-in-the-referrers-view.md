@@ -1,6 +1,6 @@
 # 21. Item references are `<kind>:<name>`, resolved in the referrer's view
 
-Status: proposed
+Status: accepted
 
 ## Context
 

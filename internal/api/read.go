@@ -124,7 +124,7 @@ var notReady = envelope("not_ready", "content is still loading",
 type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
-	activity *Activity // see RecordInto
+	activity *Activity // see RecordInto, nil records nothing
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -135,20 +135,24 @@ var _ contract.StrictServerInterface = (*Server)(nil)
 
 // NewServer returns the Server that reads provider() on every request. A nil
 // result means no load has succeeded yet, and the read answers 503 not_ready.
-func NewServer(provider func() *engine.Snapshot) (*Server, error) {
+func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server, error) {
 	specJSON, err := contract.SpecJSON()
 	if err != nil {
 		return nil, err
 	}
-	return &Server{provider: provider, specJSON: specJSON,
-		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}, nil
+	s := &Server{provider: provider, specJSON: specJSON,
+		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}
+	for _, o := range opts {
+		o(s)
+	}
+	return s, nil
 }
 
 // Register registers the spec's operations on m through the generated router,
 // as "METHOD path" patterns. Every response carries
 // X-Content-Type-Options: nosniff, parameters the router cannot decode are the
 // 400 envelope, a response that cannot be written is the 500 envelope, and
-// every answered search and lookup is recorded (RecordInto). HEAD on the
+// every answered search and lookup is recorded when the Server was built with RecordInto. HEAD on the
 // activity stream sends its headers and ends (headOnly).
 func (s *Server) Register(m contract.ServeMux) {
 	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly},
@@ -220,6 +224,9 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 	proj, hint := scopeHint(snap, project)
 	a, ok := snap.ArticleIn(proj, req.Id, opts)
 	if !ok {
+		if ref, file, hidden := snap.SuppressedIn(proj, req.Id); hidden {
+			return contract.GetArticle404JSONResponse(envelope("not_found", "no such article", suppressedHint(project, ref, file))), nil
+		}
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			"Search for the article with the search operation, then use an id from its results.")), nil
 	}
@@ -233,6 +240,60 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		Status:     status,
 		ReplacedBy: replacedBy,
 	}, nil
+}
+
+// suppressedHint says which Suppression hides a global Item from a Project and
+// which file sets it. The Project is a checked ProjectId, the reference an
+// Item id the load validated and the file is built from validated segments, so
+// the text holds no markup or line break.
+func suppressedHint(project checkedProject, ref, file string) string {
+	return "The Project " + string(project) + " suppresses " + ref + " in " + file +
+		". Remove that entry to read the Item, or look it up without the project."
+}
+
+// GetProject answers GET /api/v1/projects/{id}. The router hands over the id
+// decoded, one %2F-encoded segment (ADR 0016); one that is not a ProjectId is
+// a 400 that does not echo it.
+func (s *Server) GetProject(_ context.Context, req contract.GetProjectRequestObject) (contract.GetProjectResponseObject, error) {
+	if !contract.ValidProjectID(req.Id) {
+		return contract.GetProject400JSONResponse(envelope("bad_request", "invalid project",
+			"Pass the Project as host/org/repo in one path segment, for example github.com%2Facme%2Fshop.")), nil
+	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetProject503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	scope, registered := snap.Project(req.Id)
+	if !registered {
+		return contract.GetProject404JSONResponse(envelope("not_found", "no such Project",
+			"List the registered Projects with the projects operation. To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team.")), nil
+	}
+	return contract.GetProject200JSONResponse{Id: scope, Suppressions: list(snap.Suppressions(scope))}, nil
+}
+
+// GetSync answers GET /api/v1/sync, for operator tokens only (the app guards
+// the path): the load's warnings, already escaped and cut by the engine.
+func (s *Server) GetSync(context.Context, contract.GetSyncRequestObject) (contract.GetSyncResponseObject, error) {
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetSync503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	warnings := []contract.ContentWarning{}
+	for _, w := range snap.Warnings() {
+		warnings = append(warnings, contentWarning(w))
+	}
+	return contract.GetSync200JSONResponse{Warnings: warnings}, nil
+}
+
+// contentWarning splits an engine warning, "<file>: <message>", at the first
+// ": ". The file is built from validated path segments and holds none. A
+// warning without one is all message.
+func contentWarning(w string) contract.ContentWarning {
+	file, message, ok := strings.Cut(w, ": ")
+	if !ok {
+		return contract.ContentWarning{Message: w}
+	}
+	return contract.ContentWarning{File: file, Message: message}
 }
 
 // ListProjects answers GET /api/v1/projects.

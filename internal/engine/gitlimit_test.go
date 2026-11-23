@@ -300,7 +300,7 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 		t.Fatalf("fixture: unpacking took only %s; the pack no longer takes long to unpack", unpack)
 	}
 	if unpack < 4*transfer {
-		t.Skipf("unpacking took %s after a %s transfer; the machine is too loaded to place a deadline inside unpacking", unpack, transfer)
+		t.Skipf("TIMING-SKIP: unpacking took %s after a %s transfer; the machine is too loaded to place a deadline inside unpacking", unpack, transfer)
 	}
 
 	// The deadline falls a quarter of the way into unpacking. The timings of
@@ -334,7 +334,7 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 		}
 	}
 	if !placed {
-		t.Skipf("the pack never arrived before the %s deadline: the machine is too loaded to place it inside unpacking", deadline)
+		t.Skipf("TIMING-SKIP: the pack never arrived before the %s deadline: the machine is too loaded to place it inside unpacking", deadline)
 	}
 	want := "git source: timed out after " + deadline.String()
 	if err == nil || err.Error() != want {

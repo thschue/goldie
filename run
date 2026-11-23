@@ -18,6 +18,8 @@
 #   ./run sync-agents  copy example agent Items to .claude/agents
 #   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs)
 #   ./run ui         build the SPA (npm ci, vite build in web/) into internal/ui/dist/app; needs Node, not part of check
+#   ./run ux         build, serve examples/knowledge and run the Playwright specs in web/e2e
+#                    (screenshots, axe) into ux/, the CI artifact for the UX review; needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run versions   print the toolchain versions this repository expects
@@ -420,7 +422,28 @@ cmd_vuln() {
 
 cmd_test() {
 	say "go test"
-	go test -count=1 "$@" ./...
+	# -v is what prints a skip's message. The output goes to a file so go
+	# test's exit status survives, then is shown without the per-test
+	# progress lines. Skips of timing-sensitive tests ("TIMING-SKIP:" message
+	# prefix) are summarised afterwards; this only reports, it never fails.
+	out=$(mktemp) || die "test: mktemp failed"
+	status=0
+	go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
+	# tr drops NUL bytes first, and both run under LC_ALL=C: grep would otherwise
+	# treat the file as binary and swallow the failure text, and a UTF-8 locale
+	# makes BSD tr stop at, and GNU grep flag, invalid UTF-8. tr is POSIX; grep -a is not.
+	LC_ALL=C tr -d '\000' <"$out" | LC_ALL=C grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' || true
+	# go test -v streams a test's log lines between its "=== RUN" and its
+	# "--- SKIP", so the test is the latest name from a RUN/NAME/CONT line.
+	skipped=$(LC_ALL=C tr -d '\000' <"$out" | awk '
+		/^=== (RUN|NAME|CONT)[ \t]/ { n = $3 }
+		/^[ \t]+[^ \t:]+:[0-9]+: TIMING-SKIP:/ { if (n != "" && !(n in seen)) { seen[n] = 1; print n } }
+	' | tr '\n' ' ')
+	rm -f "$out"
+	if [ -n "$skipped" ]; then
+		printf 'run: timing-sensitive test(s) skipped: %s\n' "${skipped% }" >&2
+	fi
+	return "$status"
 }
 
 # Generated files, relative to the repository root.
@@ -453,8 +476,92 @@ cmd_ui() {
 	command -v npm >/dev/null 2>&1 || die "npm not found: ./run ui needs Node"
 	say "ui: npm ci"
 	(cd web && npm ci) || die "npm ci failed in web/"
+	if [ ! -f web/index.html ]; then
+		say "ui: web/ has no Vite app yet (no index.html); the server serves the placeholder"
+		return 0
+	fi
 	say "ui: vite build"
 	(cd web && npx vite build --outDir ../internal/ui/dist/app --emptyOutDir) || die "vite build failed"
+}
+
+# ux: the screenshot and axe evidence for the UX review (handoff §7, §12). It
+# builds the UI and the binary, serves examples/knowledge on loopback with a
+# throwaway token and free ports, and runs the Playwright specs in web/e2e
+# against it. Everything lands in ux/ (screenshots, report, server log), which
+# the CI job uploads as the ux artifact. A reviewer tool like red-check, not
+# part of check: it needs Node and a browser. The trap always stops the server.
+UX_DIR=ux
+cmd_ux() {
+	rm -rf "$UX_DIR"
+	mkdir -p "$UX_DIR" || die "cannot create $UX_DIR/"
+	cmd_ui
+	say "ux: playwright install chromium"
+	# --with-deps installs the browser's system libraries, which needs root:
+	# CI only. --no never downloads an unpinned playwright.
+	(cd web && npx --no playwright install ${CI:+--with-deps} chromium) || die "playwright install failed"
+	ux_tmp=$(mktemp -d) || die "cannot create a temporary directory"
+	ux_pid=
+	trap ux_stop EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	say "ux: go build"
+	go build -o "$ux_tmp/goldie" ./cmd/goldie || die "go build failed"
+	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/token") ||
+		die "cannot create the throwaway token"
+	say "ux: goldie server on examples/knowledge"
+	(ux_goldie 127.0.0.1:0 server) >"$UX_DIR/server.log" 2>&1 &
+	ux_pid=$!
+	i=0
+	while :; do
+		kill -0 "$ux_pid" 2>/dev/null || ux_fail "goldie server exited during startup"
+		app=$(ux_addr app)
+		admin=$(ux_addr admin)
+		if [ -n "$app" ] && [ -n "$admin" ] && (ux_goldie "$admin" health --ready) >/dev/null 2>&1; then
+			break
+		fi
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || ux_fail "goldie server not ready after 30 seconds"
+		sleep 1
+	done
+	say "ux: playwright test against http://$app"
+	status=0
+	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" npx --no playwright test) || status=$?
+	[ "$status" = 0 ] || die "ux: the Playwright specs failed; the report is in $UX_DIR/"
+	say "ux: screenshots and report in $UX_DIR/"
+}
+
+# ux_goldie <admin-addr> <args>: exec the built binary with only the
+# configuration ./run ux sets, since a token or address from the caller's
+# environment would clash with it. Port 0 on loopback takes a free port, which
+# the server logs (ux_addr). Call it in a subshell: it changes the environment
+# and execs, so the subshell's pid is goldie's.
+ux_goldie() {
+	for v in $(env | sed -n 's/^\(GOLDIE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+	export GOLDIE_ADMIN_ADDR="$1" GOLDIE_ADDR=127.0.0.1:0 GOLDIE_DRAIN_SECONDS=0 \
+		GOLDIE_CONTENT_DIR="$ROOT/examples/knowledge" GOLDIE_API_TOKEN_FILE="$ux_tmp/token"
+	shift
+	exec "$ux_tmp/goldie" "$@"
+}
+
+# ux_addr <listener>: the address the server logged for the app or admin listener.
+ux_addr() {
+	grep '"msg":"listening"' "$UX_DIR/server.log" | grep "\"listener\":\"$1\"" |
+		sed -n 's/.*"addr":"\([^"]*\)".*/\1/p' | head -n 1
+}
+
+# ux_fail prints the server log, which stays in ux/ for the artifact, and fails.
+ux_fail() {
+	printf 'run: ux: %s; the server log (%s/server.log):\n' "$1" "$UX_DIR" >&2
+	cat "$UX_DIR/server.log" >&2
+	exit 1
+}
+
+ux_stop() {
+	if [ -n "$ux_pid" ]; then
+		kill "$ux_pid" 2>/dev/null || :
+		wait "$ux_pid" 2>/dev/null || :
+	fi
+	rm -rf "$ux_tmp"
 }
 
 cmd_regen() {
@@ -609,6 +716,7 @@ vuln) cmd_vuln ;;
 sync-agents) cmd_sync_agents ;;
 regen) cmd_regen ;;
 ui) cmd_ui ;;
+ux) cmd_ux ;;
 regen-check) cmd_regen_check ;;
 regen-fixture) cmd_regen_fixture ;;
 versions) cmd_versions ;;

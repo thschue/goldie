@@ -9,10 +9,12 @@ import (
 // tie-break is what puts tied hits in order, and repeats query words, so
 // Matched must drop duplicates.
 func TestSearchTieBreakAndRepeats(t *testing.T) {
-	snap := &Snapshot{articles: []Article{
+	articles := []Article{
 		{ID: "zeta", Name: "Zeta", Keywords: []string{"sql"}},
 		{ID: "alpha", Name: "Alpha", Keywords: []string{"sql"}},
-	}}
+	}
+	// Indexed like newSnapshot does, but not sorted, which newSnapshot would.
+	snap := &Snapshot{articles: articles, index: indexArticles(articles)}
 	type hit struct {
 		id      string
 		score   int

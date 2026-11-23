@@ -161,13 +161,26 @@ func escapeHidden(quoted string) string {
 	return b.String()
 }
 
+// viewOf is the Project whose view a's references resolve in: a's own
+// Project, or "" (global only) for a global Item.
+func viewOf(a *Article) string {
+	if a.Scope == ScopeGlobal {
+		return ""
+	}
+	return a.Scope
+}
+
 // articleFile is the path of a's file relative to the Source root, as
 // loadArticles found it.
 func articleFile(a *Article) string { return a.file }
 
 // checkReplacements fails when a replaced_by does not resolve in its
 // referrer's view, names the Item itself, names a draft or is part of a cycle.
-// A global Item sees global only; a project Item sees its Project, then global.
+// A global Item sees global only; a project Item sees its Project, then
+// global, less the global Items the Project suppresses (#367), by winner's
+// rule with drafts readable (resolve), so a draft target fails as a draft and
+// a Project draft never shadows an enforced global target (#359). The
+// suppression check comes first, so the error names the project.yaml.
 func (s *Snapshot) checkReplacements() error {
 	all := s.allArticles()
 	next := make(map[*Article]*Article, len(all))
@@ -179,9 +192,9 @@ func (s *Snapshot) checkReplacements() error {
 		if err != nil { // parseArticle has already checked it
 			return fmt.Errorf("%s: replaced_by %s: %w", articleFile(a), quoteRef(a.ReplacedBy), err)
 		}
-		view := a.Scope
-		if view == ScopeGlobal {
-			view = ""
+		view := viewOf(a)
+		if file, hidden := s.suppressingFile(view, key); hidden {
+			return fmt.Errorf("%s: replaced_by %s names an Item %s suppresses", articleFile(a), quoteRef(a.ReplacedBy), file)
 		}
 		target := s.resolve(view, key)
 		switch {
@@ -234,8 +247,8 @@ func (s *Snapshot) checkEnforced() error {
 
 // enforces reports whether the global Item key is published and enforced, so
 // no Project Item shadows it (ADR 0021). checkEnforced fails a load in which a
-// published Project copy does; reads skip a draft copy, which only the drafts
-// view would otherwise let shadow it (#359).
+// published Project copy does; winner, the one shadowing rule, skips a draft
+// copy, which only the drafts view would otherwise let shadow it (#359).
 func (s *Snapshot) enforces(key itemKey) bool {
 	g := s.index[key]
 	return g != nil && g.Enforced && g.published()

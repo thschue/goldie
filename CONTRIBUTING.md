@@ -16,6 +16,20 @@ Thanks for helping. Agents follow the same rules; the agent-specific mechanics a
 5. The PR title is a Conventional Commit (`feat:`, `fix:`, `docs:`, ...). PRs are squash-merged, so the
    title becomes the commit message and drives release notes.
 
+## UI evidence
+
+A PR that changes the UI (`web/**`, `internal/ui/**`, `docs/design/**`) carries screenshot evidence
+for the UX review. `./run ux` produces it: it needs Node (the version in `web/.nvmrc`) and downloads
+Playwright's Chromium on first use. It builds the UI and the binary, serves `examples/knowledge` on
+loopback, and runs the Playwright specs in `web/e2e/`: screenshots at 375, 768 and 1280 px in light
+and dark (`shell-<width>-<theme>[-drawer].png`), axe with zero violations, no horizontal scroll and
+targets of at least 44 px. The target check exempts only controls that are not rendered or are visually
+hidden (1 px or less, such as a skip link until it is focused) and `display: inline` links inside a
+paragraph (`<p>`), the inline exception of WCAG 2.5.5; every other control must measure 44 px both
+ways. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
+`ux/` as the `ux` artifact. The screenshots stay artifacts: never commit them to
+`docs/design/screenshots/`, which holds the design references.
+
 Use the vocabulary in [CONTEXT.md](CONTEXT.md). Record a decision as an ADR in [docs/adr/](docs/adr/)
 only when it is hard to reverse, surprising and a real trade-off.
 

@@ -39,7 +39,10 @@ made for `search` and `lookup`; `status` instead reports it on its `Project:` li
 the `Project:` line, and `--json` adds `projectHint`. The Project is `--project`, else
 `GOLDIE_PROJECT`, else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream`
 (or `origin`) git remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git
-need not be installed, and credentials in a remote URL are never printed. The sync state arrives
+need not be installed, and credentials in a remote URL are never printed. When the server holds the
+Project and suppresses global articles for it, `status` lists them on a `Suppressions:` line after
+the `Project:` line (`--json` adds a `suppressions` array); a lookup of one fails with a hint naming
+the Suppression and the `project.yaml`. The sync state arrives
 with the sync work (#6). `goldie lookup` of a deprecated article prints
 `Warning: this article is deprecated. Use <replacement> instead.` on stderr, naming the replacement
 when there is one; stdout, `--json` included, carries only the article.

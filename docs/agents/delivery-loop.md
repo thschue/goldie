@@ -118,9 +118,8 @@ reason), consults, test change requests, and harness feedback filed.
 - **Models:** `implementer` and `test-author` on `sonnet`, `opus` when the issue's cited paths are
   risk paths (the review table); `reviewer` and `ux-designer` on `sonnet`; `architect` and
   `security-reviewer` on `opus`.
-- **Size:** about 400 changed lines without tests and generated code (`./run size`). Over 600, the
-  implementer reports a slice list; the stream keeps the first slice, the product session files
-  the rest.
+- **Size:** about 400 changed lines without tests and generated code (`./run size`); over 600, a
+  slice list (first slice stays, the rest is filed). Same-job fixes never count.
 - **Found-fixes** become streams of this session when a slot is free; until then, ready drafts. A
   MEDIUM+ security bug on `main` takes the [disclosure](./README.md#disclosure-and-quoting) path in
   the same tick (draft advisory, private fork); tell the user the id.

@@ -50,7 +50,9 @@
 // scoring of ADR 0005. Each takes an optional ReadOptions; by default draft
 // Items are left out, and a draft left out never shadows anything, so the
 // published Item with the same identity answers. ReadOptions{Drafts: true}
-// includes drafts, and a draft then shadows like any other Item.
+// includes drafts, and a draft then shadows like any other Item, except that
+// no Project copy shadows an enforced global Item. Snapshot.winner is the one
+// rule for which copy answers; reads and load checks all go through it.
 // Snapshot.Articles lists every global Item, drafts included, and is not a
 // reader view.
 //

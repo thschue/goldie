@@ -125,9 +125,11 @@ func yamlErr(err error) error {
 }
 
 // applySuppressions resolves a Project's suppress references in its own
-// Resolution view, published Items only (#353): its published copy first, then
-// the published global Item. A reference to the Project's own Item, or to an
-// enforced global Item, fails the load. One that resolves to nothing, a draft
+// Resolution view by winner's rule, published Items only (#353): its published
+// copy first, then the published global Item, and the global copy when it is
+// enforced (#359). A reference to the Project's own Item, or to an enforced
+// global Item, fails the load. The Project's suppressions are set only at the
+// end, so they never change how its own references resolve here. One that resolves to nothing, a draft
 // included, is a warning, so another team's deletion never fails this Project.
 // It is called only while loading, after the Project is added.
 func (s *Snapshot) applySuppressions(scope string, refs []string) error {
@@ -188,8 +190,44 @@ func (s *Snapshot) Suppressions(project string) []string {
 	return append([]string{}, p.suppressions...)
 }
 
-// suppressedIn returns the global Items proj hides, or nil.
-func (s *Snapshot) suppressedIn(proj string) map[itemKey]bool {
-	p, _ := s.lookupProject(proj)
-	return p.suppressed
+// SuppressedIn reports whether a global article is hidden from proj by a
+// Suppression: no copy answers in proj's view under opts (winner's rule), yet
+// the Project suppresses a global article visible under opts. It returns the
+// Suppression as article:<ID> in the ID's loaded spelling and the project.yaml
+// that sets it, relative to the Source root.
+func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file string, ok bool) {
+	o := readOpts(opts)
+	p, registered := s.lookupProject(proj)
+	if !registered {
+		return "", "", false
+	}
+	key := keyOf(KindArticle, id)
+	if s.winner(proj, key, o) != nil || !p.suppressed[key] {
+		return "", "", false
+	}
+	a := s.index[key]
+	if a == nil || !o.visible(*a) {
+		return "", "", false
+	}
+	return KindArticle + ":" + a.ID, projectsDir + "/" + p.scope + "/" + projectFileName, true
+}
+
+// Warnings returns the load's findings that did not fail it, such as a suppress
+// reference that names nothing, as SyncStatus.Warnings describes them. The
+// caller owns the slice.
+func (s *Snapshot) Warnings() []string {
+	return append([]string{}, s.warnings...)
+}
+
+// suppressingFile returns proj's project.yaml, relative to the root, when
+// proj suppresses the global Item key, so a reference from one of its articles
+// can name why key is hidden. A draft Project copy neither shadows nor stops
+// the suppression, and applySuppressions fails the load on a published one.
+// The path is built from validated Project segments, so it is printable ASCII.
+func (s *Snapshot) suppressingFile(proj string, key itemKey) (string, bool) {
+	p, ok := s.lookupProject(proj)
+	if !ok || !p.suppressed[key] {
+		return "", false
+	}
+	return projectsDir + "/" + p.scope + "/" + projectFileName, true
 }

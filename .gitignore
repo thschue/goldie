@@ -46,3 +46,6 @@ node_modules/
 
 # UI build output (./run ui, ADR 0019)
 internal/ui/dist/app/
+
+# UX evidence (./run ux): screenshots, report and server log, a CI artifact only
+/ux/
