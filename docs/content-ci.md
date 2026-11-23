@@ -117,6 +117,29 @@ A lookup of a suppressed article answers 404 with a hint that names the referenc
 Only the file directly in a Project directory counts. A `project.yaml` directly under `projects/`,
 a host or an org directory is a layout error; one deeper inside a Project is ignored.
 
+## The local Scope: `.goldie/`
+
+A repository's own `.goldie/` is the local Scope (CONTEXT: Scope), read by the engine's local
+Source (`engine.NewLocalSource`). The server does not serve it yet; the embedded server of #390
+will.
+
+- `.goldie/articles/**/*.md` are local articles, written like global ones. Resolution is local,
+  then project, then global, for `ArticleIn` and `SearchIn`. A local article answers in every
+  view, whichever Project is asked for, because the engine is not told which Project the checkout
+  is. On an equal search score, local hits sort before project hits, then global ones.
+- `.goldie/config.yaml` takes `suppress` as `project.yaml` does, hiding global articles in every
+  view. It may also hold `project`, `addr` and `dir`, which the client reads and the engine
+  ignores. Any other key fails the load.
+- A published local article that shadows an `enforced: true` article at any wider Scope, the
+  global one or any Project's, fails the load. The error names both as `article:<name>`. A local
+  draft shadows nothing, and a local suppression of an enforced article fails the load.
+- References from local articles (`replaced_by`, lookup lines, `suppress`) resolve in the local
+  view: local, then global. A dangling or suppressed one fails the load. Global and Project
+  articles never see local ones.
+- `.goldie`, `articles` and `config.yaml` are read through `os.Root`. A symlink, a FIFO or the
+  wrong file type fails the load, with the same size caps and case-insensitive ids as elsewhere.
+  Errors name `.goldie/...` paths only. A missing `.goldie` is an empty local Scope.
+
 ## Pipeline snippet
 
 Put the `goldie` binary on `PATH` in your pipeline, then fail the job on a non-zero exit:

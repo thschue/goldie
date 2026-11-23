@@ -12,11 +12,14 @@ const (
 	scoreSubstring    = 1
 )
 
-// The Kind and Scope of every Item the dir Source loads today (CONTEXT: Kind,
-// Scope). Each search result carries both (ADR 0005).
+// The Kind and Scope of every Item the Sources load today (CONTEXT: Kind,
+// Scope). Each search result carries both (ADR 0005). A Project Item's Scope is
+// its "host/org/repo", which holds a slash, so it never equals a name here.
 const (
 	KindArticle = "article"
 	ScopeGlobal = "global"
+	// ScopeLocal is the repository's own .goldie/ (NewLocalSource).
+	ScopeLocal = "local"
 )
 
 // Hit is a search result: the article without its content, plus why it matched.
@@ -69,7 +72,8 @@ func (s *Snapshot) Search(query string, opts ...ReadOptions) []Hit {
 // SearchIn is Search for a Project ("host/org/repo", case-insensitive). The
 // Project's articles take part together with the global ones; when both have an
 // ID, the one winner picks answers and the other is dropped. On equal score
-// Project hits sort before global ones, then by ID. An empty or unregistered
+// local hits sort before Project ones and Project ones before global ones, then
+// by ID. A local Item takes part in every view (NewLocalSource). An empty or unregistered
 // Project searches the global articles only. Draft Items are left out unless
 // opts asks for them. Deprecated Items are served and shadow. Which copy of
 // each Item answers is winner's rule.
@@ -96,12 +100,24 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 		if hits[i].Score != hits[j].Score {
 			return hits[i].Score > hits[j].Score
 		}
-		if gi, gj := hits[i].Scope == ScopeGlobal, hits[j].Scope == ScopeGlobal; gi != gj {
-			return gj
+		if ri, rj := scopeRank(hits[i].Scope), scopeRank(hits[j].Scope); ri != rj {
+			return ri < rj
 		}
 		return hits[i].ID < hits[j].ID
 	})
 	return hits
+}
+
+// scopeRank orders Scopes on equal score: local, then Project, then global
+// (Resolution's order).
+func scopeRank(scope string) int {
+	switch scope {
+	case ScopeLocal:
+		return 0
+	case ScopeGlobal:
+		return 2
+	}
+	return 1
 }
 
 func scoreArticle(a Article, words []string) Hit {
