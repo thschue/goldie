@@ -17,13 +17,8 @@ const narrow = ref(false);
 const root = ref<HTMLElement>();
 let media: MediaQueryList | undefined;
 
-const copy = computed(() =>
-  status.value === 'failed'
-    ? "Couldn't load Projects. Close and open the selector to try again."
-    : status.value === 'ready'
-      ? 'No Projects registered yet.'
-      : 'Loading Projects…',
-);
+const notes = { failed: "Couldn't load Projects. Close and open the selector to try again.", ready: 'No Projects registered yet.' };
+const copy = computed(() => notes[status.value as 'failed' | 'ready'] ?? 'Loading Projects…');
 const key = (id: string) => id.toLowerCase();
 const registered = computed(() => projects.value.some((p) => key(p) === key(current.value)));
 const label = (id: string) => (narrow.value ? id.split('/').slice(-2).join('/') : id);
@@ -39,7 +34,6 @@ async function load() {
   }
 }
 
-// The active option is set once the list is there, so the current Project is pre-selected.
 async function show() {
   open.value = true;
   await load();
@@ -129,9 +123,9 @@ watch(current, (id) => {
       @keydown="onKeydown"
       @keyup.space.prevent
     >
-      <span v-if="current" id="project-value" class="id">{{ label(current) }}</span>
-      <span v-else id="project-value" class="id">Choose a Project</span>
+      <span id="project-value" class="id">{{ current ? label(current) : 'Choose a Project' }}</span>
       <span v-if="current && loaded" id="project-chip" class="chip" :class="registered ? 'yes' : 'no'">
+        <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path v-if="registered" d="M2.5 6.5l2.5 2.5 4.5-5.5" /><circle v-else cx="6" cy="6" r="4" /></svg>
         {{ registered ? 'registered' : 'unregistered' }}
       </span>
       <svg class="caret" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
@@ -207,6 +201,7 @@ watch(current, (id) => {
 .chip.no {
   border-style: dashed;
 }
+.chip svg,
 .caret {
   flex: none;
   fill: none;

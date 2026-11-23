@@ -264,7 +264,6 @@ main:focus-visible {
   }
 }
 
-/* On a phone the word goes (the link keeps its name) so the selector has room. */
 @media (width < 480px) {
   .topbar {
     gap: var(--space-2);

@@ -77,7 +77,6 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
       <div v-for="n in 4" :key="n" class="bar"></div>
     </div>
 
-    <!-- §5.1: a rate limit is an inline warning with a countdown; any other error is the danger Alert. -->
     <div v-else-if="state === 'error' && limited" class="box warning">
       <p role="status">
         <span class="sr-only">Too many requests. Try again shortly.</span>
@@ -91,7 +90,7 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
     </div>
 
     <template v-else>
-      <p class="lead">Same golden path your agents follow — {{ items.length }} {{ items.length === 1 ? 'Item' : 'Items' }} for <span class="mono">{{ project }}</span>.</p>
+      <p class="lead">Same golden path your agents follow — {{ items.length }} {{ items.length === 1 ? 'Item' : 'Items' }} for {{ project }}.</p>
       <p v-if="view?.hint" class="hint">{{ view.hint }}</p>
       <div v-if="!items.length" role="status" class="panel">No articles for {{ project }} yet.</div>
       <ul v-else class="items">
@@ -100,10 +99,11 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
           <bdi class="name">{{ item.name }}</bdi>
           <span class="badge">{{ item.scope }}</span>
           <span class="badge" :class="item.status === 'deprecated' ? 'deprecated' : 'published'">
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path v-if="item.status === 'published'" d="M6 1.5a4.5 4.5 0 100 9 4.5 4.5 0 000-9zM3.8 6.2l1.6 1.6 2.9-3.2" /><path v-else d="M6 1.5l5 9H1zM6 5v2.5M6 9v.1" /></svg>
             <span>{{ item.status }}</span>
             <span v-if="item.replaced_by"> → <code>{{ item.replaced_by }}</code></span>
           </span>
-          <span v-if="item.enforced" class="badge">enforced</span>
+          <span v-if="item.enforced" class="badge"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M6 1l4.5 1.5v3.2c0 2.6-1.8 4.3-4.5 5.3C3.3 10 1.5 8.3 1.5 5.7V2.5z" /></svg><span>enforced</span></span>
         </li>
       </ul>
     </template>
@@ -184,12 +184,11 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   border-radius: var(--radius-md);
   background: var(--surface-1);
 }
-.mono,
-code {
+code,
+.name {
   font-family: var(--font-mono);
 }
 .name {
-  font-family: var(--font-mono);
   flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -204,6 +203,13 @@ code {
   border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--text-sm);
+}
+.badge svg {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
 }
 .kind {
   border-color: transparent;
