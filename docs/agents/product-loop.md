@@ -38,8 +38,8 @@ Each step runs only after the steps before it are done.
    - **Value check:** is the user, security or maintenance benefit worth a stream (about 30 min of
      agents and a review)? If not, close it `wontfix`: "overengineered: <why>" (the architect's view
      for a refactor). Tier 1 for issues the loops filed, tier 2 for the maintainer's.
-   - Bundle the remaining follow-ups by area into the oldest issue (a checklist; the rest close as
-     duplicates). Then apply exactly one verdict, and a priority level with `ready-for-agent`:
+   - Fold each follow-up into the open issue that touches the same code or first makes it matter
+     (any area), else bundle by area. Then one verdict, plus a priority level with `ready-for-agent`:
 
    | Verdict | When |
    |---|---|

@@ -22,7 +22,8 @@ codebase over a new mechanism.
 3. **Sweep the class:** for each finding, search the whole diff for the same mistake (a sibling
    handler, setting or path), and report all instances as one finding.
 4. **Classify** by the severity table. CRITICAL, HIGH and MEDIUM are blocking; LOW is not, and
-   carries `fix: now` (about 20 lines, in files the PR touches) or `fix: follow-up`.
+   carries `fix: now` (about 20 lines in the PR's files, or the same job done elsewhere, such as a
+   second copy of what the PR changes, at any size) or `fix: follow-up`.
 5. **On `main`:** a MEDIUM-or-worse finding that already exists on `main` is never described
    publicly. Report it with class and area only, `on_main: true`, and the advisory text below for the
    orchestrator.

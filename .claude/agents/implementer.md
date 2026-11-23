@@ -33,7 +33,8 @@ orchestrator passes you.
 5. **Dependencies** only when the issue needs one: add them with the tooling (`go get`), never by
    editing a lockfile, and write the dependency brief into the PR body.
 6. **Bugs you find** are fixed now:
-   - in this PR when they're in code you change;
+   - in this PR when they're in code you change, or in code doing the same job as your change
+     (a sibling helper in another package included), whatever the PR's size;
    - otherwise in a found-fix PR off `origin/main` (one bug, a red-first regression test, no
      `Closes`);
    - MEDIUM+ security on `main`: commit locally and report class and area only.
