@@ -120,14 +120,36 @@ func (s DirSource) Load(ctx context.Context) (*Snapshot, error) {
 		return nil, errLoadCancelled
 	}
 	// os.Root confines every Stat, ReadDir and Open to the root, so a symlinked
-	// directory cannot lead the walk out of it. contentFS opens a file without
-	// blocking and refuses one that is not regular.
+	// directory cannot lead the walk out of it.
 	root, err := os.OpenRoot(s.root)
 	if err != nil {
 		return nil, errors.New("content directory is not readable")
 	}
 	defer func() { _ = root.Close() }()
-	return loadFS(s.contentFS(root))
+	return NewRootSource(root).Load(ctx)
+}
+
+// RootSource is a Source over a directory the caller already opened as an
+// os.Root. It is DirSource without the open: a caller that validated a path
+// opens it once and reads through the handle, so replacing the path with a
+// symlink afterwards cannot redirect the read. The caller owns the root;
+// Load never closes it.
+type RootSource struct {
+	root *os.Root
+}
+
+var _ Source = RootSource{}
+
+// NewRootSource returns a Source that reads articles from root.
+func NewRootSource(root *os.Root) RootSource { return RootSource{root: root} }
+
+// Load reads the content under the root as DirSource.Load does, or fails once
+// ctx has ended.
+func (s RootSource) Load(ctx context.Context) (*Snapshot, error) {
+	if ctx.Err() != nil {
+		return nil, errLoadCancelled
+	}
+	return loadFS(DirSource{}.contentFS(s.root))
 }
 
 // loadFS is the loader every Source shares: it reads global/articles/**,

@@ -63,17 +63,26 @@ func run(args []string, out io.Writer) error {
 	return root.Execute()
 }
 
+// rootName is the path content was opened with, which Local shows in notices;
+// "" for no content directory.
+func rootName(content *os.Root) string {
+	if content == nil {
+		return ""
+	}
+	return content.Name()
+}
+
 // clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
 // embedded server of --dir and GOLDIE_DIR wired in from app, so cli imports
 // neither engine nor app. When OTEL_* selects traces, its client traces every
 // API call. The caller defers flush, which sends the spans within clientFlush.
 func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error) {
 	env = cli.DefaultEnv(out)
-	env.StartLocal = func(ctx context.Context, dir string) (string, string, func(), error) {
-		return app.StartLocal(ctx, app.LocalOptions{BaseDir: dir})
+	env.StartLocal = func(ctx context.Context, content *os.Root) (string, string, func(), error) {
+		return app.StartLocal(ctx, app.LocalOptions{BaseDir: rootName(content), Root: content})
 	}
-	env.StartLocalScope = func(ctx context.Context, dir, goldieDir string) (string, string, func(), error) {
-		return app.StartLocal(ctx, app.LocalOptions{BaseDir: dir, GoldieDir: goldieDir})
+	env.StartLocalScope = func(ctx context.Context, content *os.Root, goldieDir string) (string, string, func(), error) {
+		return app.StartLocal(ctx, app.LocalOptions{BaseDir: rootName(content), Root: content, GoldieDir: goldieDir})
 	}
 	tel, err := platform.SetupClientTelemetry(context.Background(), os.LookupEnv, role, platform.WithSpanPath(app.ClientSpanPath))
 	if err != nil {

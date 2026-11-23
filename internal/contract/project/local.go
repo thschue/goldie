@@ -52,42 +52,59 @@ func GoldieDir(root string) string { return filepath.Join(root, ".goldie") }
 // which is opened through os.Root so a symlink cannot lead out of root. Every
 // error names .goldie/config.yaml and holds no path and no part of the value.
 func ConfigContentDir(root string) (string, error) {
+	d, rel, err := openConfigContentDir(root)
+	if err != nil || d == nil {
+		return "", err
+	}
+	_ = d.Close()
+	return filepath.Join(root, rel), nil
+}
+
+// OpenConfigContentDir is ConfigContentDir that returns the directory opened
+// through the repository root, so the caller reads through the handle and a
+// path swapped for a symlink after the check cannot redirect it. It returns a
+// nil handle when config.yaml names no directory. The caller closes it.
+func OpenConfigContentDir(root string) (*os.Root, error) {
+	d, _, err := openConfigContentDir(root)
+	return d, err
+}
+
+func openConfigContentDir(root string) (*os.Root, string, error) {
 	r, err := os.OpenRoot(root)
 	if err != nil {
-		return "", errors.New("cannot open the repository root")
+		return nil, "", errors.New("cannot open the repository root")
 	}
 	defer func() { _ = r.Close() }()
 	b, err := readConfig(r)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return "", errors.New("cannot read .goldie/config.yaml")
+		return nil, "", errors.New("cannot read .goldie/config.yaml")
 	}
 	var cfg struct {
 		Dir yaml.Node `yaml:"dir"`
 	}
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
-		return "", errors.New(".goldie/config.yaml is not valid YAML")
+		return nil, "", errors.New(".goldie/config.yaml is not valid YAML")
 	}
 	switch {
 	case cfg.Dir.Kind == 0, cfg.Dir.Tag == "!!null":
-		return "", nil
+		return nil, "", nil
 	case cfg.Dir.Kind != yaml.ScalarNode || cfg.Dir.Tag != "!!str":
-		return "", errors.New(".goldie/config.yaml: dir must be a string")
+		return nil, "", errors.New(".goldie/config.yaml: dir must be a string")
 	}
 	rel := cfg.Dir.Value
 	bad := errors.New(".goldie/config.yaml: dir must name a directory inside the repository, as a relative path")
 	if rel == "" || len(rel) > maxDirValue || strings.ContainsFunc(rel, unicode.IsControl) || !filepath.IsLocal(rel) {
-		return "", bad
+		return nil, "", bad
 	}
 	rel = filepath.Clean(rel)
 	d, err := r.OpenRoot(rel) // fails on a file, on a missing path and on a symlink out of root
 	if err != nil {
-		return "", bad
+		return nil, "", bad
 	}
-	_ = d.Close()
-	return filepath.Join(root, rel), nil
+	return d, rel, nil
 }
 
 // readConfig reads .goldie/config.yaml through r, as a regular file of at most
