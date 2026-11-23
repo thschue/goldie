@@ -109,7 +109,15 @@ func (c *commander) pull(ctx context.Context) error {
 	if err := applyPull(root, files, res.digest); err != nil {
 		return err
 	}
-	return c.say(fmt.Sprintf("Pulled %d files into the Goldie namespace (.claude/skills/goldie-*, .claude/agents/goldie-*).", len(files)))
+	if err := c.say(fmt.Sprintf("Pulled %d files into the Goldie namespace (.claude/skills/goldie-*, .claude/agents/goldie-*).", len(files))); err != nil {
+		return err
+	}
+	for _, l := range loopInvocations(files) {
+		if err := c.say(l); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dryRun lists what a pull would write and remove, and writes nothing.

@@ -154,12 +154,15 @@ view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
 wins, drafts are left out) as a gzip-compressed tar, laid out for the
 target. For `claude` the entries are regular files with clean relative
 slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
-file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
-A script keeps its executable bit in the entry's mode. A skill or agent
+file of each skill and `.claude/agents/goldie-<name>.md` for each agent,
+and the entry skill `.claude/skills/goldie-loop-<name>/SKILL.md` for each
+loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
+the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 whose name, or a skill file whose path, cannot be a safe path is left out
-on purpose, and nothing in the response marks the omission. A Project
-whose view holds no skill and no agent gets a 200 with an empty archive and
-a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+on purpose, and nothing in the response marks the omission. So is a loop
+whose name holds whitespace, or whose entry path a skill already holds
+(compared ignoring case). A Project whose view holds no skill, agent or
+loop gets a 200 with an empty archive and a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
 always gives the same ETag. Compare ETags, not bytes: gzip output can
 change between Go toolchains. `If-None-Match` with that ETag answers 304
 with no body. `goldie pull` writes the archive into the Goldie namespace.
