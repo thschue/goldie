@@ -29,7 +29,8 @@ once.
   connection's remote address, and no forwarded header is trusted. Behind a TLS proxy every client
   shares the proxy's address, so enough bad guesses lock sign-in out for everyone, a valid token
   included. Counts are per process, so replicas count separately. A trusted-proxy setting is a
-  possible follow-up.
+  possible follow-up. The table of tracked addresses is bounded; past it, new addresses share one
+  count, so a flood of addresses can lock sign-in for addresses not yet tracked.
 - A session ends after a short idle time, which each use extends, and at an absolute limit from
   sign-in.
 - The signing key is `GOLDIE_SESSION_KEY` (or its `_FILE` form). Without one, each process makes a

@@ -297,7 +297,10 @@ sign-in from that address, a valid token included, is refused with a
 address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 headers are ignored, so clients behind a reverse proxy share one key
 and one lockout. The cap is per server process, and successful
-sign-ins do not count. The response is `Cache-Control: no-store`.
+sign-ins do not count. The server tracks a bounded number of
+addresses; past it, new addresses share one count, so a flood of
+addresses can lock sign-in for addresses not yet tracked. The
+response is `Cache-Control: no-store`.
 
 Operation ID: `postSession`
 

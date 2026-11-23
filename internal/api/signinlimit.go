@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // Sign-in failures an address may make per window before sign-in answers 429,
@@ -88,10 +90,10 @@ func (l *SignInLimiter) Limit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h, wait := l.take(signInKey(r.RemoteAddr), time.Now())
 		if h == nil {
-			secs := strconv.FormatInt(max(int64((wait+time.Second-1)/time.Second), 1), 10)
-			w.Header().Set("Retry-After", secs)
+			secs := max(int((wait+time.Second-1)/time.Second), 1)
+			w.Header().Set("Retry-After", strconv.Itoa(secs))
 			WriteError(w, http.StatusTooManyRequests, "rate_limited", "too many failed sign-ins from this address",
-				"Wait "+secs+" seconds, then retry.")
+				"Wait "+contract.APIError{RetryAfter: secs}.Wait()+", then retry.")
 			return
 		}
 		attempt := &signInAttempt{}

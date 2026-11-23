@@ -1068,7 +1068,10 @@ type ClientInterface interface {
 	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 	// headers are ignored, so clients behind a reverse proxy share one key
 	// and one lockout. The cap is per server process, and successful
-	// sign-ins do not count. The response is `Cache-Control: no-store`.
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1095,7 +1098,10 @@ type ClientInterface interface {
 	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 	// headers are ignored, so clients behind a reverse proxy share one key
 	// and one lockout. The cap is per server process, and successful
-	// sign-ins do not count. The response is `Cache-Control: no-store`.
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1430,7 +1436,10 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 // headers are ignored, so clients behind a reverse proxy share one key
 // and one lockout. The cap is per server process, and successful
-// sign-ins do not count. The response is `Cache-Control: no-store`.
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -1467,7 +1476,10 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 // headers are ignored, so clients behind a reverse proxy share one key
 // and one lockout. The cap is per server process, and successful
-// sign-ins do not count. The response is `Cache-Control: no-store`.
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2611,7 +2623,10 @@ type ClientWithResponsesInterface interface {
 	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 	// headers are ignored, so clients behind a reverse proxy share one key
 	// and one lockout. The cap is per server process, and successful
-	// sign-ins do not count. The response is `Cache-Control: no-store`.
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -2638,7 +2653,10 @@ type ClientWithResponsesInterface interface {
 	// address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 	// headers are ignored, so clients behind a reverse proxy share one key
 	// and one lockout. The cap is per server process, and successful
-	// sign-ins do not count. The response is `Cache-Control: no-store`.
+	// sign-ins do not count. The server tracks a bounded number of
+	// addresses; past it, new addresses share one count, so a flood of
+	// addresses can lock sign-in for addresses not yet tracked. The
+	// response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4418,7 +4436,10 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 // headers are ignored, so clients behind a reverse proxy share one key
 // and one lockout. The cap is per server process, and successful
-// sign-ins do not count. The response is `Cache-Control: no-store`.
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -4451,7 +4472,10 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // address (an IPv6 address by its /64); `X-Forwarded-For` and similar
 // headers are ignored, so clients behind a reverse proxy share one key
 // and one lockout. The cap is per server process, and successful
-// sign-ins do not count. The response is `Cache-Control: no-store`.
+// sign-ins do not count. The server tracks a bounded number of
+// addresses; past it, new addresses share one count, so a flood of
+// addresses can lock sign-in for addresses not yet tracked. The
+// response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
