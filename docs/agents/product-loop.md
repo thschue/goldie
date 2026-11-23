@@ -63,9 +63,9 @@ Each step runs only after the steps before it are done.
      - **Pattern to follow** (an existing file to copy the approach from);
      - edge cases worth a test;
      - an ADR draft when the issue makes a hard-to-reverse choice.
-   - **UX subagent** for every issue that builds UI. It returns the criteria from
-     `docs/design/ui-handoff.md`: screen, states, copy, breakpoints, accessibility. UI work is ready
-     only once the handoff is approved (§13 ticked); until then it is a `question`.
+   - **UX subagent** for every issue that changes the UI, the CLI or MCP. It returns criteria from
+     `docs/design/`, with exact wording. UI work is ready only once the handoff is approved (§13
+     ticked); until then it is a `question`.
    - You decide what goes in. Architect and UX input that would delay a valuable outcome becomes a
      follow-up issue with its value stated.
    - Write the issue body from the [template](./issue-tracker.md#issue-template). Set the `area:`
@@ -88,9 +88,9 @@ Each step runs only after the steps before it are done.
 5. **Audit** (only when the buffer is full). Each day, sample about 1 in 5 merged PRs that no gate
    held, with the `reviewer` in audit mode on the merged diff. File each finding as a follow-up; a
    bug becomes a found-fix issue with `bug`, and a security finding takes the disclosure path.
-6. **Architecture sweep** (only when the buffer is full), every 10 merges or 7 days: the
-   `architect` subagent in sweep mode on the audit worktree. File its candidates (at most 3) with
-   files, pattern and ADR.
+6. **Sweeps** (buffer full), every 10 merges or 7 days: the `architect` sweeps the audit worktree
+   (at most 3 candidates: files, pattern, ADR); the `ux-designer` walks the first run (CLI and agent
+   bar §2.4) on `main`, also after a CLI or MCP change. Each dead end is a P1 `bug`.
 7. **Inbox and metrics.** Rewrite the inbox, then append to the ledger.
 
 ## Decision rights
