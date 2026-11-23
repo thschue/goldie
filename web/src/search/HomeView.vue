@@ -118,7 +118,11 @@ onBeforeUnmount(() => {
     </div>
   </form>
 
-  <p v-if="state.kind === 'loading'" class="loading" role="status">Searching…</p>
+  <!-- Copy: handoff §8, "Empty state". Home's sections below the search (§3.2)
+       aren't built yet, so Home with no query shows the neutral panel, never gold. -->
+  <div v-if="state.kind === 'idle'" role="status" class="panel">Nothing to show yet. Content appears here as goldie's pages come online.</div>
+
+  <p v-else-if="state.kind === 'loading'" class="loading" role="status">Searching…</p>
 
   <div v-else-if="state.kind === 'error'" role="alert" class="alert">
     <p class="alert-message">{{ state.message }}</p>
@@ -193,6 +197,14 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
 }
 .loading {
+  color: var(--fg-secondary);
+}
+.panel {
+  max-width: 760px;
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
   color: var(--fg-secondary);
 }
 .miss,

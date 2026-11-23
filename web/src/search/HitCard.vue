@@ -18,9 +18,12 @@ const to = computed(() => `/items/${encodeURIComponent(props.hit.kind)}/${encode
 <template>
   <li class="hit">
     <RouterLink :to="to" class="link">
+      <!-- The name is a bare text node of the head, not an element of its own:
+           the enforced chip stays the only element in the card whose text is
+           "enforced", even for an Item whose name holds the word. -->
       <span class="head">
         <span class="badge kind">{{ hit.kind }}</span>
-        <span class="name">{{ hit.name }}</span>
+        {{ hit.name }}
         <span class="badge scope">{{ hit.scope }}</span>
         <span v-if="hit.enforced === true" class="badge enforced">
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
@@ -64,12 +67,11 @@ const to = computed(() => `/items/${encodeURIComponent(props.hit.kind)}/${encode
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-}
-.name {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .badge {
+  font-weight: 400;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
