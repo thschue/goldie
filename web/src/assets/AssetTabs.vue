@@ -78,6 +78,12 @@ function onKeydown(e: KeyboardEvent) {
   font-weight: 500;
   cursor: pointer;
 }
+/* Four tabs must fit 375 px without scrolling the page: tighter padding on a narrow screen. */
+@media (max-width: 480px) {
+  [role='tab'] {
+    padding: 0 var(--space-2);
+  }
+}
 [role='tab']:hover {
   background: var(--surface-3);
 }
