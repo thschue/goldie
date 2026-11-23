@@ -1,5 +1,4 @@
 ---
-model: opus
 description: Run one product tick (PM decisions, triage, refinement to the ready buffer, flow, audit, inbox)
 argument-hint: "[dry-run]"
 ---

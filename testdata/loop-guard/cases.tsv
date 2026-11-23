@@ -28,6 +28,11 @@ deny	gh api --method PUT repos/thschue/goldie/rulesets/1 --input r.json
 deny	gh label delete security-approved
 deny	gh repo edit --enable-auto-merge=false
 deny	docker build .
+deny	kind create cluster
+allow	printf done; kind is an Item's type in this repository
+deny	go clean -cache
+deny	GOFLAGS=-x go clean -modcache
+allow	go clean -testcache
 deny	echo hi; kubectl get pods
 deny	helm install goldie deploy/helm/goldie
 allow	git fetch origin main && git rebase origin/main && git push --force-with-lease=feat/x:0123abc origin HEAD:feat/x

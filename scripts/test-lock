@@ -4,11 +4,13 @@
 #
 #   scripts/test-lock <base> <head> [test-author commit...]
 #
-# Tests are the spec. On the branch <base>...<head>, a commit that isn't a
-# test-author commit may add test files and add lines to existing ones, but
-# may not modify or delete a line (whitespace aside) in a test file
-# (*_test.go, testdata/) that it or an earlier implementer commit on the
-# branch didn't create. A test-author commit may touch test files only.
+# Tests are the spec. A locked line is a line of a test file (*_test.go,
+# testdata/) as it is on the merge base, or as a test-author commit on the
+# branch added it, unless a test-author commit removed it. Every locked line
+# must still be in the file at <head> (whitespace aside), whichever commit
+# changed it, merge commits included. Implementers may add test files and
+# lines, and change lines they added. A test-author commit may touch test
+# files only.
 #
 # Prints one line per violation and exits 1 when there is any, 0 when there is
 # none, and 2 on a usage or git error. scripts/merge-pr runs main's copy.
@@ -31,20 +33,36 @@ is_test() { case "$1" in *_test.go | testdata/* | */testdata/*) return 0 ;; esac
 
 out=$(mktemp) || die "cannot create a temporary file"
 trap 'rm -f "$out"' EXIT INT TERM
-own="" # test files created by implementer commits on the branch
+mine="" # the test-author commits on the branch, oldest first
 for c in $(git rev-list --reverse --no-merges "$mb..$head"); do
+	is_author "$c" || continue
+	mine="$mine $c"
 	subject=$(git log -1 --format=%s "$c")
-	git diff-tree --no-commit-id -r --no-renames --name-status "$c" | while IFS="$(printf '\t')" read -r st f; do
-		if is_author "$c"; then
-			is_test "$f" || printf 'test-author commit "%s" touches a non-test file: %s\n' "$subject" "$f"
-		elif is_test "$f" && [ "$st" != A ] && ! printf '%s\n' "$own" | grep -qxF -- "$f"; then
-			removed=$(git diff -w --numstat "$c^" "$c" -- "$f" | cut -f2)
-			[ "${removed:-0}" = 0 ] || printf 'locked: %s changed by "%s"\n' "$f" "$subject"
-		fi
+	git diff-tree --no-commit-id -r --no-renames --name-only "$c" | while IFS= read -r f; do
+		is_test "$f" || printf 'test-author commit "%s" touches a non-test file: %s\n' "$subject" "$f"
 	done >>"$out"
-	is_author "$c" || own="$own
-$(git diff-tree --no-commit-id -r --no-renames --name-only --diff-filter=A "$c")"
 done
+
+# hunks <diff>: the changed lines of a unified diff as "+<line>" and "-<line>".
+hunks() { awk '/^@@/ { h = 1; next } h && /^[-+]/'; }
+git diff --name-only --no-renames "$mb" "$head" | while IFS= read -r f; do
+	is_test "$f" || continue
+	{
+		git show "$mb:$f" 2>/dev/null | sed 's/^/+/' || :
+		for c in $mine; do git diff -U0 --no-renames "$c^" "$c" -- "$f" | hunks; done
+		printf '=\n'
+		git show "$head:$f" 2>/dev/null || :
+	} | awk -v f="$f" '
+		{ line = $0 }
+		!seen && line == "=" { seen = 1; next }
+		{ sign = seen ? "" : substr(line, 1, 1); if (!seen) line = substr(line, 2)
+		  gsub(/[ \t\r]/, "", line); if (line == "") next }
+		!seen && sign == "+" { if (!(line in want)) order[++n] = line; want[line]++; text[line] = $0; next }
+		!seen && sign == "-" { want[line]--; next }
+		seen { have[line]++ }
+		END { for (i = 1; i <= n; i++) if (want[order[i]] > have[order[i]]) {
+			printf "locked: %s: %s\n", f, substr(text[order[i]], 2); exit } }'
+done >>"$out"
 
 [ -s "$out" ] || exit 0
 cat "$out"

@@ -102,7 +102,12 @@ printf '%s\n' "$segments" | {
 		"gh repo delete"* | "gh repo edit"* | "gh repo rename"* | "gh repo archive"* | \
 			"gh label delete"* | "gh label edit"* | "gh label create"* | "gh label clone"* | "gh secret"* | "gh ruleset"* | "gh variable"*)
 			deny "repository settings, labels and secrets are the maintainer's" ;;
-		docker | docker\ * | podman | podman\ * | kubectl | kubectl\ * | kind\ * | minikube\ * | \
+		"go clean"*)
+			if has "$seg" "[[:space:]]-(cache|modcache)${end}"; then
+				deny "the Go caches are shared between sessions; never clean them"
+			fi ;;
+		docker | docker\ * | podman | podman\ * | kubectl | kubectl\ * | minikube\ * | \
+			"kind create"* | "kind delete"* | "kind load"* | "kind get"* | "kind export"* | "kind build"* | \
 			gcloud | gcloud\ * | aws | aws\ * | az | az\ * | terraform | terraform\ * | tofu | tofu\ *)
 			deny "no containers, clusters or cloud CLIs" ;;
 		helm | helm\ *)

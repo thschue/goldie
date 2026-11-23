@@ -72,7 +72,7 @@ while IFS= read -r f; do
 	docs/agents/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | \
 		SECURITY.md | .mcp.json | */.mcp.json | .claude.json | examples/knowledge/*)
 		gate "agent guardrail changed: $f" ;;
-	CONTEXT.md | docs/adr/* | docs/design/* | LICENSE)
+	CONTEXT.md | docs/adr/* | docs/design/* | docs/platform-contract.md | LICENSE)
 		gate "decision record changed: $f" ;;
 	NOTICE)
 		# Adding an attribution is mechanical; removing or rewording one is

@@ -59,5 +59,8 @@
         "api.securityscorecards.dev"
       ]
     }
+  },
+  "env": {
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "160000"
   }
 }

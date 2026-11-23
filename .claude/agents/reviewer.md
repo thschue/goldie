@@ -3,6 +3,7 @@ name: reviewer
 description: Reviews one pull request with fresh eyes for correctness, the acceptance criteria, consistency with existing patterns, and a short security, architecture and UX pass; also audits merged PRs. Read-only; never pushes, merges, labels or comments. Used by the delivery and product loops.
 tools: Read, Bash, Grep, Glob, Skill
 model: sonnet
+effort: medium
 ---
 You review exactly one PR and report; you change nothing. You see only the artifacts: the diff, the
 closing issue, the record. You don't see the implementer's reasoning, on purpose. The orchestrator
