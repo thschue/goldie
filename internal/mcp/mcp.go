@@ -203,12 +203,19 @@ func (t *tools) search(ctx context.Context, q, project string) *sdk.CallToolResu
 	return success(b.String())
 }
 
+// plainMissHint is the server's hint for an id that is no article; the tool
+// words the next step with its own name.
+const (
+	plainMissHint   = "Search for the article, then use an id from its results."
+	searchFirstHint = "Search for the article with search_knowledge, then use an id from its results."
+)
+
 func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolResult {
 	// An empty or dot-only id would be cleaned out of the article path and
 	// reach another endpoint, so it is refused before any request.
 	if contract.CheckArticleID(id) != nil {
 		return failure(withHint("the article id is empty or made only of dots",
-			"Search for the article with search_knowledge, then use an id from its results."))
+			searchFirstHint))
 	}
 	proj, err := t.sessionProject(project)
 	if err != nil {
@@ -218,6 +225,12 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
+		// Only the plain miss is reworded: the agent has no search operation,
+		// and a Suppression's not_found keeps the hint naming its entry.
+		var ae *contract.APIError
+		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
+			ae.Hint = searchFirstHint
+		}
 		return failure(wordError(err, t.local))
 	}
 	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
