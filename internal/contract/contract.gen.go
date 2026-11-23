@@ -332,6 +332,14 @@ type Article struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
+	// Scope `global`, `local` (the repository's own `.goldie/`), or the Project
+	// (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+	// not global.
+	//
+	//
+	// Examples: github.com/acme/shop
+	Scope *string `json:"scope,omitempty"`
+
 	// Status An Item's lifecycle when it is not published: `deprecated` (still
 	// served; read `replaced_by` instead when present) or `draft` (only with
 	// `drafts=true`, for operators). Absent for a published Item. Clients
@@ -479,7 +487,7 @@ type ProjectItem struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
-	// Scope `global`, or the Project (`host/org/repo`) whose copy won.
+	// Scope `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won.
 	//
 	// Examples: github.com/acme/shop
 	Scope string `json:"scope"`
@@ -578,7 +586,7 @@ type SearchHit struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
-	// Scope Where the Item applies, such as `global` (ADR 0005).
+	// Scope Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005).
 	//
 	// Examples: global
 	Scope string `json:"scope"`
@@ -648,6 +656,13 @@ type SessionRequest struct {
 
 // Skill One skill bundle.
 type Skill struct {
+	// Description The `description` in the frontmatter of SKILL.md. Sent by
+	// `listSkills` only; absent when the skill has none.
+	//
+	//
+	// Examples: Deploys the app
+	Description *string `json:"description,omitempty"`
+
 	// Files The bundle's files, sorted by path, SKILL.md included.
 	//
 	// Examples: [{"path":"SKILL.md","size":16}]
@@ -664,6 +679,32 @@ type Skill struct {
 	//
 	// Examples: deploy
 	Name string `json:"name"`
+
+	// RequiresSync True when the bundle holds a script (a file under `scripts/`), so an
+	// agent must sync it to run it; false for a text-only bundle. Sent by
+	// `listSkills` only. A missing value on `getSkill` is not false: it
+	// means unknown.
+	//
+	//
+	// Examples: true
+	RequiresSync *bool `json:"requires_sync,omitempty"`
+
+	// Scope Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+	// `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+	// omits it, and a missing value means unknown.
+	//
+	//
+	// Examples: global
+	Scope *string `json:"scope,omitempty"`
+
+	// Status The `status` in the frontmatter of SKILL.md: `draft` or
+	// `deprecated`; absent for a published skill. Sent by `listSkills`
+	// only. Draft skills are hidden unless `drafts=true` is asked for
+	// with the operator role.
+	//
+	//
+	// Examples: draft
+	Status *string `json:"status,omitempty"`
 }
 
 // SkillFile One file of a skill bundle.
@@ -1247,7 +1288,10 @@ type ClientInterface interface {
 	//
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
-	// file list. Fetch one of a skill's files with `getSkillFile`
+	// file list, `scope`, `status`, `description` and `requires_sync`. A
+	// draft skill is listed only with `drafts=true` and the operator role.
+	//
+	// Fetch one of a skill's files with `getSkillFile`
 	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
@@ -1707,7 +1751,10 @@ func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBod
 //
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
-// file list. Fetch one of a skill's files with `getSkillFile`
+// file list, `scope`, `status`, `description` and `requires_sync`. A
+// draft skill is listed only with `drafts=true` and the operator role.
+//
+// Fetch one of a skill's files with `getSkillFile`
 // (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
@@ -3171,7 +3218,10 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
-	// file list. Fetch one of a skill's files with `getSkillFile`
+	// file list, `scope`, `status`, `description` and `requires_sync`. A
+	// draft skill is listed only with `drafts=true` and the operator role.
+	//
+	// Fetch one of a skill's files with `getSkillFile`
 	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -5350,7 +5400,10 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 //
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
-// file list. Fetch one of a skill's files with `getSkillFile`
+// file list, `scope`, `status`, `description` and `requires_sync`. A
+// draft skill is listed only with `drafts=true` and the operator role.
+//
+// Fetch one of a skill's files with `getSkillFile`
 // (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Returns a wrapper object for the known response body format(s).

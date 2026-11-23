@@ -378,7 +378,10 @@ List the skills
 
 Returns the skills that answer in the Project's view, sorted by name, one
 per name: the nearest Scope wins with its whole bundle. Each carries its
-file list. Fetch one of a skill's files with `getSkillFile`
+file list, `scope`, `status`, `description` and `requires_sync`. A
+draft skill is listed only with `drafts=true` and the operator role.
+
+Fetch one of a skill's files with `getSkillFile`
 (`GET /api/v1/skills/{name}/files/{path}`).
 
 Operation ID: `listSkills`
@@ -600,6 +603,7 @@ One article.
 | `name` | `string` | yes | The article's display title, from its frontmatter. |
 | `overrides` | `array` | no | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
+| `scope` | `string` | no | 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won in the requested view. Absent from an older server, where it means unknown, not global. |
 | `status` | `ItemStatus` | no |  |
 
 ### `ContentWarning`
@@ -687,7 +691,7 @@ One winning Item of a Project's view.
 | `keywords` | `array` | yes | The Item keywords from its frontmatter, lower case. |
 | `name` | `string` | yes | The Item display title, from its frontmatter. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item names a replacement. It comes from a Source and is untrusted. |
-| `scope` | `string` | yes | 'global', or the Project ('host/org/repo') whose copy won. |
+| `scope` | `string` | yes | 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won. |
 | `status` | `string` | yes | The Item's lifecycle, always present. Clients ignore values they do not know. |
 
 ### `ProjectList`
@@ -722,7 +726,7 @@ One Item that matched a search.
 | `name` | `string` | yes | The display title from the frontmatter of an article. A skill's or agent's name is its id. |
 | `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
-| `scope` | `string` | yes | Where the Item applies, such as 'global' (ADR 0005). |
+| `scope` | `string` | yes | Where the Item applies: 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won (ADR 0005). |
 | `score` | `integer` | yes | The relevance score; higher is better. |
 | `status` | `ItemStatus` | no |  |
 
@@ -759,9 +763,13 @@ One skill bundle.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `description` | `string` | no | The 'description' in the frontmatter of SKILL.md. Sent by 'listSkills' only; absent when the skill has none. |
 | `files` | `array` | yes | The bundle's files, sorted by path, SKILL.md included. |
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the skill answer is the global one, and this says what to do next. |
 | `name` | `string` | yes | The bundle's directory name. |
+| `requires_sync` | `boolean` | no | True when the bundle holds a script (a file under 'scripts/'), so an agent must sync it to run it; false for a text-only bundle. Sent by 'listSkills' only. A missing value on 'getSkill' is not false: it means unknown. |
+| `scope` | `string` | no | Where the winning copy lives, as 'SearchHit.scope' says it: 'global', 'host/org/repo' or 'local'. Sent by 'listSkills' only; 'getSkill' omits it, and a missing value means unknown. |
+| `status` | `string` | no | The 'status' in the frontmatter of SKILL.md: 'draft' or 'deprecated'; absent for a published skill. Sent by 'listSkills' only. Draft skills are hidden unless 'drafts=true' is asked for with the operator role. |
 
 ### `SkillFile`
 

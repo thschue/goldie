@@ -8,5 +8,6 @@
     "helm"
   ],
   "name": "Deploying to Kubernetes",
-  "overrides": []
+  "overrides": [],
+  "scope": "global"
 }

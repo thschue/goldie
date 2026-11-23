@@ -106,7 +106,7 @@ func (t *tools) resourceError(err error) error {
 	if errors.As(err, &e) && e.Status == http.StatusNotFound {
 		return notFound()
 	}
-	return wordError(err, t.local)
+	return wordErrorFor(err, t.local, surfaceResource)
 }
 
 // readSkillFile answers goldie://skills/{name}/{+path}: a file of the bundle,
@@ -118,7 +118,7 @@ func (t *tools) readSkillFile(ctx context.Context, req *sdk.ReadResourceRequest)
 	if !ok {
 		return nil, notFound()
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfaceResource)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (t *tools) readAgent(ctx context.Context, req *sdk.ReadResourceRequest) (*s
 	if !ok {
 		return nil, notFound()
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfaceResource)
 	if err != nil {
 		return nil, err
 	}

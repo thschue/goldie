@@ -71,10 +71,11 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		return nil, errors.New("the base Source returned no Snapshot")
 	}
 	if !s.claim.Global {
-		if a := firstItem(snap.articles, snap.agents, snap.instructions); a != nil {
+		a, name := snap.first()
+		if a != nil {
 			return nil, unclaimed(a, "global Items")
 		}
-		if name := firstSkill(snap.skills); name != "" {
+		if name != "" {
 			return nil, fmt.Errorf("%s/%s: the Source does not claim global Items", skillsDir, name)
 		}
 	}
@@ -83,10 +84,11 @@ func (s ClaimedSource) Load(ctx context.Context) (*Snapshot, error) {
 		if s.claim.accepts(p.scope) {
 			continue
 		}
-		if a := firstItem(p.articles, p.agents, p.instructions); a != nil {
+		a, name := p.first()
+		if a != nil {
 			return nil, unclaimed(a, "Project "+p.scope)
 		}
-		if name := firstSkill(p.skills); name != "" {
+		if name != "" {
 			return nil, fmt.Errorf("%s/%s/skills/%s: the Source does not claim Project %s",
 				projectsDir, p.scope, name, p.scope)
 		}

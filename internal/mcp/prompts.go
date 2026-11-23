@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,14 +23,13 @@ func promptDescription(skill string) string {
 	return "Loads the " + skill + " skill's instructions into this conversation."
 }
 
-// promptSnapshots hold, per session, the skill names the session's prompts
-// were made from. The prompt list is fixed when a session starts: the first
+// promptSnapshots hold, per session, the skill names (in the API's order) the
+// session's prompts were made from. The prompt list is fixed when a session starts: the first
 // prompts request of a session reads the skills once, and the session keeps
 // that list. A new session reads them again.
 type promptSnapshots struct {
 	mu    sync.Mutex
-	names map[*sdk.ServerSession]map[string]bool
-	order map[*sdk.ServerSession][]string
+	names map[*sdk.ServerSession][]string
 }
 
 // addPrompts makes the server answer prompts/list and prompts/get with one
@@ -38,7 +38,7 @@ type promptSnapshots struct {
 // middleware, and the server advertises prompts without listChanged, for the
 // reason New gives for tools.
 func addPrompts(s *sdk.Server, t *tools) {
-	snaps := &promptSnapshots{names: map[*sdk.ServerSession]map[string]bool{}, order: map[*sdk.ServerSession][]string{}}
+	snaps := &promptSnapshots{names: map[*sdk.ServerSession][]string{}}
 	s.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
 			ss, _ := req.GetSession().(*sdk.ServerSession)
@@ -58,37 +58,37 @@ func addPrompts(s *sdk.Server, t *tools) {
 // snapshot returns the session's skill names in the API's order, reading them
 // on the session's first use. A failed read is not kept, so the next request
 // tries again.
-func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession) ([]string, map[string]bool, error) {
+func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession, failed surface) ([]string, error) {
 	snaps.mu.Lock()
-	names, order := snaps.names[ss], snaps.order[ss]
+	names, ok := snaps.names[ss]
 	snaps.mu.Unlock()
-	if names != nil {
-		return order, names, nil
+	if ok {
+		return names, nil
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", failed)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	raw, err := t.client.ListSkills(ctx, &contract.ListSkillsParams{Project: proj})
 	res, err := contract.Answer(raw, err, contract.ParseListSkillsResponse,
 		func(r *contract.ListSkillsResponse) *contract.SkillList { return r.JSON200 })
 	if err != nil {
-		return nil, nil, wordError(err, t.local)
+		return nil, wordErrorFor(err, t.local, failed)
 	}
-	names = map[string]bool{}
-	order = nil
+	names = nil
+	seen := map[string]bool{}
 	for _, sk := range res.Skills {
 		// A name from a Source is a prompt only when it is one clean path segment.
-		if !skillNameOK(sk.Name) || contract.CleanLine(sk.Name) != sk.Name || names[sk.Name] {
+		if !skillNameOK(sk.Name) || contract.CleanLine(sk.Name) != sk.Name || seen[sk.Name] {
 			continue
 		}
-		names[sk.Name] = true
-		order = append(order, sk.Name)
+		seen[sk.Name] = true
+		names = append(names, sk.Name)
 	}
 	snaps.mu.Lock()
 	defer snaps.mu.Unlock()
-	if have := snaps.names[ss]; have != nil {
-		return snaps.order[ss], have, nil // another request of the session was first
+	if have, ok := snaps.names[ss]; ok {
+		return have, nil // another request of the session was first
 	}
 	live := map[*sdk.ServerSession]bool{}
 	for o := range s.Sessions() {
@@ -97,38 +97,37 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 	for old := range snaps.names {
 		if !live[old] {
 			delete(snaps.names, old)
-			delete(snaps.order, old)
 		}
 	}
-	snaps.names[ss], snaps.order[ss] = names, order
-	return order, names, nil
+	snaps.names[ss] = names
+	return names, nil
 }
 
 func (t *tools) listPrompts(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession) (sdk.Result, error) {
-	order, _, err := t.snapshot(ctx, s, snaps, ss)
+	names, err := t.snapshot(ctx, s, snaps, ss, surfacePrompts)
 	if err != nil {
 		return nil, err
 	}
 	res := &sdk.ListPromptsResult{Prompts: []*sdk.Prompt{}}
-	for _, n := range order {
+	for _, n := range names {
 		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: promptPrefix + n, Description: promptDescription(n)})
 	}
 	return res, nil
 }
 
 func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession, name string) (sdk.Result, error) {
-	_, names, err := t.snapshot(ctx, s, snaps, ss)
+	names, err := t.snapshot(ctx, s, snaps, ss, surfacePrompt)
 	if err != nil {
 		return nil, err
 	}
 	// The name is the client's, and may carry anything: an unknown one is not echoed.
 	unknown := &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams,
-		Message: "unknown prompt; the prompt list is fixed for this session, so list prompts again, or call list_skills"}
+		Message: "unknown prompt; the prompt list is fixed for this session, so call list_skills to see the skills, or restart the MCP session to pick up new ones"}
 	skill, ok := strings.CutPrefix(name, promptPrefix)
-	if !ok || !names[skill] {
+	if !ok || !slices.Contains(names, skill) {
 		return nil, unknown
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfacePrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +137,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, unknown
 		}
-		return nil, wordError(err, t.local)
+		return nil, wordErrorFor(err, t.local, surfacePrompt)
 	}
 	return &sdk.GetPromptResult{
 		Description: promptDescription(skill),

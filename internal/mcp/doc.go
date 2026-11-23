@@ -24,7 +24,8 @@
 // Project; getting it returns the cleaned SKILL.md, not quoted with "| " the
 // way get_skill and the resources are. The list is read on a session's first
 // prompts request and kept for the session, so it is fixed from then on; the
-// SDK's one server-wide prompt table cannot say that, so one receiving
+// SDK's one server-wide prompt table cannot say that, so an unknown prompt is
+// told to call list_skills or to restart the MCP session, and one receiving
 // middleware answers prompts/list and prompts/get. The first later Kind with
 // prompts turns it into per-Kind providers: lists concatenated, gets
 // dispatched by name. The name goldie-<skill> is pinned by #411, so a later

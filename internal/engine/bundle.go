@@ -95,7 +95,7 @@ func (s *Snapshot) Bundle(proj, target string) ([]BundleFile, string) {
 	}
 	var skills []skillBundle
 	for _, sk := range s.Skills(proj) {
-		if b, ok := s.skillBundleFor(proj, sk.Name); ok {
+		if b, ok := s.skillBundleFor(proj, sk.Name, ReadOptions{}); ok {
 			skills = append(skills, b)
 		}
 	}

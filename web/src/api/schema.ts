@@ -64,7 +64,10 @@ export interface paths {
          * List the skills
          * @description Returns the skills that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins with its whole bundle. Each carries its
-         *     file list. Fetch one of a skill's files with `getSkillFile`
+         *     file list, `scope`, `status`, `description` and `requires_sync`. A
+         *     draft skill is listed only with `drafts=true` and the operator role.
+         *
+         *     Fetch one of a skill's files with `getSkillFile`
          *     (`GET /api/v1/skills/{name}/files/{path}`).
          */
         get: operations["listSkills"];
@@ -601,6 +604,35 @@ export interface components {
              */
             files: components["schemas"]["SkillFile"][];
             /**
+             * @description Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+             *     `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+             *     omits it, and a missing value means unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
+             * @description The `status` in the frontmatter of SKILL.md: `draft` or
+             *     `deprecated`; absent for a published skill. Sent by `listSkills`
+             *     only. Draft skills are hidden unless `drafts=true` is asked for
+             *     with the operator role.
+             * @example draft
+             */
+            status?: string;
+            /**
+             * @description The `description` in the frontmatter of SKILL.md. Sent by
+             *     `listSkills` only; absent when the skill has none.
+             * @example Deploys the app
+             */
+            description?: string;
+            /**
+             * @description True when the bundle holds a script (a file under `scripts/`), so an
+             *     agent must sync it to run it; false for a text-only bundle. Sent by
+             *     `listSkills` only. A missing value on `getSkill` is not false: it
+             *     means unknown.
+             * @example true
+             */
+            requires_sync?: boolean;
+            /**
              * @description Present when the request named a Project that is not registered: the
              *     skill answer is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
@@ -763,7 +795,7 @@ export interface components {
              */
             replaced_by?: string;
             /**
-             * @description `global`, or the Project (`host/org/repo`) whose copy won.
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won.
              * @example github.com/acme/shop
              */
             scope: string;
@@ -907,7 +939,7 @@ export interface components {
              */
             kind: string;
             /**
-             * @description Where the Item applies, such as `global` (ADR 0005).
+             * @description Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005).
              * @example global
              */
             scope: string;
@@ -1021,6 +1053,13 @@ export interface components {
              * @example article:platform/deploy-v2
              */
             replaced_by?: string;
+            /**
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project
+             *     (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+             *     not global.
+             * @example github.com/acme/shop
+             */
+            scope?: string;
             /**
              * @description The Scopes this article shadows in the requested view, nearest first;
              *     `[]` when it shadows nothing. Never null. Always sent by this server;

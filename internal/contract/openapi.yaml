@@ -209,7 +209,10 @@ paths:
       description: |
         Returns the skills that answer in the Project's view, sorted by name, one
         per name: the nearest Scope wins with its whole bundle. Each carries its
-        file list. Fetch one of a skill's files with `getSkillFile`
+        file list, `scope`, `status`, `description` and `requires_sync`. A
+        draft skill is listed only with `drafts=true` and the operator role.
+
+        Fetch one of a skill's files with `getSkillFile`
         (`GET /api/v1/skills/{name}/files/{path}`).
       parameters:
         - name: project
@@ -1388,6 +1391,39 @@ components:
           examples:
             - - path: SKILL.md
                 size: 16
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+            `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+            omits it, and a missing value means unknown.
+          examples:
+            - global
+        status:
+          type: string
+          description: |
+            The `status` in the frontmatter of SKILL.md: `draft` or
+            `deprecated`; absent for a published skill. Sent by `listSkills`
+            only. Draft skills are hidden unless `drafts=true` is asked for
+            with the operator role.
+          examples:
+            - draft
+        description:
+          type: string
+          description: |
+            The `description` in the frontmatter of SKILL.md. Sent by
+            `listSkills` only; absent when the skill has none.
+          examples:
+            - Deploys the app
+        requires_sync:
+          type: boolean
+          description: |
+            True when the bundle holds a script (a file under `scripts/`), so an
+            agent must sync it to run it; false for a text-only bundle. Sent by
+            `listSkills` only. A missing value on `getSkill` is not false: it
+            means unknown.
+          examples:
+            - true
         hint:
           type: string
           minLength: 1
@@ -1599,7 +1635,7 @@ components:
             - article:platform/deploy-v2
         scope:
           type: string
-          description: '`global`, or the Project (`host/org/repo`) whose copy won.'
+          description: '`global`, `local` (the repository''s own `.goldie/`), or the Project (`host/org/repo`) whose copy won.'
           examples:
             - github.com/acme/shop
         enforced:
@@ -1769,7 +1805,7 @@ components:
             - article
         scope:
           type: string
-          description: Where the Item applies, such as `global` (ADR 0005).
+          description: "Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005)."
           examples:
             - global
         keywords:
@@ -1897,6 +1933,14 @@ components:
             before printing it.
           examples:
             - article:platform/deploy-v2
+        scope:
+          type: string
+          description: |
+            `global`, `local` (the repository's own `.goldie/`), or the Project
+            (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+            not global.
+          examples:
+            - github.com/acme/shop
         overrides:
           type: array
           description: |
