@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -111,6 +112,66 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 	}
 	if s.Current() != second || s.Status().Revision != "rev2" {
 		t.Fatal("success must swap the Snapshot and revision")
+	}
+}
+
+// clockedSource moves a fake clock by step during each Load, so a poll takes
+// exactly step on that clock.
+type clockedSource struct {
+	clock *time.Time
+	step  time.Duration
+	snap  *Snapshot
+	err   error
+}
+
+func (c *clockedSource) Load(context.Context) (*Snapshot, error) {
+	*c.clock = c.clock.Add(c.step)
+	return c.snap, c.err
+}
+
+// pollDuration is st.Duration, read by reflection so a missing field fails
+// this test and does not stop the package from compiling.
+func pollDuration(t *testing.T, st SyncStatus) time.Duration {
+	t.Helper()
+	f := reflect.ValueOf(st).FieldByName("Duration")
+	if !f.IsValid() || f.Type() != reflect.TypeOf(time.Duration(0)) {
+		t.Fatal("SyncStatus has no Duration time.Duration field")
+	}
+	return time.Duration(f.Int())
+}
+
+// Criterion (#604): with a fake now, a poll's Duration is the clock delta
+// between before and after the Source load, for a successful and a failed
+// poll, in Status and in the Status handed to onPoll.
+func TestSyncStatusDurationIsTheClockDeltaOfTheLoad(t *testing.T) {
+	clock := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	src := &clockedSource{clock: &clock, step: 3 * time.Second, snap: snapOf("a")}
+	s := NewSyncer(src)
+	s.now = func() time.Time { return clock }
+
+	if err := s.Poll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := pollDuration(t, s.Status()); got != 3*time.Second {
+		t.Errorf("Duration after an ok poll = %v, want 3s", got)
+	}
+
+	src.step, src.snap, src.err = 7500*time.Millisecond, nil, errors.New("boom")
+	var handed []SyncStatus
+	s.Run(t.Context(), 0, func(st SyncStatus) { handed = append(handed, st) })
+	if got := pollDuration(t, s.Status()); got != 7500*time.Millisecond {
+		t.Errorf("Duration after a failed poll = %v, want 7.5s", got)
+	}
+	if len(handed) != 1 || pollDuration(t, handed[0]) != 7500*time.Millisecond {
+		t.Errorf("onPoll got %+v, want one Status with Duration 7.5s", handed)
+	}
+
+	src.step = 0
+	if err := s.Poll(t.Context()); err == nil {
+		t.Fatal("want error")
+	}
+	if got := pollDuration(t, s.Status()); got != 0 {
+		t.Errorf("Duration of an instant poll = %v, want 0 (not the previous poll's)", got)
 	}
 }
 
