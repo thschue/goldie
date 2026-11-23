@@ -56,8 +56,8 @@ func describeProject(p project.Detected, problem string) string {
 	if problem != "" {
 		return "problem: " + problem
 	}
-	if p.ID == "" && p.Rejected != "" {
-		return remoteHint(p)
+	if hint := projectHint(p); hint != "" {
+		return hint
 	}
 	if p.ID == "" {
 		return "none found (set --project, " + EnvProject + " or .goldie/config.yaml, or run inside a git repository with an upstream or origin remote)"

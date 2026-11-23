@@ -53,8 +53,8 @@ func (c *commander) initProject(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if proj.ID == "" && proj.Rejected != "" {
-		return errors.New(remoteHint(proj))
+	if h := projectHint(proj); h != "" {
+		return errors.New(h)
 	}
 	if proj.ID == "" {
 		return errors.New("no Project found: set --project or " + EnvProject + ", or add an upstream or origin remote")
