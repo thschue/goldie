@@ -90,7 +90,7 @@ func TestRecordedDropsAProjectIDTheCheckRejects(t *testing.T) {
 		"whitespace": "my project",
 		"newline":    "a\nb",
 		"oversized":  strings.Repeat("p", 5*maxQueryBytes),
-		"bidi":       "a‮b",
+		"bidi":       "a\u202eb",
 	} {
 		p := contract.ProjectId(bad)
 		if _, ok := validProject(&p); ok {
