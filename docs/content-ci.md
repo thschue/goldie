@@ -157,9 +157,10 @@ itself, and a null `dir:` is none. Any other value is an error naming `.goldie/c
 a path or the value. `config.yaml` is read twice: the CLI reads it once to find the content
 directory, and the engine reads it again for the local Scope. Both refuse a symlinked
 `config.yaml`, so the command fails with an error naming `.goldie/config.yaml`. `--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only
-finds these paths; the engine reads the articles. The CLI opens the content directory once, right
-after the checks, and the embedded server reads only through that handle, so replacing the path
-with a symlink while the command runs does not redirect the read.
+finds these paths; the engine reads the articles. The CLI opens the content directory once and the embedded server reads only through that handle, so
+replacing the path with a symlink while the command runs does not redirect the read. For `dir:` in
+`config.yaml` the handle is the one the check opened through the repository root, so there is no gap
+between check and use. `--dir` and `GOLDIE_DIR` are opened by path, once, right after their checks.
 
 ## Pipeline snippet
 

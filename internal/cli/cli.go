@@ -211,13 +211,19 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	if err != nil {
 		return nil, nil, err
 	}
-	goldieDir, dir, err := f.localScope(env, dir)
+	goldieDir, dir, content, err := f.localScope(env, dir)
 	if err != nil {
 		return nil, nil, err
+	}
+	closeContent := func() {
+		if content != nil {
+			_ = content.Close()
+		}
 	}
 	local := dir != "" || goldieDir != ""
 	c, err := f.commander(env, !local)
 	if err != nil {
+		closeContent()
 		return nil, nil, err
 	}
 	if !local {
@@ -225,13 +231,13 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	}
 	// Open the content directory once, here, and serve only through the handle:
 	// a path swapped for a symlink after the checks above cannot redirect it.
-	var content *os.Root
-	if dir != "" {
+	// The config.yaml directory arrives already open, through the repository root.
+	if dir != "" && content == nil {
 		if content, err = os.OpenRoot(dir); err != nil {
 			return nil, nil, errors.New("content does not load: content directory is not readable")
 		}
 	}
-	closeContent := func() {
+	closeContent = func() {
 		if content != nil {
 			_ = content.Close()
 		}
@@ -261,19 +267,19 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 // localScope finds the repository's local Scope from the working directory:
 // goldieDir is its .goldie directory, set when .goldie/articles exists at the
 // repository root. dir is the content directory given by --dir or GOLDIE_DIR,
-// or else the one config.yaml names (project.ConfigContentDir), or "" for
-// empty content. A .goldie without articles, such as the one goldie init
+// or else the one config.yaml names, which comes back already open as handle
+// (project.OpenConfigContentDir), or "" for empty content. A .goldie without articles, such as the one goldie init
 // writes, is not a local Scope: dir comes back as it was given. An address
 // together with a local Scope is an error naming both, like one with a
 // directory, because the address would hide the repository's own content.
-func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, err error) {
+func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, handle *os.Root, err error) {
 	wd, werr := os.Getwd()
 	if werr != nil {
-		return "", dir, nil
+		return "", dir, nil, nil
 	}
 	root, ok := project.LocalRoot(wd)
 	if !ok {
-		return "", dir, nil
+		return "", dir, nil, nil
 	}
 	if dir == "" {
 		addrName := "--addr"
@@ -285,13 +291,13 @@ func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string
 			}
 		}
 		if addrName != "" {
-			return "", "", fmt.Errorf("%s is set and the repository has .goldie/articles: use %s for a running server, or unset it for the local content, not both", addrName, addrName)
+			return "", "", nil, fmt.Errorf("%s is set and the repository has .goldie/articles: use %s for a running server, or unset it for the local content, not both", addrName, addrName)
 		}
-		if dir, err = project.ConfigContentDir(root); err != nil {
-			return "", "", err
+		if handle, err = project.OpenConfigContentDir(root); err != nil {
+			return "", "", nil, err
 		}
 	}
-	return project.GoldieDir(root), dir, nil
+	return project.GoldieDir(root), dir, handle, nil
 }
 
 // localDir returns the content directory of local mode, or "" for remote
