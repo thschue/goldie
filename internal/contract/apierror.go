@@ -13,6 +13,7 @@ import (
 // valid Retry-After header. Each client words its own message from it.
 type APIError struct {
 	Status  int
+	Code    string // the envelope's error code, for clients to branch on; never shown
 	Message string
 	Hint    string
 	// RetryAfter is the wait the server asked for, in whole seconds. It is 0
@@ -31,6 +32,7 @@ func DecodeAPIError(status int, header http.Header, body []byte) APIError {
 		return e
 	}
 	if e.Message = CleanLine(env.Error.Message); e.Message != "" {
+		e.Code = CleanLine(env.Error.Code)
 		e.Hint = CleanLine(env.Error.Details.Hint)
 	}
 	return e
