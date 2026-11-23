@@ -344,6 +344,7 @@ goldie.css          @import './tokens.css'; brand layer only                    
     --miss-surface: #fff6e5;              /* Miss panels, Miss rows, Miss board cards */
     --miss-pressed: #fce7c2;              /* pressed Miss toggle / node */
     --miss-border: #f3ddb0; --miss-ink: #8a4b05; --miss-solid: #f5b455;
+    --miss-solid-ink: #0b1220;            /* text on --miss-solid, 10.29 */
     --miss-line: #e9c88a;                 /* decorative: dashed Miss path in the stream */
     --ok-ink: #147a4b; --ok-bg: #e7f5ee;
     --danger-ink: #b42318; --danger-bg: #fef3f2; --danger-border: #f1c4bf;
@@ -368,7 +369,7 @@ goldie.css          @import './tokens.css'; brand layer only                    
   --focus-ring: #7fa6f5;
   --miss-bg: #2a2112; --miss-surface: #1a1710; --miss-pressed: #3a2d14;
   --miss-border: #4a3a1c; --miss-ink: #f5b455; --miss-solid: #f5b455;
-  --miss-line: #5a4520;
+  --miss-line: #5a4520;                   /* --miss-solid-ink (#0b1220) is the same in dark: inherited */
   --ok-ink: #5fd39a; --ok-bg: #11291f;
   --danger-ink: #ff8a7a; --danger-bg: #2a1513; --danger-border: #6b2e28;
   --stream-stage: #13213f;
