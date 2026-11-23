@@ -59,7 +59,7 @@ onMounted(async () => {
       <span v-if="article.enforced === true" class="chip enforced">Enforced</span>
     </div>
     <p v-if="overrides.length" class="overrides">
-      Overrides article:{{ article.name }} <template v-for="(scope, i) in overrides" :key="scope">{{ i ? ', ' : '' }}from {{ scope }}</template>
+      Overrides article:{{ article.name }} from {{ overrides.join(', ') }}
     </p>
     <p v-if="article.keywords.length" class="keywords">
       <span v-for="k in article.keywords" :key="k" class="chip">{{ k }}</span>
