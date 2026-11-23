@@ -16,6 +16,7 @@ const forbidden = computed(() => !operator.value || (state.value === 'error' && 
 
 <template>
   <h1>Sources</h1>
+  <p v-if="!forbidden" class="intro">Failing Sources first. A failing Source keeps serving its last good Snapshot.</p>
   <div v-if="forbidden" role="status" class="box"><p>This page is for operators.</p></div>
 
   <div v-else-if="skeleton" aria-busy="true" class="list">
@@ -58,6 +59,11 @@ const forbidden = computed(() => !operator.value || (state.value === 'error' && 
 </template>
 
 <style scoped>
+.intro {
+  max-width: 940px;
+  margin: 0 0 var(--space-4);
+  color: var(--fg-secondary);
+}
 .list {
   display: grid;
   gap: var(--space-3);
