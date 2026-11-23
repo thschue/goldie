@@ -21,12 +21,17 @@
 //
 // Prompts and resources follow one pattern for each Kind that gets them. A
 // prompt is one per skill, named goldie-<name>, for the session's default
-// Project; getting it returns the cleaned SKILL.md. The list is read on a
-// session's first prompts request and kept for the session, so it is fixed
-// once the session has started; the SDK's one server-wide prompt table cannot
-// say that, so a receiving middleware answers prompts/list and prompts/get.
+// Project; getting it returns the cleaned SKILL.md, not quoted with "| " the
+// way get_skill and the resources are. The list is read on a session's first
+// prompts request and kept for the session, so it is fixed from then on; the
+// SDK's one server-wide prompt table cannot say that, so one receiving
+// middleware answers prompts/list and prompts/get. The first later Kind with
+// prompts turns it into per-Kind providers: lists concatenated, gets
+// dispatched by name. The name goldie-<skill> is pinned by #411, so a later
+// Kind must pick a Kind-qualified name.
 // A resource is a goldie://<kind>/{name}[/{path}] template: goldie://skills/
-// {name}/{path} for a file of a bundle (quoted like get_skill) and
+// {name}/{+path} (reserved expansion, so the path keeps its slashes) for a
+// file of a bundle (quoted like get_skill) and
 // goldie://agents/{name} for an agent. A URI is parsed before any request and
 // never selects a Project; a miss is the protocol's resource-not-found error,
 // which names no address, path or token. A later Kind adds its template and

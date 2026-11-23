@@ -182,13 +182,17 @@ request. `list_skills` and `list_agents` list every name for the Project, sorted
 description.
 
 The server also offers prompts and resources. Each skill is a prompt named `goldie-<skill name>`
-(for the session's default Project), and getting it returns the text of its `SKILL.md`. The prompt
-list is fixed when a session starts: a skill added later shows in a new session, and the server
-sends no `list_changed` notification. The resources are two URI templates:
-`goldie://skills/{name}/{path}` reads one file of a skill's bundle, as text with each line quoted
-with `| `, and `goldie://agents/{name}` reads an agent's name and description. The session's
-default Project picks the bundle, never the URI. A skill or file that doesn't exist, a draft agent,
-and a URI that is malformed or leaves the bundle all answer as resource not found.
+(for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
+the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
+with `| `. The prompt list is read once, the first time your client asks for it, and kept until the
+MCP server restarts. A skill added later appears after you restart your agent or its MCP server.
+The server sends no `list_changed` notification. The resources are two URI templates:
+`goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
+as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
+reads an agent's name and description. The session's default Project picks the bundle, never the
+URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
+is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
+step.
 
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or

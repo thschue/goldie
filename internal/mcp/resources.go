@@ -89,7 +89,7 @@ func resourcePath(uri, kind string) (name, path string, ok bool) {
 // notFound is the protocol's resource-not-found error. It names a next step,
 // and no URI, address, path or token: the client's own URI may carry anything.
 func notFound() error {
-	return &jsonrpc.Error{Code: sdk.CodeResourceNotFound,
+	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams,
 		Message: "resource not found; list_skills and list_agents give valid names"}
 }
 

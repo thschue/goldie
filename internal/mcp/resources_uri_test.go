@@ -19,11 +19,11 @@ func TestResourceReadOfAHostileURIIsNotFoundAndTheSessionLives(t *testing.T) {
 	for _, uri := range []string{
 		"goldie://agents/a\x00b", "goldie://agents/a\x7fb", "goldie://skills/deployer/a\x00b",
 		"goldie://skills/deployer/a\x7fb", "goldie://skills/de\x1bployer/SKILL.md", "goldie://skills/deployer/a\nb",
-		"goldie://other/x\x00", "\x00", "goldie://skills/deployer/a‮b",
+		"goldie://other/x\x00", "\x00", "goldie://skills/deployer/a\u202eb",
 	} {
 		_, err := cs.ReadResource(context.Background(), &sdk.ReadResourceParams{URI: uri})
 		var je *jsonrpc.Error
-		if !errors.As(err, &je) || je.Code != sdk.CodeResourceNotFound {
+		if !errors.As(err, &je) || je.Code != jsonrpc.CodeInvalidParams {
 			t.Errorf("read %q: want the resource-not-found error, got %v", uri, err)
 			continue
 		}
