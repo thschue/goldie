@@ -113,16 +113,16 @@ var whitespaceProjects = map[string]string{
 	"vertical tab":        "\v",
 	"form feed":           "\f",
 	"mixed ASCII":         " \t\n ",
-	"non-breaking space":  " ",
-	"NBSP and space":      "   ",
-	"em space":            " ",
-	"ideographic space":   "　",
-	"line separator":      " ",
-	"narrow no-break":     " ",
+	"non-breaking space":  "\u00a0",
+	"NBSP and space":      " \u00a0 ",
+	"em space":            "\u2003",
+	"ideographic space":   "\u3000",
+	"line separator":      "\u2028",
+	"narrow no-break":     "\u202f",
 	"oversized (64 KiB)":  strings.Repeat(" ", 64<<10),
 	"next line (NEL)":     "\u0085",
-	"ogham space mark":    " ",
-	"paragraph separator": " ",
+	"ogham space mark":    "\u1680",
+	"paragraph separator": "\u2029",
 }
 
 // A whitespace-only project is a tool error whose hint names list_projects,
@@ -156,7 +156,7 @@ func TestMCPProjectWithSurroundingWhitespaceIsRefused(t *testing.T) {
 		"leading space":   " github.com/acme/shop",
 		"trailing space":  "github.com/acme/shop ",
 		"trailing tab":    "github.com/acme/shop\t",
-		"trailing NBSP":   "github.com/acme/shop ",
+		"trailing NBSP":   "github.com/acme/shop\u00a0",
 		"leading newline": "\ngithub.com/acme/shop",
 	} {
 		for tool, args := range map[string]map[string]any{
