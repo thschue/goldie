@@ -487,6 +487,9 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Empty state | Nothing to show yet. Content appears here as goldie's pages come online. (A neutral `role="status"` panel under the page's `h1`, on every §2.2 route whose screen isn't built yet; Home's `h1` is the *Home question*.) |
 | Sign-in lead | The golden path for **`<org>`** — the same guidance your coding agents get. |
 | Token help | Exchanged once for a secure session. The token is never stored in your browser. |
+| Wrong token | That token wasn't accepted. Check it and try again, or ask your platform team for a new one. (A danger `Alert` with `role="alert"`, followed by the error envelope's `details.hint`, tied to the token field with `aria-describedby`.) |
+| Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
+| Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |

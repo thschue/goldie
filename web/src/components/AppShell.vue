@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import RoleMenu from '../auth/RoleMenu.vue';
 import GoldieMark from './GoldieMark.vue';
 import SideNav from './SideNav.vue';
 import ThemeToggle from './ThemeToggle.vue';
@@ -8,7 +9,10 @@ import ThemeToggle from './ThemeToggle.vue';
 // 1024 px up the nav is inline; below, it is a modal drawer behind the menu
 // button: focus moves in and is trapped, the page behind is inert, and Esc, a
 // link or the scrim closes it and returns focus to the menu button.
-withDefaults(defineProps<{ role?: 'reader' | 'operator' }>(), { role: 'reader' });
+// The role chip (#495) shows the session's role (account is false on the public
+// sign-in route); its menu's Sign out is emitted.
+withDefaults(defineProps<{ role?: 'reader' | 'operator'; account?: boolean }>(), { role: 'reader', account: true });
+const emit = defineEmits<{ signout: [] }>();
 
 const open = ref(false);
 const menuButton = ref<HTMLButtonElement>();
@@ -83,6 +87,7 @@ onBeforeUnmount(() => {
       <RouterLink to="/" class="brand"><GoldieMark /><span>goldie</span></RouterLink>
       <div class="actions">
         <ThemeToggle />
+        <RoleMenu v-if="account" :role="role" @signout="emit('signout')" />
         <button
           ref="menuButton"
           type="button"
