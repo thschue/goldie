@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/thschue/goldie/internal/api"
+	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -62,6 +63,7 @@ func LocalConfig(base platform.Config, dir string) platform.Config {
 // a fresh random token: what goldie server -dev and StartLocal run.
 type Local struct {
 	Config    platform.Config     // Start applies LocalConfig to it
+	GoldieDir string              // the repository's .goldie directory, the local Scope; "" is none
 	Logger    *slog.Logger        // nil discards
 	Telemetry *platform.Telemetry // nil for none
 	Force     <-chan struct{}     // closing it cuts the drain short; nil never does
@@ -82,7 +84,14 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		return "", "", nil, err
 	}
-	syncer, err := loadDir(ctx, cfg.ContentDir)
+	var src engine.Source = engine.EmptySource{}
+	if cfg.ContentDir != "" {
+		src = engine.NewDirSource(cfg.ContentDir)
+	}
+	if l.GoldieDir != "" {
+		src = engine.NewLocalSource(src, l.GoldieDir)
+	}
+	syncer, err := loadSource(ctx, src)
 	if err != nil {
 		return "", "", nil, contentLoadError(err)
 	}
@@ -156,20 +165,27 @@ func newLocalToken() (string, error) {
 // noEnv is a Lookup with nothing set, for the built-in defaults.
 func noEnv(string) (string, bool) { return "", false }
 
-// StartLocal starts the server on loopback over the content at dir with a
+// LocalOptions are what StartLocal serves.
+type LocalOptions struct {
+	BaseDir   string // the content directory (global/articles, projects/...); "" is empty content
+	GoldieDir string // the repository's .goldie directory, an absolute path: the local Scope; "" is none
+}
+
+// StartLocal starts the server on loopback over the content at opts.BaseDir,
+// with the local Scope of opts.GoldieDir added (it answers every request), a
 // fresh random token and the built-in defaults, reading no GOLDIE_ variable.
 // addr is the base URL a client talks to. stop shuts the listeners and the
 // poll loop down without a drain and returns once they have stopped; it is
 // safe to call more than once and concurrently. Cancelling ctx stops the same
 // things. The embedded server of the client commands runs it.
-func StartLocal(ctx context.Context, dir string) (addr, token string, stop func(), err error) {
+func StartLocal(ctx context.Context, opts LocalOptions) (addr, token string, stop func(), err error) {
 	base, err := platform.LoadConfig(noEnv)
 	if err != nil {
 		return "", "", nil, err
 	}
 	base.DrainTimeout = 0
 	runCtx, cancel := context.WithCancel(ctx)
-	addr, token, wait, err := Local{Config: LocalConfig(base, dir)}.Start(runCtx)
+	addr, token, wait, err := Local{Config: LocalConfig(base, opts.BaseDir), GoldieDir: opts.GoldieDir}.Start(runCtx)
 	if err != nil {
 		cancel()
 		return "", "", nil, err

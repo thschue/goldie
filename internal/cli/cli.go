@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/contract/project"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -55,6 +56,10 @@ type Env struct {
 	// its address and token. stop ends it. cmd injects app.StartLocal; nil
 	// means local mode is not available.
 	StartLocal func(ctx context.Context, dir string) (addr, token string, stop func(), err error)
+	// StartLocalScope is StartLocal for a repository with a local Scope:
+	// goldieDir is the absolute path of its .goldie directory, and dir the
+	// content directory under it, "" for none. cmd injects it from app.StartLocal.
+	StartLocalScope func(ctx context.Context, dir, goldieDir string) (addr, token string, stop func(), err error)
 }
 
 // DefaultEnv is the process environment.
@@ -192,22 +197,69 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	if err != nil {
 		return nil, nil, err
 	}
-	c, err := f.commander(env, dir == "")
+	goldieDir, dir, err := f.localScope(env, dir)
 	if err != nil {
 		return nil, nil, err
 	}
-	if dir == "" {
+	local := dir != "" || goldieDir != ""
+	c, err := f.commander(env, !local)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !local {
 		return c, func() {}, nil
 	}
-	if env.StartLocal == nil {
+	var addr, token string
+	var stop func()
+	switch {
+	case goldieDir != "" && env.StartLocalScope != nil:
+		addr, token, stop, err = env.StartLocalScope(ctx, dir, goldieDir)
+	case goldieDir == "" && env.StartLocal != nil:
+		addr, token, stop, err = env.StartLocal(ctx, dir)
+	default:
 		return nil, nil, errors.New("local mode is not available")
 	}
-	addr, token, stop, err := env.StartLocal(ctx, dir)
 	if err != nil {
 		return nil, nil, err
 	}
 	c.s.addr, c.s.token, c.local = addr, token, true
 	return c, stop, nil
+}
+
+// localScope finds the repository's local Scope from the working directory:
+// goldieDir is its .goldie directory, set when .goldie/articles exists at the
+// repository root. dir is the content directory given by --dir or GOLDIE_DIR,
+// or else the one config.yaml names (project.ConfigContentDir), or "" for
+// empty content. A .goldie without articles, such as the one goldie init
+// writes, is not a local Scope: dir comes back as it was given. An address
+// together with a local Scope is an error naming both, like one with a
+// directory, because the address would hide the repository's own content.
+func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, err error) {
+	wd, werr := os.Getwd()
+	if werr != nil {
+		return "", dir, nil
+	}
+	root, ok := project.LocalRoot(wd)
+	if !ok {
+		return "", dir, nil
+	}
+	if dir == "" {
+		addrName := "--addr"
+		if f.s.addr == "" {
+			if v, _ := env.Lookup(EnvAddr); v != "" {
+				addrName = EnvAddr
+			} else {
+				addrName = ""
+			}
+		}
+		if addrName != "" {
+			return "", "", fmt.Errorf("%s is set and the repository has .goldie/articles: use %s for a running server, or unset it for the local content, not both", addrName, addrName)
+		}
+		if dir, err = project.ConfigContentDir(root); err != nil {
+			return "", "", err
+		}
+	}
+	return project.GoldieDir(root), dir, nil
 }
 
 // localDir returns the content directory of local mode, or "" for remote
