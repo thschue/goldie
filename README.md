@@ -49,8 +49,12 @@ against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, a
 `GOLDIE_ADDR` from the environment; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
 `--addr`, or `GOLDIE_DIR` and `GOLDIE_ADDR` both set in the environment, is an error naming both.
 Content that does not load stops the command with `content does not load: <reason>`. When
-`search`, `lookup` or `status` cannot reach the embedded server, the error says so and does not
-mention `--addr` or `GOLDIE_ADDR`. `version` ignores `--dir`.
+`search`, `lookup`, `status` or an `mcp` tool cannot reach the embedded server, the error says so and
+does not mention `--addr` or `GOLDIE_ADDR`. `version` ignores `--dir`.
+
+A `200 OK` that is not a goldie API answer, such as a proxy's login page, is reported as "the
+server's answer isn't a goldie API answer; check the address", by the CLI and by `mcp` alike, and
+nothing of the page is shown.
 
 ```sh
 export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
