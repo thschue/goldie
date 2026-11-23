@@ -39,7 +39,8 @@ skills it names, with the Scope that answered for each) that answer for the Proj
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
 before any request. Skill, agent and loop names match case-insensitively, and the answer shows the
 name as written. Two skills, two agents or two loops in one Scope whose names differ only in case fail the
-load; the error names both. File paths inside a skill stay exact. `goldie skills show <name>
+load; the error names both. File paths inside a skill stay exact, and two files of one skill
+whose paths differ only in case fail the load the same way. `goldie skills show <name>
 --file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
 bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
 `goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
