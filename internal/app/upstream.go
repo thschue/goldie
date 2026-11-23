@@ -68,7 +68,7 @@ func upstreamBase(up Upstream, goldieDir string) (engine.Source, error) {
 	if up.Project == "" {
 		return nil, errors.New("an upstream needs a Project to fetch the view of")
 	}
-	if err := checkUpstreamAddr(up.Addr); err != nil {
+	if err := checkUpstreamAddr(platform.EnvAddr, up.Addr); err != nil {
 		return nil, err
 	}
 	if goldieDir != "" {
@@ -90,17 +90,18 @@ func upstreamBase(up Upstream, goldieDir string) (engine.Source, error) {
 }
 
 // checkUpstreamAddr requires an http(s) URL with a host and no credentials,
-// and https unless the host is loopback, before any connection is made.
-func checkUpstreamAddr(addr string) error {
+// and https unless the host is loopback, before any connection is made. Errors
+// name env, the setting that holds addr, and never addr.
+func checkUpstreamAddr(env, addr string) error {
 	if err := contract.CheckBaseURL(addr); err != nil {
-		return fmt.Errorf("%s: %w", platform.EnvAddr, err)
+		return fmt.Errorf("%s: %w", env, err)
 	}
 	u, err := url.Parse(addr)
 	if err != nil || u.User != nil {
-		return fmt.Errorf("%s must not hold credentials", platform.EnvAddr)
+		return fmt.Errorf("%s must not hold credentials", env)
 	}
 	if u.Scheme != "https" && !isLoopbackHost(u.Hostname()) {
-		return fmt.Errorf("%s: the upstream must use https unless its host is loopback", platform.EnvAddr)
+		return fmt.Errorf("%s: the upstream must use https unless its host is loopback", env)
 	}
 	return nil
 }

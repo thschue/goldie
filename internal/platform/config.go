@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -54,6 +55,9 @@ const (
 
 	// The ordered list of Sources (#476): one JSON document.
 	EnvSources = "GOLDIE_SOURCES"
+
+	// The server a GOLDIE_MODE=ui process proxies to (#636).
+	EnvUpstreamAddr = "GOLDIE_UPSTREAM_ADDR"
 )
 
 // MinPollInterval is the shortest GOLDIE_POLL_INTERVAL LoadConfig accepts in
@@ -84,10 +88,12 @@ func PollIntervalFloor() time.Duration {
 const MaxActivityReorderWindow = time.Minute
 
 // The values of GOLDIE_MODE: what the server mounts. ModeAll serves /api, the
-// docs, /mcp and the UI; ModeAPI serves /api and the docs only.
+// docs, /mcp and the UI; ModeAPI serves /api and the docs only; ModeUI serves
+// the UI and proxies /api and the docs to GOLDIE_UPSTREAM_ADDR.
 const (
 	ModeAll = "all"
 	ModeAPI = "api"
+	ModeUI  = "ui"
 )
 
 // ParseMode validates a GOLDIE_MODE value; empty is ModeAll. The error names
@@ -98,8 +104,10 @@ func ParseMode(v string) (string, error) {
 		return ModeAll, nil
 	case ModeAPI:
 		return ModeAPI, nil
+	case ModeUI:
+		return ModeUI, nil
 	}
-	return ModeAll, fmt.Errorf("%s: must be %s or %s", EnvMode, ModeAll, ModeAPI)
+	return ModeAll, fmt.Errorf("%s: must be %s, %s or %s", EnvMode, ModeAll, ModeAPI, ModeUI)
 }
 
 // modeOrAll is mode, or ModeAll when it is empty.
@@ -120,9 +128,14 @@ type Config struct {
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
 
-	// Mode is what the public handler mounts: ModeAll or ModeAPI. Empty (a
-	// Config built by hand) means ModeAll.
+	// Mode is what the public handler mounts: ModeAll, ModeAPI or ModeUI. Empty
+	// (a Config built by hand) means ModeAll.
 	Mode string
+
+	// UpstreamAddr is the base URL of the server ModeUI proxies to; empty in
+	// every other mode. LoadConfig has checked it is an http(s) URL with a
+	// host and no credentials.
+	UpstreamAddr string
 
 	MCPName string // {{mcp_name}} of the instruction blocks; validated by validMCPName
 
@@ -296,6 +309,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	} else {
 		cfg.PollInterval = d
 	}
+	errs = append(errs, checkModeSettings(&cfg, str, lookup)...)
 	if !strings.Contains(cfg.Addr, ":") {
 		errs = append(errs, fmt.Errorf("%s: must be a host:port address", EnvAddr))
 	}
@@ -306,6 +320,44 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s and %s must differ: the admin port is never the public listener", EnvAddr, EnvAdminAddr))
 	}
 	return cfg, errors.Join(errs...)
+}
+
+// sourceSettings are the variables of the Source: a ModeUI process serves no
+// content, so it refuses them rather than ignoring them.
+var sourceSettings = []string{EnvContentDir, EnvGitURL, EnvGitRef, EnvGitToken, EnvGitSSHKey,
+	EnvGitSSHKnownHosts, EnvGitCABundle, EnvGitAllowFileURL, EnvSources, EnvPollInterval}
+
+// checkModeSettings reads GOLDIE_UPSTREAM_ADDR into cfg and returns what the
+// mode refuses: ModeUI needs the upstream and takes no Source setting, every
+// other mode takes no upstream. Errors name the variable and never a value.
+func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lookup) []error {
+	var errs []error
+	isSet := func(name string) bool {
+		v, ok := lookup(name)
+		_, file := lookup(name + "_FILE")
+		return ok && v != "" || file
+	}
+	addr := str(EnvUpstreamAddr, def(EnvUpstreamAddr))
+	switch {
+	case cfg.Mode != ModeUI && addr != "":
+		return append(errs, fmt.Errorf("%s: only %s=%s uses an upstream", EnvUpstreamAddr, EnvMode, ModeUI))
+	case cfg.Mode != ModeUI:
+		return nil
+	case addr == "":
+		errs = append(errs, fmt.Errorf("%s: %s=%s needs the address of the server to proxy to", EnvUpstreamAddr, EnvMode, ModeUI))
+	default:
+		if u, err := url.Parse(addr); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+			errs = append(errs, fmt.Errorf("%s: must be an http or https URL with a host and no credentials", EnvUpstreamAddr))
+		} else {
+			cfg.UpstreamAddr = addr
+		}
+	}
+	for _, name := range sourceSettings {
+		if isSet(name) {
+			errs = append(errs, fmt.Errorf("%s: %s=%s serves no content, so it takes no Source setting", name, EnvMode, ModeUI))
+		}
+	}
+	return errs
 }
 
 // CheckAPITokenPairing refuses GOLDIE_API_TOKEN and GOLDIE_API_TOKENS set
