@@ -1,6 +1,9 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { defineComponent, h } from 'vue';
+import { createRouter, createWebHistory, useRoute, type RouteRecordRaw } from 'vue-router';
 import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
+import ProjectHome from './projects/ProjectHome.vue';
+import { projectOf } from './projects/api';
 import HomeView from './search/HomeView.vue';
 import EmptyView from './views/EmptyView.vue';
 import NotFoundView from './views/NotFoundView.vue';
@@ -19,8 +22,15 @@ const pages: [path: string, title: string][] = [
   ['/ops/sources', 'Sources'],
 ];
 
+// Home is one address: with a Project (`/?project=`) it lists that Project's Items,
+// otherwise it is the search (`/`, `/?q=`).
+const Home = defineComponent(() => {
+  const route = useRoute();
+  return () => h(projectOf(route.query) ? ProjectHome : HomeView);
+});
+
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: HomeView, meta: { title: 'Home' } },
+  { path: '/', component: Home, meta: { title: 'Home' } },
   // Sign in is public: the guard lets it through, and the shell shows no role chip.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),

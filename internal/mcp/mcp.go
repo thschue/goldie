@@ -234,12 +234,8 @@ func (t *tools) search(ctx context.Context, q, project string) *sdk.CallToolResu
 	return success(b.String())
 }
 
-// plainMissHint is the server's hint for an id that is no article; the tool
-// words the next step with its own name.
-const (
-	plainMissHint   = "Search for the article, then use an id from its results."
-	searchFirstHint = "Search for the article with search_knowledge, then use an id from its results."
-)
+// searchFirstHint rewords contract.ArticleMissHint with the tool's own name.
+const searchFirstHint = "Search for the article with search_knowledge, then use an id from its results."
 
 func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolResult {
 	// An empty or dot-only id would be cleaned out of the article path and
@@ -258,11 +254,7 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	if err != nil {
 		// Only the plain miss is reworded: the agent has no search operation,
 		// and a Suppression's not_found keeps the hint naming its entry.
-		var ae *contract.APIError
-		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
-			ae.Hint = searchFirstHint
-		}
-		return failure(wordError(err, t.local))
+		return failure(wordError(contract.RewordMiss(err, contract.ArticleMissHint, searchFirstHint), t.local))
 	}
 	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\nThe article (each line starts with \"| \"; drop that prefix to read it):\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
