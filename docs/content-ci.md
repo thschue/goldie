@@ -52,6 +52,11 @@ Two more checks fail the load:
 - A lookup line must resolve in the article's own view, by the same rule as `replaced_by`, and a
   draft does not resolve. A lookup line is a fenced code block line or a one-line inline code span
   whose whole content is `goldie lookup <id>`. A line with extra words or `--project` is skipped.
+  A placeholder id is skipped too: `goldie lookup <id>` or `goldie lookup …`, as in the README.
+  An id with a hidden or control character, or one longer than a reference may be, is not a
+  placeholder and fails the load. The scan follows CommonMark: a fence is indented at most 3
+  spaces, a fence in a list item counts, and an indented code block or a `<pre>` HTML block is
+  not scanned.
 
 An article with `status: draft` is left out of search and lookup, and a draft project article does
 not shadow the global article with the same id.
