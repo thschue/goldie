@@ -65,7 +65,7 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 	if names != nil {
 		return order, names, nil
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", failed)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -128,7 +128,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 	if !ok || !names[skill] {
 		return nil, unknown
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfacePrompt)
 	if err != nil {
 		return nil, err
 	}

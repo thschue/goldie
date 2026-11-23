@@ -118,7 +118,7 @@ func (t *tools) readSkillFile(ctx context.Context, req *sdk.ReadResourceRequest)
 	if !ok {
 		return nil, notFound()
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfaceResource)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (t *tools) readAgent(ctx context.Context, req *sdk.ReadResourceRequest) (*s
 	if !ok {
 		return nil, notFound()
 	}
-	proj, err := t.sessionProject("")
+	proj, err := t.sessionProjectFor("", surfaceResource)
 	if err != nil {
 		return nil, err
 	}
