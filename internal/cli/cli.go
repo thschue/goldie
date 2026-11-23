@@ -74,6 +74,8 @@ type settings struct {
 	dir                  string // content directory of local mode
 	target               string // instructions: claude or agents
 	force                bool   // instructions apply: replace a hand-edited block
+	file                 string // skills show: the file of the skill to print
+	fileSet              bool   // --file was given, even empty
 	json                 bool
 }
 
@@ -87,6 +89,12 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
 		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand")
+	}
+	if name == "skills" { // only skills have files to read
+		fs.Func("file", "show: print one file of the skill to stdout, as its raw bytes (a `path` from its file list)", func(v string) error {
+			f.s.file, f.s.fileSet = v, true
+			return nil
+		})
 	}
 	if name != "init" && name != "instructions" { // init prints three fixed lines; instructions has no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")
@@ -102,6 +110,9 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	var verb, itemName string
 	if name == "skills" || name == "agents" {
 		if verb, itemName, err = catalogUsage(name, pos); err != nil {
+			return err
+		}
+		if err = f.s.checkFileUsage(name, verb); err != nil {
 			return err
 		}
 	}
