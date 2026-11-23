@@ -332,6 +332,14 @@ type Article struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
+	// Scope `global`, `local` (the repository's own `.goldie/`), or the Project
+	// (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+	// not global.
+	//
+	//
+	// Examples: github.com/acme/shop
+	Scope *string `json:"scope,omitempty"`
+
 	// Status An Item's lifecycle when it is not published: `deprecated` (still
 	// served; read `replaced_by` instead when present) or `draft` (only with
 	// `drafts=true`, for operators). Absent for a published Item. Clients
@@ -479,7 +487,7 @@ type ProjectItem struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
-	// Scope `global`, or the Project (`host/org/repo`) whose copy won.
+	// Scope `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won.
 	//
 	// Examples: github.com/acme/shop
 	Scope string `json:"scope"`
@@ -578,7 +586,7 @@ type SearchHit struct {
 	// Examples: article:platform/deploy-v2
 	ReplacedBy *string `json:"replaced_by,omitempty"`
 
-	// Scope Where the Item applies, such as `global` (ADR 0005).
+	// Scope Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005).
 	//
 	// Examples: global
 	Scope string `json:"scope"`
