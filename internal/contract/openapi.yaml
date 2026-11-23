@@ -270,9 +270,11 @@ paths:
       x-goldie-role: operator
       tags:
         - sync
-      summary: Read the content sync warnings
+      summary: Read the content sync status and warnings
       description: |
-        Returns the findings of the last content load that did not fail it, for
+        Returns, per Source, the revision served and when it was last polled,
+        when that last succeeded and why it last failed, and the findings of the
+        last content load that did not fail it, for
         operator tokens only, such as a `suppress` reference that names nothing
         in a Project's `project.yaml`. Each warning names a file relative to the
         Source root and shows what the Source wrote escaped to printable ASCII
@@ -286,6 +288,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/SyncStatus"
               example:
+                sources:
+                  - revision: 3f786850e387550fdab836ed7e6dc881de23001b
+                    last_poll: "2026-11-23T10:00:00Z"
+                    last_success: "2026-11-23T10:00:00Z"
                 warnings:
                   - file: projects/github.com/acme/shop/project.yaml
                     message: suppress "article:team/gone" names no published Item this Project can see
@@ -305,6 +311,60 @@ paths:
           $ref: "#/components/responses/UpgradeRequired"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      operationId: postSync
+      x-goldie-role: operator
+      tags:
+        - sync
+      summary: Poll the Source now
+      description: |
+        Starts one poll of the Source now instead of waiting for
+        `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+        without waiting for it, for example after merging into the repository a
+        git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+        moves when the poll ends, `revision` when it found a new commit, and
+        `last_error` when it failed. The request takes no body. At most one
+        poll runs at a time.
+      responses:
+        "202":
+          description: A poll was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncTriggered"
+              example:
+                hint: A poll was started. Read GET /api/v1/sync to see its outcome.
+        "401":
+          description: No bearer token was sent to trigger a poll, or it is not a configured token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: A reader token was sent to trigger a poll; only an operator token may.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          description: |
+            A poll is already running, so none was started (`error.code` is
+            `sync_running`), or the token sent more requests than
+            `GOLDIE_RATE_LIMIT` allows (`rate_limited`, with `Retry-After`).
+            Wait, then read `GET /api/v1/sync`.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "503":
           $ref: "#/components/responses/NotReady"
         default:
@@ -561,7 +621,17 @@ components:
       description: How the last content load went, for operators.
       required:
         - warnings
+        - sources
       properties:
+        sources:
+          examples:
+            - - revision: 3f786850e387550fdab836ed7e6dc881de23001b
+                last_poll: "2026-11-23T10:00:00Z"
+                last_success: "2026-11-23T10:00:00Z"
+          type: array
+          description: One entry per Source. This server has exactly one.
+          items:
+            $ref: "#/components/schemas/SourceSyncStatus"
         warnings:
           type: array
           description: Load findings that did not fail the load, in load order.
@@ -570,6 +640,47 @@ components:
           examples:
             - - file: projects/github.com/acme/shop/project.yaml
                 message: suppress "article:team/gone" names no published Item this Project can see
+    SourceSyncStatus:
+      type: object
+      description: How polling one Source is going.
+      properties:
+        revision:
+          type: string
+          description: |
+            The commit the served content comes from. Absent for a Source
+            without revisions, such as a directory.
+          examples:
+            - 3f786850e387550fdab836ed7e6dc881de23001b
+        last_poll:
+          x-lint-ignore: camel-case-properties
+          type: string
+          format: date-time
+          description: When the last poll ended, whether it succeeded or not. Absent before the first poll ends.
+        last_success:
+          x-lint-ignore: camel-case-properties
+          type: string
+          format: date-time
+          description: When the last poll that loaded the content ended. Absent before the first one.
+        last_error:
+          x-lint-ignore: camel-case-properties
+          type: string
+          description: |
+            Why the last poll failed, absent when it succeeded. It names a file
+            relative to the Source root and never a host path, URL or
+            credential. The served content stays the last good one.
+          examples:
+            - "global/articles/sub/bad.md: frontmatter not closed with ---"
+    SyncTriggered:
+      type: object
+      description: The answer to starting a poll.
+      required:
+        - hint
+      properties:
+        hint:
+          type: string
+          description: What to do next.
+          examples:
+            - A poll was started. Read GET /api/v1/sync to see its outcome.
     ContentWarning:
       type: object
       description: |

@@ -106,7 +106,7 @@ article) does not fail the load, and the article is suppressed once it exists an
 engine records a warning in its sync status, one per reference and file, and `goldie validate` prints
 each on stderr as `goldie: warning: <file>: suppress "<reference>" names no published Item this
 Project can see`, with the exit code still 0. The reference is shown escaped to ASCII and cut. The
-same warnings are on `GET /api/v1/sync` (`{"warnings": [{"file", "message"}]}`) for operator tokens only (ADR
+same warnings are on `GET /api/v1/sync` (`{"warnings": [{"file", "message"}], "sources": [...]}`) for operator tokens only (ADR
 0008): a reader token gets 403 and no token 401, because a warning shows what a Source wrote. The
 Project detail does not carry them.
 

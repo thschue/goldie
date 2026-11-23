@@ -124,7 +124,8 @@ var notReady = envelope("not_ready", "content is still loading",
 type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
-	activity *Activity // see RecordInto, nil records nothing
+	activity *Activity   // see RecordInto, nil records nothing
+	sync     SyncControl // see WithSync, nil lists no Source
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -282,7 +283,7 @@ func (s *Server) GetSync(context.Context, contract.GetSyncRequestObject) (contra
 	for _, w := range snap.Warnings() {
 		warnings = append(warnings, contentWarning(w))
 	}
-	return contract.GetSync200JSONResponse{Warnings: warnings}, nil
+	return contract.GetSync200JSONResponse{Warnings: warnings, Sources: s.sourceStatuses()}, nil
 }
 
 // contentWarning splits an engine warning, "<file>: <message>", at the first

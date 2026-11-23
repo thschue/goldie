@@ -2,14 +2,14 @@ package engine
 
 import (
 	"context"
-	"regexp"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 // SyncStatus reports how the Syncer is doing. LastError is redacted: it holds
-// no paths, URLs or credentials, and is empty after a successful poll.
+// no host path, URL or credential (a file is named relative to the Source root),
+// and is empty after a successful poll.
 // Warnings are the findings of the last successful load that did not fail it,
 // such as a suppress reference that names nothing. Each names a file relative
 // to the Source root, is printable ASCII and at most 1 KiB. A warning is not
@@ -83,6 +83,29 @@ func (s *Syncer) Poll(ctx context.Context) error {
 func (s *Syncer) poll(ctx context.Context) (SyncStatus, error) {
 	s.pollMu.Lock()
 	defer s.pollMu.Unlock()
+	return s.pollLocked(ctx)
+}
+
+// Trigger starts one poll in the background, with ctx and then onPoll as Run
+// has them, and reports whether it did. It starts none, and reports false,
+// when a poll is already running or ctx has ended. The poll runs to the end of
+// ctx, not of the caller's request.
+func (s *Syncer) Trigger(ctx context.Context, onPoll func(SyncStatus)) bool {
+	if ctx.Err() != nil || !s.pollMu.TryLock() {
+		return false
+	}
+	go func() {
+		defer s.pollMu.Unlock()
+		st, _ := s.pollLocked(ctx)
+		if onPoll != nil {
+			onPoll(st)
+		}
+	}()
+	return true
+}
+
+// pollLocked is poll for a caller that holds pollMu.
+func (s *Syncer) pollLocked(ctx context.Context) (SyncStatus, error) {
 	snap, rev, err := s.load(ctx)
 	if err == nil && snap == nil {
 		err = errNilSnapshot
@@ -163,38 +186,3 @@ const (
 	errNilSnapshot  = syncError("source returned no snapshot")
 	errLoadPanicked = syncError("source load panicked")
 )
-
-// The patterns run in order and err on the side of redacting too much: a
-// redacted word costs a little detail, a leaked one may cost a credential.
-var redactions = []*regexp.Regexp{
-	// URLs, userinfo included.
-	regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://\S+`),
-	// A credential-like name (also inside an identifier such as api_key or
-	// GOLDIE_TOKEN), an optional auth scheme, and the value, quoted or not.
-	regexp.MustCompile(`(?i)[\w.-]*(token|passw(or)?d|pwd|secret|key|authorization|bearer|credential|cookie|session)[\w.-]*\s*[:=]?\s*((bearer|basic|token)\s+)?("[^"]*"|'[^']*'|\S+)`),
-	// Userinfo without a scheme (user:password@host) and email addresses.
-	// It runs after the credential pattern so it cannot swallow the closing
-	// quote of a quoted value.
-	regexp.MustCompile(`\S+@\S+`),
-	// Bare tokens: known prefixes, and any long unbroken run.
-	regexp.MustCompile(`\b(gh[pousr]_|github_pat_|glpat-)\w+`),
-	regexp.MustCompile(`[A-Za-z0-9_+=-]{32,}`),
-	// Path-like words.
-	regexp.MustCompile(`[^\s"'` + "`" + `]*[/\\][^\s"'` + "`" + `]*`),
-	// Addresses: bracketed or bare IPv6, then dotted names and IPv4, then
-	// host:port.
-	regexp.MustCompile(`\[[^\]\s]*\](:\d+)?`),
-	regexp.MustCompile(`(?i)\b[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,7}\b`),
-	regexp.MustCompile(`[\w-]+(\.[\w-]+)+(:\d+)?`),
-	regexp.MustCompile(`[\w-]+:\d+\b`),
-}
-
-// redact strips URLs, credential-looking values, bare tokens, path-like words
-// and network addresses from a message, so a Source error is safe to show on a
-// status endpoint.
-func redact(msg string) string {
-	for _, re := range redactions {
-		msg = re.ReplaceAllString(msg, "[redacted]")
-	}
-	return msg
-}

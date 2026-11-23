@@ -363,12 +363,49 @@ type SearchResults struct {
 	Results []SearchHit `json:"results"`
 }
 
+// SourceSyncStatus How polling one Source is going.
+type SourceSyncStatus struct {
+	// LastError Why the last poll failed, absent when it succeeded. It names a file
+	// relative to the Source root and never a host path, URL or
+	// credential. The served content stays the last good one.
+	//
+	//
+	// Examples: global/articles/sub/bad.md: frontmatter not closed with ---
+	LastError *string `json:"last_error,omitempty"`
+
+	// LastPoll When the last poll ended, whether it succeeded or not. Absent before the first poll ends.
+	LastPoll *time.Time `json:"last_poll,omitempty"`
+
+	// LastSuccess When the last poll that loaded the content ended. Absent before the first one.
+	LastSuccess *time.Time `json:"last_success,omitempty"`
+
+	// Revision The commit the served content comes from. Absent for a Source
+	// without revisions, such as a directory.
+	//
+	//
+	// Examples: 3f786850e387550fdab836ed7e6dc881de23001b
+	Revision *string `json:"revision,omitempty"`
+}
+
 // SyncStatus How the last content load went, for operators.
 type SyncStatus struct {
+	// Sources One entry per Source. This server has exactly one.
+	//
+	// Examples: [{"last_poll":"2026-11-23T10:00:00Z","last_success":"2026-11-23T10:00:00Z","revision":"3f786850e387550fdab836ed7e6dc881de23001b"}]
+	Sources []SourceSyncStatus `json:"sources"`
+
 	// Warnings Load findings that did not fail the load, in load order.
 	//
 	// Examples: [{"file":"projects/github.com/acme/shop/project.yaml","message":"suppress \"article:team/gone\" names no published Item this Project can see"}]
 	Warnings []ContentWarning `json:"warnings"`
+}
+
+// SyncTriggered The answer to starting a poll.
+type SyncTriggered struct {
+	// Hint What to do next.
+	//
+	// Examples: A poll was started. Read GET /api/v1/sync to see its outcome.
+	Hint string `json:"hint"`
 }
 
 // Drafts defines model for Drafts.
@@ -577,9 +614,11 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetSync Read the content sync warnings
+	// GetSync Read the content sync status and warnings
 	//
-	// Returns the findings of the last content load that did not fail it, for
+	// Returns, per Source, the revision served and when it was last polled,
+	// when that last succeeded and why it last failed, and the findings of the
+	// last content load that did not fail it, for
 	// operator tokens only, such as a `suppress` reference that names nothing
 	// in a Project's `project.yaml`. Each warning names a file relative to the
 	// Source root and shows what the Source wrote escaped to printable ASCII
@@ -588,6 +627,19 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 	GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostSync Poll the Source now
+	//
+	// Starts one poll of the Source now instead of waiting for
+	// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+	// without waiting for it, for example after merging into the repository a
+	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+	// moves when the poll ends, `revision` when it found a new commit, and
+	// `last_error` when it failed. The request takes no body. At most one
+	// poll runs at a time.
+	//
+	// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
+	PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	//
@@ -734,9 +786,11 @@ func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParam
 	return c.Client.Do(req)
 }
 
-// GetSync Read the content sync warnings
+// GetSync Read the content sync status and warnings
 //
-// Returns the findings of the last content load that did not fail it, for
+// Returns, per Source, the revision served and when it was last polled,
+// when that last succeeded and why it last failed, and the findings of the
+// last content load that did not fail it, for
 // operator tokens only, such as a `suppress` reference that names nothing
 // in a Project's `project.yaml`. Each warning names a file relative to the
 // Source root and shows what the Source wrote escaped to printable ASCII
@@ -746,6 +800,29 @@ func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParam
 // Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 func (c *Client) GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSyncRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostSync Poll the Source now
+//
+// Starts one poll of the Source now instead of waiting for
+// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+// without waiting for it, for example after merging into the repository a
+// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+// moves when the poll ends, `revision` when it found a new commit, and
+// `last_error` when it failed. The request takes no body. At most one
+// poll runs at a time.
+//
+// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
+func (c *Client) PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSyncRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -1052,6 +1129,33 @@ func NewGetSyncRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewPostSyncRequest constructs an http.Request for the PostSync method
+func NewPostSyncRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/sync"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetOpenAPIJSONRequest constructs an http.Request for the GetOpenAPIJSON method
 func NewGetOpenAPIJSONRequest(server string) (*http.Request, error) {
 	var err error
@@ -1240,9 +1344,11 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticlesWithResponse(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*SearchArticlesResponse, error)
 
-	// GetSyncWithResponse Read the content sync warnings
+	// GetSyncWithResponse Read the content sync status and warnings
 	//
-	// Returns the findings of the last content load that did not fail it, for
+	// Returns, per Source, the revision served and when it was last polled,
+	// when that last succeeded and why it last failed, and the findings of the
+	// last content load that did not fail it, for
 	// operator tokens only, such as a `suppress` reference that names nothing
 	// in a Project's `project.yaml`. Each warning names a file relative to the
 	// Source root and shows what the Source wrote escaped to printable ASCII
@@ -1253,6 +1359,21 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 	GetSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncResponse, error)
+
+	// PostSyncWithResponse Poll the Source now
+	//
+	// Starts one poll of the Source now instead of waiting for
+	// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+	// without waiting for it, for example after merging into the repository a
+	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+	// moves when the poll ends, `revision` when it found a new commit, and
+	// `last_error` when it failed. The request takes no body. At most one
+	// poll runs at a time.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
+	PostSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostSyncResponse, error)
 
 	// GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
 	//
@@ -1827,6 +1948,96 @@ func (r GetSyncResponse) ContentType() string {
 	return ""
 }
 
+// PostSyncResponse429Headers the declared response headers of an HTTP 429 response for PostSync
+type PostSyncResponse429Headers struct {
+	RetryAfter *int
+}
+
+type PostSyncResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *SyncTriggered
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorEnvelope
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *PostSyncResponse429Headers
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r PostSyncResponse) GetJSON202() *SyncTriggered {
+	return r.JSON202
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r PostSyncResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PostSyncResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r PostSyncResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r PostSyncResponse) GetJSON429() *ErrorEnvelope {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r PostSyncResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostSyncResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostSyncResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostSyncResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetOpenAPIJSONResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2043,9 +2254,11 @@ func (c *ClientWithResponses) SearchArticlesWithResponse(ctx context.Context, pa
 	return ParseSearchArticlesResponse(rsp)
 }
 
-// GetSyncWithResponse Read the content sync warnings
+// GetSyncWithResponse Read the content sync status and warnings
 //
-// Returns the findings of the last content load that did not fail it, for
+// Returns, per Source, the revision served and when it was last polled,
+// when that last succeeded and why it last failed, and the findings of the
+// last content load that did not fail it, for
 // operator tokens only, such as a `suppress` reference that names nothing
 // in a Project's `project.yaml`. Each warning names a file relative to the
 // Source root and shows what the Source wrote escaped to printable ASCII
@@ -2061,6 +2274,27 @@ func (c *ClientWithResponses) GetSyncWithResponse(ctx context.Context, reqEditor
 		return nil, err
 	}
 	return ParseGetSyncResponse(rsp)
+}
+
+// PostSyncWithResponse Poll the Source now
+//
+// Starts one poll of the Source now instead of waiting for
+// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+// without waiting for it, for example after merging into the repository a
+// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+// moves when the poll ends, `revision` when it found a new commit, and
+// `last_error` when it failed. The request takes no body. At most one
+// poll runs at a time.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
+func (c *ClientWithResponses) PostSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostSyncResponse, error) {
+	rsp, err := c.PostSync(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostSyncResponse(rsp)
 }
 
 // GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
@@ -2593,6 +2827,87 @@ func ParseGetSyncResponse(rsp *http.Response) (*GetSyncResponse, error) {
 	return response, nil
 }
 
+// ParsePostSyncResponse parses an HTTP response from a PostSyncWithResponse call
+func ParsePostSyncResponse(rsp *http.Response) (*PostSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest SyncTriggered
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers PostSyncResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetOpenAPIJSONResponse parses an HTTP response from a GetOpenAPIJSONWithResponse call
 func ParseGetOpenAPIJSONResponse(rsp *http.Response) (*GetOpenAPIJSONResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2676,9 +2991,12 @@ type ServerInterface interface {
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
-	// GetSync Read the content sync warnings
+	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(w http.ResponseWriter, r *http.Request)
+	// PostSync Poll the Source now
+	// (POST /api/v1/sync)
+	PostSync(w http.ResponseWriter, r *http.Request)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(w http.ResponseWriter, r *http.Request)
@@ -2878,6 +3196,20 @@ func (siw *ServerInterfaceWrapper) GetSync(w http.ResponseWriter, r *http.Reques
 	handler.ServeHTTP(w, r)
 }
 
+// PostSync operation middleware
+func (siw *ServerInterfaceWrapper) PostSync(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostSync(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetOpenAPIJSON operation middleware
 func (siw *ServerInterfaceWrapper) GetOpenAPIJSON(w http.ResponseWriter, r *http.Request) {
 
@@ -3031,6 +3363,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sync", wrapper.GetSync)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sync", wrapper.PostSync)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPIYAML)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetOpenAPIJSON)
@@ -3830,6 +4163,130 @@ func (response GetSyncdefaultJSONResponse) VisitGetSyncResponse(w http.ResponseW
 	return err
 }
 
+type PostSyncRequestObject struct {
+}
+
+type PostSyncResponseObject interface {
+	VisitPostSyncResponse(w http.ResponseWriter) error
+}
+
+type PostSync202JSONResponse SyncTriggered
+
+func (response PostSync202JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync401JSONResponse ErrorEnvelope
+
+func (response PostSync401JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync403JSONResponse ErrorEnvelope
+
+func (response PostSync403JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response PostSync426JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type PostSync429JSONResponse struct {
+	Body    ErrorEnvelope
+	Headers PostSync429ResponseHeaders
+}
+
+func (response PostSync429JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response PostSync503JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSyncdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response PostSyncdefaultJSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetOpenAPIJSONRequestObject struct {
 }
 
@@ -3929,9 +4386,12 @@ type StrictServerInterface interface {
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
-	// GetSync Read the content sync warnings
+	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
+	// PostSync Poll the Source now
+	// (POST /api/v1/sync)
+	PostSync(ctx context.Context, request PostSyncRequestObject) (PostSyncResponseObject, error)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(ctx context.Context, request GetOpenAPIJSONRequestObject) (GetOpenAPIJSONResponseObject, error)
@@ -4126,6 +4586,30 @@ func (sh *strictHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSyncResponseObject); ok {
 		if err := validResponse.VisitGetSyncResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PostSync operation middleware
+func (sh *strictHandler) PostSync(w http.ResponseWriter, r *http.Request) {
+	var request PostSyncRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PostSync(ctx, request.(PostSyncRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PostSync")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PostSyncResponseObject); ok {
+		if err := validResponse.VisitPostSyncResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -154,9 +154,11 @@ Operation ID: `searchArticles`
 
 ### `GET /api/v1/sync`
 
-Read the content sync warnings
+Read the content sync status and warnings
 
-Returns the findings of the last content load that did not fail it, for
+Returns, per Source, the revision served and when it was last polled,
+when that last succeeded and why it last failed, and the findings of the
+last content load that did not fail it, for
 operator tokens only, such as a `suppress` reference that names nothing
 in a Project's `project.yaml`. Each warning names a file relative to the
 Source root and shows what the Source wrote escaped to printable ASCII
@@ -172,6 +174,30 @@ Operation ID: `getSync`
 | `403` | A reader token was sent for the sync status; only an operator token may read it. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `POST /api/v1/sync`
+
+Poll the Source now
+
+Starts one poll of the Source now instead of waiting for
+`GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
+without waiting for it, for example after merging into the repository a
+git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
+moves when the poll ends, `revision` when it found a new commit, and
+`last_error` when it failed. The request takes no body. At most one
+poll runs at a time.
+
+Operation ID: `postSync`
+
+| Status | Description | Body |
+|---|---|---|
+| `202` | A poll was started. | `application/json` (`SyncTriggered`) |
+| `401` | No bearer token was sent to trigger a poll, or it is not a configured token. | `application/json` (`ErrorEnvelope`) |
+| `403` | A reader token was sent to trigger a poll; only an operator token may. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | A poll is already running, so none was started ('error.code' is 'sync_running'), or the token sent more requests than 'GOLDIE_RATE_LIMIT' allows ('rate_limited', with 'Retry-After'). Wait, then read 'GET /api/v1/sync'. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
@@ -349,10 +375,30 @@ The result of a search.
 | `query` | `string` | yes | The search words as received. |
 | `results` | `array` | yes | The matching articles, best first, then by id. |
 
+### `SourceSyncStatus`
+
+How polling one Source is going.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `last_error` | `string` | no | Why the last poll failed, absent when it succeeded. It names a file relative to the Source root and never a host path, URL or credential. The served content stays the last good one. |
+| `last_poll` | `string` | no | When the last poll ended, whether it succeeded or not. Absent before the first poll ends. |
+| `last_success` | `string` | no | When the last poll that loaded the content ended. Absent before the first one. |
+| `revision` | `string` | no | The commit the served content comes from. Absent for a Source without revisions, such as a directory. |
+
 ### `SyncStatus`
 
 How the last content load went, for operators.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `sources` | `array` | yes | One entry per Source. This server has exactly one. |
 | `warnings` | `array` | yes | Load findings that did not fail the load, in load order. |
+
+### `SyncTriggered`
+
+The answer to starting a poll.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `hint` | `string` | yes | What to do next. |

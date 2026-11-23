@@ -40,7 +40,10 @@ type publicMux struct {
 	activity *api.Activity
 	// operatorPaths are the paths the spec reserves for operator tokens.
 	operatorPaths map[string]bool
-	routes        []route
+	// sync serves the sync operations; newPublic binds it to the Source's
+	// Syncer.
+	sync   *syncControl
+	routes []route
 	// endStreams ends the open activity streams; Public.Start calls it when
 	// its context ends.
 	endStreams func()
@@ -61,7 +64,8 @@ const activityCapacity = 1000
 // they check is the one the server serves.
 func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
-	srv, err := api.NewServer(provider, api.RecordInto(activity))
+	ctl := &syncControl{}
+	srv, err := api.NewServer(provider, api.RecordInto(activity), api.WithSync(ctl))
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +73,7 @@ func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens,
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths, sync: ctl}
 	srv.KeepStreamsAlive(keepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
@@ -384,6 +388,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 	if p.pollLog != nil {
 		onPoll = logPolls(ctx, p.pollLog)
 	}
+	p.sync.run(ctx, onPoll)
 	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	// The first stop signal ends the activity streams: Shutdown waits for
 	// open requests and never cancels them, so a stream would hold it for
@@ -452,6 +457,7 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
 	addUI(m, notFound, logger)
+	m.sync.bind(src.syncer)
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {
 		p.pollLog = logger.With(src.logAttrs...)
