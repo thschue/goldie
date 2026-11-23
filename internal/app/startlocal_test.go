@@ -53,7 +53,7 @@ func startLocal(t *testing.T, dir string) (addr, token string, stop func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	addr, token, stop, err := StartLocal(ctx, dir)
+	addr, token, stop, err := StartLocal(ctx, LocalOptions{BaseDir: dir})
 	if err != nil {
 		t.Fatalf("StartLocal(%q): %v", dir, err)
 	}
@@ -242,7 +242,7 @@ func TestStartLocalStopShutsDownAndIsSafeTwice(t *testing.T) {
 	base := settledGoroutines()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr, token, stop, err := StartLocal(ctx, testContent)
+	addr, token, stop, err := StartLocal(ctx, LocalOptions{BaseDir: testContent})
 	if err != nil {
 		t.Fatalf("StartLocal: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestStartLocalConcurrentStopsAndCancel(t *testing.T) {
 	waitLoops(t, 0)
 	base := settledGoroutines()
 	ctx, cancel := context.WithCancel(context.Background())
-	addr, _, stop, err := StartLocal(ctx, testContent)
+	addr, _, stop, err := StartLocal(ctx, LocalOptions{BaseDir: testContent})
 	if err != nil {
 		t.Fatalf("StartLocal: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestStartLocalStopsWhenTheContextEnds(t *testing.T) {
 	base := settledGoroutines()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	addr, token, stop, err := StartLocal(ctx, testContent)
+	addr, token, stop, err := StartLocal(ctx, LocalOptions{BaseDir: testContent})
 	if err != nil {
 		t.Fatalf("StartLocal: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestStartLocalWithAnEndedContextLeavesNothingRunning(t *testing.T) {
 	}
 	res := make(chan result, 1)
 	go func() {
-		addr, _, stop, err := StartLocal(ctx, testContent)
+		addr, _, stop, err := StartLocal(ctx, LocalOptions{BaseDir: testContent})
 		res <- result{addr, stop, err}
 	}()
 	var r result
@@ -391,7 +391,7 @@ func TestStartLocalUnloadableContentFailsWithoutAPath(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			waitLoops(t, 0)
 			base := settledGoroutines()
-			addr, token, stop, err := StartLocal(context.Background(), tc.dir)
+			addr, token, stop, err := StartLocal(context.Background(), LocalOptions{BaseDir: tc.dir})
 			if err == nil {
 				if stop != nil {
 					stop()
