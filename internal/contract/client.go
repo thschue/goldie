@@ -106,7 +106,17 @@ func ParseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (
 type limitTransport struct{ base http.RoundTripper }
 
 func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	base := t.base
+	resp, err := refuseRedirect(t.base, r)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &limitedBody{rc: resp.Body, left: MaxResponseBytes}
+	return resp, nil
+}
+
+// refuseRedirect sends r through base (nil means http.DefaultTransport) and
+// turns a 3xx answer into ErrRedirect.
+func refuseRedirect(base http.RoundTripper, r *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -118,7 +128,6 @@ func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		_ = resp.Body.Close()
 		return nil, ErrRedirect
 	}
-	resp.Body = &limitedBody{rc: resp.Body, left: MaxResponseBytes}
 	return resp, nil
 }
 

@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
+
+	"github.com/thschue/goldie/internal/contract"
 )
 
 // EventKind says what a recorded Event was: a search or a lookup.
@@ -29,8 +31,9 @@ const (
 	// That figure assumes the other fields stay short, as a token name, a
 	// semver, a checked project id and a trace id do for a locally recorded
 	// event; six full 1,024-byte fields would be about 60 MiB. 10,000 short
-	// events are about 2 MiB.
-	MaxActivityCapacity = 10_000
+	// events are about 2 MiB. It is the contract's MaxActivityHistory, the
+	// most events a peer reads before a stream's live marker.
+	MaxActivityCapacity = contract.MaxActivityHistory
 )
 
 // Event is one search or lookup, as the activity feed shows it. Record

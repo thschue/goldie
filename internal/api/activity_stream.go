@@ -96,10 +96,14 @@ type activityStream struct {
 	last      uint64 // id of the last event written
 }
 
-// VisitGetActivityResponse sends the headers at once, then the history, then
-// live events and keepalive comments. Once the headers are out it returns
-// nil whatever happens: a failed write means the client left, and an error
-// would have the strict handler write a second answer.
+// liveMarker ends the history of every stream (ActivityLive), even an empty
+// one, so a reader can tell history from live.
+const liveMarker = "event: live\ndata: {}\n\n"
+
+// VisitGetActivityResponse sends the headers at once, then the history and
+// the live marker, then live events and keepalive comments. Once the headers
+// are out it returns nil whatever happens: a failed write means the client
+// left, and an error would have the strict handler write a second answer.
 func (st *activityStream) VisitGetActivityResponse(w http.ResponseWriter) error {
 	defer st.cancel()
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -118,6 +122,9 @@ func (st *activityStream) VisitGetActivityResponse(w http.ResponseWriter) error 
 		if !st.write(w, rc, b) {
 			return nil
 		}
+	}
+	if !st.write(w, rc, []byte(liveMarker)) {
+		return nil
 	}
 	tick := time.NewTicker(st.keepalive)
 	defer tick.Stop()
@@ -158,6 +165,7 @@ func (st *activityStream) appendEvent(b []byte, e Event) []byte {
 		Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
 		Query: e.Query, Project: e.Project, Token: e.Token,
 		ClientVersion: e.ClientVersion, TraceId: e.TraceID, Miss: e.Miss,
+		Replica: e.Replica, Late: e.Late,
 	})
 }
 
