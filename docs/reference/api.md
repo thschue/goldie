@@ -97,6 +97,30 @@ Operation ID: `listProjects`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/projects/{id}`
+
+Read one registered Project
+
+Returns the Project's id, in the case the server stores it, and the
+global Items its `project.yaml` suppresses (ADR 0021) as
+`article:<id>`, sorted. A Project that suppresses nothing answers an
+empty list. A lookup of a suppressed Item answers 404 with a hint that
+names the Suppression and the file that sets it, and search leaves it
+out.
+
+Operation ID: `getProject`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The Project. | `application/json` (`ProjectDetail`) |
+| `400` | The id is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | No bearer token, or a wrong one; the body shows no Suppressions. | `application/json` (`ErrorEnvelope`) |
+| `404` | The server holds no such Project; the hint says how to register it. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/search`
 
 Search articles by keyword
@@ -114,6 +138,29 @@ Operation ID: `searchArticles`
 | `400` | The search words are missing or longer than 1024 bytes, or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | The search asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/sync`
+
+Read the content sync warnings
+
+Returns the findings of the last content load that did not fail it, for
+operator tokens only, such as a `suppress` reference that names nothing
+in a Project's `project.yaml`. Each warning names a file relative to the
+Source root and shows what the Source wrote escaped to printable ASCII
+and cut, which is why only operators read them. `goldie validate` prints
+the same warnings for a content directory.
+
+Operation ID: `getSync`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The warnings of the current content, empty when there are none. | `application/json` (`SyncStatus`) |
+| `401` | No bearer token was sent for the sync status, or it is not a configured token. | `application/json` (`ErrorEnvelope`) |
+| `403` | A reader token was sent for the sync status; only an operator token may read it. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -189,6 +236,17 @@ One article.
 | `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
 | `status` | `ItemStatus` | no |  |
 
+### `ContentWarning`
+
+One finding of a content load that did not fail it, such as a `suppress`
+reference that names nothing. It shows what a Source wrote, escaped to
+printable ASCII and cut, which is why only operators read it.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `file` | `string` | yes | The file the finding is about, relative to the Source root. |
+| `message` | `string` | yes | What is wrong, printable ASCII, at most 1 KiB with the file. |
+
 ### `Error`
 
 One error. It never contains addresses, paths or stack traces.
@@ -224,6 +282,15 @@ An Item's lifecycle when it is not published: `deprecated` (still
 served; read `replaced_by` instead when present) or `draft` (only with
 `drafts=true`, for operators). Absent for a published Item. Clients
 ignore values they do not know.
+
+### `ProjectDetail`
+
+One registered Project and what its `project.yaml` suppresses.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `id` | `ProjectId` | yes |  |
+| `suppressions` | `array` | yes | The global Items the Project suppresses, as 'article:&lt;id&gt;', sorted. A reference that names nothing is not listed. Empty when there are none. |
 
 ### `ProjectId`
 
@@ -265,3 +332,11 @@ The result of a search.
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the results are the global ones, and this says what to do next. |
 | `query` | `string` | yes | The search words as received. |
 | `results` | `array` | yes | The matching articles, best first, then by id. |
+
+### `SyncStatus`
+
+How the last content load went, for operators.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `warnings` | `array` | yes | Load findings that did not fail the load, in load order. |

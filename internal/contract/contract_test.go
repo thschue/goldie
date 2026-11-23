@@ -34,6 +34,14 @@ func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjec
 	return ListProjects200JSONResponse{Projects: []ProjectId{}}, nil
 }
 
+func (stub) GetProject(_ context.Context, req GetProjectRequestObject) (GetProjectResponseObject, error) {
+	return GetProject200JSONResponse{Id: req.Id, Suppressions: []string{}}, nil
+}
+
+func (stub) GetSync(context.Context, GetSyncRequestObject) (GetSyncResponseObject, error) {
+	return GetSync200JSONResponse{Warnings: []ContentWarning{}}, nil
+}
+
 func (stub) GetArticle(_ context.Context, req GetArticleRequestObject) (GetArticleResponseObject, error) {
 	return GetArticle200JSONResponse{Id: req.Id, Name: "n", Keywords: []string{}, Content: "c"}, nil
 }

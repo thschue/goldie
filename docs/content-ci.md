@@ -101,8 +101,16 @@ These fail the load, and the reason names `project.yaml`:
 
 A reference that names nothing the Project can see (a deleted article, a draft, or another Project's
 article) does not fail the load, and the article is suppressed once it exists and is published. The
-engine records a warning in its sync status, one per reference and file, but no API, CLI command or
-`goldie validate` shows it yet (#274).
+engine records a warning in its sync status, one per reference and file, and `goldie validate` prints
+each on stderr as `goldie: warning: <file>: suppress "<reference>" names no published Item this
+Project can see`, with the exit code still 0. The reference is shown escaped to ASCII and cut. The
+same warnings are on `GET /api/v1/sync` (`{"warnings": [{"file", "message"}]}`) for operator tokens only (ADR
+0008): a reader token gets 403 and no token 401, because a warning shows what a Source wrote. The
+Project detail does not carry them.
+
+`GET /api/v1/projects/{id}` and `goldie status` list what a Project suppresses, as `article:<id>`.
+A lookup of a suppressed article answers 404 with a hint that names the reference and the
+`project.yaml` that sets it.
 
 Only the file directly in a Project directory counts. A `project.yaml` directly under `projects/`,
 a host or an org directory is a layout error; one deeper inside a Project is ignored.
