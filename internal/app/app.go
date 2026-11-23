@@ -38,7 +38,9 @@ type publicMux struct {
 	limiter  *api.RateLimiter
 	gate     *api.ClientVersionGate
 	activity *api.Activity
-	routes   []route
+	// operatorPaths are the paths the spec reserves for operator tokens.
+	operatorPaths map[string]bool
+	routes        []route
 	// endStreams ends the open activity streams; Public.Start calls it when
 	// its context ends.
 	endStreams func()
@@ -48,26 +50,27 @@ type publicMux struct {
 // in its Activity.
 const activityCapacity = 1000
 
-// activityKeepalive is how often an open activity stream with nothing to send
-// writes a keepalive comment. A variable so tests can shorten it; the router
-// reads it when it is built.
-var activityKeepalive = api.DefaultActivityKeepalive
-
-// newPublicMuxWith returns the router with the spec's operations over the
+// newPublicMuxKeepalive returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
 // set, a minimum client version (nil for none) and a rate limiter, and
 // recording every search and lookup in a bounded Activity named after this
-// replica (activityReplicaName). PublicHandler builds the public listener
+// replica (activityReplicaName). An open activity stream with nothing to send
+// writes a keepalive comment every keepalive (zero or less keeps
+// api.DefaultActivityKeepalive). PublicHandler builds the public listener
 // with it, and the tests build the bare router with it, so the route table
 // they check is the one the server serves.
-func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
+func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
 	srv, err := api.NewServer(provider, api.RecordInto(activity))
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity}
-	srv.KeepStreamsAlive(activityKeepalive)
+	operatorPaths, err := contract.OperatorPaths()
+	if err != nil {
+		return nil, err
+	}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate, activity: activity, operatorPaths: operatorPaths}
+	srv.KeepStreamsAlive(keepalive)
 	m.endStreams = srv.EndStreams
 	srv.Register(m)
 	return m, nil
@@ -102,17 +105,15 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 // bucket can still read what the API offers.
 var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
-// operatorPaths are the operations for operator tokens only. The token check
-// comes before the gate and the rate limit, so a reader's 403 costs no token.
-var operatorPaths = map[string]bool{"/api/v1/activity": true, "/api/v1/sync": true}
-
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
 // documents and the Swagger UI (#101). A new route fails closed. API paths are
 // then behind the minimum client version and then the per-token rate limit, so
 // a request the tokens reject learns nothing of the gate, and neither a 401 nor
-// a 426 counts against a bucket. The paths in operatorPaths need
-// api.RoleOperator instead; their other methods' 405 does too.
+// a 426 counts against a bucket. The paths the spec marks `x-goldie-role:
+// operator` (contract.OperatorPaths) need api.RoleOperator instead, checked
+// before the gate and the rate limit so a reader's 403 costs no token; their
+// other methods' 405 does too.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -121,7 +122,7 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 		return withCSP(m.tokens.Require(api.RoleReader, h))
 	case docPaths[path]:
 		return m.tokens.Require(api.RoleReader, h)
-	case operatorPaths[path]:
+	case m.operatorPaths[path]:
 		return m.tokens.Require(api.RoleOperator, m.gate.Require(m.limiter.Limit(h)))
 	}
 	return m.tokens.Require(api.RoleReader, m.gate.Require(m.limiter.Limit(h)))
@@ -417,15 +418,15 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	return newPublic(cfg, tokens, src, logger)
+	return newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive)
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;
-// cfg supplies the rate limit, the minimum client version, the Swagger UI
-// switch and the poll interval. PublicHandler and Local share it, so a local
+// keepalive is the activity stream keepalive; cfg supplies the rate limit, the
+// minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
-func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger) (*Public, error) {
-	m, err := newPublicMuxWith(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
+func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration) (*Public, error) {
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive)
 	if err != nil {
 		return nil, err
 	}

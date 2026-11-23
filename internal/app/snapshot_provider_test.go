@@ -19,7 +19,7 @@ import (
 // Issue #95: the public API reads the current Snapshot on every request. The
 // handlers take a provider, func() *engine.Snapshot, whose nil result means
 // "no successful load yet". The router constructors newPublicMux,
-// newPublicMuxWith and publicRoutes, and api.NewServer, take that provider
+// newPublicMuxKeepalive and publicRoutes, and api.NewServer, take that provider
 // instead of a *engine.Snapshot. Existing callers were adapted with
 // staticSnapshot and nothing else changed.
 
@@ -35,7 +35,7 @@ func providerServer(t *testing.T, provider func() *engine.Snapshot) *httptest.Se
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := newPublicMuxWith(provider, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
+	m, err := newPublicMuxKeepalive(provider, tokens, rateLimiter(platform.DefaultRateLimit()), nil, api.DefaultActivityKeepalive)
 	if err != nil {
 		t.Fatal(err)
 	}

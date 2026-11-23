@@ -211,7 +211,7 @@ func TestActivityEventsConformToTheActivityEventSchema(t *testing.T) {
 // A dropped notice conforms to ActivityDropped, and the events around it to
 // ActivityEvent.
 func TestActivityDroppedNoticeConformsToTheActivityDroppedSchema(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	if rec := serveAs(t, pub, searchPath("before"), func(*http.Request) {}); rec.Code != http.StatusOK {
 		t.Fatalf("fixture: status %d", rec.Code)
 	}

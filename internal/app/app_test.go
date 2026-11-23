@@ -69,7 +69,7 @@ func testPublicMux(t *testing.T) *publicMux {
 		t.Fatal(err)
 	}
 	l := platform.DefaultRateLimit()
-	m, err := newPublicMuxWith(staticSnapshot(snap), tokens, api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil)
+	m, err := newPublicMuxKeepalive(staticSnapshot(snap), tokens, api.NewRateLimiter(l.Requests, l.Per, l.Burst), nil, api.DefaultActivityKeepalive)
 	if err != nil {
 		t.Fatal(err)
 	}

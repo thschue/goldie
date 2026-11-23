@@ -40,8 +40,8 @@ import (
 // Test seam (does not exist yet, no stub here): minPollInterval, a package
 // variable of type time.Duration that is the floor newPublic applies to
 // GOLDIE_POLL_INTERVAL (today platform.MinPollInterval), so these tests can
-// poll every few milliseconds. It follows activityKeepalive: a variable so
-// tests can shorten it.
+// poll every few milliseconds. Like the activity keepalive it is a
+// value the tests can shorten.
 
 // gitCanary marks values that must never reach an error, a log line or a probe.
 const gitCanary = "c4n4ry9f1e2d3c4b5a69788"

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -17,7 +18,7 @@ import (
 // an ActivityEvent; and the first live event follows it with the next id.
 func TestALongActivityHistoryArrivesWholeAndInOrderAcrossChunks(t *testing.T) {
 	const history = 123
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	for i := range history {

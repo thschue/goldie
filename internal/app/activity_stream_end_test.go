@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/platform"
 )
 
 // The server's read timeout (appReadTimeout in platform) bounds reading the
 // request, not the stream: a stream open longer than it still gets events.
 func TestActivityStreamOutlivesTheReadTimeout(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	srv := httptest.NewUnstartedServer(pub)
 	srv.Config.ReadTimeout = 100 * time.Millisecond
 	srv.Start()
@@ -34,7 +35,7 @@ func TestActivityStreamOutlivesTheReadTimeout(t *testing.T) {
 // When the context Start runs under ends (the first stop signal), open
 // streams end cleanly, a new one is 503 shutting_down, and no slot is held.
 func TestActivityStreamsEndWhenStartsContextEnds(t *testing.T) {
-	pub := streamHandler(t, platform.Config{})
+	pub := streamHandler(t, platform.Config{}, api.DefaultActivityKeepalive)
 	ctx, stop := context.WithCancel(t.Context())
 	defer stop()
 	pub.Start(ctx, platform.NewRegistry(0))

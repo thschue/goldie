@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -23,7 +24,7 @@ const (
 // Criterion: a request naming a registered Project, in any case, is recorded
 // with the registered spelling, for searches, Misses and lookups alike.
 func TestEventStoresTheRegisteredSpellingOfItsProject(t *testing.T) {
-	pub := streamHandler(t, platform.Config{ContentDir: spellingContent})
+	pub := streamHandler(t, platform.Config{ContentDir: spellingContent}, api.DefaultActivityKeepalive)
 	for _, c := range []struct {
 		path   string
 		status int
@@ -43,7 +44,7 @@ func TestEventStoresTheRegisteredSpellingOfItsProject(t *testing.T) {
 // Criterion: an unregistered Project is recorded lower-cased, so the same id
 // sent in two cases is one Project, and its Misses are counted together.
 func TestEventStoresAnUnregisteredProjectLowerCased(t *testing.T) {
-	pub := streamHandler(t, platform.Config{ContentDir: spellingContent})
+	pub := streamHandler(t, platform.Config{ContentDir: spellingContent}, api.DefaultActivityKeepalive)
 	for _, path := range []string{
 		"/api/v1/search?q=cobol&project=github.com/ACME/None",
 		"/api/v1/search?q=cobol&project=github.com/acme/none",
@@ -60,7 +61,7 @@ func TestEventStoresAnUnregisteredProjectLowerCased(t *testing.T) {
 
 // Criterion: the stream shows the stored spelling, as text.
 func TestActivityStreamShowsTheRegisteredSpelling(t *testing.T) {
-	pub := streamHandler(t, platform.Config{ContentDir: spellingContent})
+	pub := streamHandler(t, platform.Config{ContentDir: spellingContent}, api.DefaultActivityKeepalive)
 	srv := httptest.NewServer(pub)
 	t.Cleanup(srv.Close)
 	if rec := serveAs(t, pub, "/api/v1/search?q=kubernetes&project=github.com/ACME/shop", func(*http.Request) {}); rec.Code != http.StatusOK {

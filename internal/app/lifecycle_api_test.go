@@ -452,7 +452,7 @@ func TestDraftsRoleCheckComesBeforeNotReady(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := newPublicMuxWith(func() *engine.Snapshot { return nil }, tokens, rateLimiter(platform.DefaultRateLimit()), nil)
+	m, err := newPublicMuxKeepalive(func() *engine.Snapshot { return nil }, tokens, rateLimiter(platform.DefaultRateLimit()), nil, api.DefaultActivityKeepalive)
 	if err != nil {
 		t.Fatal(err)
 	}
