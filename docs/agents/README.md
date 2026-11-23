@@ -95,8 +95,8 @@ The reviewer verifies each claim.
 ## Test lock
 
 Tests are the spec. An implementer may add test files and lines, and change its own lines, but may
-not modify, move or delete a test-file line (`*_test.go`, `testdata/**`) from `main` or the
-`test-author`, in any commit, merges included.
+not modify, move or delete a test-file line (`*_test.go`, `testdata/**`, `*.test.ts`, `*.spec.ts`,
+`web/e2e/**`) from `main` or the `test-author`, in any commit, merges included.
 
 To change one, it files a `test_change_request` (file, reason, proposed diff). The `test-author`
 approves (making the change itself) or rejects. When the criterion itself is in doubt, the request

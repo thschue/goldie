@@ -8,9 +8,10 @@ on:
 permissions:
   contents: read
 
+# Superseded pull-request runs are cancelled; every commit on main gets a full run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # `./run check` split into its four groups, run in parallel.
