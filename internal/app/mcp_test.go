@@ -224,7 +224,7 @@ func TestMCPGetArticleUnreachableAPIDoesNotLeakTheAddress(t *testing.T) {
 }
 
 // #515: over MCP the agent's tool is search_knowledge, so the not-found hint
-// names it and not the API's "search operation".
+// names it and not the API's plain wording.
 func TestMCPGetArticleUnknownIDHintNamesSearchKnowledge(t *testing.T) {
 	cs := connect(t, testToken)
 	text, isErr := call(t, cs, "get_article", map[string]any{"id": "no-such-article"})
@@ -234,9 +234,6 @@ func TestMCPGetArticleUnknownIDHintNamesSearchKnowledge(t *testing.T) {
 	const want = "Search for the article with search_knowledge, then use an id from its results."
 	if !strings.Contains(text, want) {
 		t.Errorf("error lacks the hint %q: %s", want, text)
-	}
-	if strings.Contains(text, "search operation") {
-		t.Errorf("error still passes on the API's wording: %s", text)
 	}
 	if strings.Contains(text, "Search for the article, then use an id from its results.") {
 		t.Errorf("error still carries the API's unreworded hint: %s", text)

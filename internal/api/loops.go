@@ -10,7 +10,7 @@ import (
 // noSuchLoop is the 404 envelope for a name that answers nothing in the view.
 // It echoes nothing of the request.
 var noSuchLoop = envelope("not_found", "no such loop",
-	"List the loops, then use a name from the list.")
+	contract.LoopMissHint)
 
 // loopAnswer is an engine loop as the contract sends it. The prompt is only
 // sent by a get.
