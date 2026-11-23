@@ -30,6 +30,10 @@ const (
 	TargetAgents = "agents"
 )
 
+// ValidTarget reports whether t is a target a clause may name and a block may
+// be rendered for.
+func ValidTarget(t string) bool { return t == TargetClaude || t == TargetAgents }
+
 // InstructionVars are the values of the templated variables of a clause.
 // {{project}} is the Project given to Instructions.
 type InstructionVars struct {
@@ -75,7 +79,7 @@ func parseClause(name string, raw []byte) (Article, error) {
 		return Article{}, errors.New("targets must be a list of claude and agents")
 	}
 	for _, t := range targets {
-		if t != TargetClaude && t != TargetAgents {
+		if !ValidTarget(t) {
 			return Article{}, errors.New("targets must be a list of claude and agents")
 		}
 	}
@@ -162,7 +166,11 @@ func (s *Snapshot) Instructions(proj, target string, vars InstructionVars) (bloc
 		bodies = append(bodies, strings.TrimSpace(string(a.raw)))
 	}
 	if len(bodies) == 0 {
-		bodies = append(bodies, defaultClause)
+		d := defaultClause
+		if proj == "" {
+			d = strings.Replace(d, " ({{project}})", "", 1) // no Project: no empty parentheses
+		}
+		bodies = append(bodies, d)
 	}
 	r := strings.NewReplacer(
 		"{{project}}", cleanValue(proj),

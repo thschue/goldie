@@ -227,3 +227,23 @@ func TestInstructionsNeedAToken(t *testing.T) {
 		}
 	}
 }
+
+// A request with no Project, or an unregistered one, and no clause that
+// applies gets the default block without an empty "()" where the Project
+// would be named.
+func TestInstructionsDefaultBlockWithoutAProjectHasNoEmptyParentheses(t *testing.T) {
+	cfg := loadedConfig(t, nil)
+	cfg.ContentDir = t.TempDir()
+	cfg.APITokens = namedTokenLines()
+	cfg.RateLimit = roomyRateLimit
+	h, err := PublicHandler(cfg, nil)
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	a := instructionsGet(t, srv, "?target=agents")
+	if strings.Contains(a.Block, "()") || !strings.HasPrefix(a.Block, "This repository uses Goldie") {
+		t.Errorf("default block %q, want the sentence without a parenthetical", a.Block)
+	}
+}

@@ -132,7 +132,7 @@ func WithInstructionVars(v engine.InstructionVars) ServerOption {
 // against the two the engine knows before anything else, so it never reaches a
 // lookup or the answer.
 func (s *Server) GetInstructions(_ context.Context, req contract.GetInstructionsRequestObject) (contract.GetInstructionsResponseObject, error) {
-	if req.Params.Target != engine.TargetClaude && req.Params.Target != engine.TargetAgents {
+	if !engine.ValidTarget(req.Params.Target) {
 		return contract.GetInstructions400JSONResponse(badTarget), nil
 	}
 	project, ok := validProject(req.Params.Project)

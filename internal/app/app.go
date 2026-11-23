@@ -518,7 +518,7 @@ func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src so
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, append([]api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"})}, append(activityFederation(cfg, logger), opts...)...)...)
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, serverOptions(cfg, logger, opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -551,4 +551,13 @@ func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src so
 	// (zero) gets it too, never a busy loop.
 	p.poll = max(cfg.PollInterval, minPollInterval)
 	return p, nil
+}
+
+// serverOptions are the options newPublic gives the API server: the
+// instruction variables from the configuration, the activity federation, then
+// the caller's.
+func serverOptions(cfg platform.Config, logger *slog.Logger, opts []api.ServerOption) []api.ServerOption {
+	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"})}
+	out = append(out, activityFederation(cfg, logger)...)
+	return append(out, opts...)
 }
