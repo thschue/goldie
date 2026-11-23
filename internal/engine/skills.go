@@ -123,7 +123,7 @@ var errNoSkillFile = errors.New("not a file of the skill")
 // bundle only regular files are kept: a symlink is never followed. Every file
 // is read through readLimited, so the article size cap applies. The result is
 // keyed by lower-cased name, and two directories whose names differ only in
-// case fail the load, as two agent files do.
+// case fail the load, as two agent files do; so do two files of one bundle.
 func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, error) {
 	if exists, err := requireDir(fsys, dir, what); err != nil || !exists {
 		return nil, err
@@ -149,7 +149,7 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 		seen[key] = p
 		files := map[string][]byte{}
 		exec := map[string]bool{}
-		if err := readBundle(fsys, p, "", files, exec); err != nil {
+		if err := readBundle(fsys, p, "", files, exec, map[string]string{}); err != nil {
 			return nil, err
 		}
 		skill, ok := files[skillFileName]
@@ -163,8 +163,10 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 }
 
 // readBundle reads the regular files under dir/rel into files, keyed by their
-// path relative to the bundle.
-func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte, exec map[string]bool) error {
+// path relative to the bundle. Two files whose paths differ only in case fail
+// the load, as they would collide when the bundle is pulled onto a
+// case-insensitive filesystem; seen maps each lower-cased path to its spelling.
+func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte, exec map[string]bool, seen map[string]string) error {
 	cur := dir
 	if rel != "" {
 		cur = dir + "/" + rel
@@ -180,11 +182,16 @@ func readBundle(fsys fs.FS, dir, rel string, files map[string][]byte, exec map[s
 		}
 		switch {
 		case e.IsDir():
-			if err := readBundle(fsys, dir, name, files, exec); err != nil {
+			if err := readBundle(fsys, dir, name, files, exec, seen); err != nil {
 				return err
 			}
 		case e.Type().IsRegular():
 			p := dir + "/" + name
+			key := strings.ToLower(name)
+			if other, dup := seen[key]; dup {
+				return fmt.Errorf("%s and %s: skill file paths differ only in case", dir+"/"+other, p)
+			}
+			seen[key] = name
 			raw, err := readLimited(fsys, p, "skill file")
 			if err != nil {
 				return fmt.Errorf("%s: %w", p, err)

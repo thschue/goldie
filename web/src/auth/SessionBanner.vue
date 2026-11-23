@@ -24,10 +24,10 @@ const route = useRoute();
   max-width: 760px;
   margin: 0 0 var(--space-6);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--miss-border);
+  border: 1px solid var(--danger-border);
   border-radius: var(--radius-md);
-  background: var(--miss-bg);
-  color: var(--miss-ink);
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 a {
   display: inline-flex;
