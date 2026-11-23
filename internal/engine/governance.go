@@ -27,7 +27,33 @@ func keyOf(kind, name string) itemKey {
 	return itemKey{kind: strings.ToLower(kind), name: strings.ToLower(name)}
 }
 
-func (a Article) key() itemKey { return keyOf(KindArticle, a.ID) }
+// Kind is the Item's Kind. An Article is the Item of Kind article; each Kind
+// that joins Resolution later has its own Item type answer its own Kind, so
+// references, suppression and lookups name the Item's Kind, not an assumed one.
+func (a Article) Kind() string { return KindArticle }
+
+func (a Article) key() itemKey { return keyOf(a.Kind(), a.ID) }
+
+// knownKinds is the one table of Kinds an Item reference may name (ADR 0021).
+// A Kind joins it with its loader; until then a reference to it is rejected.
+var knownKinds = []string{KindArticle}
+
+func isKnownKind(kind string) bool {
+	for _, k := range knownKinds {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// knownKindsHint names the table's Kinds for a parseRef error.
+func knownKindsHint() string {
+	if len(knownKinds) == 1 {
+		return "the known kind is " + knownKinds[0]
+	}
+	return "the known kinds are " + strings.Join(knownKinds, ", ")
+}
 
 // published reports whether the Item is served by default: every status but
 // draft. A deprecated Item is still served.
@@ -112,8 +138,8 @@ func parseRef(ref string) (itemKey, error) {
 	if strings.Trim(kind, "abcdefghijklmnopqrstuvwxyz") != "" {
 		return itemKey{}, errors.New("has a kind that is not lower-case letters")
 	}
-	if kind != KindArticle {
-		return itemKey{}, errors.New("has a kind goldie does not know; the known kind is article")
+	if !isKnownKind(kind) {
+		return itemKey{}, errors.New("has a kind goldie does not know; " + knownKindsHint())
 	}
 	for _, r := range name {
 		if r == ':' || r == '\\' || r == ' ' || r == utf8.RuneError || !unicode.IsPrint(r) || HiddenRune(r) {

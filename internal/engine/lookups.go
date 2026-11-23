@@ -27,7 +27,7 @@ func (s *Snapshot) checkLookups(all []*Article) error {
 				continue
 			}
 			// An id that is not a valid name is dangling.
-			if key, err := parseRef(KindArticle + ":" + id); err == nil {
+			if key, err := parseRef(a.Kind() + ":" + id); err == nil {
 				if file, hidden := s.suppressingFile(view, key); hidden {
 					return fmt.Errorf("%s: goldie lookup %s names an Item %s suppresses", articleFile(a), quoteID(id), file)
 				}

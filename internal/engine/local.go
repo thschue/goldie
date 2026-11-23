@@ -246,5 +246,5 @@ func localShadowErr(local, enforced *Article) error {
 // like a lookup id (quoteID), but without quotes.
 func itemRef(a *Article) string {
 	q := quoteID(a.ID)
-	return KindArticle + ":" + q[1:len(q)-1]
+	return a.Kind() + ":" + q[1:len(q)-1]
 }

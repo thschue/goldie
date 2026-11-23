@@ -121,7 +121,7 @@ func scopeRank(scope string) int {
 }
 
 func scoreArticle(a Article, words []string) Hit {
-	h := Hit{ID: a.ID, Name: a.Name, Kind: KindArticle, Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy}
+	h := Hit{ID: a.ID, Name: a.Name, Kind: a.Kind(), Scope: a.Scope, Keywords: append([]string(nil), a.Keywords...), Status: a.Status, ReplacedBy: a.ReplacedBy}
 	name := strings.ToLower(a.Name)
 	for _, w := range words {
 		for _, k := range a.Keywords {
