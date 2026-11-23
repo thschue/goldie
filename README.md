@@ -25,7 +25,8 @@ to every request, the page's fetch of `/openapi.json` included.
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
 are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
 command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
-help you ask for goes to stdout and exits 0. `goldie --version` (alone) is `goldie version`.
+help you ask for goes to stdout and exits 0.
+`goldie --version` prints the same as `goldie version`; on a subcommand `--version` stays an unknown flag.
 `goldie health` with no admin port answering exits 1 and says to check that the server runs and
 `GOLDIE_ADMIN_ADDR` matches its admin address.
 
