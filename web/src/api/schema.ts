@@ -807,6 +807,7 @@ export interface components {
          * @example {
          *       "name": "nightly",
          *       "description": "Keep the nightly build green",
+         *       "scope": "global",
          *       "interval": "30m",
          *       "dynamic": false,
          *       "stop": "when CI is green",
@@ -836,7 +837,8 @@ export interface components {
             description: string;
             /**
              * @description Where the winning copy lives, as `Article.scope` says it: `global`,
-             *     `host/org/repo` or `local`. A missing value means unknown.
+             *     `host/org/repo` or `local`. Sent by `listLoops` and `getLoop`. Absent from an
+             *     older server, where it means unknown, not global.
              * @example global
              */
             scope?: string;
@@ -885,6 +887,7 @@ export interface components {
              *       {
              *         "name": "nightly",
              *         "description": "Keep the nightly build green",
+             *         "scope": "global",
              *         "interval": "30m",
              *         "dynamic": false,
              *         "stop": "when CI is green",
