@@ -137,10 +137,6 @@ func validateSource(e sourceEntry, lookup Lookup, readFile func(string) ([]byte,
 		if f.env == "" {
 			continue
 		}
-		if !strings.HasPrefix(f.env, "GOLDIE_") {
-			p = append(p, f.key+" must name a GOLDIE_-prefixed variable")
-			continue
-		}
 		v, err := Setting(lookup, readFile, f.env)
 		if err != nil {
 			p = append(p, f.key+": "+err.Error())
