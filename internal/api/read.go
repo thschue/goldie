@@ -315,8 +315,8 @@ func (s *Server) ListProjects(context.Context, contract.ListProjectsRequestObjec
 
 // maxViewBytes is the most a Project's exported view may weigh as JSON: what
 // the hardened client reads, so the server never sends a view its own client
-// would refuse. A variable so a test can lower it.
-var maxViewBytes = contract.MaxResponseBytes
+// would refuse.
+const maxViewBytes = contract.MaxResponseBytes
 
 // viewTooLarge is the 422 envelope for a view over maxViewBytes.
 var viewTooLarge = envelope("view_too_large", "the Project's view is too large to export",

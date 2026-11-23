@@ -227,6 +227,29 @@ func TestProjectItemsOverTheResponseCapAreRefusedWholeWith422(t *testing.T) {
 	}
 }
 
+// The cap applies to the encoded body too: JSON escapes "<" to six bytes, so
+// content well under the cap as raw bytes can still be over it once encoded.
+func TestProjectItemsOverTheCapOnlyOnceEncodedAreRefusedWholeWith422(t *testing.T) {
+	dir := t.TempDir()
+	// 3 x 1,000,000 raw bytes is under the cap; encoded (x6) it is about 18 MB.
+	filler := strings.Repeat("<", 1_000_000)
+	for i := 0; i < 3; i++ {
+		writeArticle(t, dir, fmt.Sprintf("big/item-%d", i), "Big", filler)
+	}
+	srv := newServerWith(t, platform.Config{ContentDir: dir})
+
+	resp, body := apiGet(t, srv.URL+shopItems)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("status %d, want 422: %.200s", resp.StatusCode, body)
+	}
+	if code, _ := errorHint(t, body); code != "view_too_large" {
+		t.Errorf("code %q, want view_too_large", code)
+	}
+	if len(body) > 4096 || strings.Contains(string(body), "u003c") {
+		t.Errorf("the refusal carries part of the view (%d bytes)", len(body))
+	}
+}
+
 func TestProjectItemsNeverCarryDrafts(t *testing.T) {
 	base := itemsServer(t).URL
 	for _, q := range []string{"", "?drafts=true", "?drafts=false"} {
