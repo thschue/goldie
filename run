@@ -427,8 +427,15 @@ cmd_test() {
 	out=$(mktemp) || die "test: mktemp failed"
 	status=0
 	go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
-	grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' "$out" || true
-	skipped=$(awk '/--- SKIP: /{n=$3} /TIMING-SKIP:/{print n}' "$out" | sort -u | tr '\n' ' ')
+	# tr drops NUL bytes first: grep would otherwise treat the file as
+	# binary and swallow the failure text, and tr is POSIX where grep -a is not.
+	tr -d '\000' <"$out" | grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' || true
+	# go test -v streams a test's log lines between its "=== RUN" and its
+	# "--- SKIP", so the test is the latest name from a RUN/NAME/CONT line.
+	skipped=$(tr -d '\000' <"$out" | awk '
+		/^=== (RUN|NAME|CONT)[ \t]/ { n = $3 }
+		/^[ \t]+[^ \t:]+:[0-9]+: TIMING-SKIP:/ { if (n != "" && !(n in seen)) { seen[n] = 1; print n } }
+	' | tr '\n' ' ')
 	rm -f "$out"
 	if [ -n "$skipped" ]; then
 		printf 'run: timing-sensitive test(s) skipped: %s\n' "${skipped% }" >&2
