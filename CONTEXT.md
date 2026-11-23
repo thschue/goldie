@@ -17,10 +17,10 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 **Scope**: where an Item applies. `global` (everyone), `project` (one repository, under
 `projects/<host>/<org>/<repo>/`) or `local` (the repository's own `.goldie/`).
 
-**Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case.
-It is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
-request naming an unregistered Project gets the global answer with a hint; copy shown to users
-calls the global answer "global guidance only".
+**Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case. It
+is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
+request naming an unregistered Project gets the global answer with a hint; copy shown to users calls
+the global answer "global guidance only".
 
 **Resolution**: the rule that decides which Item wins when several share an identity. Scope first
 (local > project > global), then Source preference (first listed wins).
@@ -84,7 +84,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 | UI | `internal/ui` | Vue SPA, embedded, talking only to the API |
 | MCP | `internal/mcp` | Talks to the API only through the client |
 | CLI | `internal/cli` | Talks to the API only through the client |
-| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), reading API answers (`ParseOK`, `DecodeAPIError`), and client-side Project detection and the writing of `.goldie/config.yaml` that `goldie init` does (`internal/contract/project`) |
+| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), reading API answers (`Answer`, `ParseOK`, `DecodeAPIError`) and cleaning a list of strings from them (`CleanList`), and client-side Project detection and the writing of `.goldie/config.yaml` that `goldie init` does (`internal/contract/project`) |
 | Platform | `internal/platform` | Config, logging, admin port, readiness, drain, telemetry |
 | Composition root | `internal/app` | Wires modules into roles; the only client-side code that may reach the server (embedded server) |
 
