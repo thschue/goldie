@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -72,29 +73,41 @@ func skillKeywords(raw []byte) []string {
 }
 
 // skillMeta reads the status and description from the frontmatter of a
-// SKILL.md. Malformed frontmatter yields "": the file is served as written
-// either way. Only draft and deprecated are statuses; anything else is
-// published, which carries none.
+// SKILL.md. It fails closed, as lifecycleMeta.apply does for Items: a SKILL.md
+// that opens frontmatter with --- but cannot be split or parsed, or whose
+// status is present but not draft, published or deprecated, is a draft, so a
+// broken file never leaks a skill meant to be hidden. A SKILL.md with no
+// leading --- declares no status and is published (""). The file is served as
+// written either way.
 func skillMeta(raw []byte) (status, description string) {
 	front, _, err := splitFrontmatter(raw)
 	if err != nil {
+		if bytes.HasPrefix(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")), []byte("---\n")) {
+			return StatusDraft, ""
+		}
 		return "", ""
 	}
-	// Each key decodes on its own, so a mistyped description never turns a
-	// draft into a published skill.
+	// Each key decodes on its own, so a mistyped description never changes
+	// the status.
 	var meta struct {
 		Status      yaml.Node `yaml:"status"`
 		Description yaml.Node `yaml:"description"`
 	}
 	if yaml.Unmarshal(front, &meta) != nil {
-		return "", ""
+		return StatusDraft, ""
 	}
-	var st, desc string
-	_ = meta.Status.Decode(&st)
+	if present(meta.Status) {
+		v, ok := scalar(meta.Status, "!!str")
+		switch {
+		case ok && v == StatusPublished:
+		case ok && v == StatusDeprecated:
+			status = v
+		default:
+			status = StatusDraft
+		}
+	}
+	var desc string
 	_ = meta.Description.Decode(&desc)
-	if s := strings.ToLower(strings.TrimSpace(st)); s == StatusDraft || s == StatusDeprecated {
-		status = s
-	}
 	return status, strings.TrimSpace(desc)
 }
 

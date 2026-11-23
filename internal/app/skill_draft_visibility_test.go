@@ -52,6 +52,40 @@ func TestDraftSkillIsHiddenFromGetFileAndSearchUnlessAnOperatorAsks(t *testing.T
 	}
 }
 
+// A SKILL.md whose status cannot be read fails closed: it is a draft, hidden
+// from readers, rather than published.
+func TestUnreadableSkillStatusFailsClosed(t *testing.T) {
+	dir := t.TempDir()
+	writeRaw(t, dir, "global/skills/colon/SKILL.md", "---\nstatus: draft\ndescription: Deploy: build and ship\n---\n# C\n")
+	writeRaw(t, dir, "global/skills/listed/SKILL.md", "---\nstatus: [draft]\n---\n# L\n")
+	writeRaw(t, dir, "global/skills/unknown/SKILL.md", "---\nstatus: wip\n---\n# U\n")
+	writeRaw(t, dir, "global/skills/unclosed/SKILL.md", "---\nstatus: draft\n# never closed\n")
+	writeRaw(t, dir, "global/skills/plain/SKILL.md", "# No frontmatter\n")
+	writeRaw(t, dir, "global/skills/pub/SKILL.md", "---\nstatus: published\n---\n# P\n")
+	srv := httptest.NewServer(activityHandler(t, platform.Config{ContentDir: dir, RateLimit: roomyRateLimit}))
+	t.Cleanup(srv.Close)
+
+	reader := cardList(t, srv, readerToken, "")
+	for _, n := range []string{"colon", "listed", "unknown", "unclosed"} {
+		if _, ok := reader[n]; ok {
+			t.Errorf("reader sees %s, whose status cannot be read", n)
+		}
+		if status, body := itemsGet(t, srv, readerToken, "/api/v1/skills/"+n); status != http.StatusNotFound {
+			t.Errorf("reader GET %s: status %d, want 404: %s", n, status, body)
+		}
+	}
+	for _, n := range []string{"plain", "pub"} {
+		if s, ok := reader[n]; !ok || s.Status != nil {
+			t.Errorf("%s: listed %v with status %v, want published", n, ok, s.Status)
+		}
+	}
+	for _, n := range []string{"colon", "listed", "unknown", "unclosed"} {
+		if s := cardList(t, srv, operatorToken, "drafts=true")[n]; s.Status == nil || *s.Status != "draft" {
+			t.Errorf("operator with drafts=true: %s status = %v, want draft", n, s.Status)
+		}
+	}
+}
+
 func TestNearerDraftSkillDoesNotHideThePublishedGlobalOne(t *testing.T) {
 	srv := draftSkillServer(t)
 	q := "project=" + url.QueryEscape(cardShop)
