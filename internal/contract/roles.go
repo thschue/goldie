@@ -28,6 +28,16 @@ func OperatorPaths() (map[string]bool, error) {
 	return operatorPaths, operatorPathsErr
 }
 
+var httpMethods = map[string]bool{
+	"get": true, "put": true, "post": true, "delete": true,
+	"options": true, "head": true, "patch": true, "trace": true,
+}
+
+func hasKey(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
+}
+
 // parseOperatorPaths reads the operator paths from an OpenAPI document.
 func parseOperatorPaths(spec []byte) (map[string]bool, error) {
 	var doc struct {
@@ -40,8 +50,17 @@ func parseOperatorPaths(spec []byte) (map[string]bool, error) {
 	for path, item := range doc.Paths {
 		for method, node := range item {
 			var op map[string]any
-			if err := node.Decode(&op); err != nil {
+			decodeErr := node.Decode(&op)
+			if !httpMethods[method] {
+				// The mark belongs on an operation. Anywhere else it would be
+				// ignored and leave the path open, so it fails startup.
+				if method == RoleExtension || (decodeErr == nil && hasKey(op, RoleExtension)) {
+					return nil, fmt.Errorf("openapi.yaml: %s: %s under %q, want it on an operation", path, RoleExtension, method)
+				}
 				continue // "parameters", "summary" and the like are not operations
+			}
+			if decodeErr != nil {
+				continue
 			}
 			role, ok := op[RoleExtension]
 			if !ok {

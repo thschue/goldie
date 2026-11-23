@@ -422,8 +422,8 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;
-// keepalive is the activity stream keepalive; cfg supplies the rate limit, the minimum client version, the Swagger UI
-// switch and the poll interval. PublicHandler and Local share it, so a local
+// keepalive is the activity stream keepalive; cfg supplies the rate limit, the
+// minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration) (*Public, error) {
 	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive)

@@ -474,7 +474,7 @@ components:
         401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
         token over its limit is a 429 with `Retry-After`. An operation for
         operators only, such as `/api/v1/activity` and `/api/v1/sync`, answers other tokens with a
-        403. The OpenAPI document and Swagger UI are not yet covered; the auth
+        403; those operations carry the machine-readable mark `x-goldie-role: operator`. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
   schemas:
     SearchResults:
