@@ -387,9 +387,10 @@ func (e *ConfigError) Unwrap() error { return e.err }
 type Public struct {
 	*publicMux
 	source
-	pollLog *slog.Logger          // logs every poll, when the Source asks for it; nil logs none
-	polls   *platform.PollCounter // counts and times every poll (goldie.syncs, goldie.sync.duration); nil counts none
-	poll    time.Duration         // GOLDIE_POLL_INTERVAL
+	pollLog *slog.Logger                // logs every poll, when the Source asks for it; nil logs none
+	polls   *platform.PollCounter       // counts and times every poll (goldie.syncs, goldie.sync.duration); nil counts none
+	poll    time.Duration               // GOLDIE_POLL_INTERVAL
+	probe   func(context.Context) error // the upstream check of GOLDIE_MODE=ui, which has no Source; nil otherwise
 	mu      sync.Mutex
 	started bool
 	loops   sync.WaitGroup // the poll loop Start runs
@@ -405,18 +406,27 @@ type Public struct {
 // starts a loop; a call with a cancelled context does not use up the start.
 // Every call registers the check, which replaces itself.
 func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
-	reg.Add(p.check, func(context.Context) error {
-		if p.syncer.Current() == nil {
-			return errors.New("no snapshot")
-		}
-		return nil
-	})
+	if p.probe != nil {
+		reg.Add(p.check, p.probe)
+	} else {
+		reg.Add(p.check, func(context.Context) error {
+			if p.syncer.Current() == nil {
+				return errors.New("no snapshot")
+			}
+			return nil
+		})
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.started || ctx.Err() != nil {
 		return
 	}
 	p.started = true
+	if p.probe != nil {
+		// Nothing to poll: only the proxied streams end with the server.
+		context.AfterFunc(ctx, p.endStreams)
+		return
+	}
 	onPoll := p.pollHook(ctx)
 	p.sync.run(ctx, onPoll)
 	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
@@ -473,6 +483,9 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 // miss (goldie.searches, goldie.lookups) and every finished poll of its Source
 // by result (goldie.syncs).
 func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.Telemetry) (*Public, error) {
+	if cfg.Mode == platform.ModeUI {
+		return newPublicUI(cfg, logger)
+	}
 	var errs []error
 	tokens, err := apiTokens(cfg)
 	if err != nil {

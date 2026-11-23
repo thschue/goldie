@@ -40,6 +40,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got[EnvSessionKey] = ""
 	got[EnvMCPName] = cfg.MCPName
 	got[EnvMode] = cfg.Mode
+	got[EnvUpstreamAddr] = cfg.UpstreamAddr
 	for _, n := range []string{EnvGitHubClientID, EnvGitHubClientSecret, EnvGitHubURL, EnvGitHubOrgs, EnvGitHubTeams, EnvPublicURL} {
 		got[n] = "" // GitHub sign-in is off by default
 	}
