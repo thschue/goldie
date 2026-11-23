@@ -31,8 +31,10 @@ help you ask for goes to stdout and exits 0.
 `goldie health` with no admin port answering exits 1 and says to check that the server runs and
 `GOLDIE_ADMIN_ADDR` matches its admin address.
 
-`goldie skills list|show <name>` and `goldie agents list|show <name>` read the skill bundles (name
-and file list) and agent definitions (name and description) that answer for the Project. They take
+`goldie skills list|show <name>`, `goldie agents list|show <name>` and `goldie loops list|show <name>`
+read the skill bundles (name and file list), agent definitions (name and description) and loops
+(`show` prints the interval or dynamic pacing, the stop condition, the prompt and the agents and
+skills it names, with the Scope that answered for each) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
 before any request. Skill and agent names match case-insensitively, and the answer shows the
