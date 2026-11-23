@@ -160,29 +160,37 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 ## MCP over stdio
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
-`search_knowledge`, `get_article`, `list_projects` and `current_context`. `search_knowledge` and
-`get_article` take an optional `project` (`host/org/repo`, as `list_projects` names it; case is
-ignored) that puts that Project's articles first; a value that isn't a Project id, or has any
-non-ASCII character, is refused before any request. For a Project that isn't registered, the answer
-is global and carries the server's hint. At startup, and only then, it finds the default Project
-of the directory it runs in the way the CLI does: `GOLDIE_PROJECT`, then `.goldie/config.yaml`,
-then the git remotes `upstream` and `origin`. A call that leaves `project` out, or empty, answers for
-that default; an explicit `project` beats it, and one made only of white space is refused.
-`current_context` reports the default and where it came from, in the words of `goldie status`, or
-that there is none (outside a repository, for example, where the answers are global), naming a
-remote whose URL isn't `host/org/repo` by name only. A broken or unreadable `.goldie/config.yaml`
-doesn't stop the session: `current_context` reports the problem as `status` does, calls that rely on
-the default fail with it before any request, and calls with an explicit `project` still answer. Fix
-the file and restart the MCP server to pick it up. An agent's MCP client starts it as a subprocess. It talks to a
-running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
-(or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content
-with `--dir` (or `GOLDIE_DIR`, see [CLI](#cli)). Prefer the variables to
-`--token`: a `--token` value shows in the process list (`ps`) and is saved in the MCP client's
-config, while the variables can name a file. A missing or invalid setting stops it at startup with a
-message on stderr that names the setting. Like the CLI, it follows no redirects and reads at most
-16 MiB of an answer; a tool call that meets either says so, without the address. Stdout carries only
-MCP messages; errors go to stderr. It exits when the client closes stdin. Only the `.goldie/` local
-Scope (#269, #272) is still pending in local mode.
+`search_knowledge`, `get_article`, `list_projects`, `current_context`, `find_skills`, `get_skill`,
+`list_skills` and `list_agents`. `search_knowledge` and `get_article` take an optional `project`
+(`host/org/repo`, as `list_projects` names it; case is ignored) that puts that Project's articles
+first; a value that isn't a Project id, or has any non-ASCII character, is refused before any
+request. For a Project that isn't registered, the answer is global and carries the server's hint. At
+startup, and only then, it finds the default Project of the directory it runs in the way the CLI
+does: `GOLDIE_PROJECT`, then `.goldie/config.yaml`, then the git remotes `upstream` and `origin`. A
+call that leaves `project` out, or empty, answers for that default; an explicit `project` beats it,
+and one made only of white space is refused. `current_context` reports the default and where it came
+from, in the words of `goldie status`, or that there is none (outside a repository, for example,
+where the answers are global), naming a remote whose URL isn't `host/org/repo` by name only. A
+broken or unreadable `.goldie/config.yaml` doesn't stop the session: `current_context` reports the
+problem as `status` does, calls that rely on the default fail with it before any request, and calls
+with an explicit `project` still answer. Fix the file and restart the MCP server to pick it up.
+
+The skill and agent tools take the same optional `project`. `find_skills` searches skills only, by
+keyword or name. `get_skill` answers a skill's file paths and the text of its `SKILL.md`, each line
+quoted with `| `; a name that is empty, dots only or holds a separator is refused before any
+request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
+description.
+
+An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
+settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or
+`GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content with `--dir` (or
+`GOLDIE_DIR`, see [CLI](#cli)). Prefer the variables to `--token`: a `--token` value shows in the
+process list (`ps`) and is saved in the MCP client's config, while the variables can name a file. A
+missing or invalid setting stops it at startup with a message on stderr that names the setting. Like
+the CLI, it follows no redirects and reads at most 16 MiB of an answer; a tool call that meets
+either says so, without the address. Stdout carries only MCP messages; errors go to stderr. It exits
+when the client closes stdin. Only the `.goldie/` local Scope (#269, #272) is still pending in local
+mode.
 
 ```json
 {"mcpServers": {"goldie": {"command": "goldie", "args": ["mcp", "--transport", "stdio"],
