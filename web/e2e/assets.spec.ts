@@ -58,7 +58,7 @@ test.describe('routes', () => {
     await expect(page).toHaveURL((u) => u.pathname === '/assets/skills' && u.searchParams.get('project') === 'demo');
   });
 
-  for (const bad of ['loops', 'nope', 'Skills', 'skills%2Fagents', '%3Cscript%3E']) {
+  for (const bad of ['loops', 'nope', 'Skills', '%3Cscript%3E']) {
     test(`/assets/${bad} shows the not-found view under the h1, never a blank page`, async ({ page, baseURL }) => {
       const seen = await problems(page, baseURL ?? '');
       const res = await page.goto(`/assets/${bad}`);
@@ -74,6 +74,16 @@ test.describe('routes', () => {
       expect(seen.errors).toEqual([]);
     });
   }
+
+  // An escaped slash is a hostile page path: the server refuses it (path
+  // hardening in internal/ui) instead of serving the SPA index.
+  test('/assets/skills%2Fagents is refused with a 4xx and never serves the page', async ({ request }) => {
+    const res = await request.get('/assets/skills%2Fagents', { maxRedirects: 0 });
+    expect([400, 404, 414], 'an escaped slash in a page path is refused').toContain(res.status());
+    const body = await res.text();
+    expect(body).not.toContain('id="app"');
+    expect(body).not.toMatch(/Agent assets/);
+  });
 
   test('there is no Loops tab and no Loops link anywhere', async ({ page }) => {
     await page.goto('/assets/skills');
