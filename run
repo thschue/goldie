@@ -221,6 +221,11 @@ cmd_lint_spec_casing_fixture() {
 			die "camelCase OpenAPI fixture was not reported by $rule (exit $status)"
 		fi
 	done
+	# The query parameter under components.parameters must be reported too.
+	if ! printf '%s\n' "$out" | grep -q 'sortOrder'; then
+		printf '%s\n' "$out" >&2
+		die "camelCase query parameter under components.parameters was not reported (exit $status)"
+	fi
 }
 
 # contract-compat <old spec> <new spec>: exit 1 with oasdiff's findings when

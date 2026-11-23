@@ -52,8 +52,9 @@ arguments and results) carry it in an explicit `json:` tag.
   camelCase, which would give `replaced_by` in an article's frontmatter and `replacedBy` in the API.
 - Go fields keep Go-style names as oapi-codegen generates them (`ClientVersion`, `TraceId`); the JSON
   tags carry the snake_case wire name.
-- Until the lint changes, every multi-word property needs a per-property ignore. Replacing them with
-  one snake-case vacuum rule is a later issue. Disabling a stock rule makes a check less strict, so
-  under ADR 0013 the reviewer holds that change for the maintainer if it is significant.
+- The ruleset (`internal/contract/vacuum-ruleset.yaml`) replaces the per-property ignores: one
+  snake-case rule covers every property and query parameter. Disabling a stock rule makes a check
+  less strict, so under ADR 0013 the reviewer holds that change for the maintainer if it is
+  significant.
 - Changing the casing after release would be a breaking change and needs a new API version
   (ADR 0011).
