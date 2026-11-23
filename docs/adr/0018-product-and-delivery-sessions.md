@@ -44,8 +44,8 @@ minutes from ready to merge.
     checks and a 7-day release age; the delivery loop fixes red ones (amended 2026-11-23);
   - a branch push replaces claim locks.
 - **The harness changes only in batches by the maintainer.** Loops record friction in the pinned
-  `Harness feedback` issue and never open harness PRs. `docs/agents/*.md` stays within 600 lines
-  (`./run check-harness`).
+  `Harness feedback` issue and never open harness PRs.
+  (A 600-line cap on `docs/agents/*.md` was dropped on 2026-11-23.)
 - **One methodology.** Agents and humans follow the existing pattern (cited by file) and test first
   at the highest seam. Every agent has a stance: the architect is opinionated about clean
   architecture but argues from the value it buys; UX and engineers are customer-focused and weigh

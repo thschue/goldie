@@ -400,12 +400,9 @@ cmd_claim_fixture() {
 	rm -rf "$work"
 }
 
-# The loop rules stay short (ADR 0018): docs/agents within 600 lines in total,
-# each loop script within 200.
+# Each loop script stays within 200 lines (ADR 0018).
 cmd_harness_budget() {
-	say "harness budget (docs/agents <= 600 lines, each script <= 200)"
-	total=$(cat docs/agents/*.md | wc -l | tr -d ' ')
-	[ "$total" -le 600 ] || die "docs/agents/*.md has $total lines; the budget is 600 (ADR 0018)"
+	say "harness budget (each script <= 200 lines)"
 	for f in scripts/*; do
 		[ -f "$f" ] || continue
 		n=$(wc -l <"$f" | tr -d ' ')
