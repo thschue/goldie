@@ -25,6 +25,7 @@ const checking = ref(false);
 const checkFailures = ref(0);
 const checkRetry = ref<HTMLButtonElement | null>(null);
 // Retry takes focus when the alert first appears and after each failure.
+// checkFailures is a source only so that a repeat failure retriggers the focus; do not drop it.
 watch([ready, checkFailed, checkFailures], async ([isReady, failed]) => {
   if (!isReady || !failed) return;
   await nextTick();
