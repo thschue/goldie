@@ -496,7 +496,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
 | Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
 | Sign out failed | Could not sign you out. You are still signed in. **Retry** (a `role="alert"` above the page; the user stays on the page and signed in until the DELETE succeeds.) |
-| First load | Loading… (a `role="status"` line shown until the first session check settles; no shell, view or chip yet.) |
+| First load | Loading… (a `role="status"` region holding an `h1` (so the page always has one) shown by the app until the first session check settles; no shell, view or chip yet.) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |

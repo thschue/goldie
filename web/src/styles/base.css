@@ -75,9 +75,14 @@ a {
   outline-offset: 2px;
 }
 
-/* The first-load state (index.html): replaced when the app mounts. */
+/* The first-load state (App.vue): shown until the first route settles. */
 .boot-loading {
   padding: var(--space-8) var(--space-6);
   color: var(--fg-default);
   font-size: var(--text-md);
+}
+.boot-loading h1 {
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
 }

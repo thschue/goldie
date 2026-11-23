@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from './components/AppShell.vue';
 import SessionBanner from './auth/SessionBanner.vue';
@@ -7,6 +7,10 @@ import { role, signOut } from './auth/session';
 
 const route = useRoute();
 const router = useRouter();
+
+// False until the first route (and so the first session check) has settled.
+const ready = ref(false);
+onMounted(() => void router.isReady().then(() => (ready.value = true)));
 
 // A failed sign out keeps the person signed in and says so, with a retry.
 const signOutFailed = ref(false);
@@ -18,8 +22,9 @@ async function onSignOut() {
 </script>
 
 <template>
+  <div v-if="!ready" role="status" class="boot-loading"><h1>Loading…</h1></div>
   <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
-  <AppShell :role="role()" :account="!route.meta.public" @signout="onSignOut">
+  <AppShell v-else :role="role()" :account="!route.meta.public" @signout="onSignOut">
     <SessionBanner />
     <div v-if="signOutFailed" role="alert" class="signout-error">
       Could not sign you out. You are still signed in.
