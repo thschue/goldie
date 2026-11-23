@@ -19,6 +19,7 @@ const localConfigName = "config.yaml"
 // its config.yaml suppresses. It takes part in every view (#389).
 type localScope struct {
 	articles []Article // sorted by ID
+	agents   []Article // agent records, sorted by ID
 	index    keyIndex
 	// suppressed holds the global Items config.yaml hides in every view.
 	suppressed map[itemKey]bool
@@ -141,14 +142,16 @@ func splitGoldieDir(dir string) (parent, name string, err error) {
 // within fsys. It is called only while loading. The copy shares s's Projects
 // and global Items, which a Snapshot never changes.
 func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
-	articles, refs, err := readLocal(fsys, dir)
+	articles, agents, refs, err := readLocal(fsys, dir)
 	if err != nil {
 		return nil, err
 	}
 	snap := *s
 	snap.warnings = slices.Clone(s.warnings)
 	sortArticles(articles)
-	snap.local = &localScope{articles: articles, index: indexArticles(articles), configFile: dir + "/" + localConfigName}
+	sortArticles(agents)
+	snap.local = &localScope{articles: articles, agents: agents, index: indexArticles(articles), configFile: dir + "/" + localConfigName}
+	snap.local.index.add(agents)
 	hidden, _, err := snap.resolveSuppressions("", snap.local.configFile, "the local Scope's", "the local Scope", refs)
 	if err != nil {
 		return nil, err
@@ -157,10 +160,7 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	if err := snap.checkLocalEnforced(); err != nil {
 		return nil, err
 	}
-	own := make([]*Article, len(articles))
-	for i := range articles {
-		own[i] = &snap.local.articles[i]
-	}
+	own := pointers(nil, snap.local.articles, snap.local.agents)
 	// Only the local Items are checked: the wider Scopes were checked, in
 	// their own views, when the base loaded (ADR 0021).
 	if err := snap.checkReplacements(own); err != nil {
@@ -176,24 +176,26 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 // dir/config.yaml. A missing dir, articles or config.yaml is empty. Like a
 // Project's articles directory and project.yaml, a symlink is refused even
 // when it stays inside the root.
-func readLocal(fsys fs.FS, dir string) ([]Article, []string, error) {
+func readLocal(fsys fs.FS, dir string) (articles, agents []Article, refs []string, err error) {
 	if exists, err := requireDir(fsys, dir, "the Goldie directory"); err != nil || !exists {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	articlesPath := dir + "/articles"
-	var articles []Article
 	if exists, err := requireDir(fsys, articlesPath, "local articles"); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	} else if exists {
 		if articles, err = loadArticles(fsys, articlesPath, ScopeLocal); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	refs, err := readSuppressFile(fsys, dir+"/"+localConfigName, func(s *localSettings) yaml.Node { return s.Suppress })
-	if err != nil {
-		return nil, nil, err
+	if agents, err = loadScopeAgents(fsys, dir+"/agents", ScopeLocal, "local agents"); err != nil {
+		return nil, nil, nil, err
 	}
-	return articles, refs, nil
+	refs, err = readSuppressFile(fsys, dir+"/"+localConfigName, func(s *localSettings) yaml.Node { return s.Suppress })
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return articles, agents, refs, nil
 }
 
 // requireDir reports whether p exists, and fails when it is a symlink or not
@@ -220,8 +222,7 @@ func requireDir(fsys fs.FS, p, what string) (exists bool, err error) {
 // Item). A draft does not enforce and a local draft shadows nothing (#353).
 // The error names both as article:<name>, never their content.
 func (s *Snapshot) checkLocalEnforced() error {
-	for i := range s.local.articles {
-		a := &s.local.articles[i]
+	for _, a := range pointers(nil, s.local.articles, s.local.agents) {
 		if !a.published() {
 			continue
 		}

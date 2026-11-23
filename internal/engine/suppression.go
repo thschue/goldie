@@ -162,7 +162,7 @@ func (s *Snapshot) applySuppressions(scope string, refs []string) error {
 // view's own references resolve here. One that resolves to nothing, a draft
 // included, is a warning, so another team's deletion never fails the view;
 // viewer names it there. It returns the hidden keys, and them as
-// article:<ID>, sorted.
+// <kind>:<ID> (article: or agent:), sorted.
 func (s *Snapshot) resolveSuppressions(view, file, owner, viewer string, refs []string) (map[itemKey]bool, []string, error) {
 	hidden := map[itemKey]bool{}
 	warned := map[itemKey]bool{}
@@ -206,8 +206,8 @@ func suppressWarning(file, ref, viewer string) string {
 }
 
 // Suppressions lists the global Items a Project ("host/org/repo", matched
-// case-insensitively) suppresses, as article:<ID> in the ID's loaded spelling,
-// sorted. A reference that names nothing is not listed. An empty or
+// case-insensitively) suppresses, as <kind>:<ID> (article: or agent:) in the ID's
+// loaded spelling, sorted. A reference that names nothing is not listed. An empty or
 // unregistered Project suppresses nothing.
 func (s *Snapshot) Suppressions(project string) []string {
 	p, _ := s.lookupProject(project)
@@ -216,7 +216,8 @@ func (s *Snapshot) Suppressions(project string) []string {
 
 // SuppressedIn reports whether a global article is hidden from proj by a
 // Suppression: no copy answers in proj's view under opts (winner's rule), yet
-// the Project suppresses a global article visible under opts. It returns the
+// the Project suppresses a global article visible under opts. It answers for
+// articles only; a suppressed agent is not reported here. It returns the
 // Suppression as article:<ID> in the ID's loaded spelling and the project.yaml
 // that sets it, relative to the Source root.
 func (s *Snapshot) SuppressedIn(proj, id string, opts ...ReadOptions) (ref, file string, ok bool) {

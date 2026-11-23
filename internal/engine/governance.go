@@ -30,13 +30,18 @@ func keyOf(kind, name string) itemKey {
 // Kind is the Item's Kind. An Article is the Item of Kind article; each Kind
 // that joins Resolution later has its own Item type answer its own Kind, so
 // references, suppression and lookups name the Item's Kind, not an assumed one.
-func (a Article) Kind() string { return KindArticle }
+func (a Article) Kind() string {
+	if a.kind != "" {
+		return a.kind
+	}
+	return KindArticle
+}
 
 func (a Article) key() itemKey { return keyOf(a.Kind(), a.ID) }
 
 // knownKinds is the one table of Kinds an Item reference may name (ADR 0021).
 // A Kind joins it with its loader; until then a reference to it is rejected.
-var knownKinds = []string{KindArticle}
+var knownKinds = []string{KindArticle, KindAgent}
 
 func isKnownKind(kind string) bool {
 	for _, k := range knownKinds {
@@ -263,7 +268,7 @@ func (s *Snapshot) checkReplacements(all []*Article) error {
 // does not, and a draft Project copy is left out of Resolution (#353), so it
 // shadows nothing. Identity ignores case (ADR 0015).
 func (s *Snapshot) checkEnforced() error {
-	for _, a := range s.allArticles() {
+	for _, a := range s.allItems() {
 		if a.Scope == ScopeGlobal || !a.published() {
 			continue
 		}
@@ -285,15 +290,20 @@ func (s *Snapshot) enforces(key itemKey) bool {
 
 // allArticles lists pointers to every Article in the Snapshot, global first,
 // then each Project's in Project order, so errors are deterministic.
-func (s *Snapshot) allArticles() []*Article {
-	var out []*Article
-	for i := range s.articles {
-		out = append(out, &s.articles[i])
-	}
+func (s *Snapshot) allItems() []*Article {
+	out := pointers(nil, s.articles, s.agents)
 	for _, id := range s.Projects() {
 		p, _ := s.lookupProject(id)
-		for i := range p.articles {
-			out = append(out, &p.articles[i])
+		out = pointers(out, p.articles, p.agents)
+	}
+	return out
+}
+
+// pointers appends a pointer to every record in the lists to out.
+func pointers(out []*Article, lists ...[]Article) []*Article {
+	for _, list := range lists {
+		for i := range list {
+			out = append(out, &list[i])
 		}
 	}
 	return out
