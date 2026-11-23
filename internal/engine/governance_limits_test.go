@@ -71,8 +71,8 @@ func TestReplacedByErrorIsBoundedForAHugeReference(t *testing.T) {
 	refs := map[string]string{
 		// Spaces and colons: rejected when the reference is parsed.
 		"malformed": `"article:` + fill("ab cd:") + `"`,
-		// Well formed but dangling: rejected when it is resolved. Non-ASCII
-		// letters are neither a path, an address nor a token to redact.
+		// Only name characters, naming no Item. Non-ASCII letters are neither
+		// a path, an address nor a token, so redaction does not shorten them.
 		"dangling": `"article:` + fill("éé-") + `"`,
 	}
 	for name, ref := range refs {
@@ -113,7 +113,7 @@ func TestReplacedByRejectsSpacesAndInvisibleCharactersInTheName(t *testing.T) {
 			if !strings.Contains(msg, "replaced_by") {
 				t.Errorf("error %q does not name the field replaced_by", msg)
 			}
-			if strings.Contains(msg, sep) {
+			if sep != " " && strings.Contains(msg, sep) {
 				t.Errorf("error %q carries the character %+q unescaped", msg, sep)
 			}
 		})
