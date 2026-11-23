@@ -58,8 +58,8 @@ type Article struct {
 	// ReplacedBy is the frontmatter replaced_by as written, a reference
 	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
 	ReplacedBy string
-	// Overrides is set by Snapshot.View on a winning Item: the Scopes of the
-	// readable, lower-priority copies with the same identity, nearest first
+	// Overrides is set by Snapshot.View and ArticleIn on a winning Item: the
+	// Scopes of the readable, lower-priority copies with the same identity, nearest first
 	// (local, Project, global). Empty when the Item shadows nothing.
 	Overrides []string
 
@@ -575,8 +575,11 @@ func (s *Snapshot) Article(id string, opts ...ReadOptions) (Article, bool) {
 // same ID. An empty or unregistered Project resolves globally. Drafts are left
 // out unless opts asks for them. Which copy answers is winner's rule.
 func (s *Snapshot) ArticleIn(proj, id string, opts ...ReadOptions) (Article, bool) {
-	if a := s.winner(proj, keyOf(KindArticle, id), readOpts(opts)); a != nil {
-		return cloneArticle(*a), true
+	key := keyOf(KindArticle, id)
+	if a := s.winner(proj, key, readOpts(opts)); a != nil {
+		c := cloneArticle(*a)
+		c.Overrides = s.overridden(proj, key, a)
+		return c, true
 	}
 	return Article{}, false
 }

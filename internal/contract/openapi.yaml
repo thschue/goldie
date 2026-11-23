@@ -1024,6 +1024,9 @@ components:
               matched:
                 - kubernetes
                 - name
+              overrides:
+                - global
+              enforced: false
       required:
         - query
         - results
@@ -1435,6 +1438,9 @@ components:
           matched:
             - kubernetes
             - name
+          overrides:
+            - global
+          enforced: false
       required:
         - id
         - name
@@ -1497,6 +1503,21 @@ components:
             comes from a Source and is untrusted.
           examples:
             - article:platform/deploy-v2
+        overrides:
+          type: array
+          description: |
+            The Scopes this hit shadows in the requested view, nearest first;
+            `[]` when it shadows nothing. Never null. Always sent by this server;
+            absent from an older server, where it means unknown, not empty.
+          items:
+            type: string
+          examples:
+            - - global
+        enforced:
+          type: boolean
+          description: "Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false."
+          examples:
+            - false
     ItemStatus:
       type: string
       description: |
@@ -1515,6 +1536,16 @@ components:
     Article:
       type: object
       description: One article.
+      examples:
+        - id: platform/deploy
+          name: Deploying to Kubernetes
+          keywords:
+            - kubernetes
+            - deploy
+          content: Use the platform chart.
+          overrides:
+            - global
+          enforced: false
       required:
         - id
         - name
@@ -1564,6 +1595,21 @@ components:
             before printing it.
           examples:
             - article:platform/deploy-v2
+        overrides:
+          type: array
+          description: |
+            The Scopes this article shadows in the requested view, nearest first;
+            `[]` when it shadows nothing. Never null. Always sent by this server;
+            absent from an older server, where it means unknown, not empty.
+          items:
+            type: string
+          examples:
+            - - global
+        enforced:
+          type: boolean
+          description: "Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false."
+          examples:
+            - false
     ActivityEvent:
       type: object
       description: |

@@ -254,11 +254,18 @@ type AgentList struct {
 }
 
 // Article One article.
+//
+// Examples: {"content":"Use the platform chart.","enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"name":"Deploying to Kubernetes","overrides":["global"]}
 type Article struct {
 	// Content The Markdown body after the frontmatter. It comes from a Source and is untrusted; render it without raw HTML.
 	//
 	// Examples: Use the platform chart.
 	Content string `json:"content"`
+
+	// Enforced Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
+	//
+	// Examples: false
+	Enforced *bool `json:"enforced,omitempty"`
 
 	// Hint Present when the request named a Project that is not registered: the
 	// article is the global one, and this says what to do next.
@@ -281,6 +288,14 @@ type Article struct {
 	//
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
+
+	// Overrides The Scopes this article shadows in the requested view, nearest first;
+	// `[]` when it shadows nothing. Never null. Always sent by this server;
+	// absent from an older server, where it means unknown, not empty.
+	//
+	//
+	// Examples: ["global"]
+	Overrides *[]string `json:"overrides,omitempty"`
 
 	// ReplacedBy The reference to the Item that replaces this article, as written
 	// in its frontmatter, `<kind>:<name>` (ADR 0021). Present only when
@@ -467,8 +482,13 @@ type ProjectView struct {
 
 // SearchHit One article that matched a search.
 //
-// Examples: {"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}
+// Examples: {"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","overrides":["global"],"scope":"global","score":6}
 type SearchHit struct {
+	// Enforced Whether the hit is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false.
+	//
+	// Examples: false
+	Enforced *bool `json:"enforced,omitempty"`
+
 	// Id The article id, for a lookup.
 	//
 	// Examples: platform/deploy
@@ -493,6 +513,14 @@ type SearchHit struct {
 	//
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
+
+	// Overrides The Scopes this hit shadows in the requested view, nearest first;
+	// `[]` when it shadows nothing. Never null. Always sent by this server;
+	// absent from an older server, where it means unknown, not empty.
+	//
+	//
+	// Examples: ["global"]
+	Overrides *[]string `json:"overrides,omitempty"`
 
 	// ReplacedBy The reference to the Item that replaces this one, as written in its
 	// frontmatter, `<kind>:<name>` (ADR 0021). Present only when the Item
@@ -525,7 +553,7 @@ type SearchHit struct {
 
 // SearchResults The result of a search.
 //
-// Examples: {"query":"kubernetes","results":[{"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","scope":"global","score":6}]}
+// Examples: {"query":"kubernetes","results":[{"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"kind":"article","matched":["kubernetes","name"],"name":"Deploying to Kubernetes","overrides":["global"],"scope":"global","score":6}]}
 type SearchResults struct {
 	// Hint Present when the request named a Project that is not registered: the
 	// results are the global ones, and this says what to do next.

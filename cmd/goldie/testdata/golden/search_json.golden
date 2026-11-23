@@ -2,6 +2,7 @@
   "query": "agent loops",
   "results": [
     {
+      "enforced": false,
       "id": "agent-loops",
       "keywords": [
         "agents",
@@ -15,6 +16,7 @@
         "loops"
       ],
       "name": "Autonomous agent loops",
+      "overrides": [],
       "scope": "global",
       "score": 9
     }
