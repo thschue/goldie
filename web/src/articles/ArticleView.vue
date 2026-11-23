@@ -49,6 +49,7 @@ onMounted(async () => {
     </template>
   </div>
 
+  <p v-if="!article && !error" role="status" class="loading">Loading the article…</p>
   <h1>{{ article ? article.name : error ? 'Article not available' : 'Loading…' }}</h1>
 
   <template v-if="article">
@@ -129,6 +130,10 @@ onMounted(async () => {
   margin: 0 0 var(--space-4);
   color: var(--fg-secondary);
   font-size: var(--text-md);
+}
+.loading {
+  margin: 0 0 var(--space-4);
+  color: var(--fg-secondary);
 }
 .alert {
   max-width: 760px;

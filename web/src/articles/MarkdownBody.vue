@@ -17,6 +17,9 @@ function props(t: Token): Record<string, string> {
   return start && /^\d{1,9}$/.test(String(start)) ? { start: String(start) } : {};
 }
 
+// A box that scrolls sideways is a focusable, named region, so a keyboard user can scroll it.
+const scrollable = (label: string) => ({ tabindex: '0', role: 'region', 'aria-label': label });
+
 function render(tokens: Token[]): VNodeChild[] {
   const stack: Frame[] = [{ tag: '', props: {}, kids: [] }];
   const add = (n: VNodeChild) => stack[stack.length - 1].kids.push(n);
@@ -33,11 +36,11 @@ function render(tokens: Token[]): VNodeChild[] {
       }
       const el = h(f.tag, f.props, f.kids);
       // A table scrolls inside its own box, never the page.
-      add(f.tag === 'table' ? h('div', { class: 'scroll' }, [el]) : el);
+      add(f.tag === 'table' ? h('div', { class: 'scroll', ...scrollable('Table') }, [el]) : el);
     } else if (t.type === 'inline') {
       for (const n of render(t.children ?? [])) add(n);
     } else if (t.type === 'fence' || t.type === 'code_block') {
-      add(h('pre', [h('code', t.content)]));
+      add(h('pre', scrollable('Code'), [h('code', t.content)]));
     } else if (t.type === 'code_inline') {
       add(h('code', t.content));
     } else if (t.type === 'hardbreak') {
@@ -93,6 +96,11 @@ export default defineComponent({
 .article-body code {
   font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   font-size: 0.92em;
+}
+.article-body pre:focus-visible,
+.article-body .scroll:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .article-body pre code {
   overflow-wrap: normal;
