@@ -33,6 +33,9 @@ non-enforced global Item does not apply to it.
 **Status**: an Item's lifecycle value: `draft` (hidden from agents, visible in the UI), `published`
 or `deprecated` (with `replaced_by`).
 
+**Reference**: how one Item names another, `<kind>:<name>` (for example `article:platform/deploy`),
+resolved in the referring Item's Resolution view (ADR 0021).
+
 **Decision**: an architecture decision (ADR) served as an Item. Its lifecycle is `proposed`,
 `accepted`, `rejected`, `deprecated` or `superseded`. Accepted Decisions are binding for agents.
 

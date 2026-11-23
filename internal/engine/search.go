@@ -50,21 +50,21 @@ func (s *Snapshot) Search(query string) []Hit {
 func (s *Snapshot) SearchIn(proj, query string) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
-	taken := map[string]bool{}
+	taken := map[itemKey]bool{}
 	for _, list := range s.resolutionOrder(proj) {
-		var layer []string
+		var layer []itemKey
 		for _, a := range list {
-			id := strings.ToLower(a.ID)
-			if taken[id] {
+			key := a.key()
+			if taken[key] {
 				continue
 			}
-			layer = append(layer, id)
+			layer = append(layer, key)
 			if h := scoreArticle(a, words); h.Score > 0 {
 				hits = append(hits, h)
 			}
 		}
-		for _, id := range layer {
-			taken[id] = true
+		for _, key := range layer {
+			taken[key] = true
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
