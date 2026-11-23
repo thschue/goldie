@@ -12,17 +12,22 @@ import (
 // url.Parse reads "usr:pw@host:path" (an scp-like git URL with a password) as
 // the scheme "usr" with the opaque rest "pw@host:path", so it has no User to
 // redact. Formatting or logging GitOptions must still not print the password.
+// Since #96 GitOptions prints no part of the URL, so no parse can leak it; the
+// URL is logged only by app, through platform's redactor, whose table covers
+// these shapes (TestRedactGitURLKeepsOnlySchemeHostAndPath).
 func TestGitOptionsNeverPrintAnOpaqueURLsPassword(t *testing.T) {
 	const secret = "pw-opaque0123456789"
 	for _, raw := range []string{
 		"deploy:" + secret + "@git.example.invalid:org/r.git",
 		"git:" + secret + "@git.example.invalid:2222/org/r.git",
 		"mailto:" + secret + "@git.example.invalid",
+		"deploy:/" + secret + "@git.example.invalid:org/r.git",
+		"https://u:123/" + secret + "@git.example.invalid/x",
 	} {
 		opts := engine.GitOptions{URL: raw, Ref: "main"}
 		var logs bytes.Buffer
 		slog.New(slog.NewTextHandler(&logs, nil)).Info("source", "opts", opts)
 		slog.New(slog.NewJSONHandler(&logs, nil)).Info("source", "opts", opts)
-		assertNoSecret(t, fmt.Sprintf("%v %+v %#v %s", opts, opts, opts, opts)+logs.String(), secret)
+		assertNoSecret(t, fmt.Sprintf("%v %+v %#v %s", opts, opts, opts, opts)+logs.String(), secret, "git.example.invalid")
 	}
 }

@@ -773,7 +773,8 @@ func TestGitSourceSSHNeverLogsOrLeaksKeyMaterial(t *testing.T) {
 }
 
 // TestGitOptionsNeverPrintSSHKeyOrKnownHosts formats and logs GitOptions every
-// way a caller might.
+// way a caller might. Since #96 the URL is never printed either, so its user
+// and host do not appear; the Ref does.
 func TestGitOptionsNeverPrintSSHKeyOrKnownHosts(t *testing.T) {
 	key := newSSHKey(t)
 	host := newSSHKey(t)
@@ -784,9 +785,9 @@ func TestGitOptionsNeverPrintSSHKeyOrKnownHosts(t *testing.T) {
 	slog.New(slog.NewJSONHandler(&logs, nil)).Info("source", "opts", opts)
 	material := append(append(key.material(), knownHostsMaterial(kh)...), "deploy-user")
 	for _, s := range []string{fmt.Sprint(opts), fmt.Sprintf("%v %+v %#v %s", opts, opts, opts, opts), logs.String()} {
-		assertNoKeyMaterial(t, s, material...)
-		if !strings.Contains(s, "git.example.invalid") || !strings.Contains(s, "main") {
-			t.Fatalf("redaction dropped the non-secret fields: %q", s)
+		assertNoKeyMaterial(t, s, append(material, "git.example.invalid", "org/repo.git")...)
+		if !strings.Contains(s, "main") {
+			t.Fatalf("redaction dropped the Ref: %q", s)
 		}
 	}
 }

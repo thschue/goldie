@@ -169,7 +169,8 @@ func TestGitSourceRedirects(t *testing.T) {
 }
 
 // TestGitOptionsNeverPrintTheToken formats and logs GitOptions every way a
-// caller might.
+// caller might. Since #96 the URL is never printed either, so neither its
+// userinfo nor its host appears; the Ref does.
 func TestGitOptionsNeverPrintTheToken(t *testing.T) {
 	const token = "ghp_printme0123456789"
 	opts := engine.GitOptions{URL: "https://user:pw-secret@git.example.invalid/r.git", Ref: "main", Token: token}
@@ -177,9 +178,9 @@ func TestGitOptionsNeverPrintTheToken(t *testing.T) {
 	slog.New(slog.NewTextHandler(&logs, nil)).Info("source", "opts", opts)
 	slog.New(slog.NewJSONHandler(&logs, nil)).Info("source", "opts", opts)
 	for _, s := range []string{fmt.Sprint(opts), fmt.Sprintf("%v %+v %#v %s", opts, opts, opts, opts), logs.String()} {
-		assertNoSecret(t, s, token, "pw-secret")
-		if !strings.Contains(s, "git.example.invalid") || !strings.Contains(s, "main") {
-			t.Fatalf("redaction dropped the non-secret fields: %q", s)
+		assertNoSecret(t, s, token, "pw-secret", "git.example.invalid", "r.git")
+		if !strings.Contains(s, "main") {
+			t.Fatalf("redaction dropped the Ref: %q", s)
 		}
 	}
 }

@@ -216,13 +216,10 @@ func apiTokens(cfg platform.Config) (*api.Tokens, error) {
 	return tokens, nil
 }
 
-// content puts the dir Source at GOLDIE_CONTENT_DIR behind a Syncer, like
-// every Source, and runs its first poll here, so unloadable content still
-// fails at startup. Errors name the variable and never the path.
+// content puts the dir Source at GOLDIE_CONTENT_DIR (set) behind a Syncer,
+// like every Source, and runs its first poll here, so unloadable content
+// still fails at startup. Errors name the variable and never the path.
 func content(dir string) (*engine.Syncer, error) {
-	if dir == "" {
-		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
-	}
 	syncer, err := loadDir(context.Background(), dir)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
@@ -330,41 +327,42 @@ func withCSP(h http.Handler) http.Handler {
 }
 
 // ConfigError is a PublicHandler failure the operator fixes through a setting:
-// a missing or malformed token, a rate limit that limits nothing, or content
-// that is missing or does not load. It holds every such problem PublicHandler
-// found, joined with errors.Join, one per line. Any other PublicHandler error
-// is internal.
+// a missing or malformed token, a rate limit that limits nothing, no Source,
+// content that does not load, or a git Source setting the engine refuses. It
+// holds every such problem PublicHandler found, joined with errors.Join, one
+// per line. Any other PublicHandler error is internal.
 type ConfigError struct{ err error }
 
 func (e *ConfigError) Error() string { return e.err.Error() }
 
 func (e *ConfigError) Unwrap() error { return e.err }
 
-// sourceDirCheck is the name of the dir Source's readiness check (PC-02).
-const sourceDirCheck = "source:dir"
-
 // Public is the handler of the public listener and the owner of its Source's
 // Syncer.
 // It embeds the router, so it is an http.Handler and counts rate limit rejections.
-// Until Start runs, it serves the content PublicHandler loaded.
+// Until Start runs, it serves the content PublicHandler loaded: the dir
+// Source's, or none for the git Source, which answers 503 not_ready.
 type Public struct {
 	*publicMux
-	syncer  *engine.Syncer
+	source
+	pollLog *slog.Logger  // logs every poll, when the Source asks for it; nil logs none
 	poll    time.Duration // GOLDIE_POLL_INTERVAL
 	mu      sync.Mutex
 	started bool
 	loops   sync.WaitGroup // the poll loop Start runs
 }
 
-// Start runs the dir Source's poll loop, at GOLDIE_POLL_INTERVAL, until ctx ends, ends the open activity
-// streams when it does, and registers its
-// readiness check, "source:dir", with reg. It does not block. The check is
-// ready while the Syncer holds a Snapshot, so a stale Source stays ready and
-// no error reaches /readyz (PC-02). Only the first call with a live context
+// Start runs the Source's poll loop, at GOLDIE_POLL_INTERVAL, until ctx ends,
+// ends the open activity streams when it does, and registers the Source's
+// readiness check, "source:dir" or "source:git", with reg. It does not block:
+// the git Source's first load is the loop's first poll. The check fails until
+// the Syncer holds a Snapshot and then stays ready, so a stale Source stays
+// ready and no error reaches /readyz (PC-02). The git Source's polls are
+// logged (logPolls). Only the first call with a live context
 // starts a loop; a call with a cancelled context does not use up the start.
 // Every call registers the check, which replaces itself.
 func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
-	reg.Add(sourceDirCheck, func(context.Context) error {
+	reg.Add(p.check, func(context.Context) error {
 		if p.syncer.Current() == nil {
 			return errors.New("no snapshot")
 		}
@@ -376,7 +374,11 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		return
 	}
 	p.started = true
-	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, nil) })
+	var onPoll func(engine.SyncStatus)
+	if p.pollLog != nil {
+		onPoll = logPolls(ctx, p.pollLog)
+	}
+	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	// The first stop signal ends the activity streams: Shutdown waits for
 	// open requests and never cancels them, so a stream would hold it for
 	// the whole grace period (PC-08).
@@ -385,15 +387,17 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
 // the Config LoadConfig returned, used as is, and the server's component
-// logger (nil discards). It loads the dir Source and serves the API under
+// logger (nil discards). It loads the dir Source, or builds the git Source
+// without loading it (Start does), and serves the API under
 // /api/, every path of which requires a configured token; the OpenAPI document
 // at /openapi.yaml and /openapi.json and, unless switched off, Swagger UI at
 // /swagger-ui, which take the same token; and MCP over streamable HTTP at
 // /mcp, which needs a token too. Anything else is the embedded UI (a placeholder
 // page until ./run ui has built it), except /livez, /readyz and /version, which
 // are the not-found envelope here (PC-01). A
-// missing or bad token, a rate limit that limits nothing and unloadable
-// content are reported together in one *ConfigError, each naming its variable
+// missing or bad token, a rate limit that limits nothing, no Source or two,
+// unloadable dir content and every git Source setting the engine refuses are
+// reported together in one *ConfigError, each naming its variable
 // and none its value, so the server fails at startup (PC-04) and the operator
 // fixes them all in one restart.
 // Platform stays unaware of the contract: this is where the two meet.
@@ -406,22 +410,22 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		errs = append(errs, err)
 	}
-	syncer, err := content(cfg.ContentDir)
+	src, err := serveSource(cfg)
 	if err != nil {
 		errs = append(errs, err)
 	}
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	return newPublic(cfg, tokens, syncer, logger)
+	return newPublic(cfg, tokens, src, logger)
 }
 
-// newPublic builds the public handler over a loaded Syncer and a parsed token
-// set; cfg supplies the rate limit, the minimum client version, the Swagger
-// UI switch and the poll interval. PublicHandler and Local share it, so a local server
-// serves exactly what goldie server serves.
-func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, logger *slog.Logger) (*Public, error) {
-	m, err := newPublicMuxWith(syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
+// newPublic builds the public handler over a Source and a parsed token set;
+// cfg supplies the rate limit, the minimum client version, the Swagger UI
+// switch and the poll interval. PublicHandler and Local share it, so a local
+// server serves exactly what goldie server serves.
+func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger) (*Public, error) {
+	m, err := newPublicMuxWith(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +446,12 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, l
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
 	addUI(m, notFound, logger)
+	p := &Public{publicMux: m, source: src}
+	if src.logAttrs != nil {
+		p.pollLog = logger.With(src.logAttrs...)
+	}
 	// LoadConfig never yields less than the floor; a Config built by hand
 	// (zero) gets it too, never a busy loop.
-	return &Public{publicMux: m, syncer: syncer, poll: max(cfg.PollInterval, platform.MinPollInterval)}, nil
+	p.poll = max(cfg.PollInterval, minPollInterval)
+	return p, nil
 }
