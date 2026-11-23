@@ -25,22 +25,25 @@ it is recorded. It is a live view, not an audit log: the buffer is
 bounded and shared, so any reader's requests push older events out of
 it, and a restart empties it.
 
-Every event is one SSE event whose `data` is one line of JSON:
-`id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
-`lookup`), `query` (the search words, or the article id a lookup asked
-for), `project` (the registered spelling of the Project, an unregistered
-id lower-cased, or `""`), `token` (the name of the token, never its
-secret), `client_version` (the `X-Goldie-Client` version, or `""`),
-`trace_id` (or `""`) and `miss` (a search with no results, or a lookup
-answering 404). All text is escaped as JSON strings, so no query can
-end an event or start one.
+Every event is one SSE event whose `data` is one line of JSON, an
+`ActivityEvent`. Its `id` increases per server process (per replica)
+and starts again at 1 when the process restarts. All text is escaped
+as JSON strings, so no query can end an event or start one. A
+subscriber that cannot keep up loses events and then gets an event of
+type `dropped`, an `ActivityDropped` with the number lost, before the
+next event. Clients must ignore SSE event types and JSON fields they
+do not know.
 
-A subscriber that cannot keep up loses events and then gets an event
-of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
-before the next event. An idle stream sends an SSE comment every 15
+Events carry no SSE `id:` field and the server does not resume from
+`Last-Event-ID`: a reconnect replays the retained history, so clients
+dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
 seconds. The stream costs one rate-limit token when it opens, and ends
-when the server shuts down. At most 32 streams are open per server
-process; one more is a 503 whose hint says to retry later.
+at the server's first stop signal. At most 32 streams are open per
+server process; one more is a 503 whose hint says to retry later.
+
+Go clients use the raw `Client.GetActivity` and read the body as it
+arrives: `GetActivityWithResponse` reads the whole body, so it does
+not return until the stream ends.
 
 Operation ID: `getActivity`
 
@@ -141,6 +144,34 @@ Operation ID: `getOpenAPIYAML`
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ## Schemas
+
+### `ActivityDropped`
+
+The `data` of an SSE event of type `dropped`: this subscriber lost
+events because it did not keep up. Clients ignore fields they do not
+know.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `dropped` | `integer` | yes | How many events were lost before the next one. |
+
+### `ActivityEvent`
+
+One search or lookup on the activity stream, the `data` of an SSE
+event without a type. Every field is always sent; text fields are `""`
+when empty. Clients ignore fields they do not know.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `client_version` | `string` | yes | The version in 'X-Goldie-Client: goldie/&lt;version&gt;', or '""'. |
+| `id` | `integer` | yes | Increases per server process (per replica); starts again at 1 on restart. |
+| `kind` | `string` | yes | A search or a lookup. |
+| `miss` | `boolean` | yes | A search with no results, or a lookup answering 404. |
+| `project` | `string` | yes | The registered spelling of the Project, an unregistered id lower-cased, or '""'. |
+| `query` | `string` | yes | The search words, or the article id a lookup asked for, as text. |
+| `time` | `string` | yes | When the server recorded the request. |
+| `token` | `string` | yes | The name of the token that sent the request, never its secret. |
+| `trace_id` | `string` | yes | The request's trace id, or '""' without a span. |
 
 ### `Article`
 

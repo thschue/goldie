@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -18,6 +18,11 @@ const DefaultActivityKeepalive = 15 * time.Second
 // streamWriteTimeout bounds each write to an activity stream: a client that
 // stops reading cannot hold its handler, or the shutdown, past it.
 const streamWriteTimeout = 10 * time.Second
+
+// historyChunk is how many history events go in one write, each under its own
+// streamWriteTimeout, so a slow link is not cut off in the middle of a long
+// history.
+const historyChunk = 50
 
 // tooManyStreams is the 503 envelope when the Activity refuses a subscriber.
 var tooManyStreams = envelope("too_many_streams", "too many activity streams are open",
@@ -91,22 +96,6 @@ type activityStream struct {
 	last      uint64 // id of the last event written
 }
 
-// streamEvent is an Event on the wire. json.Marshal escapes control
-// characters, U+2028 and U+2029, and <, > and &, so every event is one line
-// of JSON and no query, Project or client version can end an event or start
-// one.
-type streamEvent struct {
-	ID            uint64    `json:"id"`
-	Time          time.Time `json:"time"`
-	Kind          EventKind `json:"kind"`
-	Query         string    `json:"query"`
-	Project       string    `json:"project"`
-	Token         string    `json:"token"`
-	ClientVersion string    `json:"client_version"`
-	TraceID       string    `json:"trace_id"`
-	Miss          bool      `json:"miss"`
-}
-
 // VisitGetActivityResponse sends the headers at once, then the history, then
 // live events and keepalive comments. Once the headers are out it returns
 // nil whatever happens: a failed write means the client left, and an error
@@ -121,11 +110,14 @@ func (st *activityStream) VisitGetActivityResponse(w http.ResponseWriter) error 
 		return nil
 	}
 	var b []byte
-	for _, e := range st.history {
-		b = st.appendEvent(b, e)
-	}
-	if len(b) > 0 && !st.write(w, rc, b) {
-		return nil
+	for chunk := range slices.Chunk(st.history, historyChunk) {
+		b = b[:0]
+		for _, e := range chunk {
+			b = st.appendEvent(b, e)
+		}
+		if !st.write(w, rc, b) {
+			return nil
+		}
 	}
 	tick := time.NewTicker(st.keepalive)
 	defer tick.Stop()
@@ -149,21 +141,34 @@ func (st *activityStream) VisitGetActivityResponse(w http.ResponseWriter) error 
 	}
 }
 
-// appendEvent appends e as one SSE event to b, after a dropped notice when
-// events are missing between the last one written and e: ids from one
-// Activity are consecutive, so a gap is what this subscriber lost.
+// appendEvent appends e as one SSE event to b, its data the spec's
+// ActivityEvent, after an ActivityDropped notice when events are missing
+// between the last one written and e. json.Marshal escapes control
+// characters, U+2028 and U+2029, and <, > and &, so every data is one line of
+// JSON and no query, Project or client version can end an event or start one.
 func (st *activityStream) appendEvent(b []byte, e Event) []byte {
+	// Ids from one Activity are consecutive, so a gap is what this subscriber
+	// lost. A stream merging replicas (ADR 0022, ?replicas=all) must track the
+	// last id per Replica instead, and can add the replica to ActivityDropped.
 	if st.last != 0 && e.ID > st.last+1 {
-		b = fmt.Appendf(b, "event: dropped\ndata: {\"dropped\":%d}\n\n", e.ID-st.last-1)
+		b = appendData(b, "event: dropped\n", contract.ActivityDropped{Dropped: int64(e.ID - st.last - 1)}) //nolint:gosec // ids stay far below 2^63
 	}
 	st.last = e.ID
-	data, err := json.Marshal(streamEvent{
-		ID: e.ID, Time: e.Time, Kind: e.Kind, Query: e.Query, Project: e.Project,
-		Token: e.Token, ClientVersion: e.ClientVersion, TraceID: e.TraceID, Miss: e.Miss,
+	return appendData(b, "", contract.ActivityEvent{
+		Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
+		Query: e.Query, Project: e.Project, Token: e.Token,
+		ClientVersion: e.ClientVersion, TraceId: e.TraceID, Miss: e.Miss,
 	})
-	if err != nil { // strings, numbers and a time: it cannot fail
+}
+
+// appendData appends one SSE event to b: the field lines in head, then v as
+// one data line of JSON.
+func appendData(b []byte, head string, v any) []byte {
+	data, err := json.Marshal(v)
+	if err != nil { // generated types of strings, numbers and a time: it cannot fail
 		return b
 	}
+	b = append(b, head...)
 	b = append(b, "data: "...)
 	b = append(b, data...)
 	return append(b, "\n\n"...)

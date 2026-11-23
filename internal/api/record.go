@@ -36,9 +36,9 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 }
 
 // recorded is the Event for an answered search or lookup: its words or the
-// article id asked for, the project as sent (record stores its spelling), and whether it is a Miss (a
-// search with zero results, or a lookup answering 404). Any other answer is
-// not recorded.
+// article id asked for, the project as sent (record stores its spelling), and
+// whether it is a Miss (a search with zero results, or a lookup answering
+// 404). Any other answer is not recorded.
 func recorded(req, resp any) (Event, bool) {
 	switch resp := resp.(type) {
 	case contract.SearchArticles200JSONResponse:

@@ -14,11 +14,95 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for ActivityEventKind.
+const (
+	ActivityKindLookup ActivityEventKind = "lookup"
+	ActivityKindSearch ActivityEventKind = "search"
+)
+
+// Valid indicates whether the value is a known member of the ActivityEventKind enum.
+func (e ActivityEventKind) Valid() bool {
+	switch e {
+	case ActivityKindLookup:
+		return true
+	case ActivityKindSearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// ActivityDropped The `data` of an SSE event of type `dropped`: this subscriber lost
+// events because it did not keep up. Clients ignore fields they do not
+// know.
+type ActivityDropped struct {
+	// Dropped How many events were lost before the next one.
+	//
+	// Examples: 3
+	Dropped int64 `json:"dropped"`
+}
+
+// ActivityEvent One search or lookup on the activity stream, the `data` of an SSE
+// event without a type. Every field is always sent; text fields are `""`
+// when empty. Clients ignore fields they do not know.
+type ActivityEvent struct {
+	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`.
+	//
+	// Examples: 1.5.0
+	ClientVersion string `json:"client_version"`
+
+	// Id Increases per server process (per replica); starts again at 1 on restart.
+	//
+	// Examples: 42
+	Id int64 `json:"id"`
+
+	// Kind A search or a lookup.
+	//
+	// Examples: search
+	Kind ActivityEventKind `json:"kind"`
+
+	// Miss A search with no results, or a lookup answering 404.
+	//
+	// Examples: false
+	Miss bool `json:"miss"`
+
+	// Project The registered spelling of the Project, an unregistered id lower-cased, or `""`.
+	//
+	// Examples: github.com/acme/shop
+	Project string `json:"project"`
+
+	// Query The search words, or the article id a lookup asked for, as text.
+	//
+	// Examples: deploy kubernetes
+	Query string `json:"query"`
+
+	// Time When the server recorded the request.
+	//
+	// Examples: 2026-11-23T10:00:00Z
+	Time time.Time `json:"time"`
+
+	// Token The name of the token that sent the request, never its secret.
+	//
+	// Examples: ci-reader
+	Token string `json:"token"`
+
+	// TraceId The request's trace id, or `""` without a span.
+	//
+	// Examples: 4bf92f3577b34da6a3ce929d0e0e4736
+	TraceId string `json:"trace_id"`
+}
+
+// ActivityEventKind A search or a lookup.
+//
+// Examples: search
+type ActivityEventKind string
 
 // Article One article.
 type Article struct {
@@ -277,22 +361,25 @@ type ClientInterface interface {
 	// bounded and shared, so any reader's requests push older events out of
 	// it, and a restart empties it.
 	//
-	// Every event is one SSE event whose `data` is one line of JSON:
-	// `id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
-	// `lookup`), `query` (the search words, or the article id a lookup asked
-	// for), `project` (the registered spelling of the Project, an unregistered
-	// id lower-cased, or `""`), `token` (the name of the token, never its
-	// secret), `client_version` (the `X-Goldie-Client` version, or `""`),
-	// `trace_id` (or `""`) and `miss` (a search with no results, or a lookup
-	// answering 404). All text is escaped as JSON strings, so no query can
-	// end an event or start one.
+	// Every event is one SSE event whose `data` is one line of JSON, an
+	// `ActivityEvent`. Its `id` increases per server process (per replica)
+	// and starts again at 1 when the process restarts. All text is escaped
+	// as JSON strings, so no query can end an event or start one. A
+	// subscriber that cannot keep up loses events and then gets an event of
+	// type `dropped`, an `ActivityDropped` with the number lost, before the
+	// next event. Clients must ignore SSE event types and JSON fields they
+	// do not know.
 	//
-	// A subscriber that cannot keep up loses events and then gets an event
-	// of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
-	// before the next event. An idle stream sends an SSE comment every 15
+	// Events carry no SSE `id:` field and the server does not resume from
+	// `Last-Event-ID`: a reconnect replays the retained history, so clients
+	// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
 	// seconds. The stream costs one rate-limit token when it opens, and ends
-	// when the server shuts down. At most 32 streams are open per server
-	// process; one more is a 503 whose hint says to retry later.
+	// at the server's first stop signal. At most 32 streams are open per
+	// server process; one more is a 503 whose hint says to retry later.
+	//
+	// Go clients use the raw `Client.GetActivity` and read the body as it
+	// arrives: `GetActivityWithResponse` reads the whole body, so it does
+	// not return until the stream ends.
 	//
 	// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
 	GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -348,22 +435,25 @@ type ClientInterface interface {
 // bounded and shared, so any reader's requests push older events out of
 // it, and a restart empties it.
 //
-// Every event is one SSE event whose `data` is one line of JSON:
-// `id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
-// `lookup`), `query` (the search words, or the article id a lookup asked
-// for), `project` (the registered spelling of the Project, an unregistered
-// id lower-cased, or `""`), `token` (the name of the token, never its
-// secret), `client_version` (the `X-Goldie-Client` version, or `""`),
-// `trace_id` (or `""`) and `miss` (a search with no results, or a lookup
-// answering 404). All text is escaped as JSON strings, so no query can
-// end an event or start one.
+// Every event is one SSE event whose `data` is one line of JSON, an
+// `ActivityEvent`. Its `id` increases per server process (per replica)
+// and starts again at 1 when the process restarts. All text is escaped
+// as JSON strings, so no query can end an event or start one. A
+// subscriber that cannot keep up loses events and then gets an event of
+// type `dropped`, an `ActivityDropped` with the number lost, before the
+// next event. Clients must ignore SSE event types and JSON fields they
+// do not know.
 //
-// A subscriber that cannot keep up loses events and then gets an event
-// of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
-// before the next event. An idle stream sends an SSE comment every 15
+// Events carry no SSE `id:` field and the server does not resume from
+// `Last-Event-ID`: a reconnect replays the retained history, so clients
+// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
 // seconds. The stream costs one rate-limit token when it opens, and ends
-// when the server shuts down. At most 32 streams are open per server
-// process; one more is a 503 whose hint says to retry later.
+// at the server's first stop signal. At most 32 streams are open per
+// server process; one more is a 503 whose hint says to retry later.
+//
+// Go clients use the raw `Client.GetActivity` and read the body as it
+// arrives: `GetActivityWithResponse` reads the whole body, so it does
+// not return until the stream ends.
 //
 // Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
 func (c *Client) GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -753,22 +843,25 @@ type ClientWithResponsesInterface interface {
 	// bounded and shared, so any reader's requests push older events out of
 	// it, and a restart empties it.
 	//
-	// Every event is one SSE event whose `data` is one line of JSON:
-	// `id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
-	// `lookup`), `query` (the search words, or the article id a lookup asked
-	// for), `project` (the registered spelling of the Project, an unregistered
-	// id lower-cased, or `""`), `token` (the name of the token, never its
-	// secret), `client_version` (the `X-Goldie-Client` version, or `""`),
-	// `trace_id` (or `""`) and `miss` (a search with no results, or a lookup
-	// answering 404). All text is escaped as JSON strings, so no query can
-	// end an event or start one.
+	// Every event is one SSE event whose `data` is one line of JSON, an
+	// `ActivityEvent`. Its `id` increases per server process (per replica)
+	// and starts again at 1 when the process restarts. All text is escaped
+	// as JSON strings, so no query can end an event or start one. A
+	// subscriber that cannot keep up loses events and then gets an event of
+	// type `dropped`, an `ActivityDropped` with the number lost, before the
+	// next event. Clients must ignore SSE event types and JSON fields they
+	// do not know.
 	//
-	// A subscriber that cannot keep up loses events and then gets an event
-	// of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
-	// before the next event. An idle stream sends an SSE comment every 15
+	// Events carry no SSE `id:` field and the server does not resume from
+	// `Last-Event-ID`: a reconnect replays the retained history, so clients
+	// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
 	// seconds. The stream costs one rate-limit token when it opens, and ends
-	// when the server shuts down. At most 32 streams are open per server
-	// process; one more is a 503 whose hint says to retry later.
+	// at the server's first stop signal. At most 32 streams are open per
+	// server process; one more is a 503 whose hint says to retry later.
+	//
+	// Go clients use the raw `Client.GetActivity` and read the body as it
+	// arrives: `GetActivityWithResponse` reads the whole body, so it does
+	// not return until the stream ends.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -1285,22 +1378,25 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // bounded and shared, so any reader's requests push older events out of
 // it, and a restart empties it.
 //
-// Every event is one SSE event whose `data` is one line of JSON:
-// `id` (a number, increasing), `time` (RFC 3339), `kind` (`search` or
-// `lookup`), `query` (the search words, or the article id a lookup asked
-// for), `project` (the registered spelling of the Project, an unregistered
-// id lower-cased, or `""`), `token` (the name of the token, never its
-// secret), `client_version` (the `X-Goldie-Client` version, or `""`),
-// `trace_id` (or `""`) and `miss` (a search with no results, or a lookup
-// answering 404). All text is escaped as JSON strings, so no query can
-// end an event or start one.
+// Every event is one SSE event whose `data` is one line of JSON, an
+// `ActivityEvent`. Its `id` increases per server process (per replica)
+// and starts again at 1 when the process restarts. All text is escaped
+// as JSON strings, so no query can end an event or start one. A
+// subscriber that cannot keep up loses events and then gets an event of
+// type `dropped`, an `ActivityDropped` with the number lost, before the
+// next event. Clients must ignore SSE event types and JSON fields they
+// do not know.
 //
-// A subscriber that cannot keep up loses events and then gets an event
-// of type `dropped` whose data is `{"dropped":<n>}`, the number lost,
-// before the next event. An idle stream sends an SSE comment every 15
+// Events carry no SSE `id:` field and the server does not resume from
+// `Last-Event-ID`: a reconnect replays the retained history, so clients
+// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
 // seconds. The stream costs one rate-limit token when it opens, and ends
-// when the server shuts down. At most 32 streams are open per server
-// process; one more is a 503 whose hint says to retry later.
+// at the server's first stop signal. At most 32 streams are open per
+// server process; one more is a 503 whose hint says to retry later.
+//
+// Go clients use the raw `Client.GetActivity` and read the body as it
+// arrives: `GetActivityWithResponse` reads the whole body, so it does
+// not return until the stream ends.
 //
 // Returns a wrapper object for the known response body format(s).
 //
