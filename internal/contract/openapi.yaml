@@ -64,18 +64,7 @@ paths:
             value that is not a `ProjectId` is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
-        - name: drafts
-          in: query
-          required: false
-          description: |
-            `true` includes draft Items too, marked `status: draft`; for operator
-            tokens only, and a reader token asking for drafts is a 403. Without
-            it a draft is left out for every token and never shadows, so the
-            published Item answers. Even with drafts, a draft Project article
-            never shadows an enforced global Item (ADR 0021). MCP never asks
-            for drafts.
-          schema:
-            type: boolean
+        - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
           description: The matching articles, best first.
@@ -144,18 +133,7 @@ paths:
             value that is not a `ProjectId` is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
-        - name: drafts
-          in: query
-          required: false
-          description: |
-            `true` finds draft Items too, marked `status: draft`; for operator
-            tokens only, and a reader token asking for drafts is a 403. Without
-            it a draft is left out for every token and never shadows, so the
-            published Item answers. Even with drafts, a draft Project article
-            never shadows an enforced global Item (ADR 0021). MCP never asks
-            for drafts.
-          schema:
-            type: boolean
+        - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
           description: The article.
@@ -474,8 +452,24 @@ components:
         401, and limits each token's requests (`GOLDIE_RATE_LIMIT`), where a
         token over its limit is a 429 with `Retry-After`. An operation for
         operators only, such as `/api/v1/activity` and `/api/v1/sync`, answers other tokens with a
-        403; those operations carry the machine-readable mark `x-goldie-role: operator`. The OpenAPI document and Swagger UI are not yet covered; the auth
+        403; those operations carry the machine-readable mark `x-goldie-role: operator`. A parameter value for operators only,
+        `drafts=true`, carries the same mark on `components/parameters/Drafts`. The OpenAPI document and Swagger UI are not yet covered; the auth
         work (#11) adds them.
+  parameters:
+    Drafts:
+      name: drafts
+      in: query
+      required: false
+      x-goldie-role: operator
+      description: |
+        `true` includes draft Items too, marked `status: draft`; for operator
+        tokens only, and a reader token asking for drafts is a 403. Without
+        it a draft is left out for every token and never shadows, so the
+        published Item answers. Even with drafts, a draft Project article
+        never shadows an enforced global Item (ADR 0021). MCP never asks
+        for drafts.
+      schema:
+        type: boolean
   schemas:
     SearchResults:
       type: object

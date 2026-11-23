@@ -16,7 +16,7 @@ import (
 )
 
 // The managed-block editor behind `goldie instructions apply` and `check`
-// (ADR 0007, marker format in ADR 0025). The byte functions never touch the
+// (ADR 0007, marker format in ADR 0026). The byte functions never touch the
 // disk; the file layer is in the style of project.WriteConfig.
 
 // BlockState is what a file holds, compared with the content the server serves.

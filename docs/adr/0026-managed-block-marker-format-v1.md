@@ -1,4 +1,4 @@
-# 25. Managed-block marker format v1
+# 26. Managed-block marker format v1
 
 Status: accepted
 

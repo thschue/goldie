@@ -40,6 +40,7 @@ type telemetryOption func(*telemetryConfig)
 
 type telemetryConfig struct {
 	metricReader sdkmetric.Reader
+	spanPath     func(string) string
 }
 
 // withMetricReader builds the MeterProvider around r instead of an OTLP

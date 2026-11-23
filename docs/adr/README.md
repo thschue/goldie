@@ -28,4 +28,5 @@ Consequences.
 - [0022. Federated activity across replicas](0022-federated-activity-across-replicas.md)
 - [0023. Git Source URLs are operator-trusted](0023-git-source-urls-are-operator-trusted.md)
 - [0024. API wire names are snake_case](0024-api-wire-names-are-snake-case.md)
-- [0025. Managed-block marker format v1](0025-managed-block-marker-format-v1.md)
+- [0025. Role rules are marked once in the spec, with `x-goldie-role`](0025-role-rules-are-marked-once-in-the-spec.md)
+- [0026. Managed-block marker format v1](0026-managed-block-marker-format-v1.md)

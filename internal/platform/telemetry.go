@@ -51,6 +51,9 @@ type Telemetry struct {
 	// (GOLDIE_TELEMETRY_CLIENT_INFO).
 	clientInfo bool
 
+	// spanPath turns a request path into the one a span carries (WithSpanPath).
+	spanPath func(string) string
+
 	once sync.Once
 	err  error
 }
@@ -212,7 +215,7 @@ func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanE
 	for _, o := range opts {
 		o(&cfg)
 	}
-	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}}
+	t := &Telemetry{notice: &sdkNotice{}, endpoints: map[string]string{}, spanPath: cfg.spanPath}
 	withoutProcessResourceEnv(func() {
 		if cfg.metricReader != nil {
 			t.mp = newMeterProvider(res, cfg.metricReader)
@@ -274,18 +277,68 @@ const (
 // TelemetrySettings rows marked Secret.
 var secretOTelNames = secretSet(TelemetrySettings)
 
-// SetupTelemetry reads the OTEL_* variables and builds the exporters. It
-// returns a disabled Telemetry when nothing selects one, and an error naming
-// the variable (never its value, PC-04, PC-05) when a value is invalid.
-func SetupTelemetry(ctx context.Context, lookup Lookup) (*Telemetry, error) {
-	return setupTelemetry(ctx, lookup, RoleServer)
+// signalSettings is one signal's parsed exporter selection.
+type signalSettings struct {
+	name     string
+	on       bool
+	endpoint string            // "" when none is configured: the default applies
+	headers  map[string]string // nil when none is configured
 }
 
-// setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
-// client role (any role but RoleServer) reads and exports traces only.
-func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry, error) {
+// telemetrySettings is everything the OTEL_* variables say, parsed and
+// validated once; setupTelemetry only builds from it (the LoadConfig pattern).
+type telemetrySettings struct {
+	disabled    bool
+	clientInfo  bool
+	serviceName string
+	resAttrs    map[string]string
+	trace       traceSettings
+	metric      metricSettings
+	signals     []signalSettings // the signals this role reads, in a fixed order
+}
+
+// signal returns the settings of the named signal, or the zero value when the
+// role does not read it.
+func (s telemetrySettings) signal(name string) signalSettings {
+	for _, sig := range s.signals {
+		if sig.name == name {
+			return sig
+		}
+	}
+	return signalSettings{}
+}
+
+// anyOn reports whether some signal selects an exporter.
+func (s telemetrySettings) anyOn() bool {
+	for _, sig := range s.signals {
+		if sig.on {
+			return true
+		}
+	}
+	return false
+}
+
+// endpoints maps each signal with a configured endpoint to it.
+func (s telemetrySettings) endpoints() map[string]string {
+	m := map[string]string{}
+	for _, sig := range s.signals {
+		if sig.endpoint != "" {
+			m[sig.name] = sig.endpoint
+		}
+	}
+	return m
+}
+
+// parseTelemetrySettings reads and validates the OTEL_* variables through
+// lookup, building nothing. A client role (any role but RoleServer) reads the
+// trace signal only. Every error is joined, and none carries a value (PC-04,
+// PC-05). When OTEL_SDK_DISABLED is true it stops there, as the rest is moot.
+func parseTelemetrySettings(lookup Lookup, role string) (telemetrySettings, error) {
 	server := role == RoleServer
-	var errs []error
+	var (
+		errs []error
+		s    telemetrySettings
+	)
 	get := func(name string) string {
 		var v string
 		var err error
@@ -304,25 +357,24 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 		}
 		return strings.TrimSpace(v)
 	}
-	var clientInfo bool
 	if server {
 		var err error
-		if clientInfo, err = clientInfoEnabled(lookup); err != nil {
+		if s.clientInfo, err = clientInfoEnabled(lookup); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	if v := strings.ToLower(get(envOTelDisabled)); v != "" && v != "true" && v != "false" {
 		errs = append(errs, fmt.Errorf("%s: must be true or false", envOTelDisabled))
 	} else if v == "true" {
-		return &Telemetry{}, errors.Join(errs...)
+		s.disabled = true
+		return s, errors.Join(errs...)
 	}
-	resAttrs, err := parseResourceAttributes(get(envOTelResAttrs))
-	if err != nil {
+	var err error
+	if s.resAttrs, err = parseResourceAttributes(get(envOTelResAttrs)); err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", envOTelResAttrs, err))
 	}
-	serviceName := get(envOTelService)
-	traceCfg, err := parseTraceSettings(get)
-	if err != nil {
+	s.serviceName = get(envOTelService)
+	if s.trace, err = parseTraceSettings(get); err != nil {
 		errs = append(errs, err)
 	}
 	type signal struct{ name, exporter, prefix string }
@@ -331,23 +383,20 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 		{"logs", "OTEL_LOGS_EXPORTER", "OTEL_EXPORTER_OTLP_LOGS_"},
 		{"metrics", "OTEL_METRICS_EXPORTER", "OTEL_EXPORTER_OTLP_METRICS_"},
 	}
-	var metricCfg metricSettings
 	if server {
-		if metricCfg, err = parseMetricSettings(get); err != nil {
+		if s.metric, err = parseMetricSettings(get); err != nil {
 			errs = append(errs, err)
 		}
 	} else {
 		signals = signals[:1]
 	}
-	on := map[string]bool{}
-	headers := map[string]map[string]string{}
-	endpoints := map[string]string{}
-	for _, s := range signals {
-		exp := strings.ToLower(get(s.exporter))
+	for _, sg := range signals {
+		out := signalSettings{name: sg.name}
+		exp := strings.ToLower(get(sg.exporter))
 		if exp != "" && exp != "otlp" && exp != "none" {
-			errs = append(errs, fmt.Errorf("%s: must be otlp or none", s.exporter))
+			errs = append(errs, fmt.Errorf("%s: must be otlp or none", sg.exporter))
 		}
-		for _, name := range []string{envOTLPProtocol, s.prefix + "PROTOCOL"} {
+		for _, name := range []string{envOTLPProtocol, sg.prefix + "PROTOCOL"} {
 			if p := get(name); p != "" && p != "http/protobuf" {
 				errs = append(errs, fmt.Errorf("%s: only http/protobuf is supported", name))
 			}
@@ -356,7 +405,7 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 		// signal-specific one is used as-is and wins (OTLP spec). The SDK also
 		// parses the raw value and prints one it rejects, so a value with
 		// surrounding space is refused, not trimmed.
-		for _, name := range []string{envOTLPEndpoint, s.prefix + "ENDPOINT"} {
+		for _, name := range []string{envOTLPEndpoint, sg.prefix + "ENDPOINT"} {
 			if v := get(name); v != "" {
 				raw, _ := lookup(name)
 				u, err := url.Parse(v)
@@ -365,37 +414,55 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 					continue
 				}
 				if name == envOTLPEndpoint {
-					u.Path = path.Join(u.Path, "/v1/"+s.name)
+					u.Path = path.Join(u.Path, "/v1/"+sg.name)
 				}
-				endpoints[s.name] = u.String()
+				out.endpoint = u.String()
 			}
 		}
-		on[s.name] = exp == "otlp" || (exp == "" && endpoints[s.name] != "")
+		out.on = exp == "otlp" || (exp == "" && out.endpoint != "")
 		// The SDK parses every one of these variables itself when an
 		// exporter is built, and prints a rejected key or value to the
 		// global OpenTelemetry logger. Validate each one that is set so
 		// nothing the SDK would reject gets that far.
-		for _, name := range []string{envOTLPHeaders, s.prefix + "HEADERS"} { // signal-specific wins
+		for _, name := range []string{envOTLPHeaders, sg.prefix + "HEADERS"} { // signal-specific wins
 			if v := get(name); v != "" {
 				h, err := parseOTLPHeaders(v)
 				if err != nil {
 					errs = append(errs, fmt.Errorf("%s: %w", name, err))
 				}
-				headers[s.name] = h
+				out.headers = h
 			}
 		}
+		s.signals = append(s.signals, out)
 	}
-	if err := errors.Join(errs...); err != nil {
+	return s, errors.Join(errs...)
+}
+
+// SetupTelemetry reads the OTEL_* variables and builds the exporters. It
+// returns a disabled Telemetry when nothing selects one, and an error naming
+// the variable (never its value, PC-04, PC-05) when a value is invalid.
+func SetupTelemetry(ctx context.Context, lookup Lookup, opts ...telemetryOption) (*Telemetry, error) {
+	return setupTelemetry(ctx, lookup, RoleServer, opts...)
+}
+
+// setupTelemetry is SetupTelemetry for the role whose goldie.role is role. A
+// client role (any role but RoleServer) reads and exports traces only.
+func setupTelemetry(ctx context.Context, lookup Lookup, role string, extra ...telemetryOption) (*Telemetry, error) {
+	cfg, err := parseTelemetrySettings(lookup, role)
+	if err != nil {
+		if cfg.disabled {
+			return &Telemetry{}, err
+		}
 		return nil, err
 	}
-	if !on["traces"] && !on["logs"] && !on["metrics"] {
+	if cfg.disabled || !cfg.anyOn() {
 		return &Telemetry{}, nil
 	}
 
 	var (
 		spans sdktrace.SpanExporter
 		logs  sdklog.Exporter
-		opts  []telemetryOption
+		opts  = extra
 	)
 	// The SDK parses the OTEL_* variables goldie does not (timeouts, TLS file
 	// paths, batch and log record limits) while the exporters are built, and
@@ -403,36 +470,37 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string) (*Telemetry
 	// says reaches stderr; goldie reports a fixed warning instead.
 	notice := &sdkNotice{}
 	notice.install()
+	endpoints := cfg.endpoints()
 	// The endpoint and headers are always passed, defaults included, so the
 	// SDK's own reading of the process environment is overridden.
 	headersOf := func(signal string) map[string]string {
-		if h := headers[signal]; h != nil {
+		if h := cfg.signal(signal).headers; h != nil {
 			return h
 		}
 		return map[string]string{}
 	}
-	if on["traces"] {
+	if cfg.signal("traces").on {
 		if spans, err = otlptracehttp.New(ctx, otlptracehttp.WithEndpointURL(otlpEndpoint(endpoints, "traces")),
 			otlptracehttp.WithHeaders(headersOf("traces"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_TRACES_*: cannot configure the trace exporter")
 		}
 	}
-	if on["logs"] {
+	if cfg.signal("logs").on {
 		if logs, err = otlploghttp.New(ctx, otlploghttp.WithEndpointURL(otlpEndpoint(endpoints, "logs")),
 			otlploghttp.WithHeaders(headersOf("logs"))); err != nil {
 			return nil, errors.New("OTEL_EXPORTER_OTLP_LOGS_*: cannot configure the log exporter")
 		}
 	}
-	if on["metrics"] {
-		reader, err := newMetricReader(ctx, otlpEndpoint(endpoints, "metrics"), headersOf("metrics"), metricCfg)
+	if cfg.signal("metrics").on {
+		reader, err := newMetricReader(ctx, otlpEndpoint(endpoints, "metrics"), headersOf("metrics"), cfg.metric)
 		if err != nil {
 			return nil, err
 		}
 		opts = append(opts, withMetricReader(reader))
 	}
-	t := newTelemetry(roleResource(role, serviceName, resAttrs), traceCfg, spans, logs, opts...)
+	t := newTelemetry(roleResource(role, cfg.serviceName, cfg.resAttrs), cfg.trace, spans, logs, opts...)
 	t.notice = notice
-	t.clientInfo = clientInfo
+	t.clientInfo = cfg.clientInfo
 	for _, name := range t.signals() {
 		t.endpoints[name] = redactEndpoint(otlpEndpoint(endpoints, name))
 	}
@@ -645,7 +713,7 @@ func (t *Telemetry) WrapHandler(h http.Handler) http.Handler {
 	// otelhttp sees a view of the request without the caller's address and
 	// user agent unless the operator opted in, and never X-Forwarded-For.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traced.ServeHTTP(w, spanView(r, t.clientInfo))
+		traced.ServeHTTP(w, t.spanView(r, t.clientInfo))
 	})
 }
 
