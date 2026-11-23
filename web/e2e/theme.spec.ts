@@ -56,12 +56,15 @@ test.describe('system light', () => {
     expect(stored.toLowerCase(), 'the choice is in localStorage').toContain('dark');
 
     // Record the document's state at the moment data-theme first appears.
+    // Observe `document` itself: at init-script time documentElement can still be null.
     await page.addInitScript(() => {
       const w = window as unknown as { __themeAt?: string };
-      new MutationObserver(() => {
-        if (document.documentElement.hasAttribute('data-theme') && !w.__themeAt) w.__themeAt = document.readyState;
-      }).observe(document.documentElement, { attributes: true });
-      if (document.documentElement.hasAttribute('data-theme')) w.__themeAt = document.readyState;
+      const note = () => {
+        const root = document.documentElement;
+        if (root && root.hasAttribute('data-theme') && !w.__themeAt) w.__themeAt = document.readyState;
+      };
+      new MutationObserver(note).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-theme'] });
+      note();
     });
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
