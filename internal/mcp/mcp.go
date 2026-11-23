@@ -38,13 +38,13 @@ const (
 )
 
 type searchInput struct {
-	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up, for example message queue"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 type articleInput struct {
-	ID      string `json:"id" jsonschema:"an article id from search_knowledge"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	ID      string `json:"id" jsonschema:"an article id from search_knowledge, for example rollout-guide"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 // noInput is the input of a tool that takes no arguments.
@@ -220,9 +220,9 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	if err != nil {
 		return failure(wordError(err, t.local))
 	}
-	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
+	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\nThe article (each line starts with \"| \"; drop that prefix to read it):\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
-		strings.TrimRight(contract.CleanText(a.Content), "\n")) + hintLine(a.Hint))
+		quote(strings.TrimRight(contract.CleanText(a.Content), "\n"))) + hintLine(a.Hint))
 }
 
 // deprecationLine is the notice get_article starts with for a deprecated

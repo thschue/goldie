@@ -177,8 +177,12 @@ with an explicit `project` still answer. Fix the file and restart the MCP server
 
 The skill and agent tools take the same optional `project`. `find_skills` searches skills only, by
 keyword or name. `get_skill` answers a skill's file paths and the text of its `SKILL.md`, each line
-quoted with `| `; a name that is empty, dots only or holds a separator is refused before any
-request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
+quoted with `| `; its optional `file` (a path from that list, such as `scripts/run.sh`) reads that
+file of the bundle instead, quoted the same way. A name that is empty, dots only or holds a
+separator, and a `file` that leaves the bundle, is refused before any request. A skill without a
+`SKILL.md` is reported as that, not as unknown. `get_article` quotes the article text with `| `
+too; the server's own hint stays a plain line after it. Every tool parameter's description carries
+an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
 description.
 
 The server also has one resource, `goldie://instructions` (`resources/list`, `resources/read`): the
