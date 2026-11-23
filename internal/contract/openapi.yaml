@@ -1517,7 +1517,7 @@ components:
             - github.com/acme/shop
         enforced:
           type: boolean
-          description: Whether the Item is enforced, as its frontmatter says.
+          description: "Whether the Item is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it."
     SessionRequest:
       type: object
       description: The token to sign in with.

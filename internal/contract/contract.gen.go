@@ -449,7 +449,7 @@ type ProjectItem struct {
 	// Examples: Use the platform chart.
 	Content string `json:"content"`
 
-	// Enforced Whether the Item is enforced, as its frontmatter says.
+	// Enforced Whether the Item is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
 	Enforced bool `json:"enforced"`
 
 	// Id The Item id, its path under `articles/` without `.md`.

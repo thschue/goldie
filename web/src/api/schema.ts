@@ -734,7 +734,7 @@ export interface components {
              * @example github.com/acme/shop
              */
             scope: string;
-            /** @description Whether the Item is enforced, as its frontmatter says. */
+            /** @description Whether the Item is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it. */
             enforced: boolean;
         };
         /** @description The token to sign in with. */

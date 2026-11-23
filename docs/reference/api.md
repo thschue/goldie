@@ -650,7 +650,7 @@ One winning Item of a Project's view.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `content` | `string` | yes | The Markdown body of the Item, after the frontmatter. Untrusted, it comes from a Source; render it without raw HTML. |
-| `enforced` | `boolean` | yes | Whether the Item is enforced, as its frontmatter says. |
+| `enforced` | `boolean` | yes | Whether the Item is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. |
 | `id` | `string` | yes | The Item id, its path under 'articles/' without '.md'. |
 | `keywords` | `array` | yes | The Item keywords from its frontmatter, lower case. |
 | `name` | `string` | yes | The Item display title, from its frontmatter. |
