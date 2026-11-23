@@ -300,3 +300,62 @@ func TestRedactQuotedCredentialWithAt(t *testing.T) {
 		}
 	}
 }
+
+// #6: redact is narrowed to URLs, credentials and absolute paths. Each Source
+// returns safe errors itself (a file relative to its root), so the Syncer's
+// last line of defence must not eat what a platform engineer needs to read.
+func TestRedactNarrowedLeakAndOverRedactionCases(t *testing.T) {
+	leaks := map[string]struct{ msg, leak string }{
+		"short name pw":            {"login failed pw=SECRETa1", "SECRETa1"},
+		"short name pass":          {"login failed pass: SECRETa2", "SECRETa2"},
+		"short name tok":           {"login failed tok=SECRETa3", "SECRETa3"},
+		"short name auth":          {"auth=SECRETa4 rejected", "SECRETa4"},
+		"gho prefix":               {"using gho_SECRETb1 failed", "SECRETb1"},
+		"ghs prefix":               {"using ghs_SECRETb2 failed", "SECRETb2"},
+		"github_pat with parts":    {"using github_pat_11AAA_SECRETb3part failed", "SECRETb3part"},
+		"glpat with dashes":        {"using glpat-AAAA-SECRETb4 failed", "SECRETb4"},
+		"unterminated double":      {`password="SECRETc1 and more words`, "more words"},
+		"unterminated single":      {`token='SECRETc2 and more words`, "more words"},
+		"unterminated first word":  {`secret="SECRETc3 and more`, "SECRETc3"},
+		"dotless host with port":   {"dial tcp gitserver:9418: connect: connection refused", "gitserver"},
+		"dotless host in lookup":   {"lookup gitserver on 127.0.0.11:53: no such host", "gitserver"},
+		"dotless scp-like host":    {"fetch git@gitserver:org/repo.git failed", "gitserver"},
+		"https URL":                {"fetch https://git.example.com/org/repo.git failed", "git.example.com"},
+		"URL userinfo":             {"fetch https://bot:SECRETd1@git.example.com/r.git failed", "SECRETd1"},
+		"absolute path":            {"open /srv/goldie/content/global/articles/a.md: no such file", "/srv/goldie"},
+		"absolute path with space": {"open /var/lib/goldie/cache: permission denied", "/var/lib"},
+		"windows path":             {`read C:\Users\x\file`, "Users"},
+		"dotted host":              {"lookup git.internal.corp: no such host", "internal.corp"},
+		"ipv4 with port":           {"dial tcp 10.1.2.3:443: connection refused", "10.1.2.3"},
+	}
+	for name, tc := range leaks {
+		t.Run("leak/"+name, func(t *testing.T) {
+			if got := redact(tc.msg); strings.Contains(got, tc.leak) {
+				t.Errorf("redact(%q) = %q leaks %q", tc.msg, got, tc.leak)
+			}
+		})
+	}
+
+	keep := map[string]string{
+		"keyword":                    "unknown keyword in front matter",
+		"keywords":                   "keywords must be a list of strings",
+		"version string":             "goldie v1.2.3 is older than the required 1.4.0",
+		"prerelease version":         "minimum client version 1.4.0-rc.2 not met",
+		"root-relative path":         "global/articles/sub/bad.md: front matter is not closed",
+		"root-relative project path": "projects/github.com/acme/shop/project.yaml: suppress is not a list",
+		"plain message":              "boom",
+	}
+	for name, msg := range keep {
+		t.Run("keep/"+name, func(t *testing.T) {
+			if got := redact(msg); got != msg {
+				t.Errorf("redact(%q) = %q, want it unchanged", msg, got)
+			}
+		})
+	}
+
+	// A leaked value is removed while the useful part of the message stays.
+	got := redact("global/articles/a.md: cannot open /srv/goldie/x with token=SECRETe1")
+	if !strings.Contains(got, "global/articles/a.md") || strings.Contains(got, "/srv/goldie") || strings.Contains(got, "SECRETe1") {
+		t.Errorf("redact kept or dropped the wrong parts: %q", got)
+	}
+}

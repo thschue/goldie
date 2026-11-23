@@ -42,6 +42,10 @@ func (stub) GetSync(context.Context, GetSyncRequestObject) (GetSyncResponseObjec
 	return GetSync200JSONResponse{Warnings: []ContentWarning{}}, nil
 }
 
+func (stub) PostSync(context.Context, PostSyncRequestObject) (PostSyncResponseObject, error) {
+	return PostSync202JSONResponse{Hint: "started"}, nil
+}
+
 func (stub) GetArticle(_ context.Context, req GetArticleRequestObject) (GetArticleResponseObject, error) {
 	return GetArticle200JSONResponse{Id: req.Id, Name: "n", Keywords: []string{}, Content: "c"}, nil
 }

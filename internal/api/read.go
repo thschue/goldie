@@ -129,6 +129,7 @@ type Server struct {
 	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
 	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
 	fedDown  downSet      // peers already logged as down
+	sync     SyncControl  // see WithSync, nil lists no Source
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -286,7 +287,7 @@ func (s *Server) GetSync(context.Context, contract.GetSyncRequestObject) (contra
 	for _, w := range snap.Warnings() {
 		warnings = append(warnings, contentWarning(w))
 	}
-	return contract.GetSync200JSONResponse{Warnings: warnings}, nil
+	return contract.GetSync200JSONResponse{Warnings: warnings, Sources: s.sourceStatuses()}, nil
 }
 
 // contentWarning splits an engine warning, "<file>: <message>", at the first

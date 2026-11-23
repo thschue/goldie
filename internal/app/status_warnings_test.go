@@ -60,8 +60,16 @@ func TestStatusGivesTheWarningsToAnOperator(t *testing.T) {
 func TestStatusWithoutWarningsIsAnEmptyList(t *testing.T) {
 	srv := warningServer(t, testContent)
 	resp, body := do(t, http.MethodGet, srv.URL+statusPath, bearer(operatorToken))
-	if resp.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != `{"warnings":[]}` {
-		t.Errorf("status %d body %s, want 200 {\"warnings\":[]}", resp.StatusCode, body)
+	// #6 added the Sources next to the warnings, additively: the warnings stay
+	// an empty list, never null.
+	var got struct {
+		Warnings json.RawMessage `json:"warnings"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || string(got.Warnings) != "[]" {
+		t.Errorf("status %d body %s, want 200 with \"warnings\":[]", resp.StatusCode, body)
 	}
 }
 
