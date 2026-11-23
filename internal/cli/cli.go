@@ -52,14 +52,15 @@ type Env struct {
 	Out      io.Writer                    // results
 	Err      io.Writer                    // warnings, such as a deprecated article's; nil discards them
 	Client   *http.Client                 // nil: contract's client, with a timeout
-	// StartLocal starts an embedded server over the content at dir and returns
-	// its address and token. stop ends it. cmd injects app.StartLocal; nil
-	// means local mode is not available.
-	StartLocal func(ctx context.Context, dir string) (addr, token string, stop func(), err error)
+	// StartLocal starts an embedded server over the content directory content,
+	// which the CLI opened and closes when Open's stop runs; nil is empty
+	// content. It returns the server's address and token. stop ends it. cmd
+	// injects app.StartLocal; nil means local mode is not available.
+	StartLocal func(ctx context.Context, content *os.Root) (addr, token string, stop func(), err error)
 	// StartLocalScope is StartLocal for a repository with a local Scope:
-	// goldieDir is the absolute path of its .goldie directory, and dir the
-	// content directory under it, "" for none. cmd injects it from app.StartLocal.
-	StartLocalScope func(ctx context.Context, dir, goldieDir string) (addr, token string, stop func(), err error)
+	// goldieDir is the absolute path of its .goldie directory, and content the
+	// content directory, nil for none. cmd injects it from app.StartLocal.
+	StartLocalScope func(ctx context.Context, content *os.Root, goldieDir string) (addr, token string, stop func(), err error)
 }
 
 // DefaultEnv is the process environment.
@@ -222,21 +223,39 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	if !local {
 		return c, func() {}, nil
 	}
+	// Open the content directory once, here, and serve only through the handle:
+	// a path swapped for a symlink after the checks above cannot redirect it.
+	var content *os.Root
+	if dir != "" {
+		if content, err = os.OpenRoot(dir); err != nil {
+			return nil, nil, errors.New("content does not load: content directory is not readable")
+		}
+	}
+	closeContent := func() {
+		if content != nil {
+			_ = content.Close()
+		}
+	}
 	var addr, token string
 	var stop func()
 	switch {
 	case goldieDir != "" && env.StartLocalScope != nil:
-		addr, token, stop, err = env.StartLocalScope(ctx, dir, goldieDir)
+		addr, token, stop, err = env.StartLocalScope(ctx, content, goldieDir)
 	case goldieDir == "" && env.StartLocal != nil:
-		addr, token, stop, err = env.StartLocal(ctx, dir)
+		addr, token, stop, err = env.StartLocal(ctx, content)
 	default:
+		closeContent()
 		return nil, nil, errors.New("local mode is not available")
 	}
 	if err != nil {
+		closeContent()
 		return nil, nil, err
 	}
 	c.s.addr, c.s.token, c.local = addr, token, true
-	return c, stop, nil
+	return c, func() {
+		stop()
+		closeContent()
+	}, nil
 }
 
 // localScope finds the repository's local Scope from the working directory:
