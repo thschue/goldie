@@ -131,7 +131,13 @@ func loadFS(fsys fs.FS) (*Snapshot, error) {
 		}
 		snap.addProject(d.scope, articles)
 	}
+	if err := snap.checkEnforced(); err != nil {
+		return nil, err
+	}
 	if err := snap.checkReplacements(); err != nil {
+		return nil, err
+	}
+	if err := snap.checkLookups(); err != nil {
 		return nil, err
 	}
 	return snap, nil
