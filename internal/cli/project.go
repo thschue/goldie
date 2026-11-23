@@ -7,6 +7,7 @@ import (
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/contract/project"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // How a Project was found, in the order of precedence. These are the words
@@ -33,11 +34,20 @@ var sourceWords = map[project.Source]string{
 // prefix.
 func detectProject(dir, flagValue, envValue string) (project.Detected, error) {
 	d, err := project.Detect(dir, flagValue, envValue)
+	if err != nil {
+		return project.Detected{}, withSourceWords(err)
+	}
+	return d, nil
+}
+
+// withSourceWords prefixes the error of an unusable Project with the words of
+// its source, and passes any other error, or nil, on as it is.
+func withSourceWords(err error) error {
 	var se *project.SourceError
 	if errors.As(err, &se) {
-		return project.Detected{}, fmt.Errorf("%s: %w", sourceWords[se.Source], se.Err)
+		return fmt.Errorf("%s: %w", sourceWords[se.Source], se.Err)
 	}
-	return d, err
+	return err
 }
 
 // describeProject is the text of the Project line: the problem when there is
@@ -57,12 +67,39 @@ func describeProject(p project.Detected, problem string) string {
 
 // project detects the Project for the working directory.
 func (c *commander) project() (project.Detected, error) {
+	return workingProject(c.env.Lookup, c.s.project)
+}
+
+// workingProject detects the Project of the working directory from flagValue,
+// then GOLDIE_PROJECT from lookup, then the checkout.
+func workingProject(lookup platform.Lookup, flagValue string) (project.Detected, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return project.Detected{}, errors.New("cannot read the working directory")
 	}
-	envValue, _ := c.env.Lookup(EnvProject)
-	return detectProject(dir, c.s.project, envValue)
+	envValue, _ := lookup(EnvProject)
+	return detectProject(dir, flagValue, envValue)
+}
+
+// SessionProject is the Project of a session in the words of goldie status:
+// plain strings, for a role that hands them on without Project detection.
+type SessionProject struct {
+	ID       string // host/org/repo, or "" when there is none
+	Source   string // where ID came from, as status words it
+	Rejected string // without an ID: the name of a remote whose URL is not host/org/repo
+	Problem  string // the Project problem as status words it, or ""
+}
+
+// ProjectWords words what project.Detect returned, d and err, as goldie
+// status does: the source in status's words, or the problem of its Project
+// line, with an unusable Project's source as a prefix. It does no I/O and
+// detects nothing; the caller detects. Nothing returned holds a path, a
+// remote URL or file content, because project.Detect's errors hold none.
+func ProjectWords(d project.Detected, err error) SessionProject {
+	if err = withSourceWords(err); err != nil {
+		return SessionProject{Problem: contract.CleanLine(err.Error())}
+	}
+	return SessionProject{ID: d.ID, Source: sourceWords[d.Source], Rejected: d.Rejected}
 }
 
 // projectHint is the text of the rejected-remote hint, or "" when no remote was

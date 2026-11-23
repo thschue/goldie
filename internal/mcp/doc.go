@@ -4,7 +4,9 @@
 // New returns a server with four tools: search_knowledge and get_article,
 // which take an optional project (an ASCII ProjectId, lower-cased and checked
 // before any request), list_projects, and current_context, which reports the
-// default Project set with WithProject or that there is none. The
+// default Project set with WithProject, the problem set with
+// WithProjectProblem, or that there is none. An omitted or empty project
+// takes the default, or fails with the problem before any request. The
 // contract client it is given carries the caller's credential (the static API
 // token today) and sends it on every call. API errors become tool errors with
 // the envelope's message and hint, and a rate-limited call says how many
