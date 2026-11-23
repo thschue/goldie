@@ -23,6 +23,10 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
      review the new commits (step 3) and re-run `scripts/merge-pr`;
    - `red` or `dirty` after a clean review: disarm, resume the implementer (merge `origin/main`,
      fix), then step 3 for the change;
+   - `dirty` or `red` on a PR held with `needs-maintainer`: the same, keeping the label. The
+     maintainer approves by merging and never gets a conflicted or red PR;
+   - `parked` with `needs-maintainer` after 3 tool errors (exit 2): re-run `scripts/merge-pr`
+     once per tick, and remove the label when it exits 0;
    - `answered`: remove `needs-info` and `question`; `merge` finishes as clean, `change` goes to
      step 4 (not a round);
    - `active` with no live subagent: continue at the step its markers show.
