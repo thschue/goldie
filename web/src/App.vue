@@ -108,4 +108,10 @@ button {
   font-weight: 600;
   cursor: pointer;
 }
+/* A check in flight: the label keeps full contrast (AA), the border turns
+   dashed and the cursor shows progress. aria-disabled keeps focus on it. */
+button[aria-disabled='true'] {
+  border-style: dashed;
+  cursor: progress;
+}
 </style>
