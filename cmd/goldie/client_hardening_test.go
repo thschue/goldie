@@ -295,23 +295,22 @@ func TestMCPUsageRecommendsTokenVariables(t *testing.T) {
 			t.Errorf("goldie mcp help no longer lists --token, which keeps working:\n%s", stdout)
 		}
 	})
-	for name, transport := range map[string][]string{
-		"no transport": {},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, stderr := runMCPExpectingFailure(t, nil, nil, transport...)
-			tokenRecommendation(t, "goldie mcp usage", stderr)
-			if !strings.Contains(strings.ToLower(stderr), "config") {
-				t.Errorf("goldie mcp usage does not say a --token value is saved in the MCP client's config:\n%s", stderr)
+	// Without --transport the command is misused: a one-line usage error that
+	// points at --help (where the token note lives), exit 2, no token shown.
+	t.Run("no transport", func(t *testing.T) {
+		stdout, stderr, code := runHelp(t, "mcp")
+		if code != 2 || stdout != "" {
+			t.Errorf("goldie mcp: exit %d, stdout %q, want 2 and nothing on stdout", code, stdout)
+		}
+		for _, want := range []string{"--transport must be stdio", "goldie mcp --help"} {
+			if !strings.Contains(stderr, want) {
+				t.Errorf("goldie mcp usage error lacks %q:\n%s", want, stderr)
 			}
-			if !strings.Contains(stderr, "--token") {
-				t.Errorf("goldie mcp usage no longer lists --token, which keeps working:\n%s", stderr)
-			}
-			if strings.Contains(stderr, cliToken) {
-				t.Errorf("usage carries a token: %q", stderr)
-			}
-		})
-	}
+		}
+		if strings.Contains(stderr, helpSecretToken) {
+			t.Errorf("usage error carries a token: %q", stderr)
+		}
+	})
 }
 
 // readmeSection returns the README section under the level-2 heading.
