@@ -194,9 +194,10 @@ func TestDraftAgentIsListedOnlyForAnOperatorAskingForDrafts(t *testing.T) {
 	}
 }
 
-// Criterion: an absent field means unknown. A published agent lists without
-// status, and the existing keys stay for old clients.
-func TestAgentListKeepsItsKeysAndLeavesStatusAbsentWhenPublished(t *testing.T) {
+// Criterion: an absent field means unknown, so a known status is always sent.
+// A published agent lists status "published", and the existing keys stay for
+// old clients.
+func TestAgentListKeepsItsKeysAndSendsStatusPublishedForAPublishedAgent(t *testing.T) {
 	srv := agentCardServer(t)
 	_, body := itemsGet(t, srv, readerToken, "/api/v1/agents")
 	var res struct {
@@ -209,8 +210,8 @@ func TestAgentListKeepsItsKeysAndLeavesStatusAbsentWhenPublished(t *testing.T) {
 		if a["name"] == nil || a["description"] == nil {
 			t.Errorf("an agent lost name or description: %v", a)
 		}
-		if v, ok := a["status"]; ok {
-			t.Errorf("published agent %v lists status %v, want it absent", a["name"], v)
+		if a["status"] != "published" {
+			t.Errorf("published agent %v status = %v, want published", a["name"], a["status"])
 		}
 		if a["scope"] != "global" {
 			t.Errorf("agent %v scope = %v, want global", a["name"], a["scope"])
