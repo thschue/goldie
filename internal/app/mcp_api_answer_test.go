@@ -189,12 +189,12 @@ func localStdioSession(t *testing.T, addr string) *mcp.ClientSession {
 	serverIn, clientOut := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
 	env := cli.Env{Lookup: func(string) (string, bool) { return "", false }, ReadFile: os.ReadFile, Out: io.Discard,
-		StartLocal: func(context.Context, string) (string, string, func(), error) {
+		StartLocal: func(context.Context, *os.Root) (string, string, func(), error) {
 			return addr, testToken, func() {}, nil
 		}}
 	done := make(chan error, 1)
 	go func() {
-		done <- RunMCP(ctx, []string{"--transport", "stdio", "--dir", "/content"}, env, serverIn, serverOut)
+		done <- RunMCP(ctx, []string{"--transport", "stdio", "--dir", t.TempDir()}, env, serverIn, serverOut)
 	}()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v0"}, nil).
 		Connect(ctx, &mcp.IOTransport{Reader: clientIn, Writer: clientOut}, nil)

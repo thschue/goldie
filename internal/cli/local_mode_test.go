@@ -46,22 +46,23 @@ func closedAddr(t *testing.T) string {
 // An embedded server that cannot be reached is reported as such, without the
 // advice about --addr and GOLDIE_ADDR, which do not apply in local mode.
 func TestLocalModeConnectionErrorNamesTheEmbeddedServer(t *testing.T) {
+	content := t.TempDir()
 	cases := []struct {
 		name string
 		args []string
 		vars map[string]string
 	}{
-		{"search --dir", []string{"search", "kubernetes", "--dir", "/content"}, nil},
-		{"lookup --dir", []string{"lookup", "platform/deploy", "--dir", "/content"}, nil},
-		{"search GOLDIE_DIR", []string{"search", "kubernetes"}, map[string]string{platform.EnvDir: "/content"}},
-		{"lookup GOLDIE_DIR", []string{"lookup", "platform/deploy"}, map[string]string{platform.EnvDir: "/content"}},
+		{"search --dir", []string{"search", "kubernetes", "--dir", content}, nil},
+		{"lookup --dir", []string{"lookup", "platform/deploy", "--dir", content}, nil},
+		{"search GOLDIE_DIR", []string{"search", "kubernetes"}, map[string]string{platform.EnvDir: content}},
+		{"lookup GOLDIE_DIR", []string{"lookup", "platform/deploy"}, map[string]string{platform.EnvDir: content}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var out bytes.Buffer
 			env := localEnv(c.vars, &out)
 			dead := closedAddr(t)
-			env.StartLocal = func(ctx context.Context, dir string) (string, string, func(), error) {
+			env.StartLocal = func(ctx context.Context, _ *os.Root) (string, string, func(), error) {
 				return dead, localTestToken, func() {}, nil
 			}
 			err := cli.Run(context.Background(), c.args, env)
@@ -92,7 +93,7 @@ func TestLocalModeConnectionErrorNamesTheEmbeddedServer(t *testing.T) {
 func TestRemoteModeConnectionErrorKeepsAddrAdvice(t *testing.T) {
 	var out bytes.Buffer
 	env := localEnv(map[string]string{platform.EnvToken: localTestToken}, &out)
-	env.StartLocal = func(context.Context, string) (string, string, func(), error) {
+	env.StartLocal = func(context.Context, *os.Root) (string, string, func(), error) {
 		t.Error("StartLocal called in remote mode")
 		return "", "", nil, errors.New("unexpected")
 	}
@@ -110,9 +111,10 @@ func TestRemoteModeConnectionErrorKeepsAddrAdvice(t *testing.T) {
 // Without a StartLocal, --dir and GOLDIE_DIR fail with "local mode is not
 // available", through Run and through Open, and never start anything.
 func TestLocalModeWithoutStartLocalIsNotAvailable(t *testing.T) {
+	content := t.TempDir()
 	t.Run("run --dir", func(t *testing.T) {
 		var out bytes.Buffer
-		err := cli.Run(context.Background(), []string{"search", "x", "--dir", "/content"}, localEnv(nil, &out))
+		err := cli.Run(context.Background(), []string{"search", "x", "--dir", content}, localEnv(nil, &out))
 		if err == nil || !strings.Contains(err.Error(), "local mode is not available") {
 			t.Fatalf("err = %v, want it to say local mode is not available", err)
 		}
@@ -122,7 +124,7 @@ func TestLocalModeWithoutStartLocalIsNotAvailable(t *testing.T) {
 	})
 	t.Run("run GOLDIE_DIR", func(t *testing.T) {
 		var out bytes.Buffer
-		env := localEnv(map[string]string{platform.EnvDir: "/content"}, &out)
+		env := localEnv(map[string]string{platform.EnvDir: content}, &out)
 		err := cli.Run(context.Background(), []string{"status"}, env)
 		if err == nil || !strings.Contains(err.Error(), "local mode is not available") {
 			t.Fatalf("err = %v, want it to say local mode is not available", err)
@@ -131,7 +133,7 @@ func TestLocalModeWithoutStartLocalIsNotAvailable(t *testing.T) {
 	t.Run("open", func(t *testing.T) {
 		fs := flag.NewFlagSet("x", flag.ContinueOnError)
 		f := cli.BindClientFlags(fs)
-		if err := fs.Parse([]string{"--dir", "/content"}); err != nil {
+		if err := fs.Parse([]string{"--dir", content}); err != nil {
 			t.Fatal(err)
 		}
 		addr, token, stop, err := f.Open(context.Background(), localEnv(nil, &bytes.Buffer{}))

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -65,8 +66,14 @@ func LocalConfig(base platform.Config, dir string) platform.Config {
 // Local runs the server on loopback over the content at Config.ContentDir with
 // a fresh random token: what goldie server --dev and StartLocal run.
 type Local struct {
-	Config    platform.Config     // Start applies LocalConfig to it
-	GoldieDir string              // the repository's .goldie directory, the local Scope; "" is none
+	Config    platform.Config // Start applies LocalConfig to it
+	GoldieDir string          // the repository's .goldie directory, the local Scope; "" is none
+	// Root, when set, is the content directory already opened by the caller,
+	// who owns it and closes it after the server has stopped. Start reads
+	// through it instead of opening Config.ContentDir again, so a path swapped
+	// after the caller validated it cannot redirect the read. ContentDir stays
+	// the path shown in notices.
+	Root      *os.Root
 	Logger    *slog.Logger        // nil discards
 	Telemetry *platform.Telemetry // nil for none
 	Force     <-chan struct{}     // closing it cuts the drain short; nil never does
@@ -116,7 +123,11 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	}
 	var src engine.Source = engine.EmptySource{}
 	if cfg.ContentDir != "" {
-		src = engine.NewDirSource(cfg.ContentDir)
+		if l.Root != nil {
+			src = engine.NewRootSource(l.Root)
+		} else {
+			src = engine.NewDirSource(cfg.ContentDir)
+		}
 		if l.Examples != nil {
 			src = engine.NewFallbackSource(src, engine.NewFSSource(l.Examples), l.examplesNotice(cfg.ContentDir))
 		}
@@ -197,8 +208,9 @@ func noEnv(string) (string, bool) { return "", false }
 
 // LocalOptions are what StartLocal serves.
 type LocalOptions struct {
-	BaseDir   string // the content directory (global/articles, projects/...); "" is empty content
-	GoldieDir string // the repository's .goldie directory, an absolute path: the local Scope; "" is none
+	BaseDir   string   // the content directory (global/articles, projects/...); "" is empty content
+	Root      *os.Root // BaseDir opened by the caller, who closes it after stop; nil opens BaseDir by path
+	GoldieDir string   // the repository's .goldie directory, an absolute path: the local Scope; "" is none
 }
 
 // StartLocal starts the server on loopback over the content at opts.BaseDir,
@@ -215,7 +227,7 @@ func StartLocal(ctx context.Context, opts LocalOptions) (addr, token string, sto
 	}
 	base.DrainTimeout = 0
 	runCtx, cancel := context.WithCancel(ctx)
-	addr, token, wait, err := Local{Config: LocalConfig(base, opts.BaseDir), GoldieDir: opts.GoldieDir}.Start(runCtx)
+	addr, token, wait, err := Local{Config: LocalConfig(base, opts.BaseDir), GoldieDir: opts.GoldieDir, Root: opts.Root}.Start(runCtx)
 	if err != nil {
 		cancel()
 		return "", "", nil, err
