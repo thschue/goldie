@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -46,6 +47,39 @@ const (
 	lsOnlyLocalItem = "---\nname: Only local\nkeywords: [onlylocal]\n---\n" + lsLocalOnlyBody + "\n"
 	lsDeployItem    = "---\nname: Local deploy\nkeywords: [kubernetes]\n---\n" + lsLocalDeploy + "\n"
 )
+
+// lsAssertScopeThenNormalise checks that every result of the local search JSON
+// has scope "local" and every result of the remote one has scope "global", that
+// both hold the same non-zero number of results, and that this is the number of
+// scope fields it replaces. It returns local with exactly those values
+// replaced by "global".
+func lsAssertScopeThenNormalise(t *testing.T, local, remote string) string {
+	t.Helper()
+	count := func(label, want, out string) int {
+		var v struct {
+			Results []struct {
+				Scope string `json:"scope"`
+			} `json:"results"`
+		}
+		if err := json.Unmarshal([]byte(out), &v); err != nil {
+			t.Fatalf("%s search JSON does not decode: %v", label, err)
+		}
+		for _, r := range v.Results {
+			if r.Scope != want {
+				t.Errorf("%s result has scope %q, want %q", label, r.Scope, want)
+			}
+		}
+		return len(v.Results)
+	}
+	n := count("local", "local", local)
+	if m := count("remote", "global", remote); n == 0 || m != n {
+		t.Fatalf("local has %d results and remote %d, want the same non-zero number", n, m)
+	}
+	if got := strings.Count(local, `"scope": "local"`); got != n {
+		t.Fatalf("found %d scope fields to normalise, want %d", got, n)
+	}
+	return strings.ReplaceAll(local, `"scope": "local"`, `"scope": "global"`)
+}
 
 // lsContentDir is the example content, absolute because lsRun changes the
 // working directory.
@@ -596,7 +630,15 @@ func TestCLILocalScopeOutputMatchesRemoteMode(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			remote := lsMustRun(t, t.TempDir(), nil, append(append([]string{}, c.args...), "--addr", srv.URL, "--token", cliToken)...)
 			local := lsMustRun(t, root, nil, c.args...)
-			if local != strings.ReplaceAll(remote, srv.URL, "") {
+			remote = strings.ReplaceAll(remote, srv.URL, "")
+			if c.name == "search json" {
+				// The one difference that is the point of the local Scope: the
+				// same Item is "local" here and "global" on the remote server.
+				// Both are asserted, then only that field's value is made equal;
+				// every other byte is still compared.
+				local = lsAssertScopeThenNormalise(t, local, remote)
+			}
+			if local != remote {
 				t.Errorf("local output differs from remote\n--- local ---\n%s\n--- remote ---\n%s", local, remote)
 			}
 			if !strings.Contains(local, c.want) {
