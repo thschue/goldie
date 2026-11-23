@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -27,23 +28,22 @@ const (
 	EnvProject = platform.EnvProject
 )
 
-// Usage is the one-line usage of the client commands, without the program
-// name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | init [--project ID] | version  [--addr URL | --dir PATH] [--token TOKEN] [--json]"
+// TokenNote goes in the help of the commands that take --token.
+const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
-// TokenNote follows the usage text: it recommends the token variables over
-// --token, whose value shows in the process list.
-const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine"
+// Commands lists the client commands in help order.
+var Commands = []string{"search", "lookup", "status", "init", "version"}
 
-// IsCommand reports whether name is a client command, for the dispatcher in
-// cmd/goldie.
-func IsCommand(name string) bool {
-	switch name {
-	case "search", "lookup", "status", "init", "version":
-		return true
-	}
-	return false
+// isCommand reports whether name is one of Commands.
+func isCommand(name string) bool { return slices.Contains(Commands, name) }
+
+// UsageError is a command used wrongly; the dispatcher exits 2 for it.
+type UsageError struct {
+	Command string // the command that was misused
+	Msg     string
 }
+
+func (e *UsageError) Error() string { return e.Msg }
 
 // Env is what a command reads from its surroundings, so tests need no globals.
 type Env struct {
@@ -74,26 +74,39 @@ type settings struct {
 	json                 bool
 }
 
-// Run runs one client command. args[0] is the command name.
+// Run runs one client command. args[0] is the command name. Its flags may
+// come before, between or after the positional words.
 func Run(ctx context.Context, args []string, env Env) error {
-	if len(args) == 0 || !IsCommand(args[0]) {
-		return errors.New("usage: goldie " + Usage + "\n" + TokenNote)
+	if len(args) == 0 || !isCommand(args[0]) {
+		return errors.New("usage: goldie " + strings.Join(Commands, " | "))
 	}
-	name := args[0]
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	f := BindClientFlags(fs)
-	s := &f.s
-	if name != "version" { // version has no use for a Project
-		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
-	}
-	if name != "init" { // init prints three fixed lines
-		fs.BoolVar(&s.json, "json", false, "print JSON")
-	}
+	exec := Command(args[0], fs)
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
-		return fmt.Errorf("%w\nusage: goldie %s\n%s", err, Usage, TokenNote)
+		return fmt.Errorf("%w\nusage: goldie %s [flags]\n%s", err, args[0], TokenNote)
 	}
+	return exec(ctx, pos, env)
+}
+
+// Command registers the flags of the client command name (an isCommand) on fs
+// and returns what runs it once fs is parsed, by Run or by cmd/goldie.
+func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []string, env Env) error {
+	f := BindClientFlags(fs)
+	if name != "version" { // version has no use for a Project
+		fs.StringVar(&f.s.project, "project", "", "Project as host/org/repo")
+	}
+	if name != "init" { // init prints three fixed lines
+		fs.BoolVar(&f.s.json, "json", false, "print JSON")
+	}
+	return func(ctx context.Context, pos []string, env Env) error {
+		return f.run(ctx, name, pos, env)
+	}
+}
+
+func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env Env) error {
+	var err error
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
 	// init checks registration against a running server only: it writes into
@@ -118,27 +131,27 @@ func Run(ctx context.Context, args []string, env Env) error {
 	switch name {
 	case "search":
 		if len(pos) == 0 {
-			return errors.New("usage: goldie search <words>")
+			return &UsageError{name, "usage: goldie search <words>"}
 		}
 		return c.search(ctx, strings.Join(pos, " "))
 	case "lookup":
 		if len(pos) != 1 {
-			return errors.New("usage: goldie lookup <id>")
+			return &UsageError{name, "usage: goldie lookup <id>"}
 		}
 		return c.lookup(ctx, pos[0])
 	case "status":
 		if len(pos) != 0 {
-			return errors.New("usage: goldie status")
+			return &UsageError{name, "usage: goldie status"}
 		}
 		return c.status(ctx)
 	case "init":
 		if len(pos) != 0 {
-			return errors.New("usage: goldie init [--project ID]")
+			return &UsageError{name, "usage: goldie init [--project ID]"}
 		}
 		return c.initProject(ctx)
 	default:
 		if len(pos) != 0 {
-			return errors.New("usage: goldie version")
+			return &UsageError{name, "usage: goldie version"}
 		}
 		return c.version(ctx)
 	}

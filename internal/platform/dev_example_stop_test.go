@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// #331: the goldie server -dev example backgrounds the server inside a
+// #331: the goldie server --dev example backgrounds the server inside a
 // subshell, so the shell has no job for `kill %1` or `fg`. The section must say
 // what stops it, and the privacy step must sit in the example's own span.
 
@@ -32,7 +32,7 @@ func TestServerDevSectionSaysHowToStopTheServer(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Errorf("section names no way to stop a server started in a subshell (for example `pkill -f 'goldie server -dev'`; kill %%1 and fg do not work there):\n%s", sec)
+				t.Errorf("section names no way to stop a server started in a subshell (for example `pkill -f 'goldie server --dev'`; kill %%1 and fg do not work there):\n%s", sec)
 			}
 		})
 	}

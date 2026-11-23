@@ -21,55 +21,37 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "goldie:", err)
-		os.Exit(1)
-	}
+	os.Exit(exitCode(run(os.Args[1:], os.Stdout), os.Stderr))
 }
 
-// run is the testable entry point.
+// exitCode reports err to w and returns the exit code: 0 for none, 2 for a
+// command used wrongly (an error line and the next step), 1 for other failures.
+func exitCode(err error, w io.Writer) int {
+	var u *usageErr
+	switch {
+	case err == nil:
+		return 0
+	case errors.As(err, &u):
+		next := "Run '" + u.path + " --help'."
+		_, _ = fmt.Fprintf(w, "goldie: %s\n%s\n", u.msg, next)
+		return 2
+	}
+	_, _ = fmt.Fprintln(w, "goldie:", err)
+	return 1
+}
+
+// run is the testable entry point: results and asked-for help go to out.
 func run(args []string, out io.Writer) error {
-	if len(args) == 0 {
-		return usageError()
+	root := newRoot(out)
+	// An unknown command is misuse even with --help.
+	if _, _, err := root.Find(args); err != nil {
+		return newUsageErr(root.CommandPath(), fmt.Sprintf("unknown command %q", firstWord(args)))
 	}
-	if cli.IsCommand(args[0]) {
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-		env, flush, err := clientEnv(out, platform.RoleCLI)
-		if err != nil {
-			return err
-		}
-		defer flush()
-		return cli.Run(ctx, args, env)
+	if args == nil {
+		args = []string{} // nil would make cobra read os.Args
 	}
-	switch args[0] {
-	case "server":
-		switch {
-		case len(args) == 1:
-			return runServer(out)
-		case args[1] == "-dev" && len(args) <= 3:
-			return runDev(args[2:], out)
-		}
-		return usageError()
-	case "validate":
-		if len(args) > 2 {
-			return usageError()
-		}
-		dir, _ := os.LookupEnv(platform.EnvContentDir)
-		if len(args) == 2 {
-			dir = args[1]
-		}
-		warnings, err := app.ValidateDirWarnings(context.Background(), dir)
-		for _, w := range warnings {
-			fmt.Fprintln(os.Stderr, "goldie: warning:", w)
-		}
-		return err
-	case "health":
-		return runHealth(args[1:])
-	case "mcp":
-		return runMCP(args[1:])
-	}
-	return usageError()
+	root.SetArgs(args)
+	return root.Execute()
 }
 
 // clientEnv is the process environment for the client role (RoleCLI or RoleMCP), with the
@@ -97,30 +79,6 @@ func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error
 	return env, func() { flushTelemetry(tel, clientFlush) }, nil
 }
 
-func usageError() error {
-	return errors.New("usage: goldie server [-dev [dir]] | validate [dir] | health [--ready] | " + app.MCPUsage + " | " + cli.Usage + "\n" +
-		cli.TokenNote + "\n" + devNote)
-}
-
-// devNote explains server -dev in the usage, which names the program once.
-const devNote = "server -dev serves dir (else GOLDIE_CONTENT_DIR, else the working directory) on 127.0.0.1 " +
-	"with a random token and prints the export line for the client commands; it ignores GOLDIE_ADDR, " +
-	"GOLDIE_ADMIN_ADDR and the API token variables"
-
-// runMCP serves MCP on stdin and stdout until the client closes stdin or a
-// SIGTERM or SIGINT arrives. Errors go to stderr through main: stdout carries
-// only MCP messages.
-func runMCP(args []string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	env, flush, err := clientEnv(io.Discard, platform.RoleMCP)
-	if err != nil {
-		return err
-	}
-	defer flush()
-	return app.RunMCP(ctx, args, env, os.Stdin, os.Stdout)
-}
-
 // runServer starts the server and blocks until it stops. The first SIGTERM or
 // SIGINT starts the drain; a second one exits immediately (PC-08).
 func runServer(out io.Writer) error {
@@ -146,7 +104,7 @@ func runServer(out io.Writer) error {
 	return srv.Serve(ctx, force)
 }
 
-// runDev runs goldie server -dev [dir]: the server on loopback over dir, else
+// runDev runs goldie server --dev [dir]: the server on loopback over dir, else
 // GOLDIE_CONTENT_DIR, else the working directory, with a random token. It
 // prints the export line once, straight to out: the token goes through no
 // logger, so it never reaches a log line or the OTLP log bridge. Log records
@@ -168,7 +126,7 @@ func runDev(args []string, out io.Writer) error {
 	}
 	cfg = app.LocalConfig(cfg, dir)
 	if !isSet(lookup, platform.EnvDrainSeconds) {
-		cfg.DrainTimeout = 0 // nothing balances load in front of -dev: stop at once
+		cfg.DrainTimeout = 0 // nothing balances load in front of --dev: stop at once
 	}
 	cfg.Report(logger)
 	tel.Report(logger)
@@ -260,7 +218,7 @@ func handlerError(err error) error {
 }
 
 // firstRunHint is the next step for someone who ran goldie server with nothing set.
-const firstRunHint = "To try goldie on this machine: goldie server -dev ."
+const firstRunHint = "To try goldie on this machine: goldie server --dev ."
 
 // withDevHint ends err with firstRunHint when cfg names neither a Source nor an
 // API token: a first run, not an operator mid-setup. A value that is set but
@@ -273,13 +231,10 @@ func withDevHint(cfg platform.Config, err error) error {
 }
 
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz
-// with --ready, and returns an error (exit 1) unless the answer is 200.
-func runHealth(args []string) error {
+// when ready, and returns an error (exit 1) unless the answer is 200.
+func runHealth(ready bool) error {
 	path := "/livez"
-	for _, a := range args {
-		if a != "--ready" {
-			return usageError()
-		}
+	if ready {
 		path = "/readyz"
 	}
 	cfg, err := platform.LoadConfig(os.LookupEnv)

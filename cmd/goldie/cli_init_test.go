@@ -540,14 +540,14 @@ func TestCLIInitNeverWritesAboveRepositoryRoot(t *testing.T) {
 }
 
 func TestCLIUsageListsInit(t *testing.T) {
-	_, err := runCLI(t)
-	if err == nil || !strings.Contains(err.Error(), "init") {
-		t.Errorf("usage = %v, want it to list init", err)
+	var help bytes.Buffer
+	if err := run(nil, &help); err != nil || !hasCommandLine(help.String(), "init") {
+		t.Errorf("root help = %q (err %v), want it to list init", help.String(), err)
 	}
 	root := gitRepo(t, widgetsOrigin)
 	out, err := runInit(t, root, nil, "extra")
-	if err == nil || !strings.Contains(err.Error(), "usage: goldie init") {
-		t.Errorf("init extra: err = %v, want its usage", err)
+	if err == nil || !strings.Contains(err.Error(), "goldie init") {
+		t.Errorf("init extra: err = %v, want the misuse naming goldie init", err)
 	}
 	if out != "" {
 		t.Errorf("init extra printed %q, want nothing", out)
