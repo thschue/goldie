@@ -7,6 +7,7 @@ import (
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/contract/project"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // How a Project was found, in the order of precedence. These are the words
@@ -57,12 +58,44 @@ func describeProject(p project.Detected, problem string) string {
 
 // project detects the Project for the working directory.
 func (c *commander) project() (project.Detected, error) {
+	return workingProject(c.env.Lookup, c.s.project)
+}
+
+// workingProject detects the Project of the working directory from flagValue,
+// then GOLDIE_PROJECT from lookup, then the checkout.
+func workingProject(lookup platform.Lookup, flagValue string) (project.Detected, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return project.Detected{}, errors.New("cannot read the working directory")
 	}
-	envValue, _ := c.env.Lookup(EnvProject)
-	return detectProject(dir, c.s.project, envValue)
+	envValue := ""
+	if lookup != nil {
+		envValue, _ = lookup(EnvProject)
+	}
+	return detectProject(dir, flagValue, envValue)
+}
+
+// SessionProject is the Project of a session in the words of goldie status:
+// plain strings, for a role that hands them on without Project detection.
+type SessionProject struct {
+	ID       string // host/org/repo, or "" when there is none
+	Source   string // where ID came from, as status words it
+	Rejected string // without an ID: the name of a remote whose URL is not host/org/repo
+	Problem  string // the Project problem as status words it, or ""
+}
+
+// DetectProject detects the Project of the working directory in the order of
+// the client commands, without a --project flag: GOLDIE_PROJECT from env,
+// .goldie/config.yaml, then the git remotes upstream and origin. A problem is
+// returned in the words of status's Project line, not as an error, so the
+// caller can go on without a default. Nothing returned holds a path, a remote
+// URL or file content.
+func DetectProject(env Env) SessionProject {
+	d, err := workingProject(env.Lookup, "")
+	if err != nil {
+		return SessionProject{Problem: contract.CleanLine(err.Error())}
+	}
+	return SessionProject{ID: d.ID, Source: sourceWords[d.Source], Rejected: d.Rejected}
 }
 
 // projectHint is the text of the rejected-remote hint, or "" when no remote was

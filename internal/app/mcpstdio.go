@@ -30,8 +30,10 @@ var errTransport = errors.New("--transport must be stdio, the only transport so 
 // the API through contract's hardened client, with the CLI's client settings
 // from args and env. It returns nil when the client ends the session by
 // closing in, and when ctx is cancelled. Settings are checked before the first
-// message, so a bad one fails at startup. Nothing but MCP messages is ever
-// written to out.
+// message, so a bad one fails at startup. The default Project is detected
+// once, at startup, as the CLI detects it (cli.DetectProject); a Project
+// problem does not stop the session. Nothing but MCP messages is ever written
+// to out.
 func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, out io.WriteCloser) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -56,7 +58,7 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)
 	}
-	var opts []gmcp.Option
+	opts := projectOptions(cli.DetectProject(env))
 	if settings.Local() {
 		opts = append(opts, gmcp.Local())
 	}
@@ -65,4 +67,19 @@ func RunMCP(ctx context.Context, args []string, env cli.Env, in io.ReadCloser, o
 		return nil
 	}
 	return err
+}
+
+// projectOptions hands the Project detected at startup to the MCP server as
+// plain strings: the default and its source, the problem that stops it, or the
+// rejected remote. Over HTTP (RunMCPHTTP) nothing is detected.
+func projectOptions(p cli.SessionProject) []gmcp.Option {
+	switch {
+	case p.Problem != "":
+		return []gmcp.Option{gmcp.WithProjectProblem(p.Problem)}
+	case p.ID != "":
+		return []gmcp.Option{gmcp.WithProject(p.ID, p.Source)}
+	case p.Rejected != "":
+		return []gmcp.Option{gmcp.WithRejectedRemote(p.Rejected)}
+	}
+	return nil
 }

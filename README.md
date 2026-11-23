@@ -90,9 +90,16 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 `get_article` take an optional `project` (`host/org/repo`, as `list_projects` names it; case is
 ignored) that puts that Project's articles first; a value that isn't a Project id, or has any
 non-ASCII character, is refused before any request. For a Project that isn't registered, the answer
-is global and carries the server's hint. `current_context` reports the session's default Project and
-where it came from, or that there is none; stdio does not set a default yet (#220), so pass
-`project` explicitly. An agent's MCP client starts it as a subprocess. It talks to a
+is global and carries the server's hint. At startup, and only then, it finds the default Project
+of the directory it runs in the way the CLI does: `GOLDIE_PROJECT`, then `.goldie/config.yaml`,
+then the git remotes `upstream` and `origin`. A call that leaves `project` out, or empty, answers for
+that default; an explicit `project` beats it, and one made only of white space is refused.
+`current_context` reports the default and where it came from, in the words of `goldie status`, or
+that there is none (outside a repository, for example, where the answers are global), naming a
+remote whose URL isn't `host/org/repo` by name only. A broken or unreadable `.goldie/config.yaml`
+doesn't stop the session: `current_context` reports the problem as `status` does, calls that rely on
+the default fail with it before any request, and calls with an explicit `project` still answer. Fix
+the file and restart the MCP server to pick it up. An agent's MCP client starts it as a subprocess. It talks to a
 running server with the same client settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token`
 (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content
 with `--dir` (or `GOLDIE_DIR`, see [CLI](#cli)). Prefer the variables to
