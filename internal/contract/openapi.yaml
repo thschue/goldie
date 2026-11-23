@@ -289,6 +289,7 @@ paths:
   /api/v1/sync:
     get:
       operationId: getSync
+      x-goldie-role: operator
       tags:
         - sync
       summary: Read the content sync warnings
@@ -333,6 +334,7 @@ paths:
   /api/v1/activity:
     get:
       operationId: getActivity
+      x-goldie-role: operator
       tags:
         - activity
       summary: Stream recent searches and lookups

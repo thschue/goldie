@@ -98,7 +98,7 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	if logger == nil {
 		logger = discardLogger
 	}
-	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger)
+	pub, err := newPublic(cfg, tokens, source{syncer: syncer, check: sourceDirCheck}, logger, activityKeepalive)
 	if err != nil {
 		return "", "", nil, err
 	}
