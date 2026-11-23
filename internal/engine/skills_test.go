@@ -422,3 +422,63 @@ func TestSkillNamesDifferingOnlyInCaseFailTheLoad(t *testing.T) {
 		})
 	}
 }
+
+// --- Issue #660: a skill's files that differ only in case fail the load ---
+//
+// Two files of one bundle whose paths differ only in case would collide on a
+// case-insensitive filesystem when the bundle is pulled. The load fails, naming
+// both paths and saying they differ only in case, as two agent files do.
+
+func TestSkillFilesDifferingOnlyInCaseFailTheLoad(t *testing.T) {
+	for name, files := range map[string][2]string{
+		"file name":        {"ref/Guide.md", "ref/guide.md"},
+		"top-level file":   {"Notes.txt", "notes.txt"},
+		"directory name":   {"Ref/a.md", "ref/a.md"},
+		"nested directory": {"x/Deep/Ref/a.md", "x/Deep/ref/a.md"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for scope, file := range map[string]func(string, string) string{
+				"global":  globalSkillFile,
+				"project": projectSkillFile,
+				"local":   localSkillFile,
+			} {
+				t.Run(scope, func(t *testing.T) {
+					loadLocalErr(t, map[string]string{
+						file("deploy", "SKILL.md"): "# Deploy\n",
+						file("deploy", files[0]):   "one",
+						file("deploy", files[1]):   "two",
+						file("other", "SKILL.md"):  "# Other\n",
+					}, files[0], files[1], "differ only in case")
+				})
+			}
+		})
+	}
+}
+
+// Paths that are distinct ignoring case load unchanged, including the same
+// file name in different directories and in another skill.
+func TestSkillFilesDistinctIgnoringCaseLoadUnchanged(t *testing.T) {
+	snap := load(t, map[string]string{
+		globalSkillFile("deploy", "SKILL.md"):      "# Deploy\n",
+		globalSkillFile("deploy", "Guide.md"):      "top",
+		globalSkillFile("deploy", "ref/guide.md"):  "ref",
+		globalSkillFile("deploy", "ref2/Guide.md"): "ref2",
+		globalSkillFile("deploy", "Ref/b.md"):      "dir",
+		globalSkillFile("other", "SKILL.md"):       "# Other\n",
+		globalSkillFile("other", "guide.md"):       "other",
+	})
+	s, ok := snap.SkillIn("", "deploy")
+	if !ok {
+		t.Fatal("SkillIn(deploy) found nothing")
+	}
+	want := []string{"Guide.md", "Ref/b.md", "SKILL.md", "ref/guide.md", "ref2/Guide.md"}
+	if !slices.Equal(s.Files, want) {
+		t.Errorf("Files = %v, want %v", s.Files, want)
+	}
+	if got, err := snap.SkillFile("", "deploy", "ref/guide.md"); err != nil || string(got) != "ref" {
+		t.Errorf("SkillFile(ref/guide.md) = %q, %v", got, err)
+	}
+	if _, ok := snap.SkillIn("", "other"); !ok {
+		t.Error("SkillIn(other) found nothing")
+	}
+}
