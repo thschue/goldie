@@ -20,8 +20,10 @@ const localConfigName = "config.yaml"
 type localScope struct {
 	articles []Article // sorted by ID
 	agents   []Article // agent records, sorted by ID
-	skills   map[string]skillBundle
-	index    keyIndex
+	// instructions are the local instruction clauses, sorted by ID.
+	instructions []Article
+	skills       map[string]skillBundle
+	index        keyIndex
 	// suppressed holds the global Items config.yaml hides in every view.
 	suppressed map[itemKey]bool
 	// configFile is config.yaml relative to the repository root, for errors.
@@ -143,7 +145,7 @@ func splitGoldieDir(dir string) (parent, name string, err error) {
 // within fsys. It is called only while loading. The copy shares s's Projects
 // and global Items, which a Snapshot never changes.
 func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
-	articles, agents, skills, refs, err := readLocal(fsys, dir)
+	articles, agents, clauses, skills, refs, err := readLocal(fsys, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +153,10 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	snap.warnings = slices.Clone(s.warnings)
 	sortArticles(articles)
 	sortArticles(agents)
-	snap.local = &localScope{articles: articles, agents: agents, skills: skills, index: indexArticles(articles), configFile: dir + "/" + localConfigName}
+	sortArticles(clauses)
+	snap.local = &localScope{articles: articles, agents: agents, instructions: clauses, skills: skills, index: indexArticles(articles), configFile: dir + "/" + localConfigName}
 	snap.local.index.add(agents)
+	snap.local.index.add(clauses)
 	hidden, _, err := snap.resolveSuppressions("", snap.local.configFile, "the local Scope's", "the local Scope", refs)
 	if err != nil {
 		return nil, err
@@ -177,29 +181,32 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 // dir/config.yaml. A missing dir, articles or config.yaml is empty. Like a
 // Project's articles directory and project.yaml, a symlink is refused even
 // when it stays inside the root.
-func readLocal(fsys fs.FS, dir string) (articles, agents []Article, skills map[string]skillBundle, refs []string, err error) {
+func readLocal(fsys fs.FS, dir string) (articles, agents, clauses []Article, skills map[string]skillBundle, refs []string, err error) {
 	if exists, err := requireDir(fsys, dir, "the Goldie directory"); err != nil || !exists {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	articlesPath := dir + "/articles"
 	if exists, err := requireDir(fsys, articlesPath, "local articles"); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	} else if exists {
 		if articles, err = loadArticles(fsys, articlesPath, ScopeLocal); err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 	}
 	if agents, err = loadScopeAgents(fsys, dir+"/agents", ScopeLocal, "local agents"); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
+	}
+	if clauses, err = loadScopeKind(fsys, dir+"/instructions", ScopeLocal, "local instructions", "instruction", parseClause); err != nil {
+		return nil, nil, nil, nil, nil, err
 	}
 	if skills, err = loadSkills(fsys, dir+"/skills", ScopeLocal, "local skills"); err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	refs, err = readSuppressFile(fsys, dir+"/"+localConfigName, func(s *localSettings) yaml.Node { return s.Suppress })
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
-	return articles, agents, skills, refs, nil
+	return articles, agents, clauses, skills, refs, nil
 }
 
 // requireDir reports whether p exists, and fails when it is a symlink or not
