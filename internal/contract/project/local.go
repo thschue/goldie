@@ -126,14 +126,20 @@ func readConfig(r *os.Root) ([]byte, error) {
 	return readRegular(r, name)
 }
 
-// readRegular opens name through r without blocking, checks the type of what
-// it opened, and reads at most maxProjectFile bytes.
+// readRegular opens name through r without blocking and reads it with
+// readOpened.
 func readRegular(r *os.Root, name string) ([]byte, error) {
 	f, err := r.OpenFile(name, os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	return readOpened(f)
+}
+
+// readOpened checks the type of the file f opened and reads at most
+// maxProjectFile bytes of it.
+func readOpened(f *os.File) ([]byte, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return nil, err

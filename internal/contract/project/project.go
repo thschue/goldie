@@ -210,16 +210,18 @@ var errNotRegular = errors.New("not a regular file")
 var errFileTooLarge = errors.New("file too large")
 
 // openCapped reads the regular file path names, of at most maxProjectFile
-// bytes, through an os.Root opened at its directory. The open is non-blocking
-// (openFlags) and the type is checked on what was opened, so a FIFO planted in
-// a checkout is refused rather than read, and no device is opened.
+// bytes. It follows a symlink, as the version control tool does for its own
+// metadata (a config linked into a dotfiles repository). The open is
+// non-blocking (openFlags) and the type is checked on what was opened, so a
+// FIFO planted in a checkout is refused rather than read, and no device is
+// opened.
 func openCapped(path string) ([]byte, error) {
-	r, err := os.OpenRoot(filepath.Dir(path))
+	f, err := os.OpenFile(path, os.O_RDONLY|openFlags, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = r.Close() }()
-	return readRegular(r, filepath.Base(path))
+	defer func() { _ = f.Close() }()
+	return readOpened(f)
 }
 
 // findGitConfig walks up from dir to the repository root, the nearest
