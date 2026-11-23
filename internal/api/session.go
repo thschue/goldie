@@ -156,6 +156,8 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 			"Use a token with the operator role.")
 	default:
 		v, expires := t.sessions.value(e, issued, now)
+		w.Header().Add("Vary", "Cookie")
+		w.Header().Set("Cache-Control", "private, no-store")
 		t.sessions.setCookie(w, r, v, now, expires)
 		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))

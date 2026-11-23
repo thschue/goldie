@@ -206,6 +206,16 @@ func checkRateLimit(l platform.RateLimit) error {
 	return nil
 }
 
+// checkSessionKey fails a GOLDIE_SESSION_KEY the session layer would refuse,
+// so it is reported with the other configuration errors. Unset is fine: the
+// server then makes a random key. The error never contains the key.
+func checkSessionKey(cfg platform.Config) error {
+	if _, err := (*api.Tokens)(nil).WithSessions(cfg.SessionKey, false); err != nil {
+		return fmt.Errorf("%s %w", platform.EnvSessionKey, err)
+	}
+	return nil
+}
+
 // clientVersionGate builds the minimum client version gate from the Semver
 // LoadConfig parsed; the zero Semver is no gate (nil).
 func clientVersionGate(minimum platform.Semver) *api.ClientVersionGate {
@@ -463,6 +473,9 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 		errs = append(errs, err)
 	}
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
+		errs = append(errs, err)
+	}
+	if err := checkSessionKey(cfg); err != nil {
 		errs = append(errs, err)
 	}
 	src, err := serveSource(cfg)

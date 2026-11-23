@@ -73,3 +73,17 @@ func TestRotatingATokenValueEndsItsSessions(t *testing.T) {
 	r, b = send(t, rotated, http.MethodGet, secureBase+sessionPath, withCookie(c))
 	assertStatus(t, "after rotation", r, b, http.StatusUnauthorized)
 }
+
+// A re-issued session cookie must not be stored by a shared cache.
+func TestReissuedSessionCookieIsNotCacheable(t *testing.T) {
+	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
+	c := signedIn(t, h, secureBase, operatorToken)
+	resp, body := send(t, h, http.MethodGet, secureBase+sessionSearch, withCookie(c))
+	assertStatus(t, "cookie GET", resp, body, http.StatusOK)
+	if got := resp.Header.Get("Cache-Control"); got != "private, no-store" {
+		t.Errorf("Cache-Control = %q, want private, no-store", got)
+	}
+	if got := resp.Header.Get("Vary"); !strings.Contains(got, "Cookie") {
+		t.Errorf("Vary = %q, want Cookie", got)
+	}
+}
