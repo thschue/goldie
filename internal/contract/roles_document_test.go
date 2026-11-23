@@ -182,6 +182,16 @@ func TestParseRolesStillRejectsWhatTheNarrowingMustNotOpen(t *testing.T) {
 		"mark inside a header object":   {"components:\n  responses:\n    R:\n      description: d\n      headers:\n        X-Goldie-Client:\n          x-goldie-role: operator\n          schema:\n            type: string\n", "x-goldie-role", "X-Goldie-Client"},
 		"mark inside a property schema": {"components:\n  schemas:\n    S:\n      type: object\n      properties:\n        p:\n          x-goldie-role: operator\n", "x-goldie-role", "p"},
 		"misspelt key at the root":      {"x-goldie-roles: operator\n", "x-goldie-roles", "(root)"},
+		// The names-mode skip is scoped to a real response headers map or schema
+		// properties map. The cases below name a component, a path or an
+		// extension "headers"/"properties" and must still be checked; they fail
+		// until the implementer's scoping change in roles.go lands.
+		"parameter component named headers, upper-case key": {"components:\n  parameters:\n    headers:\n      X-Goldie-Role: operator\n", "X-Goldie-Role", "headers"},
+		"parameter component named headers, misspelt key":   {"components:\n  parameters:\n    headers:\n      x-goldie-roles: operator\n", "x-goldie-roles", "headers"},
+		"request body component named properties":           {"components:\n  requestBodies:\n    properties:\n      x-goldie-role: operator\n", "x-goldie-role", "properties"},
+		"path item named headers, misspelt key":             {"  headers:\n    x-goldie-roles: operator\n", "x-goldie-roles", "headers"},
+		"path item named properties, misspelt key":          {"  properties:\n    x-goldie-roles: operator\n", "x-goldie-roles", "properties"},
+		"headers key inside an extension, misspelt key":     {"x-foo:\n  headers:\n    x-goldie-roles: operator\n", "x-goldie-roles", "x-foo"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			spec := op + c.tail
@@ -196,6 +206,21 @@ func TestParseRolesStillRejectsWhatTheNarrowingMustNotOpen(t *testing.T) {
 				t.Errorf("parseOperatorParameters accepted it, got %v", p)
 			}
 		})
+	}
+}
+
+// A response header literally named x-goldie-role is a header name, not an
+// extension (ADR 0025, issue #427): the check skips the keys of a real headers
+// map, so it is accepted and does not mark the operation. This pins the current
+// behaviour on purpose; the name is skipped, not reported.
+func TestParseRolesAcceptsAResponseHeaderNamedLikeTheRoleKey(t *testing.T) {
+	const spec = "paths:\n  /a:\n    get:\n      x-goldie-role: operator\n      responses:\n        \"200\":\n          description: d\n          headers:\n            X-Goldie-Client:\n              schema:\n                type: string\n            x-goldie-role:\n              schema:\n                type: string\n"
+	got, err := parseOperatorPaths([]byte(spec))
+	if err != nil || !got["/a"] || len(got) != 1 {
+		t.Errorf("paths: got %v, %v, want only /a", got, err)
+	}
+	if p, err := parseOperatorParameters([]byte(spec)); err != nil || len(p) != 0 {
+		t.Errorf("parameters: got %v, %v, want an empty set", p, err)
 	}
 }
 
