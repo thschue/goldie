@@ -6,12 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 	"time"
-
-	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/thschue/goldie/internal/platform"
 )
@@ -21,78 +18,6 @@ import (
 // error. app counts from the onPoll callback. The git Source's name is "git",
 // as in its readiness check and its log records. The URL and path of the
 // repository are never attributes (PC-12).
-
-// pollCounts is the sum per "source/result" of the data points of the metric
-// called name in an OTLP metrics export, and every attribute key seen on it.
-func pollCounts(t *testing.T, export []byte, name string) (counts map[string]int64, keys []string) {
-	t.Helper()
-	counts = map[string]int64{}
-	seen := map[string]bool{}
-	point := func(b []byte) {
-		attrs := map[string]string{}
-		var value int64
-		pbFields(t, b, func(num protowire.Number, n uint64, raw []byte) {
-			switch num {
-			case 6: // as_int
-				value = int64(n) //nolint:gosec // a small count
-			case 7: // attributes
-				var key, str string
-				pbFields(t, raw, func(num protowire.Number, _ uint64, raw []byte) {
-					switch num {
-					case 1:
-						key = string(raw)
-					case 2:
-						pbFields(t, raw, func(num protowire.Number, _ uint64, raw []byte) {
-							if num == 1 {
-								str = string(raw)
-							}
-						})
-					}
-				})
-				seen[key] = true
-				attrs[key] = str
-			}
-		})
-		counts[attrs["source"]+"/"+attrs["result"]] += value
-	}
-	metric := func(b []byte) {
-		var isNamed bool
-		pbFields(t, b, func(num protowire.Number, _ uint64, raw []byte) {
-			switch num {
-			case 1:
-				isNamed = string(raw) == name
-			case 7: // sum
-				if isNamed {
-					pbFields(t, raw, func(num protowire.Number, _ uint64, raw []byte) {
-						if num == 1 {
-							point(raw)
-						}
-					})
-				}
-			}
-		})
-	}
-	pbFields(t, export, func(num protowire.Number, _ uint64, resourceMetrics []byte) {
-		if num != 1 {
-			return
-		}
-		pbFields(t, resourceMetrics, func(num protowire.Number, _ uint64, scopeMetrics []byte) {
-			if num != 2 {
-				return
-			}
-			pbFields(t, scopeMetrics, func(num protowire.Number, _ uint64, m []byte) {
-				if num == 2 {
-					metric(m)
-				}
-			})
-		})
-	})
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return counts, keys
-}
 
 // Criterion: goldie.syncs counts each finished poll with source and result.
 // One ok poll (the first load) and one failed poll (the repository is gone,
@@ -157,7 +82,9 @@ func TestSourcePollsAreCountedByResult(t *testing.T) {
 	}
 
 	raw := col.body("/v1/metrics")
-	counts, keys := pollCounts(t, raw, "goldie.syncs")
+	counts, keys := metricCounts(t, raw, "goldie.syncs", func(attrs map[string]string) string {
+		return attrs["source"] + "/" + attrs["result"]
+	})
 	if counts["git/ok"] != 1 || counts["git/error"] != 1 || len(counts) != 2 {
 		t.Errorf("goldie.syncs by source/result = %v, want git/ok 1 and git/error 1", counts)
 	}
