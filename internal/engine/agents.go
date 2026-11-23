@@ -18,7 +18,7 @@ const KindAgent = "agent"
 const agentsDir = "global/agents"
 
 // Agent is one Item of Kind agent: a Markdown file with frontmatter that
-// defines a sub-agent. Only name and description are parsed; every other key
+// defines a sub-agent. Only name, description and keywords are parsed; every other key
 // (tools, model, ...) stays in Raw and is never rejected.
 type Agent struct {
 	// Name is the agent's identity, the file name without ".md", and equal to
@@ -108,8 +108,9 @@ func parseAgent(name string, raw []byte) (Article, error) {
 		return Article{}, err
 	}
 	var meta struct {
-		Name          string `yaml:"name"`
-		Description   string `yaml:"description"`
+		Name          string    `yaml:"name"`
+		Description   string    `yaml:"description"`
+		Keywords      yaml.Node `yaml:"keywords"`
 		lifecycleMeta `yaml:",inline"`
 	}
 	if err := yaml.Unmarshal(front, &meta); err != nil {
@@ -125,7 +126,7 @@ func parseAgent(name string, raw []byte) (Article, error) {
 	if desc == "" {
 		return Article{}, errors.New("frontmatter has no description")
 	}
-	a := Article{kind: KindAgent, ID: name, Name: name, description: desc, raw: raw}
+	a := Article{kind: KindAgent, ID: name, Name: name, description: desc, raw: raw, Keywords: lenientKeywords(meta.Keywords)}
 	if err := meta.apply(&a); err != nil {
 		return Article{}, err
 	}

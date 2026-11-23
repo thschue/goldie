@@ -12,11 +12,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search articles by keyword
-         * @description Returns the articles that match the search words, best first. An exact
-         *     keyword match scores 4, a keyword containing the word 1, and a name
-         *     containing the word 2. Ties are ordered by id. No match is an empty
-         *     list, not an error.
+         * Search articles, skills and agents by keyword
+         * @description Returns the Items of one Kind that match the search words, best first.
+         *     Without `kind` only articles are searched, so a client that follows a hit
+         *     with an article lookup keeps working. An exact keyword match scores 4, a
+         *     keyword containing the word 1, and a name containing the word 2. A skill
+         *     or agent matches on its name and keywords only, never on its
+         *     description (ADR 0005); a skill's keywords are the `keywords` in the
+         *     frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
+         *     empty list, not an error.
          */
         get: operations["searchArticles"];
         put?: never;
@@ -79,11 +83,38 @@ export interface paths {
         };
         /**
          * Read one skill
-         * @description Returns one skill by name with its file list. A miss is a 404 whose hint
-         *     points to the list. The digest and the executable bit are not part of
+         * @description Returns one skill by name with its file list. A client reads each listed
+         *     `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
+         *     404 whose hint points to the list. The digest and the executable bit are not part of
          *     the answer yet.
          */
         get: operations["getSkill"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{name}/files/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one file of a skill
+         * @description Returns the bytes of one file of the skill's bundle exactly as written,
+         *     for a path listed in the skill's `files`. Every file is served with the
+         *     one content type `application/octet-stream` and
+         *     `X-Content-Type-Options: nosniff`, whatever its name or content, so a
+         *     client or browser never runs or renders it. A name or path that is not a
+         *     file of the bundle that answers, one that leaves the bundle, and an
+         *     absolute path are all the same 404.
+         */
+        get: operations["getSkillFile"];
         put?: never;
         post?: never;
         delete?: never;
@@ -749,7 +780,7 @@ export interface components {
             message: string;
         };
         /**
-         * @description One article that matched a search.
+         * @description One Item that matched a search.
          * @example {
          *       "id": "platform/deploy",
          *       "name": "Deploying to Kubernetes",
@@ -772,7 +803,7 @@ export interface components {
          */
         SearchHit: {
             /**
-             * @description The article id, for a lookup.
+             * @description The Item's id, an article id for a lookup or a skill or agent name.
              * @example platform/deploy
              */
             id: string;
@@ -1149,6 +1180,11 @@ export interface operations {
                  */
                 q: string;
                 /**
+                 * @description The Kind of Item to search: `article` (the default), `skill` or
+                 *     `agent`. Any other value is a 400.
+                 */
+                kind?: "article" | "skill" | "agent";
+                /**
                  * @description Resolve for this Project (ADR 0020): its articles come before the
                  *     global ones and win on an equal id. Matched ignoring case. A Project
                  *     that is not registered answers the global results with a `hint`; a
@@ -1180,7 +1216,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            /** @description The search words are missing or longer than 1024 bytes, or `project` is not a `ProjectId`. */
+            /** @description The search words are missing or longer than 1024 bytes, `kind` is not one of the three, or `project` is not a `ProjectId`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1439,6 +1475,98 @@ export interface operations {
                 };
             };
             /** @description No skill has this name; the hint points to the skill list. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSkillFile: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the skill for this Project (ADR 0020): its bundle answers
+                 *     whole, so a file only the global bundle has is a miss. Matched
+                 *     ignoring case. An unregistered Project answers the global bundle; a
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The skill name, one path segment. A name that is not one is a miss, as is one that no skill has.
+                 * @example deploy
+                 */
+                name: string;
+                /**
+                 * @description The file's path relative to the bundle, one path segment (ADR 0016).
+                 *     A `/` inside it is sent percent-encoded as `%2F`: `scripts/run.sh`
+                 *     is requested as `/api/v1/skills/deploy/files/scripts%2Frun.sh`. A
+                 *     bare slash does not match this operation and answers the not-found
+                 *     envelope.
+                 * @example SKILL.md
+                 */
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file's bytes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description For the skill file, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill file, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill file, drafts were asked for with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No such skill, or the path is not a file of its bundle; the hint points to the skill. */
             404: {
                 headers: {
                     [name: string]: unknown;
