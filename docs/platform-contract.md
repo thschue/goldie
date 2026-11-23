@@ -16,7 +16,7 @@ Variables use the `GOLDIE_` prefix, with one exception: the standard `OTEL_*` Op
 | PC-04 | **Environment-only config.** All server settings come from environment variables and are validated at startup. Invalid or missing values fail fast with an error naming the offending variable. (Declarative Sources and tokens held in Kubernetes Secrets are the one dynamic exception; settings stay env-only.) `goldie server -dev [dir]` takes the content directory as an argument; nothing else departs from environment-only configuration. |
 | PC-05 | **Secrets by file.** Every secret variable has a `_FILE` form that reads the value from a file. Secrets never appear in plain env docs, JSON config, logs or error messages. |
 | PC-06 | **Startup report.** The effective configuration is logged once at startup with secrets redacted. |
-| PC-07 | **Structured logs.** Logs are JSON on stdout, and every line carries `component`. In `goldie server -dev` mode logs go to stderr, so stdout carries only the export line. |
+| PC-07 | **Structured logs.** Logs are JSON on stdout (the same keys as text when stdout is a terminal), and every line carries `component`. In `goldie server -dev` mode logs go to stderr, so stdout carries only the export line. |
 | PC-08 | **Drain.** On SIGTERM the server stops accepting new connections, reports not ready, finishes in-flight requests within a bounded grace period, then exits 0. Rollouts drop no requests. |
 | PC-09 | **Health subcommand.** `goldie health` probes the local admin port and exits non-zero when unhealthy, for images without a shell or `curl`. |
 | PC-10 | **Generated component docs.** Configuration and endpoint reference docs are generated from code (`./run regen`) and CI fails on drift. |

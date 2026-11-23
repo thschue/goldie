@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 )
 
@@ -23,10 +24,10 @@ func ParseLevel(s string) (slog.Level, error) {
 	return 0, errors.New("must be one of debug, info, warn, error")
 }
 
-// NewLogger returns a JSON logger writing to w. Every line carries ts,
-// level, msg, component and version (PC-07).
+// NewLogger returns a logger writing to w: JSON, or text when w is a terminal.
+// Every line carries ts, level, msg, component and version (PC-07).
 func NewLogger(w io.Writer, level slog.Level, component string) *slog.Logger {
-	h := slog.NewJSONHandler(w, &slog.HandlerOptions{
+	opts := &slog.HandlerOptions{
 		Level: level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if len(groups) > 0 {
@@ -40,7 +41,11 @@ func NewLogger(w io.Writer, level slog.Level, component string) *slog.Logger {
 			}
 			return a
 		},
-	})
+	}
+	var h slog.Handler = slog.NewJSONHandler(w, opts)
+	if f, ok := w.(*os.File); ok && isTerminal(f) {
+		h = slog.NewTextHandler(w, opts)
+	}
 	return slog.New(h.WithAttrs(identityAttrs(component)))
 }
 
