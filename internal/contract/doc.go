@@ -7,14 +7,12 @@
 // classifies every failure, and ParseOK and DecodeAPIError beneath it for the
 // error envelope. Its subpackages hold other shared helpers: contract/project
 // detects the Project of a working directory for the CLI and MCP, and
-// contract/contracttest checks responses against the document and builds
-// example request paths from it.
+// contract/contracttest (for tests only) checks responses against the document
+// with Conforms, builds example request paths from it with ExamplePath and
+// follows its local $ref pointers with ResolveRef.
 //
 // The hand-written helpers sit beside the generated code: the endpoint
 // reference Markdown is rendered from the document, and CheckArticleID rejects
 // article ids that URL path cleaning would resolve away. The package imports no
 // other goldie module.
-//
-// The package comment of contract/contracttest describes Conforms, ExamplePath
-// and ResolveRef.
 package contract
