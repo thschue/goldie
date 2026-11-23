@@ -53,6 +53,44 @@ ROOT=$(pwd)
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'run: %s\n' "$*" >&2; exit 1; }
 
+# Every temporary file and directory lives under one scratch directory,
+# RUN_TMP, made before a task runs and removed when ./run exits, however it
+# exits: normally, on a failure, or on INT or TERM (130 and 143, as cmd_ux
+# did). RUN_WT is a red-check worktree to unregister, bg_pid the command
+# bg is waiting for.
+RUN_TMP=
+RUN_WT=
+bg_pid=
+cleanup() {
+	if [ -n "$bg_pid" ]; then
+		kill "$bg_pid" 2>/dev/null || :
+		wait "$bg_pid" 2>/dev/null || :
+		bg_pid=
+	fi
+	[ -z "${ux_pid:-}" ] || ux_stop
+	if [ -n "$RUN_WT" ]; then
+		git worktree remove --force "$RUN_WT" >/dev/null 2>&1 || :
+		RUN_WT=
+	fi
+	if [ -n "$RUN_TMP" ]; then
+		rm -rf "$RUN_TMP"
+		RUN_TMP=
+	fi
+}
+
+# bg <command...>: run the command in the background and wait for it, with
+# its status as the result. A shell runs a trap only after a foreground
+# command ends, but wait is interrupted by a trapped signal, so INT and TERM
+# end ./run, and the wrapped command, at once.
+bg() {
+	"$@" &
+	bg_pid=$!
+	bg_status=0
+	wait "$bg_pid" || bg_status=$?
+	bg_pid=
+	return "$bg_status"
+}
+
 # tool <package>@<version>: print the path of the pinned tool's binary,
 # installing it first. Each version gets its own directory under .tools/ of
 # the main checkout, shared by its worktrees (or $GOLDIE_TOOLS), so a bump
@@ -131,17 +169,22 @@ cmd_lint_fixture() {
 # --remote=false keeps the check offline: the spec is one self-contained file,
 # so no $ref is fetched.
 vacuum() {
-	cfgdir=$(mktemp -d) || die "cannot create a temporary directory for vacuum"
+	cfgdir=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory for vacuum"
 	: >"$cfgdir/vacuum.conf.yaml"
 	bin=$(tool "$VACUUM")
 	status=0
+	bg env_vacuum "$bin" "$cfgdir" "$@" || status=$?
+	rm -rf "$cfgdir"
+	return "$status"
+}
+env_vacuum() {
+	bin=$1 cfgdir=$2
+	shift 2
 	(
 		for v in $(env | sed -n 's/^\(VACUUM_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 		exec "$bin" lint --config "$cfgdir/vacuum.conf.yaml" --remote=false \
 			--no-update-check --no-banner --no-style --details --fail-severity info "$@"
-	) || status=$?
-	rm -rf "$cfgdir"
-	return "$status"
+	)
 }
 
 cmd_lint_spec() {
@@ -200,7 +243,7 @@ cmd_gate_fixture() {
 	say "agent-gate fixture (each case gives its expected reasons)"
 	for case in testdata/agent-gate/*/; do
 		name=$(basename "$case")
-		repo=$(mktemp -d) || die "cannot create a temporary directory"
+		repo=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 		(
 			# The throwaway repository ignores the user's git config (signing,
 			# hooks, templates), so the case runs the same everywhere.
@@ -238,7 +281,7 @@ cmd_test_lock_fixture() {
 	tab=$(printf '\t')
 	cases=testdata/test-lock/cases.tsv
 	for name in $(grep -v '^#' "$cases" | cut -f1 | uniq); do
-		repo=$(mktemp -d) || die "cannot create a temporary directory"
+		repo=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 		fixture_git -C "$repo" init -q -b main || die "cannot create a repository for $name"
 		prev=
 		grep "^$name$tab" "$cases" | grep -v "^$name${tab}want$tab" >"$repo/.rows"
@@ -298,7 +341,7 @@ cmd_stream_state_fixture() {
 # claimed again on the -r2 branch.
 cmd_claim_fixture() {
 	say "claim fixture (the first branch push wins)"
-	work=$(mktemp -d) || die "cannot create a temporary directory"
+	work=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 	(
 		GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 		export GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM
@@ -402,6 +445,12 @@ cmd_agents_check() {
 # origin/main) and require the tests to fail there, as proof that they were
 # red first. A reviewer tool, not part of check: a test that pins existing
 # behaviour passes on <base> by design, and the reviewer judges that case.
+red_check_test() {
+	wt=$1
+	shift
+	(cd "$wt" && exec go test -count=1 "$@")
+}
+
 cmd_red_check() {
 	base=${1:-origin/main}
 	mb=$(git merge-base "$base" HEAD) || die "no merge base with $base"
@@ -410,16 +459,18 @@ cmd_red_check() {
 		say "red-check: the branch changes no test files"
 		return 0
 	fi
-	wt=$(mktemp -d) || die "cannot create a temporary directory"
+	wt=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 	git worktree add -q --detach "$wt" "$mb" || die "cannot create a worktree at $mb"
+	RUN_WT=$wt
 	for t in $tests; do
 		mkdir -p "$wt/$(dirname "$t")"
 		git show "HEAD:$t" >"$wt/$t"
 	done
 	pkgs=$(printf '%s\n' "$tests" | sed 's#/[^/]*$##' | sort -u | sed 's#^#./#')
 	status=0
-	(cd "$wt" && go test -count=1 $pkgs) >/dev/null 2>&1 || status=$?
+	bg red_check_test "$wt" $pkgs >/dev/null 2>&1 || status=$?
 	git worktree remove --force "$wt"
+	RUN_WT=
 	if [ "$status" = 0 ]; then
 		die "red-check: the changed tests pass on $base; they don't prove the change"
 	fi
@@ -438,9 +489,9 @@ cmd_test() {
 	# test's exit status survives, then is shown without the per-test
 	# progress lines. Skips of timing-sensitive tests ("TIMING-SKIP:" message
 	# prefix) are summarised afterwards; this only reports, it never fails.
-	out=$(mktemp) || die "test: mktemp failed"
+	out=$(mktemp "$RUN_TMP/f.XXXXXX") || die "test: mktemp failed"
 	status=0
-	go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
+	bg go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
 	# tr drops NUL bytes first, and both run under LC_ALL=C: grep would otherwise
 	# treat the file as binary and swallow the failure text, and a UTF-8 locale
 	# makes BSD tr stop at, and GNU grep flag, invalid UTF-8. tr is POSIX; grep -a is not.
@@ -470,9 +521,9 @@ CONTRACT_GEN=internal/contract/contract.gen.go
 # failed run never leaves a truncated generated file behind. It returns
 # non-zero on failure, so the caller can clean up before it dies.
 oapi_codegen() {
-	tmp=$(mktemp) || die "cannot create a temporary file for oapi-codegen"
+	tmp=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for oapi-codegen"
 	bin=$(tool "$OAPI_CODEGEN")
-	if "$bin" -config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
+	if bg "$bin" -config "$CONTRACT_CONFIG" "$1" >"$tmp" && cat "$tmp" >"$2"; then
 		rm -f "$tmp"
 	else
 		rm -f "$tmp"
@@ -499,7 +550,7 @@ cmd_ui() {
 # throwaway token and free ports, and runs the Playwright specs in web/e2e
 # against it. Everything lands in ux/ (screenshots, report, server log), which
 # the CI job uploads as the ux artifact. A reviewer tool like red-check, not
-# part of check: it needs Node and a browser. The trap always stops the server.
+# part of check: it needs Node and a browser. The exit trap (cleanup) always stops the server.
 UX_DIR=ux
 cmd_ux() {
 	rm -rf "$UX_DIR"
@@ -509,11 +560,8 @@ cmd_ux() {
 	# --with-deps installs the browser's system libraries, which needs root:
 	# CI only. --no never downloads an unpinned playwright.
 	(cd web && npx --no playwright install ${CI:+--with-deps} chromium) || die "playwright install failed"
-	ux_tmp=$(mktemp -d) || die "cannot create a temporary directory"
+	ux_tmp=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 	ux_pid=
-	trap ux_stop EXIT
-	trap 'exit 130' INT
-	trap 'exit 143' TERM
 	say "ux: go build"
 	go build -o "$ux_tmp/goldie" ./cmd/goldie || die "go build failed"
 	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/token") ||
@@ -571,7 +619,7 @@ ux_stop() {
 		kill "$ux_pid" 2>/dev/null || :
 		wait "$ux_pid" 2>/dev/null || :
 	fi
-	rm -rf "$ux_tmp"
+	ux_pid=
 }
 
 cmd_regen() {
@@ -589,7 +637,7 @@ cmd_regen() {
 # generation from <spec>, return 1 when they differ, and die when they cannot
 # be compared, so the fixture never passes for the wrong reason.
 drift() {
-	fresh=$(mktemp) || die "cannot create a temporary file for the drift check"
+	fresh=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for the drift check"
 	if ! oapi_codegen "$1" "$fresh"; then
 		rm -f "$fresh"
 		die "oapi-codegen failed for $1"
@@ -607,8 +655,8 @@ drift() {
 docs_drift() {
 	committed=$1
 	shift
-	fresh=$(mktemp) || die "cannot create a temporary file for the docs drift check"
-	if ! "$@" "$fresh"; then
+	fresh=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for the docs drift check"
+	if ! bg "$@" "$fresh"; then
 		rm -f "$fresh"
 		die "generator failed: $*"
 	fi
@@ -702,6 +750,10 @@ usage() {
 [ $# -ge 1 ] || { usage; exit 2; }
 sub=$1
 shift
+RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/run.XXXXXX") || die "cannot create a temporary directory"
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 case "$sub" in
 check) cmd_check ;;
 check-lint) cmd_check_lint ;;
