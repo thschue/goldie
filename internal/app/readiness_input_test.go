@@ -109,6 +109,10 @@ func TestBadInputBeforeTheFirstLoadStillNeedsAToken(t *testing.T) {
 	}
 }
 
+// notReadyPerProcess is the NotReady promise as #263 words it, lower-cased.
+const notReadyPerProcess = "once this server process has loaded its content it never answers this again, " +
+	"even if a later load fails; a restarted or new process starts unloaded."
+
 // The NotReady promise is per server process, like RateLimited: a new replica
 // can start without content even when another one has loaded. The spec must
 // not claim a load, anywhere, makes not_ready final.
@@ -128,8 +132,8 @@ func TestNotReadyDescriptionIsPerServerProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	desc := strings.ToLower(strings.Join(strings.Fields(doc.Components.Responses["NotReady"].Description), " "))
-	if !strings.Contains(desc, "once this server has loaded its content") {
-		t.Errorf("NotReady description %q, want it to say \"once this server has loaded its content\"", desc)
+	if !strings.Contains(desc, notReadyPerProcess) {
+		t.Errorf("NotReady description %q, want it to say %q", desc, notReadyPerProcess)
 	}
 	if strings.Contains(desc, "once a load has succeeded") {
 		t.Errorf("NotReady description %q still promises it for any load", desc)
@@ -146,7 +150,7 @@ func TestAPIReferenceCarriesTheNotReadyWording(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := strings.ToLower(string(b))
-	if !strings.Contains(ref, "once this server has loaded its content") {
+	if !strings.Contains(strings.Join(strings.Fields(ref), " "), notReadyPerProcess) {
 		t.Error("docs/reference/api.md lacks the per-process NotReady wording; run ./run regen")
 	}
 	if strings.Contains(ref, "once a load has succeeded") {

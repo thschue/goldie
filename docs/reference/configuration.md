@@ -53,7 +53,8 @@ when any is set. `GOLDIE_DRAIN_SECONDS` defaults to 0 here; every other setting 
 Traces of the public listener and logs are exported over OTLP (http/protobuf) when an
 endpoint is set. These variables keep their standard names and are read as defined by
 OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request
-headers and query strings are not recorded. goldie reads every variable listed here through
+headers and query strings are not recorded, and a lookup's path is recorded as the route
+template /api/v1/articles/{id}, without the id. goldie reads every variable listed here through
 its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as
 OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own
 handling: goldie neither validates nor documents them, but a value the SDK rejects is never
