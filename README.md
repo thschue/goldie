@@ -35,12 +35,13 @@ help you ask for goes to stdout and exits 0.
 and file list) and agent definitions (name and description) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. Skill and agent names match case-insensitively and the answer carries the
-name as written; two skills in one Scope whose names differ only in case fail the load. File
-paths inside a skill stay exact. `goldie skills show <name> --file <path>` writes one file of the skill, as
-listed by `show <name>`, to stdout as its raw bytes and nothing else. Redirect it to a file for
-anything binary. An unknown path exits 1 and names `goldie skills show <name>`. `--file` belongs to
-`skills show` only. An empty or dot-only path is refused before any request.
+before any request. Skill and agent names match case-insensitively, and the answer shows the
+name as written. Two skills, or two agents, in one Scope whose names differ only in case fail the
+load; the error names both. File paths inside a skill stay exact. `goldie skills show <name>
+--file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
+bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
+`goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
+refused before any request.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
