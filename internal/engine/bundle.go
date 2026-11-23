@@ -8,7 +8,48 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"go.yaml.in/yaml/v3"
 )
+
+// loopEntryPrefix follows goldiePrefix in the directory of a loop entry skill.
+const loopEntryPrefix = "loop-"
+
+// loopEntry is the entry skill of l: a skill named goldie-loop-<name> whose
+// description is the loop's and whose body is the iteration prompt and the stop
+// condition. Its frontmatter key loop holds the interval, or "dynamic", which
+// is how goldie pull prints the /loop invocation without asking the server
+// again. The description is the only field loaded unchecked, so it is cleaned
+// here; the prompt and the stop condition were checked when the loop loaded,
+// and the interval is a parsed duration.
+func loopEntry(l Loop) []byte {
+	timing := l.Interval
+	if l.Dynamic {
+		timing = "dynamic"
+	}
+	front, err := yaml.Marshal(struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+		Loop        string `yaml:"loop"`
+	}{goldiePrefix + loopEntryPrefix + l.Name, cleanText(l.Description), timing})
+	if err != nil {
+		return nil
+	}
+	return []byte("---\n" + string(front) + "---\n" + l.Content + "\n## Stop\n\nStop " + l.Stop + ".\n")
+}
+
+// cleanText is s on one line, without any rune HiddenRune names.
+func cleanText(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\r' || r == '\t' || r == 0x2028 || r == 0x2029:
+			return ' '
+		case HiddenRune(r):
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // BundleFile is one file of a bundle: a clean relative slash path from the
 // repository root, and its bytes as written.
@@ -25,7 +66,7 @@ func ValidBundleTarget(t string) bool { _, ok := bundleLayouts[t]; return ok }
 
 // bundleLayout lays the resolved skills and agents out for one target, in no
 // particular order. It is the seam a further target plugs into.
-type bundleLayout func(skills []skillBundle, agents []Agent) []BundleFile
+type bundleLayout func(skills []skillBundle, agents []Agent, loops []Loop) []BundleFile
 
 var bundleLayouts = map[string]bundleLayout{TargetClaude: claudeLayout}
 
@@ -33,9 +74,11 @@ var bundleLayouts = map[string]bundleLayout{TargetClaude: claudeLayout}
 // exactly these and nothing else.
 const goldiePrefix = "goldie-"
 
-// claudeLayout is the Claude target: .claude/skills/goldie-<name>/<file> and
-// .claude/agents/goldie-<name>.md.
-func claudeLayout(skills []skillBundle, agents []Agent) []BundleFile {
+// claudeLayout is the Claude target: .claude/skills/goldie-<name>/<file>,
+// .claude/agents/goldie-<name>.md and, for each loop, its entry skill
+// .claude/skills/goldie-loop-<name>/SKILL.md (see loopEntry). A loop whose entry
+// path a skill already holds is left out.
+func claudeLayout(skills []skillBundle, agents []Agent, loops []Loop) []BundleFile {
 	var out []BundleFile
 	for _, sk := range skills {
 		if !safeElem(sk.name) {
@@ -50,6 +93,16 @@ func claudeLayout(skills []skillBundle, agents []Agent) []BundleFile {
 	for _, a := range agents {
 		if safeElem(a.Name) {
 			out = append(out, BundleFile{Path: ".claude/agents/" + goldiePrefix + a.Name + ".md", Data: a.Raw})
+		}
+	}
+	taken := map[string]bool{}
+	for _, f := range out {
+		taken[f.Path] = true
+	}
+	for _, l := range loops {
+		p := ".claude/skills/" + goldiePrefix + loopEntryPrefix + l.Name + "/SKILL.md"
+		if safeElem(l.Name) && !taken[p] {
+			out = append(out, BundleFile{Path: p, Data: loopEntry(l)})
 		}
 	}
 	return out
@@ -121,7 +174,7 @@ func (s *Snapshot) Bundle(proj, target string) ([]BundleFile, string) {
 			skills = append(skills, b)
 		}
 	}
-	files := layout(skills, s.Agents(proj))
+	files := layout(skills, s.Agents(proj), s.Loops(proj))
 	slices.SortFunc(files, func(a, b BundleFile) int { return strings.Compare(a.Path, b.Path) })
 	h := newLenHash(sha256.New())
 	h.put([]byte(target))

@@ -1280,8 +1280,10 @@ type ClientInterface interface {
 	// wins, drafts are left out) as a gzip-compressed tar, laid out for the
 	// target. For `claude` the entries are regular files with clean relative
 	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
-	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
-	// A script keeps its executable bit in the entry's mode. A skill or agent
+	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent,
+	// and the entry skill `.claude/skills/goldie-loop-<name>/SKILL.md` for each
+	// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
+	// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 	// whose name, or a skill file whose path, cannot be a safe path is left out
 	// on purpose, and nothing in the response marks the omission. A Project
 	// whose view holds no skill and no agent gets a 200 with an empty archive and
@@ -1677,8 +1679,10 @@ func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticlePa
 // wins, drafts are left out) as a gzip-compressed tar, laid out for the
 // target. For `claude` the entries are regular files with clean relative
 // slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
-// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
-// A script keeps its executable bit in the entry's mode. A skill or agent
+// file of each skill and `.claude/agents/goldie-<name>.md` for each agent,
+// and the entry skill `.claude/skills/goldie-loop-<name>/SKILL.md` for each
+// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
+// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 // whose name, or a skill file whose path, cannot be a safe path is left out
 // on purpose, and nothing in the response marks the omission. A Project
 // whose view holds no skill and no agent gets a 200 with an empty archive and
@@ -3421,8 +3425,10 @@ type ClientWithResponsesInterface interface {
 	// wins, drafts are left out) as a gzip-compressed tar, laid out for the
 	// target. For `claude` the entries are regular files with clean relative
 	// slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
-	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
-	// A script keeps its executable bit in the entry's mode. A skill or agent
+	// file of each skill and `.claude/agents/goldie-<name>.md` for each agent,
+	// and the entry skill `.claude/skills/goldie-loop-<name>/SKILL.md` for each
+	// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
+	// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 	// whose name, or a skill file whose path, cannot be a safe path is left out
 	// on purpose, and nothing in the response marks the omission. A Project
 	// whose view holds no skill and no agent gets a 200 with an empty archive and
@@ -5782,8 +5788,10 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 // wins, drafts are left out) as a gzip-compressed tar, laid out for the
 // target. For `claude` the entries are regular files with clean relative
 // slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
-// file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
-// A script keeps its executable bit in the entry's mode. A skill or agent
+// file of each skill and `.claude/agents/goldie-<name>.md` for each agent,
+// and the entry skill `.claude/skills/goldie-loop-<name>/SKILL.md` for each
+// loop of the view (`GET /api/v1/loops`; its frontmatter key `loop` holds
+// the interval, or `dynamic`). A script keeps its executable bit in the entry's mode. A skill or agent
 // whose name, or a skill file whose path, cannot be a safe path is left out
 // on purpose, and nothing in the response marks the omission. A Project
 // whose view holds no skill and no agent gets a 200 with an empty archive and

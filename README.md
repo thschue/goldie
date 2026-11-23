@@ -127,7 +127,10 @@ goldie instructions check --target agents   # exits non-zero if missing, outdate
 `goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
 detected Project (`--project` overrides it) into the repository root of the working directory, from any
 subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
-`.claude/agents/goldie-<name>.md`. Those `goldie-` names are goldie's namespace. A pull replaces
+`.claude/agents/goldie-<name>.md`, and each loop's entry skill to `.claude/skills/goldie-loop-<name>/SKILL.md`
+(its description, iteration prompt and stop condition; the loop's agents and skills come with the rest). A
+pull that wrote files then prints `/loop <interval> /goldie-loop-<name>` for each loop, sorted by name, and
+`/loop /goldie-loop-<name>` for a dynamic one. Those `goldie-` names are goldie's namespace. A pull replaces
 the namespace as a whole, so a skill or agent removed from the platform disappears, and touches nothing
 else: your own skills and agents stay. The bundle comes from `GET /api/v1/bundle`, a tar.gz whose ETag is
 the digest of the set; `pull` keeps that digest in `.claude/goldie-pull.digest` and sends it back, so an
