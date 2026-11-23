@@ -130,6 +130,7 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		serveErr = srv.Serve(runCtx, l.Force)
 		cancel()
 		pub.loops.Wait()
+		pub.sync.wait()
 		close(finished)
 	}()
 	wait = func() error {

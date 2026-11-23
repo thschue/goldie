@@ -96,12 +96,19 @@ func (s *Syncer) Trigger(ctx context.Context, onPoll func(SyncStatus)) bool {
 	}
 	go func() {
 		defer s.pollMu.Unlock()
-		st, _ := s.pollLocked(ctx)
-		if onPoll != nil {
-			onPoll(st)
-		}
+		s.pollReport(ctx, onPoll)
 	}()
 	return true
+}
+
+// pollReport polls and hands the Status to onPoll, when not nil. The caller
+// holds pollMu, so onPoll never runs concurrently with itself, whether the
+// poll is Run's or a Trigger's.
+func (s *Syncer) pollReport(ctx context.Context, onPoll func(SyncStatus)) {
+	st, _ := s.pollLocked(ctx)
+	if onPoll != nil {
+		onPoll(st)
+	}
 }
 
 // pollLocked is poll for a caller that holds pollMu.
@@ -156,10 +163,9 @@ func (s *Syncer) Run(ctx context.Context, interval time.Duration, onPoll func(Sy
 		if ctx.Err() != nil {
 			return
 		}
-		st, _ := s.poll(ctx)
-		if onPoll != nil {
-			onPoll(st)
-		}
+		s.pollMu.Lock()
+		defer s.pollMu.Unlock()
+		s.pollReport(ctx, onPoll)
 	}
 	if interval <= 0 {
 		poll()

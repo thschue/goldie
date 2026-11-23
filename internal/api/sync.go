@@ -8,11 +8,12 @@ import (
 )
 
 // SyncControl is what the sync operations need of the Source's Syncer: its
-// status, and a way to start a poll now. Trigger reports false when a poll is
-// already running.
+// status, and a way to start a poll now. Trigger reports whether it started
+// one, and ready false when it cannot poll at all (no Source bound, or the
+// server stopping), which is not the same as busy.
 type SyncControl interface {
 	Status() engine.SyncStatus
-	Trigger() bool
+	Trigger() (started, ready bool)
 }
 
 // WithSync makes the Server answer the sync operations from c. Without it GET
@@ -52,7 +53,11 @@ func (s *Server) PostSync(context.Context, contract.PostSyncRequestObject) (cont
 	if s.sync == nil {
 		return contract.PostSync503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
 	}
-	if !s.sync.Trigger() {
+	started, ready := s.sync.Trigger()
+	if !ready {
+		return contract.PostSync503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	if !started {
 		return contract.PostSync429JSONResponse{Body: syncRunning}, nil
 	}
 	return contract.PostSync202JSONResponse{Hint: "A poll was started. Read GET /api/v1/sync to see its outcome."}, nil
