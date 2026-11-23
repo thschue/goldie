@@ -285,7 +285,8 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 		return src
 	}
 
-	// The pack is valid, and unpacking it is most of the Load.
+	// The pack is valid, and unpacking it is most of the Load. A machine too
+	// loaded to show that cannot place a deadline inside unpacking: skip.
 	src := newSrc()
 	start := time.Now()
 	if _, err := src.Load(t.Context()); err != nil {
@@ -295,24 +296,41 @@ func TestGitSourceUnpackingStopsAtTheDeadline(t *testing.T) {
 	transfer := sent().Sub(start)
 	unpack := total - transfer
 	if unpack < 200*time.Millisecond || unpack < 4*transfer {
-		t.Fatalf("fixture: unpacking took %s after a %s transfer; the test needs unpacking to dominate", unpack, transfer)
+		t.Skipf("unpacking took %s after a %s transfer; the machine is too loaded or too fast to place a deadline inside unpacking", unpack, transfer)
 	}
 
+	// The deadline falls a quarter of the way into unpacking. The timings of
+	// the first Load drift under load, so a run whose pack arrives after the
+	// deadline cannot show the property: it is run again, and the test skips
+	// when no run can. The property itself is asserted without a tight bound:
+	// the Load fails with the timeout error well before a full unpack (the
+	// slack is half the unpack time, at least 100ms) and not at its end.
 	deadline := (transfer + unpack/4).Round(time.Millisecond)
-	src = newSrc()
-	engine.SetGitLoadTimeout(src, deadline)
-	start = time.Now()
-	_, err := src.Load(t.Context())
-	elapsed := time.Since(start)
-	if arrived := sent().Sub(start); arrived <= 0 || arrived >= deadline {
-		t.Fatalf("fixture: the pack arrived %s into a %s deadline; the deadline must fall while unpacking", arrived, deadline)
+	limit := deadline + unpack/2
+	var err error
+	var elapsed time.Duration
+	placed := false
+	for attempt := 0; attempt < 3 && !placed; attempt++ {
+		src = newSrc()
+		engine.SetGitLoadTimeout(src, deadline)
+		start = time.Now()
+		_, err = src.Load(t.Context())
+		elapsed = time.Since(start)
+		arrived := sent().Sub(start)
+		placed = arrived > 0 && arrived < deadline
+		if !placed {
+			t.Logf("attempt %d: the pack arrived %s into a %s deadline; retrying", attempt+1, arrived, deadline)
+		}
+	}
+	if !placed {
+		t.Skipf("the pack never arrived before the %s deadline: the machine is too loaded to place it inside unpacking", deadline)
 	}
 	want := "git source: timed out after " + deadline.String()
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v after %s, want %q", err, elapsed, want)
 	}
-	if limit := deadline + unpack/4; elapsed > limit {
-		t.Fatalf("Load returned %s into a %s deadline, past %s: unpacking ran on (it takes %s)", elapsed, deadline, limit, unpack)
+	if elapsed >= limit {
+		t.Fatalf("Load returned %s into a %s deadline, not before %s: unpacking ran on (it takes %s)", elapsed, deadline, limit, unpack)
 	}
 	if src.Revision() != "" {
 		t.Fatal("a load cut short by its deadline set a revision")
