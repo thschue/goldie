@@ -805,7 +805,6 @@ components:
         status:
           $ref: "#/components/schemas/ItemStatus"
         replaced_by:
-          x-lint-ignore: camel-case-properties
           type: string
           description: |
             The reference to the Item that replaces this one, as written in its
@@ -872,7 +871,6 @@ components:
         status:
           $ref: "#/components/schemas/ItemStatus"
         replaced_by:
-          x-lint-ignore: camel-case-properties
           type: string
           description: |
             The reference to the Item that replaces this article, as written
@@ -942,13 +940,11 @@ components:
           examples:
             - ci-reader
         client_version:
-          x-lint-ignore: camel-case-properties
           type: string
           description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`.'
           examples:
             - 1.5.0
         trace_id:
-          x-lint-ignore: camel-case-properties
           type: string
           description: The request's trace id, or `""` without a span.
           examples:
@@ -1016,7 +1012,6 @@ components:
           examples:
             - false
         last_seen:
-          x-lint-ignore: camel-case-properties
           type: string
           format: date-time
           description: When the merge last heard from the peer, or attached it.

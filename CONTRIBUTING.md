@@ -42,6 +42,7 @@ One version covers the binary, the image and the Helm chart; release-please mana
 
 - **Additive-only from the first release:** the API (`/api/v1`) and the MCP contract (tool and prompt
   shapes). New fields, endpoints and tools may appear; existing ones do not change meaning or go away.
-  A breaking change needs a new API version.
+  A breaking change needs a new API version. Wire names (properties, query parameters, SSE event
+  types, enum values, error codes) are snake_case ([ADR 0024](docs/adr/0024-api-wire-names-are-snake-case.md)).
 - **May change in `0.x` minor releases until `1.0`:** CLI flags, config variables and Helm values.
   Breaking changes are called out in the release notes. At `1.0` they freeze too.

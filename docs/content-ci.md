@@ -5,7 +5,7 @@ on the server. It starts no server and needs no token or address; `GOLDIE_ADDR` 
 `GOLDIE_ADMIN_ADDR` do not matter.
 
 The directory is the argument, else `GOLDIE_CONTENT_DIR`, else the working directory (the same order
-as `goldie server -dev`).
+as `goldie server --dev`).
 
 | Result | Exit | stdout | stderr |
 | --- | --- | --- | --- |
@@ -13,7 +13,7 @@ as `goldie server -dev`).
 | Content does not load | 1 | empty | `goldie: content does not load: <reason>` |
 
 The reason names a file relative to the directory, never an absolute path. It is the same line
-`goldie server -dev` ends with for that directory. A second directory argument is a usage error
+`goldie server --dev` ends with for that directory. A second directory argument is a usage error
 (exit 1, usage on stderr).
 
 ## Lifecycle frontmatter

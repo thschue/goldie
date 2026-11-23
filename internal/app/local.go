@@ -20,7 +20,7 @@ const localAddr = "127.0.0.1:0"
 // localTokenBytes is the size of a local server's random token, before hex.
 const localTokenBytes = 32
 
-// DevIgnoredMessage is the line goldie server -dev logs once when the
+// DevIgnoredMessage is the line goldie server --dev logs once when the
 // environment sets a variable a local server makes itself.
 const DevIgnoredMessage = "dev mode ignores GOLDIE_ADDR, GOLDIE_ADMIN_ADDR, GOLDIE_API_TOKEN and GOLDIE_API_TOKENS from the environment"
 
@@ -60,7 +60,7 @@ func LocalConfig(base platform.Config, dir string) platform.Config {
 }
 
 // Local runs the server on loopback over the content at Config.ContentDir with
-// a fresh random token: what goldie server -dev and StartLocal run.
+// a fresh random token: what goldie server --dev and StartLocal run.
 type Local struct {
 	Config    platform.Config     // Start applies LocalConfig to it
 	GoldieDir string              // the repository's .goldie directory, the local Scope; "" is none

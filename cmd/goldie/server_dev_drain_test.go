@@ -17,7 +17,7 @@ func devReportedDrain(t *testing.T, p *devProc) any {
 	return nil
 }
 
-// Nothing balances load in front of -dev, so without GOLDIE_DRAIN_SECONDS it
+// Nothing balances load in front of --dev, so without GOLDIE_DRAIN_SECONDS it
 // stops at once instead of after the server's 25-second default; a set value
 // still applies.
 func TestServerDevDrainsForZeroSecondsUnlessSet(t *testing.T) {

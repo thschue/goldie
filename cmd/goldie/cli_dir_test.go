@@ -192,11 +192,13 @@ func TestCLIDirWithUnusableContentFails(t *testing.T) {
 	}
 }
 
-// The usage names --dir, so it is discoverable.
+// The client commands' help names --dir, so it is discoverable.
 func TestCLIUsageNamesDir(t *testing.T) {
-	err := run(nil, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "--dir") {
-		t.Errorf("usage = %v, want it to name --dir", err)
+	for _, c := range []string{"search", "lookup", "status", "mcp"} {
+		var out bytes.Buffer
+		if err := run([]string{c, "--help"}, &out); err != nil || !strings.Contains(out.String(), "--dir") {
+			t.Errorf("goldie %s --help = %q (err %v), want it to name --dir", c, out.String(), err)
+		}
 	}
 }
 
