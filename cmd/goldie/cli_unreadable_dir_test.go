@@ -10,7 +10,7 @@ import (
 // #485: an unreadable --dir says what to do next, and never prints the path.
 const (
 	unreadableDirMsg  = "content directory is not readable"
-	unreadableDirHint = "check that the content directory exists and is readable"
+	unreadableDirHint = "check that the path you passed exists and is a readable directory"
 )
 
 func TestSearchUnreadableDirNamesANextStep(t *testing.T) {
