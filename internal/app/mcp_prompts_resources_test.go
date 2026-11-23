@@ -212,14 +212,15 @@ func TestMCPResourceTemplatesAreAdvertised(t *testing.T) {
 	if want := []string{"goldie://agents/{name}", "goldie://skills/{name}/{+path}"}; !slices.Equal(got, want) {
 		t.Errorf("resource templates = %v, want %v", got, want)
 	}
-	// resources/list answers; whatever it lists lies under the two roots.
+	// resources/list answers; whatever it lists lies under the two roots,
+	// except the one fixed resource goldie://instructions (#562).
 	list, err := cs.ListResources(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("resources/list: %v", err)
 	}
 	for _, r := range list.Resources {
-		if !strings.HasPrefix(r.URI, "goldie://skills/") && !strings.HasPrefix(r.URI, "goldie://agents/") {
-			t.Errorf("resources/list names %q, outside goldie://skills/ and goldie://agents/", r.URI)
+		if r.URI != "goldie://instructions" && !strings.HasPrefix(r.URI, "goldie://skills/") && !strings.HasPrefix(r.URI, "goldie://agents/") {
+			t.Errorf("resources/list names %q, outside goldie://skills/, goldie://agents/ and goldie://instructions", r.URI)
 		}
 	}
 }
