@@ -15,6 +15,7 @@ import (
 	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
+	gmcp "github.com/thschue/goldie/internal/mcp"
 	"github.com/thschue/goldie/internal/platform"
 	"github.com/thschue/goldie/internal/ui"
 )
@@ -490,18 +491,25 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
-	p, err := newPublic(cfg, tokens, src, logger, api.DefaultActivityKeepalive, resultCounters(tel))
+	opt, calls := resultCounters(tel)
+	p, err := newPublicCounted(false, cfg, tokens, src, logger, api.DefaultActivityKeepalive, calls, opt)
 	if p != nil {
 		p.polls = tel.PollCounter("goldie.syncs", "Source polls finished, by source and result.", src.name)
 	}
 	return p, err
 }
 
-// resultCounters is the option that counts searches and lookups through tel.
-func resultCounters(tel *platform.Telemetry) api.ServerOption {
-	return api.CountResults(
+// resultCounters is the option that counts searches and lookups by result
+// (goldie.searches, goldie.lookups) and the skill gets that hit
+// (goldie.skill.gets) through tel, and the counter of MCP tool calls
+// (goldie.mcp.tool.calls) that addMCP hands to each MCP server.
+func resultCounters(tel *platform.Telemetry) (api.ServerOption, *platform.ToolCallCounter) {
+	results := api.CountResults(
 		tel.ResultCounter("goldie.searches", "Searches answered, by result."),
 		tel.ResultCounter("goldie.lookups", "Article lookups answered, by result."))
+	gets := api.CountSkillGets(tel.SkillGetCounter("goldie.skill.gets", "Skill gets that hit, by skill name, scope and client."))
+	calls := tel.ToolCallCounter("goldie.mcp.tool.calls", "MCP tool calls, by tool and result.")
+	return func(s *api.Server) { results(s); gets(s) }, calls
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;
@@ -516,6 +524,12 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 // server Local starts, whose plain-http session cookies drop Secure and
 // __Host-. It is never read from a request.
 func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
+	return newPublicCounted(dev, cfg, tokens, src, logger, keepalive, nil, opts...)
+}
+
+// newPublicCounted is newPublicSessions with calls, the counter of MCP tool
+// calls (nil counts nothing).
+func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, calls *platform.ToolCallCounter, opts ...api.ServerOption) (*Public, error) {
 	if logger == nil {
 		logger = discardLogger
 	}
@@ -532,7 +546,7 @@ func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src so
 			return nil, err
 		}
 	}
-	addMCP(m, m, logger)
+	addMCP(m, m, logger, gmcp.CountToolCalls(calls))
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")

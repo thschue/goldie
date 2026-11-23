@@ -72,8 +72,8 @@ func TestMCPHTTPServerCallsBothTools(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = true
 	}
-	if len(got) != 4 || !got["search_knowledge"] || !got["get_article"] || !got["list_projects"] || !got["current_context"] {
-		t.Errorf("tools over HTTP = %v, want exactly search_knowledge, get_article, list_projects and current_context", got)
+	if len(got) != 8 || !got["search_knowledge"] || !got["get_article"] || !got["list_projects"] || !got["current_context"] || !got["find_skills"] || !got["get_skill"] || !got["list_skills"] || !got["list_agents"] {
+		t.Errorf("tools over HTTP = %v, want exactly search_knowledge, get_article, list_projects, current_context, find_skills, get_skill, list_skills and list_agents", got)
 	}
 	assertBothToolsAnswer(t, cs)
 }

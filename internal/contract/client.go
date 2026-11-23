@@ -23,7 +23,7 @@ const requestTimeout = 30 * time.Second
 // MaxResponseBytes bounds the body of every API answer the client reads.
 const MaxResponseBytes = 16 << 20
 
-// ErrRedirect is returned for a 3xx answer, which is never followed: the
+// ErrRedirect is returned for a 3xx answer other than 304, which is never followed: the
 // token must never go to a Location the server picks. It carries nothing of
 // the answer.
 var ErrRedirect = errors.New("the server answered with a redirect")
@@ -52,6 +52,17 @@ func CheckBaseURL(baseURL string) error {
 // gets requestTimeout unless httpc sets a Timeout. A baseURL CheckBaseURL
 // rejects is ErrBaseURL.
 func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, version, false, httpc)
+}
+
+// NewMCPAPIClient is NewAPIClient for goldie mcp: every request also carries
+// the MarkMCP header, so the server counts it as MCP. X-Goldie-Client is the
+// same as for the CLI.
+func NewMCPAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWithResponses, error) {
+	return newAPIClient(baseURL, token, version, true, httpc)
+}
+
+func newAPIClient(baseURL, token, version string, mcp bool, httpc *http.Client) (*ClientWithResponses, error) {
 	if err := CheckBaseURL(baseURL); err != nil {
 		return nil, err
 	}
@@ -67,6 +78,9 @@ func NewAPIClient(baseURL, token, version string, httpc *http.Client) (*ClientWi
 	opts := []ClientOption{WithHTTPClient(&hardened),
 		WithRequestEditorFn(func(_ context.Context, r *http.Request) error {
 			r.Header.Set(ClientHeader, ClientHeaderPrefix+version)
+			if mcp {
+				MarkMCP(r.Header)
+			}
 			if token != "" {
 				r.Header.Set("Authorization", "Bearer "+token)
 			}
@@ -100,7 +114,7 @@ func ParseOK[T any](raw *http.Response, parse func(*http.Response) (T, error)) (
 	return resp, nil, nil
 }
 
-// limitTransport refuses every 3xx answer and caps every response body at
+// limitTransport refuses every 3xx answer except 304 (see refuseRedirect) and caps every response body at
 // MaxResponseBytes, so a hostile or broken server cannot make the client
 // buffer an unbounded answer.
 type limitTransport struct{ base http.RoundTripper }
@@ -115,7 +129,8 @@ func (t limitTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // refuseRedirect sends r through base (nil means http.DefaultTransport) and
-// turns a 3xx answer into ErrRedirect.
+// turns a 3xx answer into ErrRedirect, except 304: it names no Location, so
+// there is nothing to follow, and a caller that sent If-None-Match reads it.
 func refuseRedirect(base http.RoundTripper, r *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
@@ -124,7 +139,7 @@ func refuseRedirect(base http.RoundTripper, r *http.Request) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 && resp.StatusCode != http.StatusNotModified {
 		_ = resp.Body.Close()
 		return nil, ErrRedirect
 	}

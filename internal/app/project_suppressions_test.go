@@ -108,6 +108,11 @@ func TestProjectDetailOfAnUnregisteredProjectIsNotFoundWithAHint(t *testing.T) {
 	if code != "not_found" || strings.TrimSpace(hint) == "" {
 		t.Errorf("code %q hint %q, want not_found with a hint (ADR 0014)", code, hint)
 	}
+	const want = "List the registered Projects, then use one of them. " +
+		"To register one, add a projects/host/org/repo/ directory to one of goldie's Sources, usually through the platform team."
+	if hint != want {
+		t.Errorf("hint %q, want the client-neutral %q (#539)", hint, want)
+	}
 }
 
 // ADR 0016: the id is one encoded segment. A bare-slash path is not a Project

@@ -172,7 +172,8 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	if l.Upstream.Addr != "" {
 		served = source{syncer: syncer, check: sourceUpstreamCheck, logAttrs: []any{"source", "upstream"}}
 	}
-	pub, err := newPublicSessions(true, cfg, tokens, served, logger, api.DefaultActivityKeepalive, resultCounters(l.Telemetry))
+	opt, calls := resultCounters(l.Telemetry)
+	pub, err := newPublicCounted(true, cfg, tokens, served, logger, api.DefaultActivityKeepalive, calls, opt)
 	if err != nil {
 		return "", "", nil, err
 	}

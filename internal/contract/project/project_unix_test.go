@@ -102,3 +102,48 @@ func TestOpenCappedRefusesFIFO(t *testing.T) {
 		t.Fatal("openCapped blocked on a FIFO")
 	}
 }
+
+// A FIFO planted as .goldie/config.yaml is refused by Detect and by
+// OpenConfigContentDir, and neither blocks on it (#484).
+func TestConfigYAMLFIFOIsRefusedByDetectAndOpenConfigContentDir(t *testing.T) {
+	root := localRepo(t, nil)
+	if err := os.Mkdir(filepath.Join(root, ".goldie"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".goldie", "config.yaml")
+	if err := syscall.Mkfifo(path, 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	type verdict struct {
+		detectErr error
+		id        string
+		openErr   error
+		handle    *os.Root
+	}
+	done := make(chan verdict, 1)
+	go func() {
+		var v verdict
+		got, err := Detect(root, "", "")
+		v.id, v.detectErr = got.ID, err
+		v.handle, v.openErr = OpenConfigContentDir(root)
+		done <- v
+	}()
+	select {
+	case v := <-done:
+		if v.handle != nil {
+			_ = v.handle.Close()
+		}
+		if v.detectErr == nil || v.id != "" {
+			t.Errorf("Detect on a FIFO config.yaml = %q, %v; want a refusal", v.id, v.detectErr)
+		}
+		if v.openErr == nil || v.handle != nil {
+			t.Errorf("OpenConfigContentDir on a FIFO config.yaml = %v, %v; want a refusal", v.handle, v.openErr)
+		}
+	case <-time.After(5 * time.Second):
+		// Unblock the reader so the test process can exit.
+		if f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
+			_ = f.Close()
+		}
+		t.Fatal("a reader blocked on a FIFO config.yaml")
+	}
+}

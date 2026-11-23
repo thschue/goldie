@@ -14,9 +14,6 @@ import (
 // KindAgent is the Kind of an agent definition: the file agents/<name>.md.
 const KindAgent = "agent"
 
-// agentsDir is where a Source keeps its global agents, relative to its root.
-const agentsDir = "global/agents"
-
 // Agent is one Item of Kind agent: a Markdown file with frontmatter that
 // defines a sub-agent. Only name, description and keywords are parsed; every other key
 // (tools, model, ...) stays in Raw and is never rejected.
