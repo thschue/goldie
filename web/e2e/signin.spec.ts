@@ -580,3 +580,147 @@ eachViewport((width, theme) => {
     }
   });
 });
+
+// Errors look like errors (#650): a failure uses the danger tokens, a "not
+// found" or a wait keeps the miss tokens, and both read at WCAG AA contrast
+// in both themes. Colours are read from the rendered element and compared
+// with the resolved tokens, so a renamed class cannot hide a wrong token.
+type Look = { ink: string; bg: string; border: string; ratio: number };
+
+async function look(el: import('@playwright/test').Locator): Promise<{ look: Look; tokens: Record<'danger' | 'miss', Omit<Look, 'ratio'>> }> {
+  return el.evaluate((node) => {
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const rgb = (c: string) => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = '#000';
+      ctx.fillStyle = c;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return [r, g, b];
+    };
+    const hex = (c: number[]) => c.join(',');
+    const lum = (c: number[]) => {
+      const [r, g, b] = c.map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const root = getComputedStyle(document.documentElement);
+    const token = (n: string) => rgb(root.getPropertyValue(n).trim());
+    const s = getComputedStyle(node);
+    const ink = rgb(s.color);
+    const bg = rgb(s.backgroundColor);
+    const [hi, lo] = [lum(ink), lum(bg)].sort((a, b) => b - a);
+    return {
+      look: { ink: hex(ink), bg: hex(bg), border: hex(rgb(s.borderTopColor)), ratio: (hi + 0.05) / (lo + 0.05) },
+      tokens: {
+        danger: { ink: hex(token('--danger-ink')), bg: hex(token('--danger-bg')), border: hex(token('--danger-border')) },
+        miss: { ink: hex(token('--miss-ink')), bg: hex(token('--miss-bg')), border: hex(token('--miss-border')) },
+      },
+    };
+  });
+}
+
+async function expectDanger(el: import('@playwright/test').Locator) {
+  const { look: l, tokens } = await look(el);
+  expect({ ink: l.ink, bg: l.bg, border: l.border }, 'uses --danger-ink, --danger-bg and --danger-border').toEqual(tokens.danger);
+  expect(l.ratio, 'AA contrast of text on its background').toBeGreaterThanOrEqual(4.5);
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test.describe(`error colours, ${theme}`, () => {
+    test.use({ colorScheme: theme });
+
+    test('the sign-out failure alert uses the danger tokens', async ({ page }) => {
+      await page.route('**/api/v1/session', (route) =>
+        route.request().method() === 'DELETE' ? route.fulfill({ status: 500, contentType: 'application/json', body: envelope('internal', 'x', '') }) : route.continue(),
+      );
+      await page.goto('/decisions');
+      await page.getByRole('banner').getByRole('button', { name: /reader|operator/i }).click();
+      await page.getByRole('menuitem', { name: 'Sign out' }).click();
+      await expectDanger(page.getByRole('alert'));
+    });
+
+    test.describe('anonymous', () => {
+      test.use({ storageState: anonymous });
+
+      test('the wrong-token error on /signin uses the danger tokens', async ({ page }) => {
+        await page.goto('/signin');
+        await signIn(page, wrongToken);
+        await expectDanger(page.getByRole('alert'));
+      });
+
+      test('the rate-limit wait on /signin keeps the miss tokens and differs from a failure', async ({ page }) => {
+        await page.route('**/api/v1/session', (route) =>
+          route.request().method() === 'POST'
+            ? route.fulfill({ status: 429, contentType: 'application/json', headers: { 'Retry-After': '30' }, body: envelope('rate_limited', 'x', '') })
+            : route.continue(),
+        );
+        await page.goto('/signin');
+        await signIn(page, wrongToken);
+        const { look: l, tokens } = await look(page.getByRole('main').getByRole('status').filter({ hasText: 'Too many requests' }));
+        expect({ ink: l.ink, bg: l.bg, border: l.border }).toEqual(tokens.miss);
+        expect(l.bg, 'a wait does not look like a failure').not.toBe(tokens.danger.bg);
+      });
+    });
+
+    test('the session-ended banner uses the danger tokens', async ({ page }) => {
+      let signedIn = true;
+      await page.route('**/api/v1/**', (route) => {
+        const req = route.request();
+        if (signedIn && req.method() === 'GET' && new URL(req.url()).pathname === '/api/v1/session') {
+          return route.fulfill({ status: 200, contentType: 'application/json', body: sessionBody('reader') });
+        }
+        return route.fulfill({ status: 401, contentType: 'application/json', body: envelope('unauthorized', 'no valid session', 'Sign in again.') });
+      });
+      await page.goto('/decisions');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+      signedIn = false;
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.getByRole('navigation').getByRole('link', { name: 'Home', exact: true }).click();
+      await expect(page.getByText(endedCopy)).toBeVisible();
+      await expectDanger(page.getByRole('status').filter({ hasText: 'Your session ended' }));
+    });
+  });
+}
+
+test.describe('focus after a failed sign-out', () => {
+  test('moves to the alert Retry button, and the keyboard alone retries and signs out', async ({ page }) => {
+    let failing = true;
+    await page.route('**/api/v1/session', (route) => {
+      if (route.request().method() !== 'DELETE') return route.continue();
+      return failing ? route.fulfill({ status: 500, contentType: 'application/json', body: envelope('internal', 'x', '') }) : route.fulfill({ status: 204 });
+    });
+    await page.goto('/decisions');
+    const chip = page.getByRole('banner').getByRole('button', { name: /reader|operator/i });
+    await chip.focus();
+    await page.keyboard.press('Enter');
+    const item = page.getByRole('menuitem', { name: 'Sign out' });
+    await expect(item).toBeVisible();
+    for (let i = 0; i < 8 && !(await item.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown');
+    await expect(item, 'Sign out reached with the keyboard').toBeFocused();
+    await page.keyboard.press('Enter');
+
+    const alert = page.getByRole('alert');
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole('button', { name: 'Retry' }), 'focus is on Retry').toBeFocused();
+
+    // A second failure puts focus back on Retry too.
+    await page.keyboard.press('Enter');
+    await expect(alert.getByRole('button', { name: 'Retry' })).toBeFocused();
+
+    failing = false;
+    await page.keyboard.press('Space');
+    await expect(page).toHaveURL((u) => u.pathname === '/signin');
+  });
+
+  test('a sign-out that succeeds does not leave focus on a Retry button', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) => (route.request().method() === 'DELETE' ? route.fulfill({ status: 204 }) : route.continue()));
+    await page.goto('/');
+    await page.getByRole('banner').getByRole('button', { name: /reader|operator/i }).click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/signin');
+    await expect(page.getByRole('button', { name: 'Retry' })).toHaveCount(0);
+  });
+});
