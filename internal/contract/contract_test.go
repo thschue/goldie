@@ -50,6 +50,14 @@ func (stub) GetAgent(context.Context, GetAgentRequestObject) (GetAgentResponseOb
 	return GetAgent200JSONResponse{}, nil
 }
 
+func (stub) ListLoops(context.Context, ListLoopsRequestObject) (ListLoopsResponseObject, error) {
+	return ListLoops200JSONResponse{}, nil
+}
+
+func (stub) GetLoop(context.Context, GetLoopRequestObject) (GetLoopResponseObject, error) {
+	return GetLoop200JSONResponse{}, nil
+}
+
 func (stub) GetInstructions(context.Context, GetInstructionsRequestObject) (GetInstructionsResponseObject, error) {
 	return GetInstructions200JSONResponse{}, nil
 }

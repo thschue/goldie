@@ -164,6 +164,9 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	if err := snap.checkLookups(own); err != nil {
 		return nil, err
 	}
+	if err := snap.checkLoops(own); err != nil {
+		return nil, err
+	}
 	return &snap, nil
 }
 
