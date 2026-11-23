@@ -5,6 +5,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,11 +26,17 @@ const (
 )
 
 // localRun runs args against an embedded server at addr, injected by StartLocal.
+// The placeholder content directory "/content" becomes a real one, because local
+// mode opens the directory it serves.
 func localRun(t *testing.T, addr string, args ...string) error {
 	t.Helper()
+	args = slices.Clone(args)
+	if i := slices.Index(args, "/content"); i >= 0 {
+		args[i] = t.TempDir()
+	}
 	var out bytes.Buffer
 	env := localEnv(nil, &out)
-	env.StartLocal = func(ctx context.Context, dir string) (string, string, func(), error) {
+	env.StartLocal = func(ctx context.Context, _ *os.Root) (string, string, func(), error) {
 		return addr, localTestToken, func() {}, nil
 	}
 	return cli.Run(context.Background(), args, env)
