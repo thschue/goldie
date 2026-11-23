@@ -102,6 +102,13 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
+		var ae *contract.APIError
+		// Only lookup words not_found: other commands keep the server's hint.
+		// Inside a Project a not_found can be a Suppression, and the server's
+		// hint names the entry to remove, so it is kept there.
+		if errors.As(err, &ae) && ae.Code == "not_found" && projectParam(proj) == nil {
+			ae.Hint = "Search for the article with: goldie search <words>, then use an id from its results."
+		}
 		return wordError(err, c.local)
 	}
 	// Only the warning goes to stderr, so stdout stays the article alone and
@@ -399,7 +406,11 @@ func wordAPIError(e *contract.APIError) (note, hint string) {
 		note = fmt.Sprintf("the server answered %d %s", e.Status, status)
 	}
 	hint = e.Hint
+	// The API words some hints for HTTP clients; the CLI replaces them by
+	// error code with its own ways to fix the call.
 	switch {
+	case e.Code == "unauthorized":
+		hint = "Set --token, " + EnvToken + " or " + EnvToken + "_FILE to a valid API token."
 	case e.Wait() != "":
 		hint = "Wait " + e.Wait() + ", then retry."
 	case e.Status == http.StatusTooManyRequests:

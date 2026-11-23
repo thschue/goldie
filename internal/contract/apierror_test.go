@@ -66,6 +66,7 @@ func TestDecodeAPIErrorReadsRetryAfterInWholeSeconds(t *testing.T) {
 			got := contract.DecodeAPIError(http.StatusTooManyRequests, c.header, []byte(rateLimited))
 			want := contract.APIError{
 				Status:     http.StatusTooManyRequests,
+				Code:       "rate_limited",
 				Message:    "too many requests for this API token",
 				Hint:       "Wait the number of seconds in the Retry-After header, then retry.",
 				RetryAfter: c.want,
@@ -94,7 +95,7 @@ func TestDecodeAPIErrorReadsRetryAfterWhateverTheBody(t *testing.T) {
 			}
 		})
 	}
-	want := contract.APIError{Status: http.StatusServiceUnavailable, Message: "boom", RetryAfter: 120}
+	want := contract.APIError{Status: http.StatusServiceUnavailable, Code: "x", Message: "boom", RetryAfter: 120}
 	body := []byte(`{"error":{"code":"x","message":"boom","details":{}}}`)
 	if got := contract.DecodeAPIError(http.StatusServiceUnavailable, http.Header{"Retry-After": {"120"}}, body); got != want {
 		t.Errorf("DecodeAPIError(503) = %#v, want %#v", got, want)

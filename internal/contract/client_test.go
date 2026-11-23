@@ -320,12 +320,12 @@ func TestParseOKReadsAnyOtherStatusAsAnAPIError(t *testing.T) {
 		body   string
 		want   contract.APIError
 	}{
-		{"not found", http.StatusNotFound, nil, envelope, contract.APIError{Status: 404, Message: "boom", Hint: "do this"}},
+		{"not found", http.StatusNotFound, nil, envelope, contract.APIError{Status: 404, Code: "x", Message: "boom", Hint: "do this"}},
 		{"429 with words in Retry-After", http.StatusTooManyRequests, http.Header{"Retry-After": {"soon"}}, rateLimited,
-			contract.APIError{Status: 429, Message: "too many requests for this API token",
+			contract.APIError{Status: 429, Code: "rate_limited", Message: "too many requests for this API token",
 				Hint: "Wait the number of seconds in the Retry-After header, then retry."}},
 		{"429 with a wait", http.StatusTooManyRequests, http.Header{"Retry-After": {"30"}}, rateLimited,
-			contract.APIError{Status: 429, Message: "too many requests for this API token",
+			contract.APIError{Status: 429, Code: "rate_limited", Message: "too many requests for this API token",
 				Hint: "Wait the number of seconds in the Retry-After header, then retry.", RetryAfter: 30}},
 		{"html 502", http.StatusBadGateway, nil, "<html>http://10.0.0.1/internal</html>", contract.APIError{Status: 502}},
 		{"201 is not a 200", http.StatusCreated, nil, `{"query":"go","results":[]}`, contract.APIError{Status: 201}},
