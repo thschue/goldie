@@ -106,14 +106,13 @@ func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) [
 // out unless o asks for them.
 func (s *Snapshot) searchSkills(proj string, words []string, o ReadOptions) []Hit {
 	var hits []Hit
-	for _, sk := range s.Skills(proj, o) {
-		b, _ := s.skillBundleFor(proj, sk.Name, o)
+	for _, b := range s.skillBundles(proj, o) {
 		status := StatusPublished
-		if sk.Status != "" {
-			status = sk.Status
+		if b.status != "" {
+			status = b.status
 		}
-		h := Hit{ID: sk.Name, Name: sk.Name, Kind: KindSkill, Scope: b.scope, Keywords: append([]string(nil), b.keywords...), Status: status}
-		scoreWords(&h, sk.Name, b.keywords, words)
+		h := Hit{ID: b.name, Name: b.name, Kind: KindSkill, Scope: b.scope, Keywords: append([]string(nil), b.keywords...), Status: status}
+		scoreWords(&h, b.name, b.keywords, words)
 		if h.Score > 0 {
 			hits = append(hits, h)
 		}
