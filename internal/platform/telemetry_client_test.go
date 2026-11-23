@@ -276,7 +276,8 @@ func spanText(s tracetest.SpanStub) []string {
 // itself still goes out whole: the wrap changes only what the span sees.
 func TestClientSpanCarriesNoQueryArticleIDOrAuthorization(t *testing.T) {
 	spans := newSpanSink()
-	client := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, nil)
+	// The route template comes from the injected path function (#327).
+	client := newTelemetry(telemetryResource("", nil), defaultTraceSettings(), spans, nil, WithSpanPath(articlePrefixStub))
 	api := newAPIStub(t, nil)
 	reqs := plantedRequests(t, api.srv.URL)
 	doAll(t, client.WrapTransport(http.DefaultTransport), reqs)
