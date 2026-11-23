@@ -35,7 +35,7 @@ type source struct {
 // startup never waits for a clone. Errors name the variables to fix and never
 // a value.
 func serveSource(cfg platform.Config) (source, error) {
-	if err := platform.CheckOneSource(cfg.ContentDir, cfg.GitURL); err != nil {
+	if err := platform.CheckOneSource(cfg.ContentDir, cfg.GitURL, len(cfg.Sources) > 0); err != nil {
 		return source{}, err
 	}
 	switch {
