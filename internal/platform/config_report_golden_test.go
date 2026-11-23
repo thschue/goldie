@@ -9,11 +9,11 @@ import (
 // values onto the registry rows cannot change a key, its order, a value's JSON
 // type or the redaction of a Secret row (PC-06). #258 appends the git Source
 // settings and GOLDIE_POLL_INTERVAL after the existing rows, so the #207 bytes
-// stay a prefix of every line.
+// stayed a prefix of every line until #398.
 // #398 registers GOLDIE_ACTIVITY_PEERS and GOLDIE_ACTIVITY_REORDER_WINDOW
-// after GOLDIE_MIN_CLIENT_VERSION, so every line gains them there (approved by
-// the loop: the registry contract requires it), and the last case pins them
-// as written.
+// after GOLDIE_MIN_CLIENT_VERSION, so every line gains them there, mid-line,
+// and the #207 bytes are no longer a prefix (approved by the loop: the
+// registry contract requires it). The last case pins them as written.
 
 // reportTS matches the timestamp of a log line, the one part that varies.
 var reportTS = regexp.MustCompile(`"ts":"[^"]*",`)
