@@ -169,7 +169,7 @@ func TestCLIVersionAgainstAnErrorStatusCarriesTheStatusAndHint(t *testing.T) {
 			if c.hint == "" && m["hint"] != nil {
 				t.Errorf("hint = %v, want none", m["hint"])
 			}
-			requireNoLeak(t, "version", text, srv.URL, "leak-body", "leak-path", "soon-marker", "0 seconds")
+			requireNoLeak(t, "version", text, srv.URL, "leak-body", "leak-path", "soon-marker", "Wait 0 second")
 			// status words the same error as its failure: same note, same hint.
 			_, serr := runCLI(t, "status", "--addr", srv.URL, "--token", versionToken)
 			if serr == nil {
