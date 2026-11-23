@@ -19,9 +19,6 @@ import (
 // instructionFiles maps --target to the file at the repository root.
 var instructionFiles = map[string]string{"claude": "CLAUDE.md", "agents": "AGENTS.md"}
 
-// maxInstructionFile bounds what apply and check read.
-const maxInstructionFile = 4 << 20
-
 func (s settings) checkInstructionsUsage(pos []string) error {
 	if len(pos) != 1 || (pos[0] != "apply" && pos[0] != "check") {
 		return &UsageError{"instructions", "instructions takes apply or check"}
@@ -41,7 +38,7 @@ func (s settings) checkInstructionsUsage(pos []string) error {
 // on a refusal; check never writes.
 //
 // Lost-update window: apply reads the file, then renames a temporary file over
-// it. An edit made by another process between the read and the rename is lost.
+// it. An edit made by another process between the read and the rename is overwritten.
 // There is no lock; the window is as short as one local write.
 func (c *commander) instructions(ctx context.Context, action string) error {
 	name := instructionFiles[c.s.target]
@@ -67,7 +64,9 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 	if err != nil {
 		return wordError(err, c.local)
 	}
-	if err := checkBlockContent([]byte(res.Block)); err != nil {
+	// The block is untrusted Source content: strip hidden and bidi characters.
+	block := []byte(contract.CleanText(res.Block))
+	if err := checkBlockContent(block); err != nil {
 		return err
 	}
 
@@ -81,13 +80,17 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 		return err
 	}
 	// check replaces with force so an edited block reports its status.
-	out, status, err := ReplaceBlock(file, []byte(res.Block), action == "check" || c.s.force)
+	out, status, err := ReplaceBlock(file, block, action == "check" || c.s.force)
 	if err != nil {
 		return err
 	}
 	if action == "check" {
 		if status != BlockCurrent {
-			return fmt.Errorf("the goldie block in %s is %s; run: goldie instructions apply --target %s", name, status, c.s.target)
+			fix := "goldie instructions apply --target " + c.s.target
+			if status == BlockEdited {
+				fix += " --force"
+			}
+			return fmt.Errorf("the goldie block in %s is %s; run: %s", name, status, fix)
 		}
 		_, err = fmt.Fprintf(c.out, "%s is up to date.\n", name)
 		return err
@@ -122,9 +125,9 @@ func readInstructionFile(root *os.Root, name string) ([]byte, os.FileMode, error
 		return nil, 0, fmt.Errorf("cannot read %s", name)
 	}
 	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, maxInstructionFile+1))
-	if err != nil || len(b) > maxInstructionFile {
-		return nil, 0, fmt.Errorf("cannot read %s: unreadable or larger than %d MiB", name, maxInstructionFile>>20)
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return nil, 0, fmt.Errorf("cannot read %s", name)
 	}
 	return b, fi.Mode().Perm(), nil
 }

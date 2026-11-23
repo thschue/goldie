@@ -286,8 +286,8 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"  goldie init\n  goldie init --project github.com/acme/shop",
 	},
 	"instructions": {
-		"instructions apply|check [--target claude|agents] [--force] [flags]", "Write or check goldie's instruction block in CLAUDE.md or AGENTS.md",
-		"apply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set. check exits\nnon-zero when the block is missing, outdated or edited, and writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is lost (a lost update).",
+		"instructions apply|check [flags]", "Write or check goldie's instruction block in CLAUDE.md or AGENTS.md",
+		"Keep goldie's instruction block in CLAUDE.md or AGENTS.md current.\n\napply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set. check exits\nnon-zero when the block is missing, outdated or edited, and writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is overwritten.",
 		"  goldie instructions apply\n  goldie instructions apply --target agents --force\n  goldie instructions check --target agents",
 	},
 	"version": {
