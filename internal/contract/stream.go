@@ -32,16 +32,18 @@ var errNotStreamable = errors.New("the activity stream needs a client built by N
 // never replicas=all) with the client's token. It reads the history up to
 // the live marker, which must arrive within idle of the answer (keepalives
 // do not extend it: an older server sends them but never the marker) and
-// after at most MaxActivityHistory events, and returns it with a channel of
-// the live events after it. A non-200 is an *APIError, a 3xx ErrRedirect
+// after at most MaxActivityHistory events and MaxResponseBytes read in all
+// (every byte up to and including the marker counts), and returns it with a
+// channel of the live events after it. A non-200 is an *APIError, a 3xx ErrRedirect
 // (never followed), a 200 that is not text/event-stream ErrNotAPIAnswer, a
-// stream that ends, falls silent or passes the history cap before its live
-// marker an error, and an unreachable server an error naming no address.
+// stream that ends, falls silent or passes either history bound before its
+// live marker an error, and an unreachable server an error naming no address.
 // History and live hold every event without a type that is an
 // ActivityEvent, skipping comments, other event types and malformed data.
 // The channel closes when the body ends, ctx ends, no byte arrives for idle,
 // or one event is larger than MaxResponseBytes. The stream is not capped at
-// MaxResponseBytes and not ended by the client's timeout; idle governs it.
+// MaxResponseBytes after the marker and not ended by the client's timeout;
+// idle governs it.
 func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Duration) (history []ActivityEvent, live <-chan ActivityEvent, err error) {
 	inner, ok := c.ClientInterface.(*Client)
 	if !ok {
@@ -91,7 +93,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 	}
 	deadline.Reset(idle)
 	body := &idleBody{rc: resp.Body, deadline: deadline, idle: idle}
-	events := &sseReader{r: bufio.NewReader(body)}
+	events := &sseReader{r: bufio.NewReader(body), budget: MaxResponseBytes}
 	for {
 		typ, data, err := events.next()
 		if err != nil {
@@ -111,6 +113,7 @@ func (c *ClientWithResponses) StreamActivity(ctx context.Context, idle time.Dura
 		}
 		history = append(history, e)
 	}
+	events.budget = 0 // the history's budget; the live part runs for hours
 	body.live.Store(true)
 	deadline.Reset(idle)
 	ch := make(chan ActivityEvent, streamBuffer)
@@ -192,10 +195,15 @@ func (b *idleBody) Read(p []byte) (int, error) {
 func (b *idleBody) Close() error { return b.rc.Close() }
 
 // sseReader reads server-sent events (WHATWG HTML, "Server-sent events"),
-// failing with ErrTooLarge when one event is larger than MaxResponseBytes.
+// failing with ErrTooLarge when one event is larger than MaxResponseBytes,
+// or when more than budget bytes have been read in all (no limit when
+// budget is 0). Every byte counts: events, comments, skipped fields and
+// types, malformed data, line ends and the live marker.
 type sseReader struct {
-	r    *bufio.Reader
-	line []byte
+	r      *bufio.Reader
+	line   []byte
+	budget int
+	read   int
 }
 
 // next returns the type and data of the next event that has data, skipping
@@ -234,7 +242,9 @@ func (s *sseReader) readLine(size *int) ([]byte, error) {
 	s.line = s.line[:0]
 	for {
 		chunk, err := s.r.ReadSlice('\n')
-		if *size += len(chunk); *size > MaxResponseBytes {
+		*size += len(chunk)
+		s.read += len(chunk)
+		if *size > MaxResponseBytes || (s.budget > 0 && s.read > s.budget) {
 			return nil, ErrTooLarge
 		}
 		s.line = append(s.line, chunk...)

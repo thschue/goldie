@@ -515,11 +515,17 @@ type ClientInterface interface {
 	// do not know.
 	//
 	// Events carry no SSE `id:` field and the server does not resume from
-	// `Last-Event-ID`: a reconnect replays the retained history, so clients
-	// dedupe by `replica` and `id` (ids repeat across replicas). An idle
-	// stream sends the comment `: keepalive` every 15 seconds. The stream costs one rate-limit token when it opens, and ends
-	// at the server's first stop signal. At most 32 streams are open per
-	// server process; one more is a 503 whose hint says to retry later.
+	// `Last-Event-ID`: a reconnect replays the retained history, so on
+	// reconnect clients replace their view with the history before `live`.
+	// Within one connection they dedupe by `replica` and `id`; across
+	// connections ids are no key, because they start again at 1 when a
+	// replica restarts under the same name. An idle stream sends the
+	// comment `: keepalive` every 15 seconds. The stream costs one
+	// rate-limit token when it opens, and ends at the server's first stop
+	// signal. At most 32 streams are open per server process; one more is a
+	// 503 whose hint says to retry later. The history before `live` holds at
+	// most 10,000 events, and the Go client reads at most 16 MiB of the
+	// stream before `live`.
 	//
 	// Go clients use `StreamActivity` on the client `NewAPIClient` builds:
 	// `GetActivityWithResponse` reads the whole body, so it does not return
@@ -616,11 +622,17 @@ type ClientInterface interface {
 // do not know.
 //
 // Events carry no SSE `id:` field and the server does not resume from
-// `Last-Event-ID`: a reconnect replays the retained history, so clients
-// dedupe by `replica` and `id` (ids repeat across replicas). An idle
-// stream sends the comment `: keepalive` every 15 seconds. The stream costs one rate-limit token when it opens, and ends
-// at the server's first stop signal. At most 32 streams are open per
-// server process; one more is a 503 whose hint says to retry later.
+// `Last-Event-ID`: a reconnect replays the retained history, so on
+// reconnect clients replace their view with the history before `live`.
+// Within one connection they dedupe by `replica` and `id`; across
+// connections ids are no key, because they start again at 1 when a
+// replica restarts under the same name. An idle stream sends the
+// comment `: keepalive` every 15 seconds. The stream costs one
+// rate-limit token when it opens, and ends at the server's first stop
+// signal. At most 32 streams are open per server process; one more is a
+// 503 whose hint says to retry later. The history before `live` holds at
+// most 10,000 events, and the Go client reads at most 16 MiB of the
+// stream before `live`.
 //
 // Go clients use `StreamActivity` on the client `NewAPIClient` builds:
 // `GetActivityWithResponse` reads the whole body, so it does not return
@@ -1156,11 +1168,17 @@ type ClientWithResponsesInterface interface {
 	// do not know.
 	//
 	// Events carry no SSE `id:` field and the server does not resume from
-	// `Last-Event-ID`: a reconnect replays the retained history, so clients
-	// dedupe by `replica` and `id` (ids repeat across replicas). An idle
-	// stream sends the comment `: keepalive` every 15 seconds. The stream costs one rate-limit token when it opens, and ends
-	// at the server's first stop signal. At most 32 streams are open per
-	// server process; one more is a 503 whose hint says to retry later.
+	// `Last-Event-ID`: a reconnect replays the retained history, so on
+	// reconnect clients replace their view with the history before `live`.
+	// Within one connection they dedupe by `replica` and `id`; across
+	// connections ids are no key, because they start again at 1 when a
+	// replica restarts under the same name. An idle stream sends the
+	// comment `: keepalive` every 15 seconds. The stream costs one
+	// rate-limit token when it opens, and ends at the server's first stop
+	// signal. At most 32 streams are open per server process; one more is a
+	// 503 whose hint says to retry later. The history before `live` holds at
+	// most 10,000 events, and the Go client reads at most 16 MiB of the
+	// stream before `live`.
 	//
 	// Go clients use `StreamActivity` on the client `NewAPIClient` builds:
 	// `GetActivityWithResponse` reads the whole body, so it does not return
@@ -1923,11 +1941,17 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // do not know.
 //
 // Events carry no SSE `id:` field and the server does not resume from
-// `Last-Event-ID`: a reconnect replays the retained history, so clients
-// dedupe by `replica` and `id` (ids repeat across replicas). An idle
-// stream sends the comment `: keepalive` every 15 seconds. The stream costs one rate-limit token when it opens, and ends
-// at the server's first stop signal. At most 32 streams are open per
-// server process; one more is a 503 whose hint says to retry later.
+// `Last-Event-ID`: a reconnect replays the retained history, so on
+// reconnect clients replace their view with the history before `live`.
+// Within one connection they dedupe by `replica` and `id`; across
+// connections ids are no key, because they start again at 1 when a
+// replica restarts under the same name. An idle stream sends the
+// comment `: keepalive` every 15 seconds. The stream costs one
+// rate-limit token when it opens, and ends at the server's first stop
+// signal. At most 32 streams are open per server process; one more is a
+// 503 whose hint says to retry later. The history before `live` holds at
+// most 10,000 events, and the Go client reads at most 16 MiB of the
+// stream before `live`.
 //
 // Go clients use `StreamActivity` on the client `NewAPIClient` builds:
 // `GetActivityWithResponse` reads the whole body, so it does not return
