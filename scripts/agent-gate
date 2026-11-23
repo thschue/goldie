@@ -13,9 +13,9 @@
 #
 # Human gates are kept for security and product direction only:
 #   - by path: agent guardrails and instruction files (anywhere in the tree),
-#     the knowledge served to agents, the decision record, CI and release,
-#     architecture enforcement, the loop tooling (`scripts/`), git
-#     attributes, workspaces and vendoring, deployment;
+#     the knowledge served to agents, the decision record (ADRs, CONTEXT.md,
+#     LICENSE), CI and release, architecture enforcement, the loop tooling
+#     (`scripts/`), git attributes, workspaces and vendoring, deployment;
 #   - review only: a change to `run`, the task runner CI calls, which a
 #     reviewer can tell apart (a new task) from a weakened check, and lines
 #     only added to NOTICE (removing or rewording one is a hard reason);
@@ -72,7 +72,7 @@ while IFS= read -r f; do
 	docs/agents/* | .claude/* | */.claude/* | CLAUDE.md | */CLAUDE.md | AGENTS.md | */AGENTS.md | \
 		SECURITY.md | .mcp.json | */.mcp.json | .claude.json | examples/knowledge/*)
 		gate "agent guardrail changed: $f" ;;
-	CONTEXT.md | docs/adr/* | docs/design/* | docs/platform-contract.md | LICENSE)
+	CONTEXT.md | docs/adr/* | LICENSE)
 		gate "decision record changed: $f" ;;
 	NOTICE)
 		# Adding an attribution is mechanical; removing or rewording one is

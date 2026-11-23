@@ -71,7 +71,7 @@ reason), consults, test change requests, and harness feedback filed.
 
    | Reviewer | Paths |
    |---|---|
-   | `architect` | a new Go package, `internal/contract/**`, `go.mod`, `.golangci.*` or `docs/adr/**` |
+   | `architect` | a new Go package, `internal/contract/**`, `go.mod`, `.golangci.*`, `docs/adr/**` or `docs/platform-contract.md` |
    | `ux-designer` | `web/**`, `internal/ui/**`, `docs/design/**`, and what users meet in a terminal or an agent: `cmd/goldie/**`, `internal/cli/**`, `internal/mcp/**`, `internal/app/mcp*.go`, `README.md`, `docs/reference/**` |
    | `security-reviewer` (risk paths) | auth, sessions and tokens in `internal/api/`, `internal/mcp/**`, git Sources and sync in `internal/engine/`, `internal/platform/config*`, `goldie pull`, agent guardrails (`.claude/**`, `CLAUDE.md`, `docs/agents/**`, `scripts/**`, `.github/**`) |
 
