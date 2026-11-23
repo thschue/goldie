@@ -1,0 +1,25 @@
+# Deliberately camelCase OpenAPI document. `./run lint-spec-casing-fixture` requires the
+# snake-case rules to report the property `clientVersion` and the query parameter `pageSize`.
+openapi: 3.1.0
+info:
+  title: Camel
+  version: 0.0.0
+paths:
+  /camel:
+    get:
+      operationId: getCamel
+      parameters:
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Camel.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clientVersion:
+                    type: string

@@ -43,8 +43,8 @@ camelCase API field.
 Spec-generated Go types get the wire name from the spec. Hand-written wire structs (MCP tool
 arguments and results) carry it in an explicit `json:` tag.
 
-Until the spec lint uses a snake-case rule, each multi-word property carries
-`x-lint-ignore: camel-case-properties`.
+`./run lint-spec` enforces this for properties and query parameters with the ruleset
+`internal/contract/vacuum-ruleset.yaml`, which replaces vacuum's `camel-case-properties`.
 
 ## Consequences
 
