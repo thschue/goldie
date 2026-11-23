@@ -38,6 +38,10 @@ func (stub) GetProject(_ context.Context, req GetProjectRequestObject) (GetProje
 	return GetProject200JSONResponse{Id: req.Id, Suppressions: []string{}}, nil
 }
 
+func (stub) GetProjectItems(context.Context, GetProjectItemsRequestObject) (GetProjectItemsResponseObject, error) {
+	return GetProjectItems200JSONResponse{Items: []ProjectItem{}, Suppressions: []string{}}, nil
+}
+
 func (stub) GetSync(context.Context, GetSyncRequestObject) (GetSyncResponseObject, error) {
 	return GetSync200JSONResponse{Warnings: []ContentWarning{}}, nil
 }

@@ -57,6 +57,24 @@ func (e ItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProjectItemStatus.
+const (
+	ProjectItemStatusDeprecated ProjectItemStatus = "deprecated"
+	ProjectItemStatusPublished  ProjectItemStatus = "published"
+)
+
+// Valid indicates whether the value is a known member of the ProjectItemStatus enum.
+func (e ProjectItemStatus) Valid() bool {
+	switch e {
+	case ProjectItemStatusDeprecated:
+		return true
+	case ProjectItemStatusPublished:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetActivityParamsReplicas.
 const (
 	All GetActivityParamsReplicas = "all"
@@ -312,12 +330,83 @@ type ProjectDetail struct {
 // Examples: github.com/acme/shop
 type ProjectId = string
 
+// ProjectItem One winning Item of a Project's view.
+type ProjectItem struct {
+	// Content The Markdown body of the Item, after the frontmatter. Untrusted, it comes from a Source; render it without raw HTML.
+	//
+	// Examples: Use the platform chart.
+	Content string `json:"content"`
+
+	// Enforced Whether the Item is enforced, as its frontmatter says.
+	Enforced bool `json:"enforced"`
+
+	// Id The Item id, its path under `articles/` without `.md`.
+	//
+	// Examples: platform/deploy
+	Id string `json:"id"`
+
+	// Keywords The Item keywords from its frontmatter, lower case.
+	//
+	// Examples: ["kubernetes","deploy"]
+	Keywords []string `json:"keywords"`
+
+	// Name The Item display title, from its frontmatter.
+	//
+	// Examples: Deploying to Kubernetes
+	Name string `json:"name"`
+
+	// ReplacedBy The reference to the Item that replaces this one, as written in its
+	// frontmatter, `<kind>:<name>` (ADR 0021). Present only when the Item
+	// names a replacement. It comes from a Source and is untrusted.
+	//
+	//
+	// Examples: article:platform/deploy-v2
+	ReplacedBy *string `json:"replaced_by,omitempty"`
+
+	// Scope `global`, or the Project (`host/org/repo`) whose copy won.
+	//
+	// Examples: github.com/acme/shop
+	Scope string `json:"scope"`
+
+	// Status The Item's lifecycle, always present. Clients ignore values they do not know.
+	//
+	// Examples: published
+	Status ProjectItemStatus `json:"status"`
+}
+
+// ProjectItemStatus The Item's lifecycle, always present. Clients ignore values they do not know.
+//
+// Examples: published
+type ProjectItemStatus string
+
 // ProjectList The Projects the server holds Scope for.
 type ProjectList struct {
 	// Projects The Projects, sorted.
 	//
 	// Examples: ["github.com/acme/shop"]
 	Projects []ProjectId `json:"projects"`
+}
+
+// ProjectView A Project's resolved view, the winning Items and what it suppresses.
+type ProjectView struct {
+	// Hint Present when the request named a Project that is not registered: the
+	// view is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	Hint *string `json:"hint,omitempty"`
+
+	// Items The winning Items, sorted by `id`, ascending. No draft.
+	//
+	// Examples: []
+	Items []ProjectItem `json:"items"`
+
+	// Suppressions The global Items the Project suppresses, as `<kind>:<id>`, sorted.
+	// Empty when there are none.
+	//
+	//
+	// Examples: ["article:platform/notes"]
+	Suppressions []string `json:"suppressions"`
 }
 
 // SearchHit One article that matched a search.
@@ -666,6 +755,26 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
 	GetProject(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProjectItems Export a Project's resolved view
+	//
+	// Returns the articles that win in the Project's view (Resolution): the
+	// Project's own copy over the global one with the same id, every global
+	// Item the Project does not shadow or suppress, and no draft. Only
+	// winners are sent: nothing of another Project and no shadowed copy.
+	// Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+	// is `enforced`, so an embedded server can build on this view and check
+	// that a local Item does not shadow an enforced one. The Project's
+	// Suppressions (ADR 0021) are listed as in `getProject`.
+	//
+	// A Project the server does not hold is answered with the global view and
+	// a `hint`, as search and lookup do. A view over the export limit, the
+	// same 16 MiB the goldie client reads, is refused whole with 422
+	// `view_too_large`; it is never truncated, because a partial view would
+	// hide enforced Items.
+	//
+	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
+	GetProjectItems(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SearchArticles Search articles by keyword
 	//
 	// Returns the articles that match the search words, best first. An exact
@@ -832,6 +941,36 @@ func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn
 // Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
 func (c *Client) GetProject(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetProjectRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetProjectItems Export a Project's resolved view
+//
+// Returns the articles that win in the Project's view (Resolution): the
+// Project's own copy over the global one with the same id, every global
+// Item the Project does not shadow or suppress, and no draft. Only
+// winners are sent: nothing of another Project and no shadowed copy.
+// Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+// is `enforced`, so an embedded server can build on this view and check
+// that a local Item does not shadow an enforced one. The Project's
+// Suppressions (ADR 0021) are listed as in `getProject`.
+//
+// A Project the server does not hold is answered with the global view and
+// a `hint`, as search and lookup do. A view over the export limit, the
+// same 16 MiB the goldie client reads, is refused whole with 422
+// `view_too_large`; it is never truncated, because a partial view would
+// hide enforced Items.
+//
+// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
+func (c *Client) GetProjectItems(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectItemsRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1114,6 +1253,40 @@ func NewGetProjectRequest(server string, id ProjectId) (*http.Request, error) {
 	}
 
 	operationPath := "/api/v1/projects/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetProjectItemsRequest constructs an http.Request for the GetProjectItems method
+func NewGetProjectItemsRequest(server string, id ProjectId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/projects/" + pathParam0 + "/items"
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1448,6 +1621,28 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
 	GetProjectWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
+
+	// GetProjectItemsWithResponse Export a Project's resolved view
+	//
+	// Returns the articles that win in the Project's view (Resolution): the
+	// Project's own copy over the global one with the same id, every global
+	// Item the Project does not shadow or suppress, and no draft. Only
+	// winners are sent: nothing of another Project and no shadowed copy.
+	// Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+	// is `enforced`, so an embedded server can build on this view and check
+	// that a local Item does not shadow an enforced one. The Project's
+	// Suppressions (ADR 0021) are listed as in `getProject`.
+	//
+	// A Project the server does not hold is answered with the global view and
+	// a `hint`, as search and lookup do. A view over the export limit, the
+	// same 16 MiB the goldie client reads, is refused whole with 422
+	// `view_too_large`; it is never truncated, because a partial view would
+	// hide enforced Items.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
+	GetProjectItemsWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectItemsResponse, error)
 
 	// SearchArticlesWithResponse Search articles by keyword
 	//
@@ -1879,6 +2074,103 @@ func (r GetProjectResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetProjectItemsResponse429Headers the declared response headers of an HTTP 429 response for GetProjectItems
+type GetProjectItemsResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetProjectItemsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProjectView
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetProjectItemsResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProjectItemsResponse) GetJSON200() *ProjectView {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetProjectItemsResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetProjectItemsResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r GetProjectItemsResponse) GetJSON422() *ErrorEnvelope {
+	return r.JSON422
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetProjectItemsResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetProjectItemsResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetProjectItemsResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetProjectItemsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProjectItemsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectItemsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectItemsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProjectItemsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2374,6 +2666,34 @@ func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, id Pro
 	return ParseGetProjectResponse(rsp)
 }
 
+// GetProjectItemsWithResponse Export a Project's resolved view
+//
+// Returns the articles that win in the Project's view (Resolution): the
+// Project's own copy over the global one with the same id, every global
+// Item the Project does not shadow or suppress, and no draft. Only
+// winners are sent: nothing of another Project and no shadowed copy.
+// Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+// is `enforced`, so an embedded server can build on this view and check
+// that a local Item does not shadow an enforced one. The Project's
+// Suppressions (ADR 0021) are listed as in `getProject`.
+//
+// A Project the server does not hold is answered with the global view and
+// a `hint`, as search and lookup do. A view over the export limit, the
+// same 16 MiB the goldie client reads, is refused whole with 422
+// `view_too_large`; it is never truncated, because a partial view would
+// hide enforced Items.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
+func (c *ClientWithResponses) GetProjectItemsWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectItemsResponse, error) {
+	rsp, err := c.GetProjectItems(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectItemsResponse(rsp)
+}
+
 // SearchArticlesWithResponse Search articles by keyword
 //
 // Returns the articles that match the search words, best first. An exact
@@ -2803,6 +3123,94 @@ func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
 	return response, nil
 }
 
+// ParseGetProjectItemsResponse parses an HTTP response from a GetProjectItemsWithResponse call
+func ParseGetProjectItemsResponse(rsp *http.Response) (*GetProjectItemsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectItemsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectView
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetProjectItemsResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseSearchArticlesResponse parses an HTTP response from a SearchArticlesWithResponse call
 func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3133,6 +3541,9 @@ type ServerInterface interface {
 	// GetProject Read one registered Project
 	// (GET /api/v1/projects/{id})
 	GetProject(w http.ResponseWriter, r *http.Request, id ProjectId)
+	// GetProjectItems Export a Project's resolved view
+	// (GET /api/v1/projects/{id}/items)
+	GetProjectItems(w http.ResponseWriter, r *http.Request, id ProjectId)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
@@ -3278,6 +3689,32 @@ func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetProject(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetProjectItems operation middleware
+func (siw *ServerInterfaceWrapper) GetProjectItems(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProjectItems(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3526,6 +3963,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}/items", wrapper.GetProjectItems)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sync", wrapper.GetSync)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sync", wrapper.PostSync)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
@@ -4093,6 +4531,138 @@ func (response GetProjectdefaultJSONResponse) VisitGetProjectResponse(w http.Res
 	return err
 }
 
+type GetProjectItemsRequestObject struct {
+	Id ProjectId `json:"id"`
+}
+
+type GetProjectItemsResponseObject interface {
+	VisitGetProjectItemsResponse(w http.ResponseWriter) error
+}
+
+type GetProjectItems200JSONResponse ProjectView
+
+func (response GetProjectItems200JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems400JSONResponse ErrorEnvelope
+
+func (response GetProjectItems400JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems401JSONResponse ErrorEnvelope
+
+func (response GetProjectItems401JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems422JSONResponse ErrorEnvelope
+
+func (response GetProjectItems422JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetProjectItems426JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetProjectItems429JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItems503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetProjectItems503JSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectItemsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetProjectItemsdefaultJSONResponse) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SearchArticlesRequestObject struct {
 	Params SearchArticlesParams
 }
@@ -4562,6 +5132,9 @@ type StrictServerInterface interface {
 	// GetProject Read one registered Project
 	// (GET /api/v1/projects/{id})
 	GetProject(ctx context.Context, request GetProjectRequestObject) (GetProjectResponseObject, error)
+	// GetProjectItems Export a Project's resolved view
+	// (GET /api/v1/projects/{id}/items)
+	GetProjectItems(ctx context.Context, request GetProjectItemsRequestObject) (GetProjectItemsResponseObject, error)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
@@ -4717,6 +5290,32 @@ func (sh *strictHandler) GetProject(w http.ResponseWriter, r *http.Request, id P
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetProjectResponseObject); ok {
 		if err := validResponse.VisitGetProjectResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetProjectItems operation middleware
+func (sh *strictHandler) GetProjectItems(w http.ResponseWriter, r *http.Request, id ProjectId) {
+	var request GetProjectItemsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetProjectItems(ctx, request.(GetProjectItemsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetProjectItems")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetProjectItemsResponseObject); ok {
+		if err := validResponse.VisitGetProjectItemsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

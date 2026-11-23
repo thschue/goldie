@@ -264,6 +264,87 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/projects/{id}/items:
+    get:
+      operationId: getProjectItems
+      tags:
+        - projects
+      summary: Export a Project's resolved view
+      description: |
+        Returns the articles that win in the Project's view (Resolution): the
+        Project's own copy over the global one with the same id, every global
+        Item the Project does not shadow or suppress, and no draft. Only
+        winners are sent: nothing of another Project and no shadowed copy.
+        Sorted by `id`, ascending. Each Item carries its `scope` and whether it
+        is `enforced`, so an embedded server can build on this view and check
+        that a local Item does not shadow an enforced one. The Project's
+        Suppressions (ADR 0021) are listed as in `getProject`.
+
+        A Project the server does not hold is answered with the global view and
+        a `hint`, as search and lookup do. A view over the export limit, the
+        same 16 MiB the goldie client reads, is refused whole with 422
+        `view_too_large`; it is never truncated, because a partial view would
+        hide enforced Items.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: |
+            The Project as one path segment (ADR 0016): the `/` inside
+            `host/org/repo` is sent percent-encoded as `%2F`. Matched ignoring
+            case. A bare-slash path is not this route and answers the not-found
+            envelope; a value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+          example: github.com/acme/shop
+      responses:
+        "200":
+          description: The Project's resolved view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectView"
+              example:
+                items:
+                  - id: platform/deploy
+                    name: Deploying to Kubernetes
+                    keywords:
+                      - kubernetes
+                      - deploy
+                    content: Use the platform chart.
+                    status: published
+                    scope: github.com/acme/shop
+                    enforced: false
+                suppressions:
+                  - article:platform/notes
+        "400":
+          description: The id sent is not a valid `ProjectId`; the body does not repeat it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: No bearer token, or a wrong one; the body shows no Item.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: |
+            The view is over the export limit; the error code is
+            `view_too_large`. Nothing of the view is sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/sync:
     get:
       operationId: getSync
@@ -651,6 +732,99 @@ components:
           examples:
             - - article:platform/notes
               - article:style
+    ProjectView:
+      type: object
+      description: A Project's resolved view, the winning Items and what it suppresses.
+      required:
+        - items
+        - suppressions
+      properties:
+        items:
+          type: array
+          description: The winning Items, sorted by `id`, ascending. No draft.
+          examples:
+            - []
+          items:
+            $ref: "#/components/schemas/ProjectItem"
+        suppressions:
+          type: array
+          description: |
+            The global Items the Project suppresses, as `<kind>:<id>`, sorted.
+            Empty when there are none.
+          items:
+            type: string
+          examples:
+            - - article:platform/notes
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            view is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    ProjectItem:
+      type: object
+      description: One winning Item of a Project's view.
+      required:
+        - id
+        - name
+        - keywords
+        - content
+        - status
+        - scope
+        - enforced
+      properties:
+        id:
+          type: string
+          description: The Item id, its path under `articles/` without `.md`.
+          examples:
+            - platform/deploy
+        name:
+          type: string
+          description: The Item display title, from its frontmatter.
+          examples:
+            - Deploying to Kubernetes
+        keywords:
+          type: array
+          description: The Item keywords from its frontmatter, lower case.
+          items:
+            type: string
+          examples:
+            - - kubernetes
+              - deploy
+        content:
+          type: string
+          description: The Markdown body of the Item, after the frontmatter. Untrusted, it comes from a Source; render it without raw HTML.
+          examples:
+            - "Use the platform chart."
+        status:
+          type: string
+          description: The Item's lifecycle, always present. Clients ignore values they do not know.
+          enum:
+            - published
+            - deprecated
+          x-enum-varnames:
+            - ProjectItemStatusPublished
+            - ProjectItemStatusDeprecated
+          examples:
+            - published
+        replaced_by:
+          type: string
+          description: |
+            The reference to the Item that replaces this one, as written in its
+            frontmatter, `<kind>:<name>` (ADR 0021). Present only when the Item
+            names a replacement. It comes from a Source and is untrusted.
+          examples:
+            - article:platform/deploy-v2
+        scope:
+          type: string
+          description: '`global`, or the Project (`host/org/repo`) whose copy won.'
+          examples:
+            - github.com/acme/shop
+        enforced:
+          type: boolean
+          description: Whether the Item is enforced, as its frontmatter says.
     SyncStatus:
       type: object
       description: How the last content load went, for operators.
