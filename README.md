@@ -64,19 +64,19 @@ with the sync work (#6). `goldie lookup` of a deprecated article prints
 `Warning: this article is deprecated. Use <replacement> instead.` on stderr, naming the replacement
 when there is one; stdout, `--json` included, carries only the article.
 
-`goldie search`, `lookup`, `skills`, `agents`, `status` and `mcp` also work without a server:
-`--dir PATH` (or `GOLDIE_DIR`) starts an embedded server over a directory of content (`global/articles` under it) on
-loopback, with its own random token, and stops it when the command ends. Output is the same as
-against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, and also a
+`goldie search`, `lookup`, `skills`, `agents`, `status` and `mcp` also work without a server: `--dir
+PATH` (or `GOLDIE_DIR`) starts an embedded server over a directory of content (`global/articles`
+under it) on loopback, with its own random token, and stops it when the command ends. Output is the
+same as against a remote server over the same content. `--dir` overrides `GOLDIE_DIR`, and also a
 `GOLDIE_ADDR` from the environment; a repository with `.goldie/articles/` starts the same embedded
-server with its local Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or empty
-content (see [the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr` or
-`GOLDIE_ADDR` is an error; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
+server with its local Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or
+empty content (see [the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr`
+or `GOLDIE_ADDR` is an error; `GOLDIE_TOKEN` is ignored. `--dir` or `GOLDIE_DIR` together with
 `--addr`, or `GOLDIE_DIR` and `GOLDIE_ADDR` both set in the environment, is an error naming both.
-Content that does not load stops the command with `content does not load: <reason>`. When
-`search`, `lookup`, `status` or an `mcp` tool cannot reach the embedded server, the error says so and
-does not mention `--addr` or `GOLDIE_ADDR`. `version` and `init` ignore `--dir`: `init` checks
-registration only against a running server.
+Content that does not load stops the command with `content does not load: <reason>`. When `search`,
+`lookup`, `status` or an `mcp` tool cannot reach the embedded server, the error says so and does not
+mention `--addr` or `GOLDIE_ADDR`. `version` and `init` ignore `--dir`: `init` checks registration
+only against a running server.
 
 A `200 OK` that is not a goldie API answer, such as a proxy's login page, is reported as "the
 server's answer isn't a goldie API answer; check the address", by the CLI and by `mcp` alike, and
