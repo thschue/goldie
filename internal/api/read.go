@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
@@ -81,6 +83,10 @@ type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
 	activity *Activity // see RecordInto
+
+	keepalive   time.Duration // see KeepStreamsAlive
+	streamsDone chan struct{} // closed by EndStreams
+	endOnce     sync.Once
 }
 
 var _ contract.StrictServerInterface = (*Server)(nil)
@@ -92,16 +98,18 @@ func NewServer(provider func() *engine.Snapshot) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Server{provider: provider, specJSON: specJSON}, nil
+	return &Server{provider: provider, specJSON: specJSON,
+		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}, nil
 }
 
 // Register registers the spec's operations on m through the generated router,
 // as "METHOD path" patterns. Every response carries
 // X-Content-Type-Options: nosniff, parameters the router cannot decode are the
 // 400 envelope, a response that cannot be written is the 500 envelope, and
-// every answered search and lookup is recorded (RecordInto).
+// every answered search and lookup is recorded (RecordInto). HEAD on the
+// activity stream sends its headers and ends (headOnly).
 func (s *Server) Register(m contract.ServeMux) {
-	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record},
+	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly},
 		contract.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc:  requestError,
 			ResponseErrorHandlerFunc: responseError,

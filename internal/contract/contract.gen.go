@@ -14,11 +14,95 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for ActivityEventKind.
+const (
+	ActivityKindLookup ActivityEventKind = "lookup"
+	ActivityKindSearch ActivityEventKind = "search"
+)
+
+// Valid indicates whether the value is a known member of the ActivityEventKind enum.
+func (e ActivityEventKind) Valid() bool {
+	switch e {
+	case ActivityKindLookup:
+		return true
+	case ActivityKindSearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// ActivityDropped The `data` of an SSE event of type `dropped`: this subscriber lost
+// events because it did not keep up. Clients ignore fields they do not
+// know.
+type ActivityDropped struct {
+	// Dropped How many events were lost before the next one.
+	//
+	// Examples: 3
+	Dropped int64 `json:"dropped"`
+}
+
+// ActivityEvent One search or lookup on the activity stream, the `data` of an SSE
+// event without a type. Every field is always sent; text fields are `""`
+// when empty. Clients ignore fields they do not know.
+type ActivityEvent struct {
+	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`.
+	//
+	// Examples: 1.5.0
+	ClientVersion string `json:"client_version"`
+
+	// Id Increases per server process (per replica); starts again at 1 on restart.
+	//
+	// Examples: 42
+	Id int64 `json:"id"`
+
+	// Kind A search or a lookup.
+	//
+	// Examples: search
+	Kind ActivityEventKind `json:"kind"`
+
+	// Miss A search with no results, or a lookup answering 404.
+	//
+	// Examples: false
+	Miss bool `json:"miss"`
+
+	// Project The registered spelling of the Project, an unregistered id lower-cased, or `""`.
+	//
+	// Examples: github.com/acme/shop
+	Project string `json:"project"`
+
+	// Query The search words, or the article id a lookup asked for, as text.
+	//
+	// Examples: deploy kubernetes
+	Query string `json:"query"`
+
+	// Time When the server recorded the request.
+	//
+	// Examples: 2026-11-23T10:00:00Z
+	Time time.Time `json:"time"`
+
+	// Token The name of the token that sent the request, never its secret.
+	//
+	// Examples: ci-reader
+	Token string `json:"token"`
+
+	// TraceId The request's trace id, or `""` without a span.
+	//
+	// Examples: 4bf92f3577b34da6a3ce929d0e0e4736
+	TraceId string `json:"trace_id"`
+}
+
+// ActivityEventKind A search or a lookup.
+//
+// Examples: search
+type ActivityEventKind string
 
 // Article One article.
 type Article struct {
@@ -268,6 +352,38 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
+	// GetActivity Stream recent searches and lookups
+	//
+	// Streams this server process's recent searches and lookups as
+	// server-sent events, for operator tokens only. The stream opens with the
+	// retained events in `id` order, oldest first, then sends each new one as
+	// it is recorded. It is a live view, not an audit log: the buffer is
+	// bounded and shared, so any reader's requests push older events out of
+	// it, and a restart empties it.
+	//
+	// Every event is one SSE event whose `data` is one line of JSON, an
+	// `ActivityEvent`. Its `id` increases per server process (per replica)
+	// and starts again at 1 when the process restarts. All text is escaped
+	// as JSON strings, so no query can end an event or start one. A
+	// subscriber that cannot keep up loses events and then gets an event of
+	// type `dropped`, an `ActivityDropped` with the number lost, before the
+	// next event. Clients must ignore SSE event types and JSON fields they
+	// do not know.
+	//
+	// Events carry no SSE `id:` field and the server does not resume from
+	// `Last-Event-ID`: a reconnect replays the retained history, so clients
+	// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+	// seconds. The stream costs one rate-limit token when it opens, and ends
+	// at the server's first stop signal. At most 32 streams are open per
+	// server process; one more is a 503 whose hint says to retry later.
+	//
+	// Go clients use the raw `Client.GetActivity` and read the body as it
+	// arrives: `GetActivityWithResponse` reads the whole body, so it does
+	// not return until the stream ends.
+	//
+	// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
+	GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetArticle Look up one article
 	//
 	// Returns one article by its id. Ids compare ignoring case. A miss is a
@@ -308,6 +424,48 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
 	GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+// GetActivity Stream recent searches and lookups
+//
+// Streams this server process's recent searches and lookups as
+// server-sent events, for operator tokens only. The stream opens with the
+// retained events in `id` order, oldest first, then sends each new one as
+// it is recorded. It is a live view, not an audit log: the buffer is
+// bounded and shared, so any reader's requests push older events out of
+// it, and a restart empties it.
+//
+// Every event is one SSE event whose `data` is one line of JSON, an
+// `ActivityEvent`. Its `id` increases per server process (per replica)
+// and starts again at 1 when the process restarts. All text is escaped
+// as JSON strings, so no query can end an event or start one. A
+// subscriber that cannot keep up loses events and then gets an event of
+// type `dropped`, an `ActivityDropped` with the number lost, before the
+// next event. Clients must ignore SSE event types and JSON fields they
+// do not know.
+//
+// Events carry no SSE `id:` field and the server does not resume from
+// `Last-Event-ID`: a reconnect replays the retained history, so clients
+// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+// seconds. The stream costs one rate-limit token when it opens, and ends
+// at the server's first stop signal. At most 32 streams are open per
+// server process; one more is a 503 whose hint says to retry later.
+//
+// Go clients use the raw `Client.GetActivity` and read the body as it
+// arrives: `GetActivityWithResponse` reads the whole body, so it does
+// not return until the stream ends.
+//
+// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
+func (c *Client) GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetActivityRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 // GetArticle Look up one article
@@ -399,6 +557,33 @@ func (c *Client) GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditor
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+// NewGetActivityRequest constructs an http.Request for the GetActivity method
+func NewGetActivityRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/activity"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewGetArticleRequest constructs an http.Request for the GetArticle method
@@ -649,6 +834,40 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
+	// GetActivityWithResponse Stream recent searches and lookups
+	//
+	// Streams this server process's recent searches and lookups as
+	// server-sent events, for operator tokens only. The stream opens with the
+	// retained events in `id` order, oldest first, then sends each new one as
+	// it is recorded. It is a live view, not an audit log: the buffer is
+	// bounded and shared, so any reader's requests push older events out of
+	// it, and a restart empties it.
+	//
+	// Every event is one SSE event whose `data` is one line of JSON, an
+	// `ActivityEvent`. Its `id` increases per server process (per replica)
+	// and starts again at 1 when the process restarts. All text is escaped
+	// as JSON strings, so no query can end an event or start one. A
+	// subscriber that cannot keep up loses events and then gets an event of
+	// type `dropped`, an `ActivityDropped` with the number lost, before the
+	// next event. Clients must ignore SSE event types and JSON fields they
+	// do not know.
+	//
+	// Events carry no SSE `id:` field and the server does not resume from
+	// `Last-Event-ID`: a reconnect replays the retained history, so clients
+	// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+	// seconds. The stream costs one rate-limit token when it opens, and ends
+	// at the server's first stop signal. At most 32 streams are open per
+	// server process; one more is a 503 whose hint says to retry later.
+	//
+	// Go clients use the raw `Client.GetActivity` and read the body as it
+	// arrives: `GetActivityWithResponse` reads the whole body, so it does
+	// not return until the stream ends.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
+	GetActivityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
+
 	// GetArticleWithResponse Look up one article
 	//
 	// Returns one article by its id. Ids compare ignoring case. A miss is a
@@ -699,6 +918,89 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /openapi.yaml (the `GetOpenAPIYAML` operationId).
 	GetOpenAPIYAMLWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetOpenAPIYAMLResponse, error)
+}
+
+// GetActivityResponse429Headers the declared response headers of an HTTP 429 response for GetActivity
+type GetActivityResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetActivityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetActivityResponse429Headers
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetActivityResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetActivityResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetActivityResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetActivityResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetActivityResponse) GetJSON503() *ErrorEnvelope {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetActivityResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetActivityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetActivityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetActivityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetActivityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 // GetArticleResponse429Headers the declared response headers of an HTTP 429 response for GetArticle
@@ -1067,6 +1369,46 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 	return ""
 }
 
+// GetActivityWithResponse Stream recent searches and lookups
+//
+// Streams this server process's recent searches and lookups as
+// server-sent events, for operator tokens only. The stream opens with the
+// retained events in `id` order, oldest first, then sends each new one as
+// it is recorded. It is a live view, not an audit log: the buffer is
+// bounded and shared, so any reader's requests push older events out of
+// it, and a restart empties it.
+//
+// Every event is one SSE event whose `data` is one line of JSON, an
+// `ActivityEvent`. Its `id` increases per server process (per replica)
+// and starts again at 1 when the process restarts. All text is escaped
+// as JSON strings, so no query can end an event or start one. A
+// subscriber that cannot keep up loses events and then gets an event of
+// type `dropped`, an `ActivityDropped` with the number lost, before the
+// next event. Clients must ignore SSE event types and JSON fields they
+// do not know.
+//
+// Events carry no SSE `id:` field and the server does not resume from
+// `Last-Event-ID`: a reconnect replays the retained history, so clients
+// dedupe by `id`. An idle stream sends the comment `: keepalive` every 15
+// seconds. The stream costs one rate-limit token when it opens, and ends
+// at the server's first stop signal. At most 32 streams are open per
+// server process; one more is a 503 whose hint says to retry later.
+//
+// Go clients use the raw `Client.GetActivity` and read the body as it
+// arrives: `GetActivityWithResponse` reads the whole body, so it does
+// not return until the stream ends.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
+func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
+	rsp, err := c.GetActivity(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetActivityResponse(rsp)
+}
+
 // GetArticleWithResponse Look up one article
 //
 // Returns one article by its id. Ids compare ignoring case. A miss is a
@@ -1146,6 +1488,80 @@ func (c *ClientWithResponses) GetOpenAPIYAMLWithResponse(ctx context.Context, re
 		return nil, err
 	}
 	return ParseGetOpenAPIYAMLResponse(rsp)
+}
+
+// ParseGetActivityResponse parses an HTTP response from a GetActivityWithResponse call
+func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetActivityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetActivityResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
 }
 
 // ParseGetArticleResponse parses an HTTP response from a GetArticleWithResponse call
@@ -1459,6 +1875,9 @@ func ParseGetOpenAPIYAMLResponse(rsp *http.Response) (*GetOpenAPIYAMLResponse, e
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// GetActivity Stream recent searches and lookups
+	// (GET /api/v1/activity)
+	GetActivity(w http.ResponseWriter, r *http.Request)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
@@ -1484,6 +1903,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// GetActivity operation middleware
+func (siw *ServerInterfaceWrapper) GetActivity(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetActivity(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // GetArticle operation middleware
 func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Request) {
@@ -1738,6 +2171,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search", wrapper.SearchArticles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPIYAML)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetOpenAPIJSON)
 
@@ -1758,6 +2192,152 @@ type RateLimitedJSONResponse struct {
 }
 
 type UpgradeRequiredJSONResponse ErrorEnvelope
+
+type GetActivityRequestObject struct {
+}
+
+type GetActivityResponseObject interface {
+	VisitGetActivityResponse(w http.ResponseWriter) error
+}
+
+type GetActivity200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response GetActivity200TexteventStreamResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, fall back to io.Copy.
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+	// text/event-stream messages are typically small; use a
+	// modest buffer and flush after each chunk so clients see
+	// events immediately instead of waiting on OS buffering.
+	buf := make([]byte, 4096)
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			flusher.Flush()
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+type GetActivity401JSONResponse ErrorEnvelope
+
+func (response GetActivity401JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetActivity403JSONResponse ErrorEnvelope
+
+func (response GetActivity403JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetActivity426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetActivity426JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetActivity429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetActivity429JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetActivity503JSONResponse ErrorEnvelope
+
+func (response GetActivity503JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetActivitydefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetActivitydefaultJSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetArticleRequestObject struct {
 	Id     string `json:"id"`
@@ -2197,6 +2777,9 @@ func (response GetOpenAPIYAMLdefaultJSONResponse) VisitGetOpenAPIYAMLResponse(w 
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// GetActivity Stream recent searches and lookups
+	// (GET /api/v1/activity)
+	GetActivity(ctx context.Context, request GetActivityRequestObject) (GetActivityResponseObject, error)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
@@ -2254,6 +2837,30 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// GetActivity operation middleware
+func (sh *strictHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	var request GetActivityRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetActivity(ctx, request.(GetActivityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetActivity")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetActivityResponseObject); ok {
+		if err := validResponse.VisitGetActivityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // GetArticle operation middleware

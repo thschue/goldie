@@ -43,7 +43,8 @@ type Event struct {
 	// ("1.5.0" for goldie/v1.5.0), or "" when the header is not exactly one
 	// goldie/<semver> value.
 	ClientVersion string
-	// Project is the project parameter as sent, registered or not, or "".
+	// Project is the registered spelling of the project parameter, an
+	// unregistered one lower-cased, or "" without one.
 	Project string
 	// TraceID is the trace id of the request's span, or "" without one.
 	TraceID string
@@ -119,15 +120,24 @@ func (a *Activity) Record(e Event) {
 // events recorded after them, with no gap and no duplicate. cancel closes
 // the channel and frees the slot; it is idempotent. When the hub is disabled
 // or at MaxActivitySubscribers, history and live are nil and cancel does
-// nothing.
+// nothing. TrySubscribe says so explicitly.
 func (a *Activity) Subscribe() (history []Event, live <-chan Event, cancel func()) {
+	history, live, cancel, _ = a.TrySubscribe()
+	return history, live, cancel
+}
+
+// TrySubscribe is Subscribe with an explicit answer: ok is false when the hub
+// is disabled or at MaxActivitySubscribers, and then history and live are nil
+// and cancel is a non-nil no-op. It shares the cap and the slots with
+// Subscribe.
+func (a *Activity) TrySubscribe() (history []Event, live <-chan Event, cancel func(), ok bool) {
 	if a == nil || len(a.ring) == 0 {
-		return nil, nil, func() {}
+		return nil, nil, func() {}, false
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if len(a.subs) >= MaxActivitySubscribers {
-		return nil, nil, func() {}
+		return nil, nil, func() {}, false
 	}
 	n := min(a.next-1, uint64(len(a.ring)))
 	history = make([]Event, 0, n)
@@ -143,7 +153,7 @@ func (a *Activity) Subscribe() (history []Event, live <-chan Event, cancel func(
 			delete(a.subs, s)
 			close(s.ch) // Record sends under the same lock, so never on a closed channel
 		})
-	}
+	}, true
 }
 
 // Dropped counts events a full subscriber channel refused.

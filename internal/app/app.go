@@ -39,11 +39,19 @@ type publicMux struct {
 	gate     *api.ClientVersionGate
 	activity *api.Activity
 	routes   []route
+	// endStreams ends the open activity streams; Public.Start calls it when
+	// its context ends.
+	endStreams func()
 }
 
 // activityCapacity is how many recent searches and lookups the server keeps
 // in its Activity.
 const activityCapacity = 1000
+
+// activityKeepalive is how often an open activity stream with nothing to send
+// writes a keepalive comment. A variable so tests can shorten it; the router
+// reads it when it is built.
+var activityKeepalive = api.DefaultActivityKeepalive
 
 // newPublicMuxWith returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
@@ -59,6 +67,8 @@ func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limi
 	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
 		activity: api.NewActivity(activityCapacity, "", nil)}
 	srv.RecordInto(m.activity)
+	srv.KeepStreamsAlive(activityKeepalive)
+	m.endStreams = srv.EndStreams
 	srv.Register(m)
 	return m, nil
 }
@@ -92,13 +102,17 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 // bucket can still read what the API offers.
 var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
+// operatorPaths are the operations for operator tokens only. The token check
+// comes before the gate and the rate limit, so a reader's 403 costs no token.
+var operatorPaths = map[string]bool{"/api/v1/activity": true}
+
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
 // documents and the Swagger UI (#101). A new route fails closed. API paths are
 // then behind the minimum client version and then the per-token rate limit, so
 // a request the tokens reject learns nothing of the gate, and neither a 401 nor
-// a 426 counts against a bucket. Every operation today is open to readers; an
-// operator-only one (sync, activity) passes api.RoleOperator when it lands.
+// a 426 counts against a bucket. The paths in operatorPaths need
+// api.RoleOperator instead; their other methods' 405 does too.
 // Under /swagger-ui the Content-Security-Policy wraps the token check, so its
 // 401s and 405s carry it too.
 func (m *publicMux) guard(path string, h http.Handler) http.Handler {
@@ -107,6 +121,8 @@ func (m *publicMux) guard(path string, h http.Handler) http.Handler {
 		return withCSP(m.tokens.Require(api.RoleReader, h))
 	case docPaths[path]:
 		return m.tokens.Require(api.RoleReader, h)
+	case operatorPaths[path]:
+		return m.tokens.Require(api.RoleOperator, m.gate.Require(m.limiter.Limit(h)))
 	}
 	return m.tokens.Require(api.RoleReader, m.gate.Require(m.limiter.Limit(h)))
 }
@@ -332,7 +348,8 @@ type Public struct {
 	loops   sync.WaitGroup // the poll loop Start runs
 }
 
-// Start runs the dir Source's poll loop until ctx ends and registers its
+// Start runs the dir Source's poll loop until ctx ends, ends the open activity
+// streams when it does, and registers its
 // readiness check, "source:dir", with reg. It does not block. The check is
 // ready while the Syncer holds a Snapshot, so a stale Source stays ready and
 // no error reaches /readyz (PC-02). Only the first call with a live context
@@ -352,6 +369,10 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 	}
 	p.started = true
 	p.loops.Go(func() { p.syncer.Run(ctx, dirPollInterval, nil) })
+	// The first stop signal ends the activity streams: Shutdown waits for
+	// open requests and never cancels them, so a stream would hold it for
+	// the whole grace period (PC-08).
+	context.AfterFunc(ctx, p.endStreams)
 }
 
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from

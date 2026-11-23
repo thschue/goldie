@@ -56,6 +56,8 @@ and running `./run regen`.
 - `goldie health` probes `/livez` on the local admin port (`--ready` probes `/readyz`) and exits
   non-zero unless it answers 200. Use plain `health` for liveness probes: it stays green while draining.
 - The first SIGTERM or SIGINT starts the drain; a second one exits immediately with a non-zero code.
+  Unbounded streams (`GET /api/v1/activity`) end cleanly at the first stop signal, and new ones
+  get 503 `shutting_down` during the drain, so no stream holds up the shutdown.
   After the drain, in-flight requests get up to 30 s to finish; past that the server exits non-zero.
   Set the pod's termination grace period above `GOLDIE_DRAIN_SECONDS` plus that 30 s.
 - The public endpoints are documented in the generated [API reference](reference/api.md)
@@ -87,7 +89,10 @@ and running `./run regen`.
   Every path under `/api/`, `/openapi.yaml`, `/openapi.json` and every `/swagger-ui` path require
   `Authorization: Bearer <token>` with at least the `reader` Role; no other header, query parameter
   or cookie is a credential. The server hashes the token and compares it with every configured
-  digest in constant time, and answers 401 in the error envelope otherwise. The OpenAPI documents
+  digest in constant time, and answers 401 in the error envelope otherwise. `GET /api/v1/activity`,
+  the live event stream of recent searches and lookups, needs the `operator` Role: other tokens get
+  403 before the rate limit, so the refusal costs them nothing. The stream is a live view, not an
+  audit log, and it ends at the first SIGTERM, before the drain (PC-08). The OpenAPI documents
   and Swagger UI do not count against the rate limit. The handler sees the token's name, never its
   secret. The startup report shows both variables as `(redacted)`. Like every config variable,
   these may change in a `0.x` minor release (ADR 0011).

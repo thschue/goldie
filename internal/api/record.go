@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
@@ -27,6 +28,7 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 				e.ClientVersion = v.String()
 			}
 			e.TraceID = platform.TraceID(ctx)
+			e.Project = s.projectSpelling(e.Project)
 			s.activity.Record(e)
 		}
 		return resp, err
@@ -34,9 +36,9 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 }
 
 // recorded is the Event for an answered search or lookup: its words or the
-// article id asked for, the project as sent, and whether it is a Miss (a
-// search with zero results, or a lookup answering 404). Any other answer is
-// not recorded.
+// article id asked for, the project as sent (record stores its spelling), and
+// whether it is a Miss (a search with zero results, or a lookup answering
+// 404). Any other answer is not recorded.
 func recorded(req, resp any) (Event, bool) {
 	switch resp := resp.(type) {
 	case contract.SearchArticles200JSONResponse:
@@ -48,6 +50,21 @@ func recorded(req, resp any) (Event, bool) {
 		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: miss}, true
 	}
 	return Event{}, false
+}
+
+// projectSpelling is the registered spelling of the Project sent, matched
+// ignoring case, or the id lower-cased when it is not registered, so one
+// Project's events never split on case (ADR 0020). "" stays "".
+func (s *Server) projectSpelling(sent string) string {
+	if sent == "" {
+		return ""
+	}
+	if snap := s.provider(); snap != nil {
+		if registered, ok := snap.Project(sent); ok {
+			return registered
+		}
+	}
+	return strings.ToLower(sent)
 }
 
 // sentProject is the project parameter as sent, or "" without one. The
