@@ -81,7 +81,9 @@ func redactToken(t string) string {
 
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
-	if err != nil {
+	// url.Parse reads usr:pw@host:path as the scheme usr with an opaque rest
+	// and no User, so an opaque URL is never printed: it could hold a password.
+	if err != nil || u.Opaque != "" {
 		return "[invalid URL]"
 	}
 	if u.User != nil {
