@@ -256,7 +256,7 @@ func TestSignInReturnsNameAndRoleAndAHardenedHostCookie(t *testing.T) {
 // On the plain-http loopback listener of a dev server a browser would drop a
 // Secure or __Host- cookie, so both go; the rest of the hardening stays.
 func TestSignInOnPlainHTTPLoopbackDropsSecureAndThePrefix(t *testing.T) {
-	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
+	h := devSessionHandler(t, namedTokenLines(), sessionKey)
 	for _, base := range []string{loopbackBase, "http://localhost:8080", "http://[::1]:8080"} {
 		resp, body := signIn(t, h, base, operatorToken)
 		assertStatus(t, base, resp, body, http.StatusOK)
