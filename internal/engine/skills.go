@@ -10,6 +10,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// KindSkill is the Kind of a skill bundle: the directory skills/<name>/.
+const KindSkill = "skill"
+
 // skillsDir is where a Source keeps its global skill bundles, relative to its
 // root. A Project's are in <project dir>/skills and the local Scope's in
 // .goldie/skills.

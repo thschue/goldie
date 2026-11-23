@@ -121,7 +121,7 @@ func (s *Server) GetAgent(ctx context.Context, req contract.GetAgentRequestObjec
 // nothing, so a name that is no skill and a path that leaves the bundle look
 // alike. It echoes nothing of the request.
 var noSuchSkillFile = envelope("not_found", "no such skill file",
-	"Read the skill, then use a path from its files list.")
+	"List the skills, read the one you want, then use a path from its files list.")
 
 // GetSkillFile answers GET /api/v1/skills/{name}/files/{path}: the file's
 // bytes as written, under the one content type the contract declares and

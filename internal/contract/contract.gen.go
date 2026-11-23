@@ -515,7 +515,7 @@ type SearchHit struct {
 	// Examples: platform/deploy
 	Id string `json:"id"`
 
-	// Keywords The article's keywords, lower case.
+	// Keywords The Item's keywords, lower case.
 	//
 	// Examples: ["kubernetes","deploy"]
 	Keywords []string `json:"keywords"`
@@ -530,7 +530,9 @@ type SearchHit struct {
 	// Examples: ["kubernetes","name"]
 	Matched []string `json:"matched"`
 
-	// Name The display title from the frontmatter.
+	// Name The display title from the frontmatter of an article. A skill's or
+	// agent's name is its id.
+	//
 	//
 	// Examples: Deploying to Kubernetes
 	Name string `json:"name"`
@@ -588,7 +590,7 @@ type SearchResults struct {
 	// Examples: deploy kubernetes
 	Query string `json:"query"`
 
-	// Results The matching articles, best first, then by id.
+	// Results The matching Items, best first, then by id.
 	//
 	// Examples: []
 	Results []SearchHit `json:"results"`
@@ -1073,7 +1075,8 @@ type ClientInterface interface {
 	// or agent matches on its name and keywords only, never on its
 	// description (ADR 0005); a skill's keywords are the `keywords` in the
 	// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-	// empty list, not an error.
+	// empty list, not an error. A skill or agent hit's `id` is its name: read
+	// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1152,8 +1155,8 @@ type ClientInterface interface {
 	//
 	// Returns one skill by name with its file list. A client reads each listed
 	// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-	// 404 whose hint points to the list. The digest and the executable bit are not part of
-	// the answer yet.
+	// 404 whose hint points to the list. The digest and the executable bit
+	// are not part of the answer yet.
 	//
 	// Corresponds with GET /api/v1/skills/{name} (the `GetSkill` operationId).
 	GetSkill(ctx context.Context, name string, params *GetSkillParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1411,7 +1414,8 @@ func (c *Client) GetProjectItems(ctx context.Context, id ProjectId, reqEditors .
 // or agent matches on its name and keywords only, never on its
 // description (ADR 0005); a skill's keywords are the `keywords` in the
 // frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-// empty list, not an error.
+// empty list, not an error. A skill or agent hit's `id` is its name: read
+// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 //
 // Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1550,8 +1554,8 @@ func (c *Client) ListSkills(ctx context.Context, params *ListSkillsParams, reqEd
 //
 // Returns one skill by name with its file list. A client reads each listed
 // `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-// 404 whose hint points to the list. The digest and the executable bit are not part of
-// the answer yet.
+// 404 whose hint points to the list. The digest and the executable bit
+// are not part of the answer yet.
 //
 // Corresponds with GET /api/v1/skills/{name} (the `GetSkill` operationId).
 func (c *Client) GetSkill(ctx context.Context, name string, params *GetSkillParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2724,7 +2728,8 @@ type ClientWithResponsesInterface interface {
 	// or agent matches on its name and keywords only, never on its
 	// description (ADR 0005); a skill's keywords are the `keywords` in the
 	// frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-	// empty list, not an error.
+	// empty list, not an error. A skill or agent hit's `id` is its name: read
+	// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -2811,8 +2816,8 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns one skill by name with its file list. A client reads each listed
 	// `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-	// 404 whose hint points to the list. The digest and the executable bit are not part of
-	// the answer yet.
+	// 404 whose hint points to the list. The digest and the executable bit
+	// are not part of the answer yet.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4604,7 +4609,8 @@ func (c *ClientWithResponses) GetProjectItemsWithResponse(ctx context.Context, i
 // or agent matches on its name and keywords only, never on its
 // description (ADR 0005); a skill's keywords are the `keywords` in the
 // frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-// empty list, not an error.
+// empty list, not an error. A skill or agent hit's `id` is its name: read
+// it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -4727,8 +4733,8 @@ func (c *ClientWithResponses) ListSkillsWithResponse(ctx context.Context, params
 //
 // Returns one skill by name with its file list. A client reads each listed
 // `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-// 404 whose hint points to the list. The digest and the executable bit are not part of
-// the answer yet.
+// 404 whose hint points to the list. The digest and the executable bit
+// are not part of the answer yet.
 //
 // Returns a wrapper object for the known response body format(s).
 //

@@ -53,7 +53,8 @@ paths:
         or agent matches on its name and keywords only, never on its
         description (ADR 0005); a skill's keywords are the `keywords` in the
         frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-        empty list, not an error.
+        empty list, not an error. A skill or agent hit's `id` is its name: read
+        it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
       parameters:
         - name: q
           in: query
@@ -89,13 +90,13 @@ paths:
         - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
-          description: The matching articles, best first.
+          description: The matching Items, best first.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResults"
         "400":
-          description: The search words are missing or longer than 1024 bytes, `kind` is not one of the three, or `project` is not a `ProjectId`.
+          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`.
           content:
             application/json:
               schema:
@@ -259,8 +260,8 @@ paths:
       description: |
         Returns one skill by name with its file list. A client reads each listed
         `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-        404 whose hint points to the list. The digest and the executable bit are not part of
-        the answer yet.
+        404 whose hint points to the list. The digest and the executable bit
+        are not part of the answer yet.
       parameters:
         - name: name
           in: path
@@ -394,7 +395,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: No such skill, or the path is not a file of its bundle; the hint points to the skill.
+          description: No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files.
           content:
             application/json:
               schema:
@@ -1142,7 +1143,7 @@ components:
             - deploy kubernetes
         results:
           type: array
-          description: The matching articles, best first, then by id.
+          description: The matching Items, best first, then by id.
           items:
             $ref: "#/components/schemas/SearchHit"
           examples:
@@ -1561,7 +1562,9 @@ components:
             - platform/deploy
         name:
           type: string
-          description: The display title from the frontmatter.
+          description: |
+            The display title from the frontmatter of an article. A skill's or
+            agent's name is its id.
           examples:
             - Deploying to Kubernetes
         kind:
@@ -1576,7 +1579,7 @@ components:
             - global
         keywords:
           type: array
-          description: The article's keywords, lower case.
+          description: The Item's keywords, lower case.
           items:
             type: string
           examples:

@@ -17,7 +17,6 @@ const (
 // its "host/org/repo", which holds a slash, so it never equals a name here.
 const (
 	KindArticle = "article"
-	KindSkill   = "skill"
 	ScopeGlobal = "global"
 	// ScopeLocal is the repository's own .goldie/ (NewLocalSource).
 	ScopeLocal = "local"

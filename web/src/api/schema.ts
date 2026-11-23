@@ -20,7 +20,8 @@ export interface paths {
          *     or agent matches on its name and keywords only, never on its
          *     description (ADR 0005); a skill's keywords are the `keywords` in the
          *     frontmatter of its `SKILL.md`. Ties are ordered by id. No match is an
-         *     empty list, not an error.
+         *     empty list, not an error. A skill or agent hit's `id` is its name: read
+         *     it with `GET /api/v1/skills/{name}` or `GET /api/v1/agents/{name}`.
          */
         get: operations["searchArticles"];
         put?: never;
@@ -85,8 +86,8 @@ export interface paths {
          * Read one skill
          * @description Returns one skill by name with its file list. A client reads each listed
          *     `files[].path` with `GET /api/v1/skills/{name}/files/{path}`. A miss is a
-         *     404 whose hint points to the list. The digest and the executable bit are not part of
-         *     the answer yet.
+         *     404 whose hint points to the list. The digest and the executable bit
+         *     are not part of the answer yet.
          */
         get: operations["getSkill"];
         put?: never;
@@ -472,7 +473,7 @@ export interface components {
              */
             query: string;
             /**
-             * @description The matching articles, best first, then by id.
+             * @description The matching Items, best first, then by id.
              * @example []
              */
             results: components["schemas"]["SearchHit"][];
@@ -808,7 +809,8 @@ export interface components {
              */
             id: string;
             /**
-             * @description The display title from the frontmatter.
+             * @description The display title from the frontmatter of an article. A skill's or
+             *     agent's name is its id.
              * @example Deploying to Kubernetes
              */
             name: string;
@@ -823,7 +825,7 @@ export interface components {
              */
             scope: string;
             /**
-             * @description The article's keywords, lower case.
+             * @description The Item's keywords, lower case.
              * @example [
              *       "kubernetes",
              *       "deploy"
@@ -1207,7 +1209,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The matching articles, best first. */
+            /** @description The matching Items, best first. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1216,7 +1218,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            /** @description The search words are missing or longer than 1024 bytes, `kind` is not one of the three, or `project` is not a `ProjectId`. */
+            /** @description The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -1566,7 +1568,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description No such skill, or the path is not a file of its bundle; the hint points to the skill. */
+            /** @description No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files. */
             404: {
                 headers: {
                     [name: string]: unknown;
