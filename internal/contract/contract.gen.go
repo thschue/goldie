@@ -1154,16 +1154,16 @@ type ClientInterface interface {
 	// plain-http loopback dev server, `goldie server --dev`; any other
 	// server, one behind a TLS proxy included, always sets both). It names
 	// the token and its times under a signature (ADR 0027), expires after 30
-	// minutes without use (each request with the cookie extends it) and 7 days after
-	// sign-in at the latest, ends when the token is removed or given a new
-	// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-	// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-	// `GET /api/v1/session`) from a same-origin request; a cross-site
-	// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-	// The client sends the token back in an `X-Goldie-CSRF` request header on
-	// each unsafe request. A bearer token beats the cookie, and a bearer
-	// caller gets and needs no CSRF token. This operation takes no bearer
-	// token, and a
+	// minutes without use (each request with the cookie extends it) and 7
+	// days after sign-in at the latest, and ends when the token is removed or
+	// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+	// an unsafe method only from a same-origin request that also sends the
+	// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+	// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+	// missing or wrong token, is a 403. The client sends the token back in an
+	// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+	// beats the cookie, and a bearer caller gets and needs no CSRF token.
+	// This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. Failed sign-ins are
 	// capped per remote address: past the cap within a window, every
 	// sign-in from that address, a valid token included, is refused with a
@@ -1190,16 +1190,16 @@ type ClientInterface interface {
 	// plain-http loopback dev server, `goldie server --dev`; any other
 	// server, one behind a TLS proxy included, always sets both). It names
 	// the token and its times under a signature (ADR 0027), expires after 30
-	// minutes without use (each request with the cookie extends it) and 7 days after
-	// sign-in at the latest, ends when the token is removed or given a new
-	// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-	// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-	// `GET /api/v1/session`) from a same-origin request; a cross-site
-	// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-	// The client sends the token back in an `X-Goldie-CSRF` request header on
-	// each unsafe request. A bearer token beats the cookie, and a bearer
-	// caller gets and needs no CSRF token. This operation takes no bearer
-	// token, and a
+	// minutes without use (each request with the cookie extends it) and 7
+	// days after sign-in at the latest, and ends when the token is removed or
+	// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+	// an unsafe method only from a same-origin request that also sends the
+	// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+	// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+	// missing or wrong token, is a 403. The client sends the token back in an
+	// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+	// beats the cookie, and a bearer caller gets and needs no CSRF token.
+	// This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. Failed sign-ins are
 	// capped per remote address: past the cap within a window, every
 	// sign-in from that address, a valid token included, is refused with a
@@ -1575,16 +1575,16 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // plain-http loopback dev server, `goldie server --dev`; any other
 // server, one behind a TLS proxy included, always sets both). It names
 // the token and its times under a signature (ADR 0027), expires after 30
-// minutes without use (each request with the cookie extends it) and 7 days after
-// sign-in at the latest, ends when the token is removed or given a new
-// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-// `GET /api/v1/session`) from a same-origin request; a cross-site
-// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-// The client sends the token back in an `X-Goldie-CSRF` request header on
-// each unsafe request. A bearer token beats the cookie, and a bearer
-// caller gets and needs no CSRF token. This operation takes no bearer
-// token, and a
+// minutes without use (each request with the cookie extends it) and 7
+// days after sign-in at the latest, and ends when the token is removed or
+// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+// an unsafe method only from a same-origin request that also sends the
+// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+// missing or wrong token, is a 403. The client sends the token back in an
+// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+// beats the cookie, and a bearer caller gets and needs no CSRF token.
+// This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. Failed sign-ins are
 // capped per remote address: past the cap within a window, every
 // sign-in from that address, a valid token included, is refused with a
@@ -1621,16 +1621,16 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // plain-http loopback dev server, `goldie server --dev`; any other
 // server, one behind a TLS proxy included, always sets both). It names
 // the token and its times under a signature (ADR 0027), expires after 30
-// minutes without use (each request with the cookie extends it) and 7 days after
-// sign-in at the latest, ends when the token is removed or given a new
-// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-// `GET /api/v1/session`) from a same-origin request; a cross-site
-// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-// The client sends the token back in an `X-Goldie-CSRF` request header on
-// each unsafe request. A bearer token beats the cookie, and a bearer
-// caller gets and needs no CSRF token. This operation takes no bearer
-// token, and a
+// minutes without use (each request with the cookie extends it) and 7
+// days after sign-in at the latest, and ends when the token is removed or
+// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+// an unsafe method only from a same-origin request that also sends the
+// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+// missing or wrong token, is a 403. The client sends the token back in an
+// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+// beats the cookie, and a bearer caller gets and needs no CSRF token.
+// This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. Failed sign-ins are
 // capped per remote address: past the cap within a window, every
 // sign-in from that address, a valid token included, is refused with a
@@ -2971,16 +2971,16 @@ type ClientWithResponsesInterface interface {
 	// plain-http loopback dev server, `goldie server --dev`; any other
 	// server, one behind a TLS proxy included, always sets both). It names
 	// the token and its times under a signature (ADR 0027), expires after 30
-	// minutes without use (each request with the cookie extends it) and 7 days after
-	// sign-in at the latest, ends when the token is removed or given a new
-	// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-	// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-	// `GET /api/v1/session`) from a same-origin request; a cross-site
-	// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-	// The client sends the token back in an `X-Goldie-CSRF` request header on
-	// each unsafe request. A bearer token beats the cookie, and a bearer
-	// caller gets and needs no CSRF token. This operation takes no bearer
-	// token, and a
+	// minutes without use (each request with the cookie extends it) and 7
+	// days after sign-in at the latest, and ends when the token is removed or
+	// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+	// an unsafe method only from a same-origin request that also sends the
+	// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+	// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+	// missing or wrong token, is a 403. The client sends the token back in an
+	// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+	// beats the cookie, and a bearer caller gets and needs no CSRF token.
+	// This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. Failed sign-ins are
 	// capped per remote address: past the cap within a window, every
 	// sign-in from that address, a valid token included, is refused with a
@@ -3007,16 +3007,16 @@ type ClientWithResponsesInterface interface {
 	// plain-http loopback dev server, `goldie server --dev`; any other
 	// server, one behind a TLS proxy included, always sets both). It names
 	// the token and its times under a signature (ADR 0027), expires after 30
-	// minutes without use (each request with the cookie extends it) and 7 days after
-	// sign-in at the latest, ends when the token is removed or given a new
-	// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-	// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-	// `GET /api/v1/session`) from a same-origin request; a cross-site
-	// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-	// The client sends the token back in an `X-Goldie-CSRF` request header on
-	// each unsafe request. A bearer token beats the cookie, and a bearer
-	// caller gets and needs no CSRF token. This operation takes no bearer
-	// token, and a
+	// minutes without use (each request with the cookie extends it) and 7
+	// days after sign-in at the latest, and ends when the token is removed or
+	// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+	// an unsafe method only from a same-origin request that also sends the
+	// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+	// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+	// missing or wrong token, is a 403. The client sends the token back in an
+	// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+	// beats the cookie, and a bearer caller gets and needs no CSRF token.
+	// This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. Failed sign-ins are
 	// capped per remote address: past the cap within a window, every
 	// sign-in from that address, a valid token included, is refused with a
@@ -5024,16 +5024,16 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // plain-http loopback dev server, `goldie server --dev`; any other
 // server, one behind a TLS proxy included, always sets both). It names
 // the token and its times under a signature (ADR 0027), expires after 30
-// minutes without use (each request with the cookie extends it) and 7 days after
-// sign-in at the latest, ends when the token is removed or given a new
-// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-// `GET /api/v1/session`) from a same-origin request; a cross-site
-// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-// The client sends the token back in an `X-Goldie-CSRF` request header on
-// each unsafe request. A bearer token beats the cookie, and a bearer
-// caller gets and needs no CSRF token. This operation takes no bearer
-// token, and a
+// minutes without use (each request with the cookie extends it) and 7
+// days after sign-in at the latest, and ends when the token is removed or
+// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+// an unsafe method only from a same-origin request that also sends the
+// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+// missing or wrong token, is a 403. The client sends the token back in an
+// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+// beats the cookie, and a bearer caller gets and needs no CSRF token.
+// This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. Failed sign-ins are
 // capped per remote address: past the cap within a window, every
 // sign-in from that address, a valid token included, is refused with a
@@ -5066,16 +5066,16 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // plain-http loopback dev server, `goldie server --dev`; any other
 // server, one behind a TLS proxy included, always sets both). It names
 // the token and its times under a signature (ADR 0027), expires after 30
-// minutes without use (each request with the cookie extends it) and 7 days after
-// sign-in at the latest, ends when the token is removed or given a new
-// value, and authenticates `GET` and `HEAD`, and an unsafe method that
-// also sends the CSRF token (`X-Goldie-CSRF`, returned here and by
-// `GET /api/v1/session`) from a same-origin request; a cross-site
-// `Origin` or `Sec-Fetch-Site`, or a missing or wrong token, is a 403.
-// The client sends the token back in an `X-Goldie-CSRF` request header on
-// each unsafe request. A bearer token beats the cookie, and a bearer
-// caller gets and needs no CSRF token. This operation takes no bearer
-// token, and a
+// minutes without use (each request with the cookie extends it) and 7
+// days after sign-in at the latest, and ends when the token is removed or
+// given a new value. It authenticates `GET` and `HEAD`. It authenticates
+// an unsafe method only from a same-origin request that also sends the
+// CSRF token (`X-Goldie-CSRF`, returned here and by `GET
+// /api/v1/session`); a cross-site `Origin` or `Sec-Fetch-Site`, or a
+// missing or wrong token, is a 403. The client sends the token back in an
+// `X-Goldie-CSRF` request header on each unsafe request. A bearer token
+// beats the cookie, and a bearer caller gets and needs no CSRF token.
+// This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. Failed sign-ins are
 // capped per remote address: past the cap within a window, every
 // sign-in from that address, a valid token included, is refused with a

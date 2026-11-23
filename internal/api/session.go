@@ -115,10 +115,10 @@ func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenE
 // send it back.
 const CSRFHeader = "X-Goldie-CSRF"
 
-// csrf is the CSRF token, an HMAC bound to the session, sent in a header, of the session of e that began at issued
-// (Unix seconds): an HMAC under the session key over the token's name, its
-// digest and the sign-in time. It is the same for the life of the session,
-// across cookie re-issues, and for no other session, key or token value.
+// csrf returns the CSRF token of the session of e that began at issued (Unix
+// seconds): an HMAC under the session key over the token's name, its digest
+// and the sign-in time. It is stable across cookie re-issues and unique to the
+// session.
 func (s *Sessions) csrf(e tokenEntry, issued int64) string {
 	h := hmac.New(sha256.New, s.key)
 	_, _ = fmt.Fprintf(h, "goldie-csrf\n%s\n%x\n%d", e.name, e.digest, issued) // a hash.Hash never errors
@@ -160,10 +160,11 @@ func (s *Sessions) setCookie(w http.ResponseWriter, r *http.Request, value strin
 	})
 }
 
-// serveCookie authenticates a request with a valid session cookie (an unsafe method also needs the CSRF token): the
-// token is looked up by name, so its Role is the configuration's now and a
-// removed token ends the session. It re-issues the cookie on every request it lets through. handled is false
-// when the request carries no cookie.
+// serveCookie authenticates a request with a valid session cookie; an unsafe
+// method also needs the CSRF token. The token is looked up by name, so its
+// Role is the configuration's now and a removed token ends the session. It
+// re-issues the cookie on every request it lets through. handled is false when
+// the request carries no cookie.
 func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Role, next http.Handler) (handled bool) {
 	c, err := r.Cookie(t.sessions.cookieName(r))
 	if err != nil {
