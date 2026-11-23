@@ -64,7 +64,7 @@ func SpanPath(p string) string {
 
 // ClientSpanPath is SpanPath for a client, whose request path starts with the
 // path of the API's base URL (a reverse proxy may serve goldie under a
-// prefix): the route is the shortest tail of p that is one, and the prefix is
+// prefix): the route is the longest tail of p that is one, and the prefix is
 // not exported.
 func ClientSpanPath(p string) string {
 	segs, ok := spanSegments(p)
