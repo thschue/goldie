@@ -57,7 +57,6 @@ import (
 //		Status *ReplicaStatus
 //	}
 //
-//	func MergeHistories(histories ...[]Event) []Event // sorted by Time, then Replica, then ID; deduped by Replica+ID, first wins
 //	func NewMerger(cfg MergeConfig) *Merger
 //	func (m *Merger) Start(ctx context.Context, inputs ...MergeInput) (history []Event, out <-chan MergedItem)
 //	func (m *Merger) Add(in MergeInput) bool // attach or re-attach an input while running
@@ -65,10 +64,11 @@ import (
 //	func (m *Merger) Buffered() int          // events held in the window now
 //	func (m *Merger) Dropped() uint64        // items the full output refused
 //	func (m *Merger) Duplicates() uint64     // events discarded as already seen (Replica+ID)
-//	func (m *Merger) Rejected() uint64       // events discarded as invalid (empty Replica or ID 0)
+//	func (m *Merger) Rejected() uint64       // events discarded as invalid (empty Replica, ID 0, or a Replica other than its input's Name) and duplicate input names
 //
 // Behaviour fixed here:
-//   - History: Start returns MergeHistories of every input's History. Those
+//   - History: Start returns every input's History merged (sorted by Time,
+//     then Replica, then ID; deduped by Replica+ID, first wins). Those
 //     keys count as seen, so the same event repeated live is not emitted again.
 //   - Window: an event received at clock time N is held until
 //     min(Event.Time, N) + Window <= clock now, so a far-future timestamp waits
@@ -80,6 +80,8 @@ import (
 //     emitted. The first copy wins. Event.ID going backwards is accepted when
 //     the key is new.
 //   - Invalid events (empty Replica, ID 0) are discarded and counted in Rejected.
+//     So is an event whose Replica differs from its input's Name: a feed
+//     carries only its own events (ADR 0022), live or in History.
 //   - Availability: an input is down when its Live channel is closed or was nil
 //     at attach; silence alone never marks it down (an idle replica is
 //     normal; the transport closes Live on a timeout). A down status is
@@ -257,45 +259,53 @@ func eqKeys(t *testing.T, got []Event, want ...string) {
 
 // ---- history merge ----
 
-func TestMergeHistories_OrderedByTimeThenReplicaThenID(t *testing.T) {
-	a := []Event{mergeEv("b", 1, mergeT0), mergeEv("b", 2, mergeT0.Add(3*time.Second))}
-	b := []Event{mergeEv("a", 2, mergeT0), mergeEv("a", 1, mergeT0), mergeEv("c", 1, mergeT0.Add(time.Second))}
-	eqKeys(t, MergeHistories(a, b), "a/1", "a/2", "b/1", "c/1", "b/2")
-	// Stable and deterministic: the argument order does not matter.
-	eqKeys(t, MergeHistories(b, a), "a/1", "a/2", "b/1", "c/1", "b/2")
+// The merged history is observed through Start, the one entry point.
+
+func TestMergerStart_HistoryIsOrderedByTimeThenReplicaThenID(t *testing.T) {
+	b := MergeInput{Name: "b", History: []Event{mergeEv("b", 1, mergeT0), mergeEv("b", 2, mergeT0.Add(3*time.Second))}}
+	a := MergeInput{Name: "a", History: []Event{mergeEv("a", 2, mergeT0), mergeEv("a", 1, mergeT0)}}
+	c := MergeInput{Name: "c", History: []Event{mergeEv("c", 1, mergeT0.Add(time.Second))}}
+	eqKeys(t, startMerger(t, MergeConfig{}, b, a, c).hist, "a/1", "a/2", "b/1", "c/1", "b/2")
+	// Stable and deterministic: the input order does not matter.
+	eqKeys(t, startMerger(t, MergeConfig{}, c, a, b).hist, "a/1", "a/2", "b/1", "c/1", "b/2")
 }
 
-func TestMergeHistories_DedupsByReplicaAndIDFirstWins(t *testing.T) {
+func TestMergerStart_HistoryDedupsByReplicaAndIDFirstWins(t *testing.T) {
 	first := mergeEv("a", 1, mergeT0)
 	first.Query = "first"
 	second := mergeEv("a", 1, mergeT0.Add(time.Hour))
 	second.Query = "second"
-	got := MergeHistories([]Event{first}, []Event{second, mergeEv("b", 1, mergeT0)})
-	eqKeys(t, got, "a/1", "b/1")
-	if got[0].Query != "first" {
-		t.Fatalf("the first copy must win, got %q", got[0].Query)
+	r := startMerger(t, MergeConfig{},
+		MergeInput{Name: "a", History: []Event{first, second}},
+		MergeInput{Name: "b", History: []Event{mergeEv("b", 1, mergeT0)}})
+	eqKeys(t, r.hist, "a/1", "b/1")
+	if r.hist[0].Query != "first" {
+		t.Fatalf("the first copy must win, got %q", r.hist[0].Query)
+	}
+	if r.m.Rejected() != 0 {
+		t.Fatalf("Rejected = %d, a duplicate is not a rejection", r.m.Rejected())
 	}
 }
 
-func TestMergeHistories_NoInputGivesNoEvents(t *testing.T) {
-	if got := MergeHistories(); len(got) != 0 {
+func TestMergerStart_NoInputGivesNoHistory(t *testing.T) {
+	if got := startMerger(t, MergeConfig{}).hist; len(got) != 0 {
 		t.Fatalf("got %v", got)
 	}
-	if got := MergeHistories(nil, []Event{}); len(got) != 0 {
+	if got := startMerger(t, MergeConfig{}, MergeInput{Name: "a"}, MergeInput{Name: "b", History: []Event{}}).hist; len(got) != 0 {
 		t.Fatalf("got %v", got)
 	}
 }
 
-func TestMergeHistories_DoesNotMutateItsInputs(t *testing.T) {
+func TestMergerStart_DoesNotMutateTheInputHistories(t *testing.T) {
 	a := []Event{mergeEv("a", 2, mergeT0.Add(time.Second)), mergeEv("a", 1, mergeT0)}
-	MergeHistories(a)
+	startMerger(t, MergeConfig{}, MergeInput{Name: "a", History: a})
 	eqKeys(t, a, "a/2", "a/1")
 }
 
 func TestMergerStart_ReturnsTheMergedHistoryOfAllInputs(t *testing.T) {
 	r := startMerger(t, MergeConfig{},
-		MergeInput{Name: "a", History: []Event{mergeEv("a", 1, mergeT0.Add(2*time.Second))}, Live: make(chan Event)},
-		MergeInput{Name: "b", History: []Event{mergeEv("b", 1, mergeT0.Add(time.Second)), mergeEv("a", 1, mergeT0.Add(2*time.Second))}, Live: make(chan Event)},
+		MergeInput{Name: "a", History: []Event{mergeEv("a", 1, mergeT0.Add(2*time.Second)), mergeEv("a", 1, mergeT0.Add(2*time.Second))}, Live: make(chan Event)},
+		MergeInput{Name: "b", History: []Event{mergeEv("b", 1, mergeT0.Add(time.Second))}, Live: make(chan Event)},
 	)
 	eqKeys(t, r.hist, "b/1", "a/1")
 	r.expectNone() // history is returned, not replayed on the output
@@ -390,12 +400,12 @@ func TestMerger_EqualTimestampsLeaveByReplicaThenID(t *testing.T) {
 
 // ---- dedup ----
 
-func TestMerger_SameEventFromTwoInputsAppearsOnce(t *testing.T) {
-	l1, l2 := make(chan Event), make(chan Event)
-	r := startMerger(t, MergeConfig{}, MergeInput{Name: "direct", Live: l1}, MergeInput{Name: "via", Live: l2})
+func TestMerger_SameEventSentTwiceByItsInputAppearsOnce(t *testing.T) {
+	l1 := make(chan Event)
+	r := startMerger(t, MergeConfig{}, MergeInput{Name: "a", Live: l1})
 	e := mergeEv("a", 7, mergeT0)
 	sendEv(t, l1, e)
-	sendEv(t, l2, e)
+	sendEv(t, l1, e)
 	r.waitFor("duplicate counted", func() bool { return r.m.Duplicates() == 1 })
 	r.clock.Advance(2 * time.Second)
 	if got := r.recvEvent(); got.Replica != "a" || got.ID != 7 {
@@ -418,13 +428,13 @@ func TestMerger_HistoryEventRepeatedLiveIsNotEmitted(t *testing.T) {
 }
 
 func TestMerger_CopyArrivingAfterTheFirstWasEmittedIsDropped(t *testing.T) {
-	l1, l2 := make(chan Event), make(chan Event)
-	r := startMerger(t, MergeConfig{}, MergeInput{Name: "p", Live: l1}, MergeInput{Name: "q", Live: l2})
+	l1 := make(chan Event)
+	r := startMerger(t, MergeConfig{}, MergeInput{Name: "a", Live: l1})
 	sendEv(t, l1, mergeEv("a", 1, mergeT0))
 	r.waitFor("buffered", func() bool { return r.m.Buffered() == 1 })
 	r.clock.Advance(2 * time.Second)
 	r.recvEvent()
-	sendEv(t, l2, mergeEv("a", 1, mergeT0))
+	sendEv(t, l1, mergeEv("a", 1, mergeT0))
 	r.waitFor("duplicate", func() bool { return r.m.Duplicates() == 1 })
 	r.clock.Advance(10 * time.Second)
 	r.expectNone() // and not re-emitted as a late event
