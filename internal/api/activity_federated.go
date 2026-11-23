@@ -78,6 +78,21 @@ type Credential struct {
 	SessionVal  string
 }
 
+// String, GoString and LogValue show only whether a credential is set, so it
+// never reaches a log line or an error text.
+func (c Credential) String() string   { return "api.Credential[" + c.redacted() + "]" }
+func (c Credential) GoString() string { return c.String() }
+func (c Credential) LogValue() slog.Value {
+	return slog.StringValue(c.redacted())
+}
+
+func (c Credential) redacted() string {
+	if c.Token == "" && c.SessionVal == "" {
+		return "none"
+	}
+	return "[redacted]"
+}
+
 // activityCall is what activityRequest hands the handler: replicas=all, and
 // the caller's credential.
 type activityCall struct {
