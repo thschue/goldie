@@ -1512,7 +1512,7 @@ components:
             - article:platform/deploy-v2
         scope:
           type: string
-          description: '`global`, or the Project (`host/org/repo`) whose copy won.'
+          description: '`global`, `local` (the repository''s own `.goldie/`), or the Project (`host/org/repo`) whose copy won.'
           examples:
             - github.com/acme/shop
         enforced:
@@ -1682,7 +1682,7 @@ components:
             - article
         scope:
           type: string
-          description: Where the Item applies, such as `global` (ADR 0005).
+          description: "Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005)."
           examples:
             - global
         keywords:
@@ -1813,8 +1813,8 @@ components:
         scope:
           type: string
           description: |
-            `global`, or the Project (`host/org/repo`) whose copy won in the
-            requested view. Absent from an older server, where it means unknown,
+            `global`, `local` (the repository's own `.goldie/`), or the Project
+            (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
             not global.
           examples:
             - github.com/acme/shop

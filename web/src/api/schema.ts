@@ -730,7 +730,7 @@ export interface components {
              */
             replaced_by?: string;
             /**
-             * @description `global`, or the Project (`host/org/repo`) whose copy won.
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won.
              * @example github.com/acme/shop
              */
             scope: string;
@@ -874,7 +874,7 @@ export interface components {
              */
             kind: string;
             /**
-             * @description Where the Item applies, such as `global` (ADR 0005).
+             * @description Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005).
              * @example global
              */
             scope: string;
@@ -989,8 +989,8 @@ export interface components {
              */
             replaced_by?: string;
             /**
-             * @description `global`, or the Project (`host/org/repo`) whose copy won in the
-             *     requested view. Absent from an older server, where it means unknown,
+             * @description `global`, `local` (the repository's own `.goldie/`), or the Project
+             *     (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
              *     not global.
              * @example github.com/acme/shop
              */
