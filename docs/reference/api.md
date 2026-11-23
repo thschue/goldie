@@ -550,7 +550,7 @@ One agent definition.
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the agent answer is the global one, and this says what to do next. |
 | `name` | `string` | yes | The agent's name, its file name without '.md'. |
 | `scope` | `string` | no | Where the winning copy lives, as 'SearchHit.scope' says it: 'global', 'host/org/repo' or 'local'. Sent by 'listAgents' only; 'getAgent' omits it, and a missing value means unknown. |
-| `status` | `string` | no | The 'status' in the frontmatter: 'draft' or 'deprecated'; absent for a published agent. Sent by 'listAgents' only. Draft agents are hidden unless 'drafts=true' is asked for with the operator role. |
+| `status` | `string` | no | The agent's status: 'published', 'draft' or 'deprecated'. Sent by 'listAgents' only; 'getAgent' omits it, and a missing value means unknown. Draft agents are hidden unless 'drafts=true' is asked for with the operator role. |
 
 ### `AgentList`
 

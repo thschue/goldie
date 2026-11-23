@@ -270,9 +270,10 @@ type Agent struct {
 	// Examples: global
 	Scope *string `json:"scope,omitempty"`
 
-	// Status The `status` in the frontmatter: `draft` or `deprecated`; absent for
-	// a published agent. Sent by `listAgents` only. Draft agents are
-	// hidden unless `drafts=true` is asked for with the operator role.
+	// Status The agent's status: `published`, `draft` or `deprecated`. Sent by
+	// `listAgents` only; `getAgent` omits it, and a missing value means
+	// unknown. Draft agents are hidden unless `drafts=true` is asked for
+	// with the operator role.
 	//
 	//
 	// Examples: draft

@@ -104,7 +104,7 @@ func (s *Server) ListAgents(ctx context.Context, req contract.ListAgentsRequestO
 	res := contract.ListAgents200JSONResponse{Agents: []contract.Agent{}, Hint: hint}
 	for _, a := range snap.Agents(proj, opts) {
 		card := contract.Agent{Name: a.Name, Description: a.Description, Scope: &a.Scope}
-		if a.Status != "" && a.Status != engine.StatusPublished {
+		if a.Status != "" {
 			card.Status = &a.Status
 		}
 		res.Agents = append(res.Agents, card)
