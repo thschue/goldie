@@ -33,6 +33,13 @@ type Skill struct {
 	Files []string
 	// Sizes is each file's size in bytes, keyed by the paths in Files.
 	Sizes map[string]int
+	// Status is StatusDraft, StatusDeprecated, or empty for a published skill:
+	// the status in the frontmatter of SKILL.md.
+	Status string
+	// Description is the description in the frontmatter of SKILL.md, or empty.
+	Description string
+	// RequiresSync is true when the bundle holds a file under scripts/.
+	RequiresSync bool
 }
 
 // skillBundle is a loaded bundle: every file's bytes as written.
@@ -43,6 +50,8 @@ type skillBundle struct {
 	files map[string][]byte
 	// keywords are the keywords in the frontmatter of SKILL.md, lower case.
 	keywords []string
+	// status and description are the frontmatter's ("" if absent).
+	status, description string
 }
 
 // skillKeywords reads the keywords from the frontmatter of a SKILL.md. A
@@ -60,6 +69,28 @@ func skillKeywords(raw []byte) []string {
 		return nil
 	}
 	return lenientKeywords(meta.Keywords)
+}
+
+// skillMeta reads the status and description from the frontmatter of a
+// SKILL.md. Malformed frontmatter yields "": the file is served as written
+// either way. Only draft and deprecated are statuses; anything else is
+// published, which carries none.
+func skillMeta(raw []byte) (status, description string) {
+	front, _, err := splitFrontmatter(raw)
+	if err != nil {
+		return "", ""
+	}
+	var meta struct {
+		Status      string `yaml:"status"`
+		Description string `yaml:"description"`
+	}
+	if yaml.Unmarshal(front, &meta) != nil {
+		return "", ""
+	}
+	if s := strings.ToLower(strings.TrimSpace(meta.Status)); s == StatusDraft || s == StatusDeprecated {
+		status = s
+	}
+	return status, strings.TrimSpace(meta.Description)
 }
 
 // errNoSkillFile is what SkillFile returns for anything that is not a file of
@@ -104,7 +135,8 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 		if !ok {
 			return nil, fmt.Errorf("%s: has no %s", p, skillFileName)
 		}
-		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, keywords: skillKeywords(skill)}
+		status, description := skillMeta(skill)
+		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, keywords: skillKeywords(skill), status: status, description: description}
 	}
 	return bundles, nil
 }
@@ -178,17 +210,22 @@ func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
 	}
 	files := make([]string, 0, len(b.files))
 	sizes := make(map[string]int, len(b.files))
+	sync := false
 	for f, raw := range b.files {
 		files = append(files, f)
 		sizes[f] = len(raw)
+		sync = sync || strings.HasPrefix(f, "scripts/")
 	}
 	slices.Sort(files)
-	return Skill{Name: b.name, Scope: b.scope, Files: files, Sizes: sizes}, true
+	return Skill{Name: b.name, Scope: b.scope, Files: files, Sizes: sizes,
+		Status: b.status, Description: b.description, RequiresSync: sync}, true
 }
 
 // Skills returns the skills that answer in proj's view, sorted by name: one
-// per name, the bundle SkillIn returns.
-func (s *Snapshot) Skills(proj string) []Skill {
+// per name, the bundle SkillIn returns. A draft skill is left out unless opts
+// has Drafts.
+func (s *Snapshot) Skills(proj string, opts ...ReadOptions) []Skill {
+	o := readOpts(opts)
 	names := map[string]bool{}
 	for _, scope := range s.skillScopes(proj) {
 		for n := range scope {
@@ -197,7 +234,7 @@ func (s *Snapshot) Skills(proj string) []Skill {
 	}
 	out := make([]Skill, 0, len(names))
 	for n := range names {
-		if sk, ok := s.SkillIn(proj, n); ok {
+		if sk, ok := s.SkillIn(proj, n); ok && (o.Drafts || sk.Status != StatusDraft) {
 			out = append(out, sk)
 		}
 	}

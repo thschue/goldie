@@ -27,10 +27,12 @@ func skillAnswer(sk engine.Skill) contract.Skill {
 	return contract.Skill{Name: sk.Name, Files: files}
 }
 
-// ListSkills answers GET /api/v1/skills. Skills have no drafts, but drafts=true
-// is still an operator-only parameter, as for every read.
+// ListSkills answers GET /api/v1/skills. A draft skill is listed only with
+// drafts=true, an operator-only parameter as for every read. Each entry also
+// carries the fields of a skill card (the single get does not).
 func (s *Server) ListSkills(ctx context.Context, req contract.ListSkillsRequestObject) (contract.ListSkillsResponseObject, error) {
-	if _, allowed := readOptions(ctx, req.Params.Drafts); !allowed {
+	opts, allowed := readOptions(ctx, req.Params.Drafts)
+	if !allowed {
 		return contract.ListSkills403JSONResponse(forbiddenDrafts), nil
 	}
 	project, ok := validProject(req.Params.Project)
@@ -43,8 +45,17 @@ func (s *Server) ListSkills(ctx context.Context, req contract.ListSkillsRequestO
 	}
 	proj, hint := scopeHint(snap, project)
 	res := contract.ListSkills200JSONResponse{Skills: []contract.Skill{}, Hint: hint}
-	for _, sk := range snap.Skills(proj) {
-		res.Skills = append(res.Skills, skillAnswer(sk))
+	for _, sk := range snap.Skills(proj, opts) {
+		ans := skillAnswer(sk)
+		ans.Scope = &sk.Scope
+		ans.RequiresSync = &sk.RequiresSync
+		if sk.Status != "" {
+			ans.Status = &sk.Status
+		}
+		if sk.Description != "" {
+			ans.Description = &sk.Description
+		}
+		res.Skills = append(res.Skills, ans)
 	}
 	return res, nil
 }

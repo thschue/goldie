@@ -64,7 +64,8 @@ export interface paths {
          * List the skills
          * @description Returns the skills that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins with its whole bundle. Each carries its
-         *     file list. Fetch one of a skill's files with `getSkillFile`
+         *     file list, `scope`, `status`, `description` and `requires_sync`. A
+         *     draft skill is listed only with `drafts=true` and the operator role. Fetch one of a skill's files with `getSkillFile`
          *     (`GET /api/v1/skills/{name}/files/{path}`).
          */
         get: operations["listSkills"];
@@ -567,6 +568,32 @@ export interface components {
              *     ]
              */
             files: components["schemas"]["SkillFile"][];
+            /**
+             * @description Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+             *     `host/org/repo` or `local`. Sent by the skill list; absent means
+             *     unknown.
+             * @example global
+             */
+            scope?: string;
+            /**
+             * @description The `status` in the frontmatter of SKILL.md, for example `draft`.
+             *     Sent by the skill list; absent for a published skill.
+             * @example draft
+             */
+            status?: string;
+            /**
+             * @description The `description` in the frontmatter of SKILL.md. Sent by the skill
+             *     list; absent when the skill has none.
+             * @example Deploys the app
+             */
+            description?: string;
+            /**
+             * @description True when the bundle holds a script (a file under `scripts/`), so an
+             *     agent must sync it to run it; false for a text-only bundle. Sent by
+             *     the skill list; absent means unknown.
+             * @example true
+             */
+            requires_sync?: boolean;
             /**
              * @description Present when the request named a Project that is not registered: the
              *     skill answer is the global one, and this says what to do next.
