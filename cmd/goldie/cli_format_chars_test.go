@@ -111,7 +111,24 @@ func TestCLIErrorDropsFormatCharactersFromTheEnvelope(t *testing.T) {
 	if leaked := formatChars(err.Error()); len(leaked) > 0 {
 		t.Errorf("error carries format characters %v:\n%q", leaked, err)
 	}
-	if want := "abcdefghijk (404 Not Found)\nHint: abcdefghijk"; err.Error() != want {
+	if want := "abcdefghijk (404 Not Found)\nHint: " + lookupHint; err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+// A code the CLI does not reword keeps the server's hint, and the hint is
+// cleaned of format characters.
+func TestCLIErrorDropsFormatCharactersFromAKeptHint(t *testing.T) {
+	h := jsonString(t, hiddenCf)
+	body := `{"error":{"code":"bad_request","message":` + h + `,"details":{"hint":` + h + `}}}`
+	_, err := runCLI(t, "lookup", "x", "--addr", hostileServer(t, http.StatusBadRequest, body), "--token", cliToken)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if leaked := formatChars(err.Error()); len(leaked) > 0 {
+		t.Errorf("error carries format characters %v:\n%q", leaked, err)
+	}
+	if want := "abcdefghijk (400 Bad Request)\nHint: abcdefghijk"; err.Error() != want {
 		t.Errorf("error = %q, want %q", err, want)
 	}
 }

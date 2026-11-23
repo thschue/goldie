@@ -100,9 +100,9 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	var c *commander
 	switch name {
 	case "version":
-		c, err = f.commander(env, false)
+		c, err = f.commander(env, tokenOptional)
 	case "init":
-		c, err = f.commander(env, true)
+		c, err = f.commander(env, tokenRequired)
 	default:
 		var stop func()
 		if c, stop, err = f.open(ctx, env); stop != nil {
@@ -205,7 +205,11 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 		}
 	}
 	local := dir != "" || goldieDir != ""
-	c, err := f.commander(env, !local)
+	mode := tokenRequired
+	if local {
+		mode = tokenNone
+	}
+	c, err := f.commander(env, mode)
 	if err != nil {
 		closeContent()
 		return nil, nil, err
@@ -304,17 +308,29 @@ func (f *ClientFlags) localDir(env Env) (string, error) {
 	return "", fmt.Errorf("%s and %s are both set: use %s for a running server or %s for local content, not both", dirName, addrName, addrName, dirName)
 }
 
-// commander resolves the settings from the flags and env. With needToken it
-// reads the token variables, which may fail.
-func (f *ClientFlags) commander(env Env, needToken bool) (*commander, error) {
+// tokenMode says how commander reads the token variables.
+type tokenMode int
+
+const (
+	tokenNone     tokenMode = iota // not read: local mode has no token
+	tokenRequired                  // read; a broken setting is an error
+	tokenOptional                  // read; a broken setting is ignored, so version keeps working
+)
+
+// commander resolves the settings from the flags and env. --token wins over
+// the variables, which are read as the mode says.
+func (f *ClientFlags) commander(env Env, mode tokenMode) (*commander, error) {
 	s := f.s
 	if s.addr == "" {
 		s.addr, _ = env.Lookup(EnvAddr)
 	}
-	if s.token == "" && needToken {
+	if s.token == "" && mode != tokenNone {
 		var err error
 		if s.token, err = platform.Setting(env.Lookup, env.ReadFile, EnvToken); err != nil {
-			return nil, err
+			if mode == tokenRequired {
+				return nil, err
+			}
+			s.token = ""
 		}
 	}
 	errOut := env.Err
