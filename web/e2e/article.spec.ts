@@ -7,7 +7,8 @@
 // - the id is shown in a mono face (computed font-family names "mono");
 // - the enforced chip is text or an img named /enforced/i, shown only for
 //   `enforced: true`; the overrides line reads "Overrides article:<name|id> from
-//   <scope>", one "from" per Scope, shown only for a non-empty `overrides`;
+//   <scope>[, <scope>]", a single "from" before the Scopes (docs/design
+//   ui-handoff §8), shown only for a non-empty `overrides`;
 // - the lifecycle banner is a role=status in main, above the h1, with a dashed
 //   border for a draft; the replaced_by link is inside it;
 // - an error is a role=alert in main holding the envelope's message and hint
@@ -248,13 +249,13 @@ test.describe('the article page', () => {
     await expect(chip(page)).toHaveCount(0);
   });
 
-  test('says "Overrides article:<name> from <scope>" for each shadowed Scope, and only then', async ({ page }) => {
+  test('says "Overrides article:<name> from <scope>, <scope>" for shadowed Scopes, and only then', async ({ page }) => {
     await stubArticle(page, article({ enforced: false, overrides: ['org', 'global'] }));
     await open(page);
     await expect(h1(page)).toBeVisible();
     const text = await mainText(page);
     expect(text).toMatch(/Overrides\s+article:(Deploying to Kubernetes|platform\/deploy)\s+from\s+org/);
-    expect(text).toMatch(/from\s+global/);
+    expect(text).toMatch(/from\s+org,\s*global/);
 
     await page.unroute(apiArticle);
     await stubArticle(page, article({ enforced: false, overrides: [] }));
