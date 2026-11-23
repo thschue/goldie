@@ -26,7 +26,20 @@ const (
 	EnvRateLimit = "GOLDIE_RATE_LIMIT"
 
 	EnvMinClientVersion = "GOLDIE_MIN_CLIENT_VERSION"
+
+	// The git Source (#96). Its URL is operator-trusted (ADR-0023).
+	EnvGitURL           = "GOLDIE_GIT_URL" // logged with userinfo, query and fragment redacted
+	EnvGitRef           = "GOLDIE_GIT_REF"
+	EnvGitToken         = "GOLDIE_GIT_TOKEN"           // secret: never logged
+	EnvGitSSHKey        = "GOLDIE_GIT_SSH_KEY"         // secret: never logged
+	EnvGitSSHKnownHosts = "GOLDIE_GIT_SSH_KNOWN_HOSTS" // secret: never logged
+	EnvGitCABundle      = "GOLDIE_GIT_CA_BUNDLE"       // logged only as set or unset
+	EnvGitAllowFileURL  = "GOLDIE_GIT_ALLOW_FILE_URL"
+	EnvPollInterval     = "GOLDIE_POLL_INTERVAL"
 )
+
+// MinPollInterval is the shortest GOLDIE_POLL_INTERVAL LoadConfig accepts.
+const MinPollInterval = 10 * time.Second
 
 // Config is the effective server configuration. It is read once at startup
 // by LoadConfig and never changes afterwards.
@@ -55,6 +68,20 @@ type Config struct {
 	ContentDir string // root of the dir Source
 	APIToken   string // the shorthand for one operator token; secret
 	APITokens  string // name:role:token lines, as read; secret
+
+	// The git Source, as read; LoadConfig checks only that GitURL and
+	// ContentDir are not both set. GitURL may carry userinfo: log it only
+	// through the startup report, which redacts it.
+	GitURL           string
+	GitRef           string // empty for the remote's HEAD
+	GitToken         string // secret
+	GitSSHKey        string // secret
+	GitSSHKnownHosts string // secret
+	GitCABundle      string // PEM; logged only as set or unset
+	GitAllowFileURL  bool   // accept a file:// GitURL
+
+	PollInterval     time.Duration // how often every Source is polled; at least MinPollInterval
+	pollIntervalText string        // PollInterval as written, for the startup report
 }
 
 // Lookup reads one environment variable. os.LookupEnv satisfies it; tests
@@ -124,6 +151,29 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("%s: must be true or false", EnvSwaggerUIEnabled))
 	}
+	cfg.GitURL = str(EnvGitURL, def(EnvGitURL))
+	cfg.GitRef = str(EnvGitRef, def(EnvGitRef))
+	cfg.GitToken = str(EnvGitToken, def(EnvGitToken))
+	cfg.GitSSHKey = str(EnvGitSSHKey, def(EnvGitSSHKey))
+	cfg.GitSSHKnownHosts = str(EnvGitSSHKnownHosts, def(EnvGitSSHKnownHosts))
+	cfg.GitCABundle = str(EnvGitCABundle, def(EnvGitCABundle))
+	if err := checkOneSource(cfg.ContentDir, cfg.GitURL); err != nil {
+		errs = append(errs, err)
+	}
+	switch strings.ToLower(str(EnvGitAllowFileURL, def(EnvGitAllowFileURL))) {
+	case "true":
+		cfg.GitAllowFileURL = true
+	case "false":
+	default:
+		errs = append(errs, fmt.Errorf("%s: must be true or false", EnvGitAllowFileURL))
+	}
+	cfg.pollIntervalText = str(EnvPollInterval, def(EnvPollInterval))
+	if d, err := time.ParseDuration(cfg.pollIntervalText); err != nil || d < MinPollInterval {
+		// The value is never echoed: time.ParseDuration's error quotes it.
+		errs = append(errs, fmt.Errorf("%s: must be a Go duration of at least %s, such as 1m or 90s", EnvPollInterval, MinPollInterval))
+	} else {
+		cfg.PollInterval = d
+	}
 	if !strings.Contains(cfg.Addr, ":") {
 		errs = append(errs, fmt.Errorf("%s: must be a host:port address", EnvAddr))
 	}
@@ -144,6 +194,18 @@ func LoadConfig(lookup Lookup) (Config, error) {
 func CheckAPITokenPairing(token, tokens string) error {
 	if token != "" && tokens != "" {
 		return fmt.Errorf("%s and %s are both set: set exactly one", EnvAPIToken, EnvAPITokens)
+	}
+	return nil
+}
+
+// checkOneSource refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL set together,
+// after their _FILE forms are read: until several Sources are configurable
+// (ADR 0004), a process serves one. Like the token pairing it is part of
+// LoadConfig, so goldie health refuses it too. The error names both variables
+// and neither value: the URL may hold a password.
+func checkOneSource(contentDir, gitURL string) error {
+	if contentDir != "" && gitURL != "" {
+		return fmt.Errorf("%s and %s are both set: for now a process serves one Source, so set only one", EnvContentDir, EnvGitURL)
 	}
 	return nil
 }
@@ -196,4 +258,86 @@ func redacted(secret any) string {
 		return "(unset)"
 	}
 	return "(redacted)"
+}
+
+// setOrUnset stands in for a value that is logged only as set or unset, such
+// as the git CA bundle: not a secret, but bulky and of no use in a log line.
+func setOrUnset(v string) string {
+	if v == "" {
+		return "(unset)"
+	}
+	return "(set)"
+}
+
+// redactGitURL is GOLDIE_GIT_URL as the startup report logs it: the userinfo,
+// the query and the fragment replaced by (redacted), whether or not the value
+// parses. It never trusts url.Parse, which reads usr:pw@host:path as the
+// scheme usr with an opaque rest. Everything before the last @ that is not a
+// scheme is userinfo, so an @ in a path costs the host, never a password; from
+// the first ?, # or character a URL cannot hold (a space, a control or
+// non-ASCII character, a quote), the rest is dropped. When such a byte comes
+// before the last @, nothing tells a password holding it from a query or
+// fragment holding the @, so all but the scheme is dropped.
+func redactGitURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	rest := raw
+	scheme, afterScheme, hasScheme := strings.Cut(raw, "://")
+	if hasScheme && isURLScheme(scheme) {
+		b.WriteString(scheme + "://")
+		rest = afterScheme
+	}
+	if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+		if end := urlEnd(rest); end < at {
+			return b.String() + "(redacted)"
+		}
+		b.WriteString("(redacted)@")
+		rest = rest[at+1:]
+	}
+	end := urlEnd(rest)
+	b.WriteString(rest[:end])
+	switch {
+	case end == len(rest):
+	case rest[end] == '?':
+		b.WriteString("?(redacted)")
+	case rest[end] == '#':
+		b.WriteString("#(redacted)")
+	default:
+		b.WriteString("(redacted)")
+	}
+	return b.String()
+}
+
+// urlEnd is the index of the first ?, # or byte a URL's authority or path
+// cannot hold in s, or len(s) when there is none.
+func urlEnd(s string) int {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '?' || c == '#' || !isURLByte(c) {
+			return i
+		}
+	}
+	return len(s)
+}
+
+// isURLScheme reports whether s is a URL scheme (RFC 3986 3.1): a letter, then
+// letters, digits, '+', '-' or '.'.
+func isURLScheme(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		letter := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
+		other := '0' <= c && c <= '9' || c == '+' || c == '-' || c == '.'
+		if !letter && (i == 0 || !other) {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// isURLByte reports whether c may appear in the authority or path of a URL
+// (RFC 3986: unreserved, sub-delims, ':', '/', '@', '%', '[' and ']').
+func isURLByte(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' ||
+		strings.IndexByte("-._~!$&'()*+,;=:/@%[]", c) >= 0
 }

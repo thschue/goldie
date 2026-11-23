@@ -89,3 +89,35 @@ func TestBinaryHealthRejectsBothTokenVariables(t *testing.T) {
 		}
 	}
 }
+
+// #258: LoadConfig refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL together, so
+// goldie health stops on them too, naming both variables before it probes
+// anything, and echoing neither the directory nor the URL's password.
+func TestBinaryHealthRejectsContentDirAndGitURL(t *testing.T) {
+	const password = "git-url-password-0123456789abcdef"
+	dir := filepath.Join(t.TempDir(), "content-marker-dir")
+	url := "https://deploy:" + password + "@git.example.com/org/content.git"
+	urlFile := filepath.Join(t.TempDir(), "git-url")
+	if err := os.WriteFile(urlFile, []byte(url+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, env := range map[string][]string{
+		"both variables": {"GOLDIE_CONTENT_DIR=" + dir, "GOLDIE_GIT_URL=" + url},
+		"url file":       {"GOLDIE_CONTENT_DIR=" + dir, "GOLDIE_GIT_URL_FILE=" + urlFile},
+	} {
+		cmd := exec.Command(goldieBinary(t), "health")
+		cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "GOLDIE_ADMIN_ADDR=127.0.0.1:1"}, env...)
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "GOLDIE_CONTENT_DIR") || !strings.Contains(string(out), "GOLDIE_GIT_URL") {
+			t.Errorf("health with %s: err = %v, want a failure naming GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL: %s", name, err, out)
+		}
+		if strings.Contains(string(out), "unreachable") {
+			t.Errorf("health with %s: it probed the admin port instead of refusing the configuration: %s", name, out)
+		}
+		for _, hidden := range []string{password, "content-marker-dir", urlFile} {
+			if strings.Contains(string(out), hidden) {
+				t.Errorf("health with %s: output echoes %q: %s", name, hidden, out)
+			}
+		}
+	}
+}
