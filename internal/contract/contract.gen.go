@@ -171,6 +171,21 @@ type Article struct {
 	Status *ItemStatus `json:"status,omitempty"`
 }
 
+// ContentWarning One finding of a content load that did not fail it, such as a `suppress`
+// reference that names nothing. It shows what a Source wrote, escaped to
+// printable ASCII and cut, which is why only operators read it.
+type ContentWarning struct {
+	// File The file the finding is about, relative to the Source root.
+	//
+	// Examples: projects/github.com/acme/shop/project.yaml
+	File string `json:"file"`
+
+	// Message What is wrong, printable ASCII, at most 1 KiB with the file.
+	//
+	// Examples: suppress "article:team/gone" names no published Item this Project can see
+	Message string `json:"message"`
+}
+
 // Error One error. It never contains addresses, paths or stack traces.
 type Error struct {
 	// Code A stable, machine-readable error code.
@@ -211,6 +226,25 @@ type ErrorEnvelope struct {
 //
 // Examples: deprecated
 type ItemStatus string
+
+// ProjectDetail One registered Project and what its `project.yaml` suppresses.
+type ProjectDetail struct {
+	// Id A Project: exactly three segments `host/org/repo` (ADR 0020). The host
+	// is a lower-case DNS name that starts with a letter or digit; the org and
+	// the repo use letters, digits, `.`, `_` and `-` and do not start with a
+	// dot. Clients send it lower-cased; the server matches it ignoring case.
+	//
+	//
+	// Examples: github.com/acme/shop
+	Id ProjectId `json:"id"`
+
+	// Suppressions The global Items the Project suppresses, as `article:<id>`, sorted.
+	// A reference that names nothing is not listed. Empty when there are none.
+	//
+	//
+	// Examples: ["article:platform/notes","article:style"]
+	Suppressions []string `json:"suppressions"`
+}
 
 // ProjectId A Project: exactly three segments `host/org/repo` (ADR 0020). The host
 // is a lower-case DNS name that starts with a letter or digit; the org and
@@ -306,6 +340,14 @@ type SearchResults struct {
 	//
 	// Examples: []
 	Results []SearchHit `json:"results"`
+}
+
+// SyncStatus How the last content load went, for operators.
+type SyncStatus struct {
+	// Warnings Load findings that did not fail the load, in load order.
+	//
+	// Examples: [{"file":"projects/github.com/acme/shop/project.yaml","message":"suppress \"article:team/gone\" names no published Item this Project can see"}]
+	Warnings []ContentWarning `json:"warnings"`
 }
 
 // ErrorResponse The body of every error response.
@@ -480,6 +522,18 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
 	ListProjects(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetProject Read one registered Project
+	//
+	// Returns the Project's id, in the case the server stores it, and the
+	// global Items its `project.yaml` suppresses (ADR 0021) as
+	// `article:<id>`, sorted. A Project that suppresses nothing answers an
+	// empty list. A lookup of a suppressed Item answers 404 with a hint that
+	// names the Suppression and the file that sets it, and search leaves it
+	// out.
+	//
+	// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
+	GetProject(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SearchArticles Search articles by keyword
 	//
 	// Returns the articles that match the search words, best first. An exact
@@ -489,6 +543,18 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSync Read the content sync warnings
+	//
+	// Returns the findings of the last content load that did not fail it, for
+	// operator tokens only, such as a `suppress` reference that names nothing
+	// in a Project's `project.yaml`. Each warning names a file relative to the
+	// Source root and shows what the Source wrote escaped to printable ASCII
+	// and cut, which is why only operators read them. `goldie validate` prints
+	// the same warnings for a content directory.
+	//
+	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
+	GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	//
@@ -584,6 +650,28 @@ func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn
 	return c.Client.Do(req)
 }
 
+// GetProject Read one registered Project
+//
+// Returns the Project's id, in the case the server stores it, and the
+// global Items its `project.yaml` suppresses (ADR 0021) as
+// `article:<id>`, sorted. A Project that suppresses nothing answers an
+// empty list. A lookup of a suppressed Item answers 404 with a hint that
+// names the Suppression and the file that sets it, and search leaves it
+// out.
+//
+// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
+func (c *Client) GetProject(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetProjectRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // SearchArticles Search articles by keyword
 //
 // Returns the articles that match the search words, best first. An exact
@@ -594,6 +682,28 @@ func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn
 // Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 func (c *Client) SearchArticles(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSearchArticlesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSync Read the content sync warnings
+//
+// Returns the findings of the last content load that did not fail it, for
+// operator tokens only, such as a `suppress` reference that names nothing
+// in a Project's `project.yaml`. Each warning names a file relative to the
+// Source root and shows what the Source wrote escaped to printable ASCII
+// and cut, which is why only operators read them. `goldie validate` prints
+// the same warnings for a content directory.
+//
+// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
+func (c *Client) GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSyncRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -765,6 +875,40 @@ func NewListProjectsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetProjectRequest constructs an http.Request for the GetProject method
+func NewGetProjectRequest(server string, id ProjectId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/projects/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewSearchArticlesRequest constructs an http.Request for the SearchArticles method
 func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*http.Request, error) {
 	var err error
@@ -829,6 +973,33 @@ func NewSearchArticlesRequest(server string, params *SearchArticlesParams) (*htt
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSyncRequest constructs an http.Request for the GetSync method
+func NewGetSyncRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/sync"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -992,6 +1163,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/projects (the `ListProjects` operationId).
 	ListProjectsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListProjectsResponse, error)
 
+	// GetProjectWithResponse Read one registered Project
+	//
+	// Returns the Project's id, in the case the server stores it, and the
+	// global Items its `project.yaml` suppresses (ADR 0021) as
+	// `article:<id>`, sorted. A Project that suppresses nothing answers an
+	// empty list. A lookup of a suppressed Item answers 404 with a hint that
+	// names the Suppression and the file that sets it, and search leaves it
+	// out.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
+	GetProjectWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
+
 	// SearchArticlesWithResponse Search articles by keyword
 	//
 	// Returns the articles that match the search words, best first. An exact
@@ -1003,6 +1188,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/search (the `SearchArticles` operationId).
 	SearchArticlesWithResponse(ctx context.Context, params *SearchArticlesParams, reqEditors ...RequestEditorFn) (*SearchArticlesResponse, error)
+
+	// GetSyncWithResponse Read the content sync warnings
+	//
+	// Returns the findings of the last content load that did not fail it, for
+	// operator tokens only, such as a `suppress` reference that names nothing
+	// in a Project's `project.yaml`. Each warning names a file relative to the
+	// Source root and shows what the Source wrote escaped to printable ASCII
+	// and cut, which is why only operators read them. `goldie validate` prints
+	// the same warnings for a content directory.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
+	GetSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncResponse, error)
 
 	// GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
 	//
@@ -1293,6 +1492,103 @@ func (r ListProjectsResponse) ContentType() string {
 	return ""
 }
 
+// GetProjectResponse429Headers the declared response headers of an HTTP 429 response for GetProject
+type GetProjectResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetProjectResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ProjectDetail
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetProjectResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetProjectResponse) GetJSON200() *ProjectDetail {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetProjectResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetProjectResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetProjectResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetProjectResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetProjectResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetProjectResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetProjectResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetProjectResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetProjectResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetProjectResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // SearchArticlesResponse429Headers the declared response headers of an HTTP 429 response for SearchArticles
 type SearchArticlesResponse429Headers struct {
 	RetryAfter *int
@@ -1384,6 +1680,96 @@ func (r SearchArticlesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SearchArticlesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetSyncResponse429Headers the declared response headers of an HTTP 429 response for GetSync
+type GetSyncResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetSyncResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SyncStatus
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSyncResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSyncResponse) GetJSON200() *SyncStatus {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSyncResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetSyncResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSyncResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSyncResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetSyncResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSyncResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSyncResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSyncResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSyncResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSyncResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1559,6 +1945,26 @@ func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, reqE
 	return ParseListProjectsResponse(rsp)
 }
 
+// GetProjectWithResponse Read one registered Project
+//
+// Returns the Project's id, in the case the server stores it, and the
+// global Items its `project.yaml` suppresses (ADR 0021) as
+// `article:<id>`, sorted. A Project that suppresses nothing answers an
+// empty list. A lookup of a suppressed Item answers 404 with a hint that
+// names the Suppression and the file that sets it, and search leaves it
+// out.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/projects/{id} (the `GetProject` operationId).
+func (c *ClientWithResponses) GetProjectWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectResponse, error) {
+	rsp, err := c.GetProject(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetProjectResponse(rsp)
+}
+
 // SearchArticlesWithResponse Search articles by keyword
 //
 // Returns the articles that match the search words, best first. An exact
@@ -1575,6 +1981,26 @@ func (c *ClientWithResponses) SearchArticlesWithResponse(ctx context.Context, pa
 		return nil, err
 	}
 	return ParseSearchArticlesResponse(rsp)
+}
+
+// GetSyncWithResponse Read the content sync warnings
+//
+// Returns the findings of the last content load that did not fail it, for
+// operator tokens only, such as a `suppress` reference that names nothing
+// in a Project's `project.yaml`. Each warning names a file relative to the
+// Source root and shows what the Source wrote escaped to printable ASCII
+// and cut, which is why only operators read them. `goldie validate` prints
+// the same warnings for a content directory.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
+func (c *ClientWithResponses) GetSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncResponse, error) {
+	rsp, err := c.GetSync(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSyncResponse(rsp)
 }
 
 // GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
@@ -1850,6 +2276,94 @@ func ParseListProjectsResponse(rsp *http.Response) (*ListProjectsResponse, error
 	return response, nil
 }
 
+// ParseGetProjectResponse parses an HTTP response from a GetProjectWithResponse call
+func ParseGetProjectResponse(rsp *http.Response) (*GetProjectResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetProjectResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProjectDetail
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetProjectResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseSearchArticlesResponse parses an HTTP response from a SearchArticlesWithResponse call
 func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -1925,6 +2439,87 @@ func ParseSearchArticlesResponse(rsp *http.Response) (*SearchArticlesResponse, e
 	switch {
 	case rsp.StatusCode == 429:
 		var headers SearchArticlesResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetSyncResponse parses an HTTP response from a GetSyncWithResponse call
+func ParseGetSyncResponse(rsp *http.Response) (*GetSyncResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSyncResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SyncStatus
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetSyncResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -2015,9 +2610,15 @@ type ServerInterface interface {
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
+	// GetProject Read one registered Project
+	// (GET /api/v1/projects/{id})
+	GetProject(w http.ResponseWriter, r *http.Request, id ProjectId)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
+	// GetSync Read the content sync warnings
+	// (GET /api/v1/sync)
+	GetSync(w http.ResponseWriter, r *http.Request)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(w http.ResponseWriter, r *http.Request)
@@ -2118,6 +2719,32 @@ func (siw *ServerInterfaceWrapper) ListProjects(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetProject operation middleware
+func (siw *ServerInterfaceWrapper) GetProject(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id ProjectId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetProject(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // SearchArticles operation middleware
 func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http.Request) {
 
@@ -2168,6 +2795,20 @@ func (siw *ServerInterfaceWrapper) SearchArticles(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SearchArticles(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSync operation middleware
+func (siw *ServerInterfaceWrapper) GetSync(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSync(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2328,6 +2969,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search", wrapper.SearchArticles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sync", wrapper.GetSync)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.yaml", wrapper.GetOpenAPIYAML)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/openapi.json", wrapper.GetOpenAPIJSON)
@@ -2746,6 +3389,138 @@ func (response ListProjectsdefaultJSONResponse) VisitListProjectsResponse(w http
 	return err
 }
 
+type GetProjectRequestObject struct {
+	Id ProjectId `json:"id"`
+}
+
+type GetProjectResponseObject interface {
+	VisitGetProjectResponse(w http.ResponseWriter) error
+}
+
+type GetProject200JSONResponse ProjectDetail
+
+func (response GetProject200JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject400JSONResponse ErrorEnvelope
+
+func (response GetProject400JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject401JSONResponse ErrorEnvelope
+
+func (response GetProject401JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject404JSONResponse ErrorEnvelope
+
+func (response GetProject404JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetProject426JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetProject429JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProject503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetProject503JSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetProjectdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetProjectdefaultJSONResponse) VisitGetProjectResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type SearchArticlesRequestObject struct {
 	Params SearchArticlesParams
 }
@@ -2878,6 +3653,123 @@ func (response SearchArticlesdefaultJSONResponse) VisitSearchArticlesResponse(w 
 	return err
 }
 
+type GetSyncRequestObject struct {
+}
+
+type GetSyncResponseObject interface {
+	VisitGetSyncResponse(w http.ResponseWriter) error
+}
+
+type GetSync200JSONResponse SyncStatus
+
+func (response GetSync200JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSync401JSONResponse ErrorEnvelope
+
+func (response GetSync401JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSync403JSONResponse ErrorEnvelope
+
+func (response GetSync403JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSync426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetSync426JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSync429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetSync429JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSync503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetSync503JSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSyncdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSyncdefaultJSONResponse) VisitGetSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetOpenAPIJSONRequestObject struct {
 }
 
@@ -2971,9 +3863,15 @@ type StrictServerInterface interface {
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
+	// GetProject Read one registered Project
+	// (GET /api/v1/projects/{id})
+	GetProject(ctx context.Context, request GetProjectRequestObject) (GetProjectResponseObject, error)
 	// SearchArticles Search articles by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
+	// GetSync Read the content sync warnings
+	// (GET /api/v1/sync)
+	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(ctx context.Context, request GetOpenAPIJSONRequestObject) (GetOpenAPIJSONResponseObject, error)
@@ -3099,6 +3997,32 @@ func (sh *strictHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetProject operation middleware
+func (sh *strictHandler) GetProject(w http.ResponseWriter, r *http.Request, id ProjectId) {
+	var request GetProjectRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetProject(ctx, request.(GetProjectRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetProject")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetProjectResponseObject); ok {
+		if err := validResponse.VisitGetProjectResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // SearchArticles operation middleware
 func (sh *strictHandler) SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams) {
 	var request SearchArticlesRequestObject
@@ -3118,6 +4042,30 @@ func (sh *strictHandler) SearchArticles(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SearchArticlesResponseObject); ok {
 		if err := validResponse.VisitSearchArticlesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSync operation middleware
+func (sh *strictHandler) GetSync(w http.ResponseWriter, r *http.Request) {
+	var request GetSyncRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSync(ctx, request.(GetSyncRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSync")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSyncResponseObject); ok {
+		if err := validResponse.VisitGetSyncResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

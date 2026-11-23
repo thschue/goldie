@@ -59,7 +59,11 @@ func run(args []string, out io.Writer) error {
 		if len(args) == 2 {
 			dir = args[1]
 		}
-		return app.ValidateDir(context.Background(), dir)
+		warnings, err := app.ValidateDirWarnings(context.Background(), dir)
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, "goldie: warning:", w)
+		}
+		return err
 	case "health":
 		return runHealth(args[1:])
 	case "mcp":

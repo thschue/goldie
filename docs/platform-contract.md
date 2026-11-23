@@ -92,7 +92,8 @@ and running `./run regen`.
   digest in constant time, and answers 401 in the error envelope otherwise. `GET /api/v1/activity`,
   the live event stream of recent searches and lookups, needs the `operator` Role: other tokens get
   403 before the rate limit, so the refusal costs them nothing. The stream is a live view, not an
-  audit log, and it ends at the first SIGTERM, before the drain (PC-08). The OpenAPI documents
+  audit log, and it ends at the first SIGTERM, before the drain (PC-08). `GET /api/v1/sync`, the
+  content load's warnings, needs the `operator` Role the same way. The OpenAPI documents
   and Swagger UI do not count against the rate limit. The handler sees the token's name, never its
   secret. The startup report shows both variables as `(redacted)`. Like every config variable,
   these may change in a `0.x` minor release (ADR 0011).

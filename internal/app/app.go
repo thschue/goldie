@@ -103,7 +103,7 @@ var docPaths = map[string]bool{"/openapi.yaml": true, "/openapi.json": true}
 
 // operatorPaths are the operations for operator tokens only. The token check
 // comes before the gate and the rate limit, so a reader's 403 costs no token.
-var operatorPaths = map[string]bool{"/api/v1/activity": true}
+var operatorPaths = map[string]bool{"/api/v1/activity": true, "/api/v1/sync": true}
 
 // guard puts every registered path behind the tokens with at least the reader
 // Role: the API under /api/, any operation the spec adds later, the OpenAPI
@@ -252,13 +252,23 @@ func contentLoadError(err error) error {
 // "content does not load: " and the loader's reason, the words server -dev
 // ends with; it never names dir.
 func ValidateDir(ctx context.Context, dir string) error {
+	_, err := ValidateDirWarnings(ctx, dir)
+	return err
+}
+
+// ValidateDirWarnings is ValidateDir that also returns the load's warnings,
+// the findings that do not fail it, such as a suppress reference that names
+// nothing. Each names a file relative to dir, is printable ASCII and at most
+// 1 KiB, so a caller may print it as it is.
+func ValidateDirWarnings(ctx context.Context, dir string) ([]string, error) {
 	if dir == "" {
 		dir = "."
 	}
-	if _, err := loadDir(ctx, dir); err != nil {
-		return contentLoadError(err)
+	syncer, err := loadDir(ctx, dir)
+	if err != nil {
+		return nil, contentLoadError(err)
 	}
-	return nil
+	return syncer.Status().Warnings, nil
 }
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so

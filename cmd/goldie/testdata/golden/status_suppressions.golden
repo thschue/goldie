@@ -1,0 +1,7 @@
+Server: reachable
+API: Goldie API 0.1.0
+Auth: token accepted
+Project: github.com/acme/shop (from --project)
+Suppressions: article:platform/notes, article:style
+
+Search with: goldie search <words>

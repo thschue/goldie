@@ -1,0 +1,13 @@
+{
+  "api": "Goldie API",
+  "apiVersion": "0.1.0",
+  "project": "github.com/acme/shop",
+  "projectSource": "--project",
+  "reachable": true,
+  "suppressions": [
+    "article:platform/notes",
+    "article:style"
+  ],
+  "tokenAccepted": true,
+  "tokenGiven": true
+}
