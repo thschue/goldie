@@ -101,7 +101,7 @@ func TestSpanPathGivesOneFixedPlaceholderToAnythingElse(t *testing.T) {
 		"/api/v1/articles", "/api/v1/articles/", "/api/v1/articles/a/b", "/api/v1/articles/a/b/c",
 		"/api/v1/articles/x/", "/api/v1/articles//x", "//api/v1/articles/x",
 		"/api/v1/search/extra", "/mcp/x",
-		"/foo/\x00\x1b[31m\r\nx: y\x7f/‮", "/foo/%00%1b%0d%0a", "/" + strings.Repeat("A", 100000),
+		"/foo/\x00\x1b[31m\r\nx: y\x7f/\u202e", "/foo/%00%1b%0d%0a", "/" + strings.Repeat("A", 100000),
 	} {
 		got := SpanPath(in)
 		if got == placeholder {
@@ -239,7 +239,10 @@ func TestLocalServerExportsContractTemplatesNotPaths(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- wait() }()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the local server stopped with an error: %v", err)
+		}
 	case <-time.After(15 * time.Second):
 		t.Fatal("the local server did not stop")
 	}
