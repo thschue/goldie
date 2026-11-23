@@ -115,12 +115,15 @@ test.describe('the tabs follow the WAI-ARIA tabs pattern', () => {
     await expect(tab(page, 'Instructions')).toHaveAttribute('aria-selected', 'false');
   });
 
-  test('the tab panel stays empty: no Skill, Agent or Instruction content yet', async ({ page }) => {
-    await page.goto('/assets/skills');
-    await expect(page.getByRole('tabpanel')).toBeVisible();
-    await expect(page.getByRole('tabpanel').getByRole('link')).toHaveCount(0);
-    await expect(page.getByRole('tabpanel').getByRole('table')).toHaveCount(0);
-  });
+  // The Skills tab has content since #587 (web/e2e/assets-skills.spec.ts).
+  for (const slug of ['agents', 'instructions']) {
+    test(`the ${slug} tab panel stays empty: no content yet`, async ({ page }) => {
+      await page.goto(`/assets/${slug}`);
+      await expect(page.getByRole('tabpanel')).toBeVisible();
+      await expect(page.getByRole('tabpanel').getByRole('link')).toHaveCount(0);
+      await expect(page.getByRole('tabpanel').getByRole('table')).toHaveCount(0);
+    });
+  }
 
   for (const [i, name] of tabNames.entries()) {
     test(`the URL names the selected tab: /assets/${slugs[i]} selects ${name} and makes it the one tab stop`, async ({ page }) => {
