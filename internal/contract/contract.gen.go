@@ -656,8 +656,8 @@ type SessionRequest struct {
 
 // Skill One skill bundle.
 type Skill struct {
-	// Description The `description` in the frontmatter of SKILL.md. Sent by the skill
-	// list; absent when the skill has none.
+	// Description The `description` in the frontmatter of SKILL.md. Sent by
+	// `listSkills` only; absent when the skill has none.
 	//
 	//
 	// Examples: Deploys the app
@@ -682,22 +682,25 @@ type Skill struct {
 
 	// RequiresSync True when the bundle holds a script (a file under `scripts/`), so an
 	// agent must sync it to run it; false for a text-only bundle. Sent by
-	// the skill list; absent means unknown.
+	// `listSkills` only. A missing value on `getSkill` is not false: it
+	// means unknown.
 	//
 	//
 	// Examples: true
 	RequiresSync *bool `json:"requires_sync,omitempty"`
 
 	// Scope Where the winning copy lives, as `SearchHit.scope` says it: `global`,
-	// `host/org/repo` or `local`. Sent by the skill list; absent means
-	// unknown.
+	// `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+	// omits it, and a missing value means unknown.
 	//
 	//
 	// Examples: global
 	Scope *string `json:"scope,omitempty"`
 
-	// Status The `status` in the frontmatter of SKILL.md, for example `draft`.
-	// Sent by the skill list; absent for a published skill.
+	// Status The `status` in the frontmatter of SKILL.md: `draft` or
+	// `deprecated`; absent for a published skill. Sent by `listSkills`
+	// only. Draft skills are hidden unless `drafts=true` is asked for
+	// with the operator role.
 	//
 	//
 	// Examples: draft
@@ -1252,7 +1255,9 @@ type ClientInterface interface {
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
 	// file list, `scope`, `status`, `description` and `requires_sync`. A
-	// draft skill is listed only with `drafts=true` and the operator role. Fetch one of a skill's files with `getSkillFile`
+	// draft skill is listed only with `drafts=true` and the operator role.
+	//
+	// Fetch one of a skill's files with `getSkillFile`
 	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
@@ -1683,7 +1688,9 @@ func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBod
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
 // file list, `scope`, `status`, `description` and `requires_sync`. A
-// draft skill is listed only with `drafts=true` and the operator role. Fetch one of a skill's files with `getSkillFile`
+// draft skill is listed only with `drafts=true` and the operator role.
+//
+// Fetch one of a skill's files with `getSkillFile`
 // (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Corresponds with GET /api/v1/skills (the `ListSkills` operationId).
@@ -3049,7 +3056,9 @@ type ClientWithResponsesInterface interface {
 	// Returns the skills that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins with its whole bundle. Each carries its
 	// file list, `scope`, `status`, `description` and `requires_sync`. A
-	// draft skill is listed only with `drafts=true` and the operator role. Fetch one of a skill's files with `getSkillFile`
+	// draft skill is listed only with `drafts=true` and the operator role.
+	//
+	// Fetch one of a skill's files with `getSkillFile`
 	// (`GET /api/v1/skills/{name}/files/{path}`).
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -5104,7 +5113,9 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 // Returns the skills that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins with its whole bundle. Each carries its
 // file list, `scope`, `status`, `description` and `requires_sync`. A
-// draft skill is listed only with `drafts=true` and the operator role. Fetch one of a skill's files with `getSkillFile`
+// draft skill is listed only with `drafts=true` and the operator role.
+//
+// Fetch one of a skill's files with `getSkillFile`
 // (`GET /api/v1/skills/{name}/files/{path}`).
 //
 // Returns a wrapper object for the known response body format(s).

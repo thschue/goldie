@@ -80,17 +80,22 @@ func skillMeta(raw []byte) (status, description string) {
 	if err != nil {
 		return "", ""
 	}
+	// Each key decodes on its own, so a mistyped description never turns a
+	// draft into a published skill.
 	var meta struct {
-		Status      string `yaml:"status"`
-		Description string `yaml:"description"`
+		Status      yaml.Node `yaml:"status"`
+		Description yaml.Node `yaml:"description"`
 	}
 	if yaml.Unmarshal(front, &meta) != nil {
 		return "", ""
 	}
-	if s := strings.ToLower(strings.TrimSpace(meta.Status)); s == StatusDraft || s == StatusDeprecated {
+	var st, desc string
+	_ = meta.Status.Decode(&st)
+	_ = meta.Description.Decode(&desc)
+	if s := strings.ToLower(strings.TrimSpace(st)); s == StatusDraft || s == StatusDeprecated {
 		status = s
 	}
-	return status, strings.TrimSpace(meta.Description)
+	return status, strings.TrimSpace(desc)
 }
 
 // errNoSkillFile is what SkillFile returns for anything that is not a file of
@@ -188,11 +193,13 @@ func (s *Snapshot) skillScopes(proj string) []map[string]skillBundle {
 	return append(scopes, s.skills)
 }
 
-// skillBundleFor finds the bundle that answers for name in proj's view.
-func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
+// skillBundleFor finds the bundle that answers for name in proj's view. A
+// draft bundle is skipped unless o.Drafts, so a nearer draft never hides a
+// published copy.
+func (s *Snapshot) skillBundleFor(proj, name string, o ReadOptions) (skillBundle, bool) {
 	key := strings.ToLower(name)
 	for _, scope := range s.skillScopes(proj) {
-		if b, ok := scope[key]; ok {
+		if b, ok := scope[key]; ok && (o.Drafts || b.status != StatusDraft) {
 			return b, true
 		}
 	}
@@ -201,10 +208,10 @@ func (s *Snapshot) skillBundleFor(proj, name string) (skillBundle, bool) {
 
 // SkillIn resolves a skill bundle for a Project ("host/org/repo") by name, both
 // matched case-insensitively; the Skill carries the directory's own spelling.
-// Local then Project then global. An empty or
-// unregistered Project resolves globally.
-func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
-	b, ok := s.skillBundleFor(proj, name)
+// Local then Project then global. An empty or unregistered Project resolves
+// globally. Drafts are left out unless opts asks for them.
+func (s *Snapshot) SkillIn(proj, name string, opts ...ReadOptions) (Skill, bool) {
+	b, ok := s.skillBundleFor(proj, name, readOpts(opts))
 	if !ok {
 		return Skill{}, false
 	}
@@ -222,8 +229,8 @@ func (s *Snapshot) SkillIn(proj, name string) (Skill, bool) {
 }
 
 // Skills returns the skills that answer in proj's view, sorted by name: one
-// per name, the bundle SkillIn returns. A draft skill is left out unless opts
-// has Drafts.
+// per name, the bundle SkillIn returns. Drafts are left out unless opts asks
+// for them.
 func (s *Snapshot) Skills(proj string, opts ...ReadOptions) []Skill {
 	o := readOpts(opts)
 	names := map[string]bool{}
@@ -234,7 +241,7 @@ func (s *Snapshot) Skills(proj string, opts ...ReadOptions) []Skill {
 	}
 	out := make([]Skill, 0, len(names))
 	for n := range names {
-		if sk, ok := s.SkillIn(proj, n); ok && (o.Drafts || sk.Status != StatusDraft) {
+		if sk, ok := s.SkillIn(proj, n, o); ok {
 			out = append(out, sk)
 		}
 	}
@@ -245,9 +252,9 @@ func (s *Snapshot) Skills(proj string, opts ...ReadOptions) []Skill {
 // SkillFile returns a copy of one file of the bundle that answers for name in
 // proj's view, as written. A path that is not a file of that bundle, whether
 // missing, absolute, leaving the bundle with "..", or a symlink (never
-// loaded), is an error.
-func (s *Snapshot) SkillFile(proj, name, file string) ([]byte, error) {
-	b, ok := s.skillBundleFor(proj, name)
+// loaded), is an error. Drafts are left out unless opts asks for them.
+func (s *Snapshot) SkillFile(proj, name, file string, opts ...ReadOptions) ([]byte, error) {
+	b, ok := s.skillBundleFor(proj, name, readOpts(opts))
 	if !ok {
 		return nil, errNoSkillFile
 	}
