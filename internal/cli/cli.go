@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "status", "init", "instructions", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -72,6 +72,8 @@ func DefaultEnv(out io.Writer) Env {
 type settings struct {
 	addr, token, project string
 	dir                  string // content directory of local mode
+	target               string // instructions: claude or agents
+	force                bool   // instructions apply: replace a hand-edited block
 	json                 bool
 }
 
@@ -82,7 +84,11 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	if name != "version" { // version has no use for a Project
 		fs.StringVar(&f.s.project, "project", "", "Project as host/org/repo")
 	}
-	if name != "init" { // init prints three fixed lines
+	if name == "instructions" {
+		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
+		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand")
+	}
+	if name != "init" && name != "instructions" { // init prints three fixed lines; instructions has no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")
 	}
 	return func(ctx context.Context, pos []string, env Env) error {
@@ -105,6 +111,11 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 	// the repository and has no use for an embedded server (#282 is silent on
 	// local mode), so like version it ignores --dir and GOLDIE_DIR.
 	var c *commander
+	if name == "instructions" { // usage errors come before any server step
+		if err := f.s.checkInstructionsUsage(pos); err != nil {
+			return err
+		}
+	}
 	switch name {
 	case "version":
 		c, err = f.commander(env, tokenOptional)
@@ -149,6 +160,8 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 			return &UsageError{name, "init takes no arguments"}
 		}
 		return c.initProject(ctx)
+	case "instructions":
+		return c.instructions(ctx, pos[0])
 	default:
 		if len(pos) != 0 {
 			return &UsageError{name, "version takes no arguments"}
