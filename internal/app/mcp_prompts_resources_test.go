@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -452,4 +455,175 @@ func TestMCPPromptsAndResourcesWithAnUnreachableAPIDoNotLeakTheAddress(t *testin
 			t.Errorf("error leaks the address: %s", s)
 		}
 	}
+}
+
+// Acceptance tests for #568: the wording of a failed prompt or resource read,
+// the unknown-prompt message, and the trust model for prompt text.
+
+// failingFilesProxy answers like the skills fixture, except that every file
+// read (skill bundles, so prompts/get and the skill resources) fails with a 429
+// that carries a wait.
+func failingFilesProxy(t *testing.T) string {
+	t.Helper()
+	target, err := url.Parse(skillSearchServer(t).URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := httputil.NewSingleHostReverseProxy(target)
+	return mcpStub(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/files/") {
+			mcpEnvelope(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}, "")(w, r)
+			return
+		}
+		rp.ServeHTTP(w, r)
+	})
+}
+
+// protocolMessage is the message the server sent, without the client's
+// "calling \"prompts/get\"" prefix, which is not the server's wording.
+func protocolMessage(err error) string {
+	var je *jsonrpc.Error
+	if errors.As(err, &je) {
+		return je.Message
+	}
+	return err.Error()
+}
+
+// Criterion 1: a failed prompt read or resource read names the prompt or the
+// resource, and never a tool: the agent did not call one.
+func TestMCPFailedPromptAndResourceReadsNameThePromptOrResourceNotATool(t *testing.T) {
+	servers := map[string]func(*testing.T) string{
+		"unreachable API": mcpDeadAddr,
+		"429 on every call": func(t *testing.T) string {
+			return mcpStub(t, mcpEnvelope(http.StatusTooManyRequests, map[string]string{"Retry-After": "30"}, ""))
+		},
+		"429 without wait": func(t *testing.T) string { return mcpStub(t, mcpEnvelope(http.StatusTooManyRequests, nil, "")) },
+		"429 on a file":    failingFilesProxy,
+	}
+	for label, mk := range servers {
+		t.Run(label, func(t *testing.T) {
+			cs := session(t, mk(t), readerToken)
+			_, perr := getPrompt(cs, "goldie-deployer")
+			if perr == nil {
+				t.Fatal("prompts/get: want an error")
+			}
+			if m := strings.ToLower(protocolMessage(perr)); !strings.Contains(m, "prompt") {
+				t.Errorf("the prompt error does not name the prompt: %v", perr)
+			}
+			errs := []error{perr}
+			uris := []string{"goldie://skills/deployer/scripts/run.sh"}
+			if label != "429 on a file" {
+				uris = append(uris, "goldie://agents/releaser") // an agent is no file of a bundle
+			}
+			for _, uri := range uris {
+				_, _, rerr := readResource(cs, uri)
+				if rerr == nil {
+					t.Fatalf("read %s: want an error", uri)
+				}
+				if m := strings.ToLower(protocolMessage(rerr)); !strings.Contains(m, "resource") {
+					t.Errorf("the error of %s does not name the resource: %v", uri, rerr)
+				}
+				errs = append(errs, rerr)
+			}
+			for _, err := range errs {
+				if strings.Contains(strings.ToLower(protocolMessage(err)), "tool") {
+					t.Errorf("the error names a tool: %v", err)
+				}
+				for _, bad := range promptResourceLeaks {
+					if strings.Contains(err.Error(), bad) {
+						t.Errorf("the error leaks %q: %v", bad, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Criterion 2: an unknown prompt is told to call list_skills or to restart the
+// session; the list does not change, so "list prompts again" is wrong.
+func TestMCPUnknownPromptMessagePointsToListSkillsOrARestart(t *testing.T) {
+	cs := connectSkills(t, readerToken)
+	for _, name := range []string{"goldie-no-such-skill", "deployer", "goldie-"} {
+		_, err := getPrompt(cs, name)
+		if err == nil {
+			t.Fatalf("prompt %q: want an error", name)
+		}
+		m := protocolMessage(err)
+		if !strings.Contains(m, "unknown prompt") {
+			t.Errorf("prompt %q: the error does not say the prompt is unknown: %v", name, err)
+		}
+		if strings.Contains(strings.ToLower(m), "list prompts again") {
+			t.Errorf("prompt %q: the error tells the agent to list prompts again: %v", name, err)
+		}
+		if !strings.Contains(m, "list_skills") && !strings.Contains(strings.ToLower(m), "restart") {
+			t.Errorf("prompt %q: the error points neither to list_skills nor to a restart: %v", name, err)
+		}
+		if name == "goldie-no-such-skill" && strings.Contains(m, name) {
+			t.Errorf("prompt %q: the error echoes the name: %v", name, err)
+		}
+	}
+}
+
+// readDoc reads a file for the docs assertions, flattening its comment markers.
+func readDoc(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// Criterion 2: the README and doc.go say the same as the error.
+func TestMCPDocsDoNotTellToListPromptsAgain(t *testing.T) {
+	for _, path := range []string{"../../README.md", "../mcp/doc.go"} {
+		text := strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(readDoc(t, path), "\n//", "\n")), " "))
+		if strings.Contains(text, "list prompts again") {
+			t.Errorf("%s still says to list prompts again", path)
+		}
+	}
+	readme := readDoc(t, "../../README.md")
+	var para string
+	for _, p := range strings.Split(readme, "\n\n") {
+		if strings.Contains(p, "The server also offers prompts") {
+			para = strings.Join(strings.Fields(p), " ")
+		}
+	}
+	if para == "" {
+		t.Fatal("README.md has no prompts paragraph")
+	}
+	if !strings.Contains(para, "unknown prompt") || !strings.Contains(para, "list_skills") {
+		t.Errorf("README's prompts paragraph does not say that an unknown prompt points to list_skills or a restart: %s", para)
+	}
+	doc := strings.Join(strings.Fields(strings.ReplaceAll(readDoc(t, "../mcp/doc.go"), "\n//", "\n")), " ")
+	if !strings.Contains(doc, "unknown prompt") || !strings.Contains(doc, "list_skills") {
+		t.Error("internal/mcp/doc.go does not say that an unknown prompt points to list_skills or a restart")
+	}
+}
+
+// Criterion 3: the README states the trust model of prompt text beside the
+// quoting rule for tool output. The README is tested for content like this
+// elsewhere (the logging and init paragraphs), so this asserts it too.
+func TestMCPReadmeStatesTheTrustModelOfPromptTextBesideTheQuotingRule(t *testing.T) {
+	paras := strings.Split(readDoc(t, "../../README.md"), "\n\n")
+	for i, p := range paras {
+		flat := strings.Join(strings.Fields(p), " ")
+		if !strings.Contains(flat, "cleaned but not quoted") {
+			continue
+		}
+		// The paragraph that says prompt text is not quoted, and its neighbours.
+		var near string
+		for _, q := range paras[max(i-1, 0):min(i+2, len(paras))] {
+			near += " " + strings.Join(strings.Fields(q), " ")
+		}
+		near = strings.ToLower(near)
+		if !strings.Contains(near, "untrusted") {
+			t.Errorf("README does not call prompt text untrusted beside the quoting rule: %s", flat)
+		}
+		if !strings.Contains(near, "instruction") {
+			t.Errorf("README does not say what the client may do with prompt text (instructions) beside the quoting rule: %s", flat)
+		}
+		return
+	}
+	t.Error("README.md no longer says prompt text is cleaned but not quoted")
 }
