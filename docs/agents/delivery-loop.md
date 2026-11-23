@@ -40,7 +40,7 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
    - exit 3 means another session won: take the next issue.
 5. **Dispatch** each new or resumed step in the background (`isolation: "worktree"`), then end the
    tick so the session stays responsive.
-6. **Clean up:** remove the worktrees of merged or closed PRs. Remove `in-progress` from issues
+6. **Clean up:** remove a subagent's worktree once its work is pushed or its PR closed. Remove `in-progress` from issues
    whose PR merged or closed. Kill only processes this tick started, by PID.
 
 **Report:** streams advanced (step and outcome), claims, merges, PRs held or parked (with
@@ -109,15 +109,14 @@ reason), consults, test change requests, and harness feedback filed.
   - On rejection, record `<!-- goldie-loop:tests rejected -->` with the reason; the implementer
     meets the test as written.
   - A disputed criterion goes to `needs-info reason=spec`.
-- **`blocked` reports** (or no valid JSON block): inspect the branch and the subagent's worktree,
-  then resume the same subagent once, naming what's missing (push, PR body, report). A second
-  `blocked` on the same step parks the stream as `needs-info reason=human-check`.
+- **`blocked` reports** (or no JSON block): inspect the branch and worktree, resume the subagent
+  once naming what's missing (push, PR body, report). A second `blocked`, or 45 min without a
+  commit, file change or report after one status message, parks `needs-info reason=human-check`.
 
 ## Routing, size, found-fixes, pacing
 
-- **Models:** `implementer` and `test-author` on `sonnet`, `opus` when the issue's cited paths are
-  risk paths (the review table); `reviewer` and `ux-designer` on `sonnet`; `architect` and
-  `security-reviewer` on `opus`.
+- **Models:** the session runs on `sonnet` (`claude --model sonnet`, never a 1M context); the
+  agent definitions pin each role's model and effort (`opus` only for `security-reviewer`).
 - **Size:** about 400 changed lines without tests and generated code (`./run size`); over 600, a
   slice list (first slice stays, the rest is filed). Same-job fixes never count.
 - **Found-fixes** become streams of this session when a slot is free; until then, ready drafts. A

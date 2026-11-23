@@ -140,5 +140,5 @@ split the audit into its own session (a harness decision).
 
 ## Pacing
 
-Run `/loop /product`. Wake in 15 min while the buffer is below target, and 30 to 60 min when it's
-full.
+Start with `claude --model opus` (never a 1M context) and run `/loop /product`. Wake in 30 min
+while the buffer is below target, and 60 min when it's full.

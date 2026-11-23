@@ -94,9 +94,9 @@ The reviewer verifies each claim.
 
 ## Test lock
 
-Tests are the spec. An implementer may add test files and add lines to existing ones, but may not
-modify, move or delete a line in a test file (`*_test.go`, `testdata/**`) it didn't create on the
-branch: not one from `main`, not one from the `test-author`.
+Tests are the spec. An implementer may add test files and lines, and change its own lines, but may
+not modify, move or delete a test-file line (`*_test.go`, `testdata/**`) from `main` or the
+`test-author`, in any commit, merges included.
 
 To change one, it files a `test_change_request` (file, reason, proposed diff). The `test-author`
 approves (making the change itself) or rejects. When the criterion itself is in doubt, the request
@@ -134,7 +134,8 @@ either/or with a recommendation, through the product session's `Maintainer inbox
 
 **Harness feedback.** When a rule is missing, wrong or slows the flow, append one comment to the
 pinned `Harness feedback` issue: what happened, its cost in time, the evidence, and a proposed rule.
-Never open a harness PR. The maintainer ships a batch weekly.
+Never open a harness PR; the maintainer ships a batch weekly. Host problems (disk, network,
+toolchain, sandbox) go to the user in the session report, never in a public issue.
 
 ## Guardrails enforced by the harness
 

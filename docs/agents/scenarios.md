@@ -16,7 +16,7 @@ number names the case that motivated the rule.
 | S8 | Blocking finding still open after 2 fix rounds | delivery | `review reason=round-cap` marker, `needs-info reason=round-cap`; inbox "Decide" |
 | S9 | Clean review, gate exits 1 (new direct dependency, verified brief, #50) | delivery | `needs-maintainer`, marker lists the reasons and the brief; nothing merged |
 | S10 | Clean review, `run` gains a task (#58); another PR adds `\|\| true` to an existing step | delivery | First: `review:` reason judged not significant in the marker, merged. Second: significant, `needs-maintainer` |
-| S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table; the implementer ran on `opus` |
+| S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table |
 | S13 | Implementer unsure which module owns a function | delivery | a `Consult (architect):` note with question and answer; implementer resumed; 4th consult parks `needs-info reason=spec` |
 | S14 | Clean except a non-additive product question; answered by the product session or the maintainer (#180) | delivery | `review reason=decision` with `needs-info` and `question` in one command; on the answer, both labels off and merge-pr on the same head |
 | S26 | Clean and armed, then `main` moves and CI goes red (#195) | delivery | `red`: auto-merge disabled before the implementer fixes it; the new commits are reviewed and `scripts/merge-pr` re-runs, test lock included |
