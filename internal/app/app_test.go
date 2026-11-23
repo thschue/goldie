@@ -2,11 +2,9 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"reflect"
 	"regexp"
 	"slices"
@@ -62,7 +60,7 @@ func withDefaultRateLimit(l platform.RateLimit) platform.RateLimit {
 // PublicHandler uses, from a parsed token set and limiter.
 func testPublicMux(t *testing.T) *publicMux {
 	t.Helper()
-	snap, err := engine.NewDirSource(testContent).Load()
+	snap, err := engine.NewDirSource(testContent).Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +195,7 @@ func TestSpecEndpointsOnlyAnswerGet(t *testing.T) {
 
 func TestUnknownPathIsTheNotFoundEnvelope(t *testing.T) {
 	srv := newServer(t)
-	resp, body := get(t, srv.URL+"/nope")
+	resp, body := apiGet(t, srv.URL+"/api/nope")
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status %d, want 404", resp.StatusCode)
 	}
@@ -233,69 +231,6 @@ func specOperations(t *testing.T) []string {
 	return ops
 }
 
-var templateRE = regexp.MustCompile(`\{([^/{}]+)\}`)
-
-// concretePath substitutes every {param} of a spec path template with the
-// example of the path parameter of that name, percent-encoded as one path
-// segment (ADR 0016). The parameters are those of the path item and of the
-// operation; an operation's parameter wins. A parameter without an example is
-// an error: the live pass cannot request the path.
-func concretePath(doc map[string]any, method, path string) (string, error) {
-	paths, _ := doc["paths"].(map[string]any)
-	item, _ := paths[path].(map[string]any)
-	op, _ := item[strings.ToLower(method)].(map[string]any)
-	examples := map[string]any{}
-	for _, list := range []any{item["parameters"], op["parameters"]} {
-		params, _ := list.([]any)
-		for _, p := range params {
-			pm, _ := p.(map[string]any)
-			if pm["in"] != "path" {
-				continue
-			}
-			if name, _ := pm["name"].(string); name != "" {
-				if ex, ok := pm["example"]; ok {
-					examples[name] = ex
-				}
-			}
-		}
-	}
-	var missing []string
-	out := templateRE.ReplaceAllStringFunc(path, func(tok string) string {
-		name := tok[1 : len(tok)-1]
-		ex, ok := examples[name].(string)
-		if !ok || ex == "" {
-			missing = append(missing, name)
-			return tok
-		}
-		return url.PathEscape(ex)
-	})
-	if len(missing) > 0 {
-		return "", fmt.Errorf("%s %s: path parameter(s) %v have no string example in the spec", method, path, missing)
-	}
-	return out, nil
-}
-
-func TestConcretePathSubstitutesExamples(t *testing.T) {
-	doc := map[string]any{"paths": map[string]any{
-		"/a/{id}/b/{n}": map[string]any{
-			"parameters": []any{map[string]any{"name": "n", "in": "path", "example": "7"}},
-			"get": map[string]any{"parameters": []any{
-				map[string]any{"name": "id", "in": "path", "example": "x/y z"},
-			}},
-		},
-		"/c/{id}": map[string]any{
-			"get": map[string]any{"parameters": []any{map[string]any{"name": "id", "in": "path"}}},
-		},
-	}}
-	got, err := concretePath(doc, "GET", "/a/{id}/b/{n}")
-	if err != nil || got != "/a/x%2Fy%20z/b/7" {
-		t.Errorf("concretePath = %q, %v; want /a/x%%2Fy%%20z/b/7", got, err)
-	}
-	if got, err := concretePath(doc, "GET", "/c/{id}"); err == nil {
-		t.Errorf("a parameter without an example gave %q, want an error", got)
-	}
-}
-
 func TestRoutesAndSpecAgree(t *testing.T) {
 	routes := testPublicMux(t).routes
 	var registered []string
@@ -322,12 +257,11 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 	// And against the live router: every operation must reach a handler, not
 	// the not-found fallback. A templated path is requested with each path
 	// parameter's spec example, which the test content answers.
-	doc := specDoc(t)
 	srv := newServer(t)
 	for _, o := range ops {
 		method, path, _ := strings.Cut(o, " ")
 		if strings.Contains(path, "{") {
-			concrete, err := concretePath(doc, method, path)
+			concrete, err := contracttest.ExamplePath(method, path)
 			if err != nil {
 				t.Error(err)
 				continue
@@ -346,7 +280,6 @@ func TestRoutesAndSpecAgree(t *testing.T) {
 // HEAD wherever GET is, and HEAD is served where GET is.
 func TestRouterHonoursRegisteredMethods(t *testing.T) {
 	routes := testPublicMux(t).routes
-	doc := specDoc(t)
 	byPath := map[string][]string{}
 	for _, r := range routes {
 		byPath[r.path] = append(byPath[r.path], r.methods...)
@@ -361,7 +294,7 @@ func TestRouterHonoursRegisteredMethods(t *testing.T) {
 		concrete := path
 		if strings.Contains(path, "{") {
 			var err error
-			if concrete, err = concretePath(doc, methods[0], path); err != nil {
+			if concrete, err = contracttest.ExamplePath(methods[0], path); err != nil {
 				t.Error(err)
 				continue
 			}
@@ -411,12 +344,13 @@ func TestErrorEnvelopesDoNotLeak(t *testing.T) {
 	}
 	hostile := func(r *http.Request) { r.Host = "internal.example.test:8443" }
 	attempts := []attempt{
-		{http.MethodGet, "/nope", nil},
-		{http.MethodGet, "/etc/passwd", nil},
-		{http.MethodGet, "/..%2f..%2fetc/passwd", nil},
-		{http.MethodGet, "/C:/Windows/System32", nil},
-		{http.MethodGet, "/10.0.0.1:8080/x.go", nil},
-		{http.MethodGet, "/nope", hostile},
+		{http.MethodGet, "/api/nope", bearer(testToken)},
+		{http.MethodGet, "/api/etc/passwd", bearer(testToken)},
+		{http.MethodGet, "/api/..%2f..%2fetc/passwd", bearer(testToken)},
+		{http.MethodGet, "/api/C:/Windows/System32", bearer(testToken)},
+		{http.MethodGet, "/api/10.0.0.1:8080/x.go", bearer(testToken)},
+		{http.MethodGet, "/api/nope", func(r *http.Request) { hostile(r); bearer(testToken)(r) }},
+		{http.MethodPost, "/", hostile},
 		{http.MethodPost, "/openapi.yaml", bearer(testToken)},
 		{http.MethodDelete, "/openapi.json", func(r *http.Request) { hostile(r); bearer(testToken)(r) }},
 	}
@@ -446,7 +380,7 @@ func TestEveryErrorCarriesAHint(t *testing.T) {
 		method, path string
 		code         string
 	}{
-		{http.MethodGet, "/nope", "not_found"},
+		{http.MethodGet, "/api/nope", "not_found"},
 		{http.MethodPost, "/openapi.json", "method_not_allowed"},
 	} {
 		_, body := do(t, c.method, srv.URL+c.path, bearer(testToken))

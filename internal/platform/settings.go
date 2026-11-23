@@ -3,6 +3,7 @@ package platform
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // SettingSpec is one entry of the settings registry. The registry is the
@@ -19,23 +20,30 @@ type SettingSpec struct {
 	// it, the reference prints the NAME_FILE note, and among the
 	// TelemetrySettings only Secret rows accept a _FILE form (PC-05, PC-06).
 	Secret bool
+
+	// Value returns the setting's effective value from Config, which the
+	// startup report logs. Every Settings row has one; TelemetrySettings and
+	// ClientSettings rows are not part of Config and have none. Report
+	// redacts a Secret row's value after calling it, so an accessor returns
+	// the plain field and never redacts on its own.
+	Value func(Config) any
 }
 
 // Settings lists every configuration variable. To add one, add its Env
-// constant, a row here (Secret if its value must never be logged) and its
-// value in Config.effective, then run `./run regen`.
+// constant, its Config field and a row here with its Value accessor (Secret
+// if its value must never be logged), then run `./run regen`.
 var Settings = []SettingSpec{
-	{Name: EnvAddr, Default: ":8080", Meaning: "Public (app) listener."},
-	{Name: EnvAdminAddr, Default: ":8081", Meaning: "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
-	{Name: EnvLogLevel, Default: "info", Meaning: "Log level: debug, info, warn or error."},
-	{Name: EnvDrainSeconds, Default: "25", Meaning: "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
-	{Name: EnvSwaggerUIEnabled, Default: "true", Meaning: "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
-	{Name: EnvContentDir, Meaning: "Required by goldie server. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
-	{Name: EnvAPIToken, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKENS, not both; both set stops the server and goldie health. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
-	{Name: EnvAPITokens, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKEN, not both; both set stops the server and goldie health. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes, and must not start with sha256:, which marks a hash. Blank lines and lines starting with # are ignored. GOLDIE_API_TOKENS_FILE keeps every line and drops only the trailing newline. A bad line stops the server, naming the line number, never the token."},
-	{Name: EnvRateLimit, Default: "20/s,burst=40", Meaning: "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers, and the rate is at most 1e9 per second (60000000000/m). The burst has no upper bound, so a very large burst effectively disables the limit. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An MCP tool call counts twice: once for the /mcp request and once for the API request it makes. Every client using the GOLDIE_API_TOKEN shorthand shares one bucket, under the token name api-token. A malformed value stops the server and goldie health."},
-	{Name: EnvMinClientVersion, Meaning: "The oldest goldie client the server serves, as a semantic version such as 1.4.0 (MAJOR.MINOR.PATCH, optionally -<prerelease>, without a leading v). The goldie CLI sends X-Goldie-Client: goldie/<version> on every request; on every /api/ path and on /mcp, a client whose version is older (semver precedence, so a prerelease is older than its release) is answered 426 in the error envelope, code upgrade_required, with a hint naming this minimum. Requests without the header, or whose header is not goldie/<semver> (curl, other tools, a dev build), are let through: the header is a courtesy, not a credential. Requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. Unset, there is no gate. A value that is not a semantic version stops the server and goldie health."},
-	{Name: EnvTelemetryClientInfo, Default: "false", Meaning: "true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on."},
+	{Name: EnvAddr, Value: func(c Config) any { return c.Addr }, Default: ":8080", Meaning: "Public (app) listener."},
+	{Name: EnvAdminAddr, Value: func(c Config) any { return c.AdminAddr }, Default: ":8081", Meaning: "Admin listener: /livez, /readyz, /version. Must differ from GOLDIE_ADDR."},
+	{Name: EnvLogLevel, Value: func(c Config) any { return c.LogLevel }, Default: "info", Meaning: "Log level: debug, info, warn or error."},
+	{Name: EnvDrainSeconds, Value: func(c Config) any { return int(c.DrainTimeout / time.Second) }, Default: "25", Meaning: "Time in seconds between failing readiness on SIGTERM and shutting the listeners down. 0 to 3600."},
+	{Name: EnvSwaggerUIEnabled, Value: func(c Config) any { return c.SwaggerUIEnabled }, Default: "true", Meaning: "Serve Swagger UI at /swagger-ui on the public listener, from assets embedded in the binary. true or false; false answers 404."},
+	{Name: EnvContentDir, Value: func(c Config) any { return c.ContentDir }, Meaning: "Required by goldie server; goldie validate reads it too, when no directory argument is given. Directory of the dir Source; articles are read from global/articles under it at startup, and invalid content stops the server."},
+	{Name: EnvAPIToken, Value: func(c Config) any { return c.APIToken }, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKENS, not both; both set stops the server and goldie health. The shorthand for one operator token, named api-token: the bearer token an /api/ or /mcp request may send. Printable ASCII without spaces, at least 32 bytes (generate one with openssl rand -hex 32); a trailing newline in the file is ignored and not counted."},
+	{Name: EnvAPITokens, Value: func(c Config) any { return c.APITokens }, Secret: true, Meaning: "goldie server needs this or GOLDIE_API_TOKEN, not both; both set stops the server and goldie health. The named API tokens, one per line: name:role:sha256:<hex>, the recommended form, so the server never holds the token itself, or name:role:token. The name (1 to 64 letters, digits, '.', '_' or '-') identifies the client in activity and telemetry; each name and token is used once. The role is reader (search, look up, list, fetch bundles) or operator (also trigger syncs and read activity). <hex> is the SHA-256 of the token in hex (printf %s \"$TOKEN\" | sha256sum); the token behind a hash must be as strong as openssl rand -hex 32 makes it. A plaintext token is printable ASCII without spaces, at least 32 bytes, and must not start with sha256:, which marks a hash. Blank lines and lines starting with # are ignored. GOLDIE_API_TOKENS_FILE keeps every line and drops only the trailing newline. A bad line stops the server, naming the line number, never the token."},
+	{Name: EnvRateLimit, Value: func(c Config) any { return c.rateLimitText }, Default: "20/s,burst=40", Meaning: "The request limit per token on every /api/ path and on /mcp: <n>/s or <n>/m, n requests per second or per minute for each token name, optionally followed by ,burst=<b>, the most requests a token may send at once (b defaults to n). n and b are positive integers, and the rate is at most 1e9 per second (60000000000/m). The burst has no upper bound, so a very large burst effectively disables the limit. The limit is held in memory per process, so each replica and each restart starts with full buckets. A request over the limit is answered 429 in the error envelope, with a Retry-After header giving the whole seconds to wait. Requests without a valid token are rejected with 401 before the limit and do not count. An MCP tool call counts twice: once for the /mcp request and once for the API request it makes. Every client using the GOLDIE_API_TOKEN shorthand shares one bucket, under the token name api-token. A malformed value stops the server and goldie health."},
+	{Name: EnvMinClientVersion, Value: func(c Config) any { return c.minClientVersionText }, Meaning: "The oldest goldie client the server serves, as a semantic version such as 1.4.0 (MAJOR.MINOR.PATCH, optionally -<prerelease>, without a leading v). The goldie CLI sends X-Goldie-Client: goldie/<version> on every request; on every /api/ path and on /mcp, a client whose version is older (semver precedence, so a prerelease is older than its release) is answered 426 in the error envelope, code upgrade_required, with a hint naming this minimum. Requests without the header, or whose header is not goldie/<semver> (curl, other tools, a dev build), are let through: the header is a courtesy, not a credential. Requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. Unset, there is no gate. A value that is not a semantic version stops the server and goldie health."},
+	{Name: EnvTelemetryClientInfo, Value: func(c Config) any { return c.telemetryClientInfo }, Default: "false", Meaning: "true or false. true adds the caller's IP address (client.address, from the connection, never from X-Forwarded-For, which any caller can forge) and user agent (user_agent.original) to server spans. Off, spans carry no client address, port or user agent. Takes effect only when trace export is on."},
 }
 
 // TelemetrySettings lists the standard OpenTelemetry variables goldie honours.
@@ -73,12 +81,17 @@ const EnvToken = "GOLDIE_TOKEN"
 // the detection from git remotes and is overridden by --project.
 const EnvProject = "GOLDIE_PROJECT"
 
+// EnvDir is the directory of content the client commands serve from an
+// embedded server, so they need no server started by hand. --dir overrides it.
+const EnvDir = "GOLDIE_DIR"
+
 // ClientSettings lists the variables the client commands (search, lookup,
 // status, version) and goldie mcp --transport stdio read. They are not server configuration: LoadConfig
 // ignores them, and the reference renders them in a table of their own.
 var ClientSettings = []SettingSpec{
 	{Name: EnvAddr, Meaning: "Server URL, http:// or https://, that the client commands and goldie mcp --transport stdio talk to; --addr overrides it. The client does not read GOLDIE_ADDR_FILE. version skips a value that is not a URL, such as the server's listen address."},
 	{Name: EnvToken, Secret: true, Meaning: "The bearer token that search, lookup, status and goldie mcp --transport stdio send; --token overrides it. status works without it."},
+	{Name: EnvDir, Meaning: "A directory of content (global/articles under it). search, lookup, status and goldie mcp --transport stdio start an embedded server over it on loopback, with its own random token, and stop it when they end; --dir overrides it. Setting it together with --addr, or with GOLDIE_ADDR when --dir is not given, is an error; an explicit --dir wins over GOLDIE_ADDR in the environment, and GOLDIE_TOKEN is ignored. Content that does not load stops the command. version ignores it."},
 	{Name: EnvProject, Meaning: "The Project as host/org/repo, or a git remote URL (userinfo is dropped). Overrides .goldie/config.yaml and detection from the upstream or origin git remote; --project overrides it. search and lookup send it as project=; status shows it."},
 }
 
@@ -111,11 +124,30 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("responses keep working; `/mcp` bounds its own requests. The admin listener bounds the whole\n")
 	b.WriteString("request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows\n")
 	b.WriteString("`GOLDIE_DRAIN_SECONDS`.\n")
+	b.WriteString("\n## goldie server -dev\n\n")
+	b.WriteString("`goldie server -dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.\n")
+	b.WriteString("In this mode log records go to stderr, so only the export line goes to stdout. The server runs\n")
+	b.WriteString("until it is stopped, so run it in the background or redirect stdout to a file and read the\n")
+	b.WriteString("export line from there. The file holds the API token, so create it private, and in a subshell so\n")
+	b.WriteString("your own umask stays as it is: `(umask 077; goldie server -dev examples/knowledge > dev.env &)`.\n")
+	b.WriteString("The file is empty until the server prints its line, so run `. ./dev.env` once the server is up.\n")
+	b.WriteString("The subshell leaves the shell no job to bring to the foreground or kill by job number, so stop\n")
+	b.WriteString("the server by name: `pkill -f 'goldie server -dev'`. This stops every dev server you\n")
+	b.WriteString("run, not just the one in this directory.\n")
+	b.WriteString("Both listeners bind to 127.0.0.1 on ports the system picks, and the API takes one random\n")
+	b.WriteString("token (32 bytes from the system's secure random source, in hex), made for this run. It prints\n")
+	b.WriteString("`export " + EnvAddr + "=http://127.0.0.1:<port> " + EnvToken + "=<token>` once, to stdout, and the\n")
+	b.WriteString("token appears nowhere else: not in a log line, the startup report or telemetry. It ignores\n")
+	b.WriteString("`" + EnvAddr + "`, `" + EnvAdminAddr + "`, `" + EnvAPIToken + "` and `" + EnvAPITokens + "` and their\n")
+	b.WriteString("_FILE forms, so a shell that ran the export line can run it again, and logs one line saying so\n")
+	b.WriteString("when any is set. `" + EnvDrainSeconds + "` defaults to 0 here; every other setting applies as for\n")
+	b.WriteString("`goldie server`.\n")
 	b.WriteString("\n## OpenTelemetry\n\n")
 	b.WriteString("Traces of the public listener and logs are exported over OTLP (http/protobuf) when an\n")
 	b.WriteString("endpoint is set. These variables keep their standard names and are read as defined by\n")
 	b.WriteString("OpenTelemetry, with the validation noted. Admin-port requests are not traced. Request\n")
-	b.WriteString("headers and query strings are not recorded. goldie reads every variable listed here through\n")
+	b.WriteString("headers and query strings are not recorded, and a lookup's path is recorded as the route\n")
+	b.WriteString("template /api/v1/articles/{id}, without the id. goldie reads every variable listed here through\n")
 	b.WriteString("its own lookup and passes it to the SDK explicitly. Other OTEL_* variables, such as\n")
 	b.WriteString("OTEL_BSP_*, OTEL_BLRP_*, timeouts, TLS and compression, keep the OpenTelemetry SDK's own\n")
 	b.WriteString("handling: goldie neither validates nor documents them, but a value the SDK rejects is never\n")
@@ -124,7 +156,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	table(&b, TelemetrySettings)
 	b.WriteString("\n## Client commands\n\n")
 	b.WriteString("`goldie search`, `lookup`, `status` and `version` read these variables, and so does\n")
-	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR and GOLDIE_TOKEN).\n")
+	b.WriteString("`goldie mcp --transport stdio` (GOLDIE_ADDR, GOLDIE_TOKEN and GOLDIE_DIR).\n")
 	b.WriteString("Only " + EnvToken + " has a _FILE form (" + EnvToken + "_FILE); the client reads no other _FILE variable.\n\n")
 	table(&b, ClientSettings)
 	return []byte(b.String())

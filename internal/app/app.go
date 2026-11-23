@@ -3,16 +3,20 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
+	"github.com/thschue/goldie/internal/ui"
 )
 
 // route is one public endpoint: a path and the methods it answers. HEAD is
@@ -29,28 +33,38 @@ type route struct {
 // puts every path behind the tokens; and it answers each path's other methods
 // with the 405 envelope.
 type publicMux struct {
-	mux     *http.ServeMux
-	tokens  *api.Tokens
-	limiter *api.RateLimiter
-	gate    *api.ClientVersionGate
-	routes  []route
+	mux      *http.ServeMux
+	tokens   *api.Tokens
+	limiter  *api.RateLimiter
+	gate     *api.ClientVersionGate
+	activity *api.Activity
+	routes   []route
 }
+
+// activityCapacity is how many recent searches and lookups the server keeps
+// in its Activity.
+const activityCapacity = 1000
 
 // newPublicMuxWith returns the router with the spec's operations over the
 // Snapshot provider registered, and nothing else, guarded by a parsed token
-// set, a minimum client version (nil for none) and a rate limiter.
-// PublicHandler builds the public listener with it, and the tests build the
-// bare router with it, so the route table they check is the one the server
-// serves.
+// set, a minimum client version (nil for none) and a rate limiter, and
+// recording every search and lookup in a bounded Activity. PublicHandler
+// builds the public listener with it, and the tests build the bare router
+// with it, so the route table they check is the one the server serves.
 func newPublicMuxWith(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate) (*publicMux, error) {
 	srv, err := api.NewServer(provider)
 	if err != nil {
 		return nil, err
 	}
-	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate}
+	m := &publicMux{mux: http.NewServeMux(), tokens: tokens, limiter: limiter, gate: gate,
+		activity: api.NewActivity(activityCapacity, "", nil)}
+	srv.RecordInto(m.activity)
 	srv.Register(m)
 	return m, nil
 }
+
+// Activity is the Activity the router records every search and lookup into.
+func (m *publicMux) Activity() *api.Activity { return m.activity }
 
 // HandleFunc registers one generated operation; its pattern is "METHOD path".
 // A pattern without a method is a programming error and panics at startup, as
@@ -144,6 +158,9 @@ func checkRateLimit(l platform.RateLimit) error {
 	if l.Requests <= 0 || l.Per <= 0 {
 		return fmt.Errorf("%s: no limit was given; the server does not run without one", platform.EnvRateLimit)
 	}
+	if l.Per/time.Duration(l.Requests) <= 0 {
+		return fmt.Errorf("%s: the interval per request rounds to zero; the server does not run without a limit", platform.EnvRateLimit)
+	}
 	return nil
 }
 
@@ -190,11 +207,43 @@ func content(dir string) (*engine.Syncer, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("%s is not set: point it at a content directory", platform.EnvContentDir)
 	}
-	syncer := engine.NewSyncer(engine.NewDirSource(dir))
-	if err := syncer.Poll(); err != nil {
+	syncer, err := loadDir(context.Background(), dir)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", platform.EnvContentDir, err)
 	}
 	return syncer, nil
+}
+
+// loadDir puts the dir Source at dir behind a Syncer and runs its first poll.
+// The error is the loader's reason, which names a file relative to dir and
+// never dir itself; callers say which setting or argument it came from.
+func loadDir(ctx context.Context, dir string) (*engine.Syncer, error) {
+	syncer := engine.NewSyncer(engine.NewDirSource(dir))
+	if err := syncer.Poll(ctx); err != nil {
+		return nil, err
+	}
+	return syncer, nil
+}
+
+// contentLoadError is the one error for content that does not load, shared by
+// ValidateDir and Local.Start so their messages stay equal: "content does not
+// load: " and the loader's reason, never the directory.
+func contentLoadError(err error) error {
+	return fmt.Errorf("content does not load: %w", err)
+}
+
+// ValidateDir runs the content load the server runs at startup over dir, else
+// the working directory, and returns nil when it succeeds. A failure reads
+// "content does not load: " and the loader's reason, the words server -dev
+// ends with; it never names dir.
+func ValidateDir(ctx context.Context, dir string) error {
+	if dir == "" {
+		dir = "."
+	}
+	if _, err := loadDir(ctx, dir); err != nil {
+		return contentLoadError(err)
+	}
+	return nil
 }
 
 // addSwaggerUI registers the Swagger UI paths. They are not API operations, so
@@ -215,6 +264,27 @@ func addSwaggerUI(m *publicMux) error {
 		m.handle(http.MethodGet, "/swagger-ui/"+a.Name, h)
 	}
 	return nil
+}
+
+// addUI mounts the embedded UI as the catch-all at "/". It is not registered
+// through m.handle: it is no API operation, so it stays out of the route table
+// and the spec. Paths that must never fall back to the UI are claimed first:
+// the Swagger UI prefix (unknown paths, or every path when it is switched off,
+// keep the token and the 404 envelope) and the probe paths, which only the
+// admin listener serves (PC-01), so a monitor pointed at this port never reads
+// a UI page as "ready". Matching is exact and case-sensitive.
+func addUI(m *publicMux, notFound http.Handler, logger *slog.Logger) {
+	if !ui.Built() {
+		logger.Warn("ui not built: serving the placeholder page; run ./run ui")
+	}
+	if len(m.methods("/swagger-ui")) == 0 {
+		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
+	}
+	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
+	for _, p := range []string{"/livez", "/readyz", "/version"} {
+		m.mux.Handle(p, notFound)
+	}
+	m.mux.Handle("/", ui.Handler(ui.Assets()))
 }
 
 // swaggerUICSP is the Content-Security-Policy of the Swagger UI paths. The
@@ -244,19 +314,61 @@ func (e *ConfigError) Error() string { return e.err.Error() }
 
 func (e *ConfigError) Unwrap() error { return e.err }
 
+// sourceDirCheck is the name of the dir Source's readiness check (PC-02).
+const sourceDirCheck = "source:dir"
+
+// dirPollInterval is how often the dir Source is polled for changed content.
+const dirPollInterval = 30 * time.Second
+
+// Public is the handler of the public listener and the owner of its Source's
+// Syncer.
+// It embeds the router, so it is an http.Handler and counts rate limit rejections.
+// Until Start runs, it serves the content PublicHandler loaded.
+type Public struct {
+	*publicMux
+	syncer  *engine.Syncer
+	mu      sync.Mutex
+	started bool
+	loops   sync.WaitGroup // the poll loop Start runs
+}
+
+// Start runs the dir Source's poll loop until ctx ends and registers its
+// readiness check, "source:dir", with reg. It does not block. The check is
+// ready while the Syncer holds a Snapshot, so a stale Source stays ready and
+// no error reaches /readyz (PC-02). Only the first call with a live context
+// starts a loop; a call with a cancelled context does not use up the start.
+// Every call registers the check, which replaces itself.
+func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
+	reg.Add(sourceDirCheck, func(context.Context) error {
+		if p.syncer.Current() == nil {
+			return errors.New("no snapshot")
+		}
+		return nil
+	})
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.started || ctx.Err() != nil {
+		return
+	}
+	p.started = true
+	p.loops.Go(func() { p.syncer.Run(ctx, dirPollInterval, nil) })
+}
+
 // PublicHandler builds the handler for the public listener (GOLDIE_ADDR) from
 // the Config LoadConfig returned, used as is, and the server's component
 // logger (nil discards). It loads the dir Source and serves the API under
 // /api/, every path of which requires a configured token; the OpenAPI document
 // at /openapi.yaml and /openapi.json and, unless switched off, Swagger UI at
 // /swagger-ui, which take the same token; and MCP over streamable HTTP at
-// /mcp, which needs a token too. Anything else is the not-found envelope. A
+// /mcp, which needs a token too. Anything else is the embedded UI (a placeholder
+// page until ./run ui has built it), except /livez, /readyz and /version, which
+// are the not-found envelope here (PC-01). A
 // missing or bad token, a rate limit that limits nothing and unloadable
 // content are reported together in one *ConfigError, each naming its variable
 // and none its value, so the server fails at startup (PC-04) and the operator
 // fixes them all in one restart.
 // Platform stays unaware of the contract: this is where the two meet.
-func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, error) {
+func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 	var errs []error
 	tokens, err := apiTokens(cfg)
 	if err != nil {
@@ -272,6 +384,14 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, erro
 	if len(errs) > 0 {
 		return nil, &ConfigError{errors.Join(errs...)}
 	}
+	return newPublic(cfg, tokens, syncer, logger)
+}
+
+// newPublic builds the public handler over a loaded Syncer and a parsed token
+// set; cfg supplies the rate limit, the minimum client version and the
+// Swagger UI switch. PublicHandler and Local share it, so a local server
+// serves exactly what goldie server serves.
+func newPublic(cfg platform.Config, tokens *api.Tokens, syncer *engine.Syncer, logger *slog.Logger) (*Public, error) {
 	m, err := newPublicMuxWith(syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion))
 	if err != nil {
 		return nil, err
@@ -292,6 +412,6 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (http.Handler, erro
 	// Unknown /api/ paths need the token too, so they reveal nothing.
 	m.mux.Handle("/api/", m.guard("/api/", notFound))
 	m.mux.Handle("/api", m.guard("/api", notFound))
-	m.mux.Handle("/", notFound)
-	return m, nil
+	addUI(m, notFound, logger)
+	return &Public{publicMux: m, syncer: syncer}, nil
 }

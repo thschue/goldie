@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -229,7 +230,9 @@ func TestDocsPathVariantsServeNoDocument(t *testing.T) {
 			what := v + " as " + who
 			// A redirect is followed below only if it stays on a docs path
 			// that then asks for the token; a 200 here is a document.
-			if resp.StatusCode == http.StatusOK {
+			// The one 200 allowed is the UI's own page (#164): an unknown path
+			// without a file extension falls back to it, and it is not a document.
+			if resp.StatusCode == http.StatusOK && !bytes.Equal(body, uiIndex(t)) {
 				t.Errorf("%s: status 200, want no document", what)
 			}
 			if who == "no token" && resp.StatusCode >= 300 && resp.StatusCode < 400 {

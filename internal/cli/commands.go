@@ -27,7 +27,7 @@ func (c *commander) printJSON(v any) error {
 	var out strings.Builder
 	for _, r := range string(b) {
 		switch {
-		case r < 0x7f || !contract.UnsafeRune(r):
+		case r < 0x7f || !contract.HiddenRune(r):
 			out.WriteRune(r)
 		case r > 0xffff:
 			hi, lo := utf16.EncodeRune(r)
@@ -50,21 +50,15 @@ func (c *commander) search(ctx context.Context, q string) error {
 		return err
 	}
 	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: q, Project: projectParam(proj)})
+	res, err := contract.Answer(raw, err, contract.ParseSearchArticlesResponse, searchResults)
 	if err != nil {
-		return transportError(err)
-	}
-	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
-	if err := answerError(e, err); err != nil {
-		return err
-	}
-	if resp.JSON200 == nil {
-		return apiError(resp.HTTPResponse, resp.Body)
+		return wordError(err, c.local)
 	}
 	if c.s.json {
-		return c.printJSON(resp.JSON200)
+		return c.printJSON(res)
 	}
 	var b strings.Builder
-	hits := resp.JSON200.Results
+	hits := res.Results
 	if len(hits) == 0 {
 		fmt.Fprintf(&b, "No articles match %q.\n\n", contract.CleanLine(q))
 	} else {
@@ -75,19 +69,25 @@ func (c *commander) search(ctx context.Context, q string) error {
 		fmt.Fprintf(&b, "%d %s for %q, best first:\n\n", len(hits), noun, contract.CleanLine(q))
 		for _, h := range hits {
 			fmt.Fprintf(&b, "  %s  %s\n", contract.CleanLine(h.Id), contract.CleanLine(h.Name))
-			fmt.Fprintf(&b, "    score %d, matched: %s\n", h.Score, cleanList(h.Matched))
-			fmt.Fprintf(&b, "    keywords: %s\n", cleanList(h.Keywords))
+			fmt.Fprintf(&b, "    score %d, matched: %s\n", h.Score, contract.CleanList(h.Matched))
+			fmt.Fprintf(&b, "    keywords: %s\n", contract.CleanList(h.Keywords))
 		}
 		b.WriteString("\nRead one with: goldie lookup <id>\n")
 	}
 	b.WriteString("Try other words: goldie search <words>\n")
-	writeHint(&b, resp.JSON200.Hint)
+	writeHint(&b, res.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
 	return err
 }
 
+// searchResults is the 200 body of a search, for contract.Answer.
+func searchResults(r *contract.SearchArticlesResponse) *contract.SearchResults { return r.JSON200 }
+
 func (c *commander) lookup(ctx context.Context, id string) error {
-	if dotOnly(id) {
+	// An empty or dot-only id would be resolved by the URL path ("." and ".."
+	// collapse) into a different API route, so it is refused before any
+	// Project, client or HTTP step.
+	if contract.CheckArticleID(id) != nil {
 		return errors.New("lookup needs an article id, not an empty or dot-only one\nHint: find ids with: goldie search <words>")
 	}
 	proj, err := c.project()
@@ -99,23 +99,17 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 		return err
 	}
 	raw, err := cl.GetArticle(ctx, id, &contract.GetArticleParams{Project: projectParam(proj)})
+	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
+		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
-		return transportError(err)
-	}
-	resp, e, err := contract.ParseOK(raw, contract.ParseGetArticleResponse)
-	if err := answerError(e, err); err != nil {
-		return err
-	}
-	if resp.JSON200 == nil {
-		return apiError(resp.HTTPResponse, resp.Body)
+		return wordError(err, c.local)
 	}
 	if c.s.json {
-		return c.printJSON(resp.JSON200)
+		return c.printJSON(a)
 	}
-	a := resp.JSON200
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\nid: %s\nkeywords: %s\n\n%s\n\nFind more with: goldie search <words>\n",
-		contract.CleanLine(a.Name), contract.CleanLine(a.Id), cleanList(a.Keywords), strings.TrimRight(contract.CleanText(a.Content), "\n"))
+		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords), strings.TrimRight(contract.CleanText(a.Content), "\n"))
 	writeHint(&b, a.Hint)
 	_, err = fmt.Fprint(c.out, b.String())
 	return err
@@ -143,12 +137,9 @@ func (c *commander) status(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	doc, err := cl.GetOpenAPIJSONWithResponse(ctx)
-	if err != nil {
-		return transportError(err)
-	}
-	if doc.JSON200 == nil && doc.StatusCode() != http.StatusUnauthorized {
-		return apiError(doc.HTTPResponse, doc.Body)
+	probe := probeServer(ctx, cl, given)
+	if probe.err != nil {
+		return wordError(probe.err, c.local)
 	}
 	// A Project problem is reported on the Project line, not as a failure:
 	// status is how a user finds out what is wrong. Other commands still fail.
@@ -160,24 +151,22 @@ func (c *commander) status(ctx context.Context) error {
 	}
 	auth := "no token given (set --token or " + EnvToken + " to check it)"
 	accepted := false
-	var title, apiVersion string
 	var hint *string
 	switch {
-	case doc.JSON200 != nil:
-		title, apiVersion = specInfo(*doc.JSON200)
+	case probe.answered():
 		if given {
-			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj)); err != nil {
+			if auth, accepted, hint, err = probeToken(ctx, cl, projectParam(proj), c.local); err != nil {
 				return err
 			}
 		}
-	case given:
+	case probe.tokenState == tokenRejected:
 		auth = "token rejected"
 	}
 	if c.s.json {
 		out := map[string]any{"reachable": true, "api": nil, "apiVersion": nil,
 			"tokenGiven": given, "tokenAccepted": accepted, "project": nil, "projectSource": nil}
-		if doc.JSON200 != nil {
-			out["api"], out["apiVersion"] = title, apiVersion
+		if probe.answered() {
+			out["api"], out["apiVersion"] = probe.title, probe.apiVersion
 		}
 		if proj.ID != "" {
 			out["project"], out["projectSource"] = proj.ID, sourceWords[proj.Source]
@@ -194,8 +183,8 @@ func (c *commander) status(ctx context.Context) error {
 		return c.printJSON(out)
 	}
 	apiLine := "unknown (the API document needs an accepted token)"
-	if doc.JSON200 != nil {
-		apiLine = contract.CleanLine(title) + " " + contract.CleanLine(apiVersion)
+	if probe.answered() {
+		apiLine = contract.CleanLine(probe.title) + " " + contract.CleanLine(probe.apiVersion)
 	}
 	_, err = fmt.Fprintf(c.out, "Server: reachable\nAPI: %s\nAuth: %s\nProject: %s\n\nSearch with: goldie search <words>\n",
 		apiLine, auth, describeProject(proj, projectError))
@@ -209,25 +198,19 @@ func (c *commander) status(ctx context.Context) error {
 
 // probeToken checks the token with one search for project, so status reports
 // the token as accepted only where the API answers it, and passes on the
-// server's hint for an unregistered Project. Any answer other than 200 or 401
-// is read by contract.ParseOK, so a 429 stays a rate-limit error.
-func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId) (auth string, accepted bool, hint *string, err error) {
+// server's hint for an unregistered Project. Any answer other than 401 is read
+// by contract.Answer, so a 429 stays a rate-limit error.
+func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *contract.ProjectId, local bool) (auth string, accepted bool, hint *string, err error) {
 	raw, err := cl.SearchArticles(ctx, &contract.SearchArticlesParams{Q: "goldie", Project: project})
-	if err != nil {
-		return "", false, nil, transportError(err)
-	}
-	if raw.StatusCode == http.StatusUnauthorized {
+	if err == nil && raw.StatusCode == http.StatusUnauthorized {
 		_ = raw.Body.Close()
 		return "token rejected", false, nil, nil
 	}
-	resp, e, err := contract.ParseOK(raw, contract.ParseSearchArticlesResponse)
-	if err := answerError(e, err); err != nil {
-		return "", false, nil, err
+	res, err := contract.Answer(raw, err, contract.ParseSearchArticlesResponse, searchResults)
+	if err != nil {
+		return "", false, nil, wordError(err, local)
 	}
-	if resp.JSON200 == nil {
-		return "", false, nil, apiError(resp.HTTPResponse, resp.Body)
-	}
-	return "token accepted", true, resp.JSON200.Hint, nil
+	return "token accepted", true, res.Hint, nil
 }
 
 // version prints the client version, and the server's API version when an
@@ -239,9 +222,14 @@ func probeToken(ctx context.Context, cl *contract.ClientWithResponses, project *
 //
 // When the version is missing the output says why, with a hint where the user
 // can act, as status does on its Auth line: no token, token rejected, a
-// redirect (check the address), an answer that was too large, or an
+// redirect (check the address), an answer that was too large, an error
+// status, an answer that isn't a goldie API answer (check the address), or an
 // unreachable server (check that the server is running and the address is
-// right). It never prints the address or the token. The JSON key stays
+// right). For an error status the note is the cleaned message of the server's
+// envelope with the status (just the status when there is no message), and the
+// hint is the server's own, or a wait hint when the server sent a valid
+// Retry-After or answered 429 (wordAPIError). It never prints the address or
+// the token. The JSON key stays
 // serverApiVersion (the contract is additive-only) and is null when unknown,
 // with the reason in serverNote.
 func (c *commander) version(ctx context.Context) error {
@@ -249,10 +237,13 @@ func (c *commander) version(ctx context.Context) error {
 	line := platform.Version
 	var note string
 	var hint *string
-	cl, err := c.client(c.s.token != "")
-	var doc *contract.GetOpenAPIJSONResponse
+	given := c.s.token != ""
+	cl, err := c.client(given)
+	var probe serverProbe
+	var apiErr *contract.APIError
 	if err == nil {
-		doc, err = cl.GetOpenAPIJSONWithResponse(ctx)
+		probe = probeServer(ctx, cl, given)
+		err = probe.err
 	}
 	switch {
 	case cl == nil:
@@ -269,19 +260,28 @@ func (c *commander) version(ctx context.Context) error {
 		note = "the server's answer was too large"
 		h := "check that the address points at a Goldie server"
 		hint = &h
+	case errors.Is(err, contract.ErrNotAPIAnswer):
+		note = "the server's answer isn't a goldie API answer"
+		h := "check the address (--addr or " + EnvAddr + ")"
+		hint = &h
+	case errors.As(err, &apiErr):
+		var h string
+		note, h = wordAPIError(apiErr)
+		if h != "" {
+			hint = &h
+		}
 	case err != nil:
 		note = "the server cannot be reached"
 		h := "check that the server is running and the address is right"
 		hint = &h
-	case doc.JSON200 != nil:
-		_, apiVersion := specInfo(*doc.JSON200)
-		info["serverApiVersion"] = apiVersion
-		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(apiVersion))
-	case doc.StatusCode() == http.StatusUnauthorized && c.s.token == "":
+	case probe.answered():
+		info["serverApiVersion"] = probe.apiVersion
+		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(probe.apiVersion))
+	case probe.tokenState == tokenMissing:
 		note = "no token given"
 		h := "set " + EnvToken + " or " + EnvToken + "_FILE (or pass --token) to see the server API version"
 		hint = &h
-	case doc.StatusCode() == http.StatusUnauthorized:
+	case probe.tokenState == tokenRejected:
 		note = "the token was rejected"
 		h := "check " + EnvToken + " or " + EnvToken + "_FILE"
 		hint = &h
@@ -309,84 +309,58 @@ func (c *commander) printVersion(info map[string]any, line string) error {
 	return err
 }
 
-// specInfo reads the title and version from an OpenAPI document.
-func specInfo(doc map[string]any) (title, version string) {
-	info, _ := doc["info"].(map[string]any)
-	title, _ = info["title"].(string)
-	version, _ = info["version"].(string)
-	return title, version
-}
-
-// transportError words a transport failure. The cause is dropped: it can
-// carry the address, and the user already knows what they typed.
-func transportError(err error) error {
-	if errors.Is(err, contract.ErrTooLarge) {
-		return fmt.Errorf("the server's answer is larger than %d MiB", contract.MaxResponseBytes>>20)
-	}
-	if errors.Is(err, contract.ErrRedirect) {
-		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
-	}
-	return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
-}
-
-// apiError words an error response. contract.DecodeAPIError passes on only
-// the status, the cleaned message and hint of the server's envelope, and the
-// wait of a valid Retry-After.
+// wordError words a failure to call the API or read its answer, as
+// contract.Answer classifies it. A transport failure loses its cause, which
+// can carry the address (and the user already knows what they typed). In
+// local mode there is no address or token to check: the embedded server is
+// the cause.
 //
-// A wait or a 429 gets its own hint instead of the server's, which points at
-// a header the user does not see. Without a valid wait it says none, rather
-// than "0 seconds" or the server's raw value.
-func apiError(resp *http.Response, body []byte) error {
-	return wordAPIError(contract.DecodeAPIError(resp.StatusCode, resp.Header, body))
-}
-
-// answerError words what contract.ParseOK found wrong with an answer: an
-// unreadable or unparsable body as transportError, an error status as
-// apiError. It is nil for a 200.
-func answerError(e *contract.APIError, err error) error {
+// For an error status, contract.DecodeAPIError passes on only the status, the
+// cleaned message and hint of the server's envelope, and the wait of a valid
+// Retry-After. A wait or a 429 gets its own hint instead of the server's,
+// which points at a header the user does not see. Without a valid wait it
+// says none, rather than "0 seconds" or the server's raw value.
+func wordError(err error, local bool) error {
+	var e *contract.APIError
 	switch {
-	case err != nil:
-		return transportError(err)
-	case e != nil:
-		return wordAPIError(*e)
+	case errors.As(err, &e):
+	case errors.Is(err, contract.ErrTooLarge):
+		return fmt.Errorf("the server's answer is larger than %d MiB", contract.MaxResponseBytes>>20)
+	case errors.Is(err, contract.ErrRedirect) && local:
+		return errors.New("the embedded server answered with a redirect, which the CLI does not follow")
+	case errors.Is(err, contract.ErrRedirect):
+		return errors.New("the server answered with a redirect, which the CLI does not follow: check --addr or " + EnvAddr)
+	case errors.Is(err, contract.ErrNotAPIAnswer) && local:
+		return errors.New("the embedded server's answer isn't a goldie API answer")
+	case errors.Is(err, contract.ErrNotAPIAnswer):
+		return errors.New("the server's answer isn't a goldie API answer; check the address")
+	case local:
+		return errors.New("cannot reach the embedded server over the local content: it stopped or could not be reached")
+	default:
+		return fmt.Errorf("cannot reach the server: check --addr or %s and that the server is running", EnvAddr)
 	}
-	return nil
-}
-
-// wordAPIError is the text of e, as apiError describes.
-func wordAPIError(e contract.APIError) error {
-	status := http.StatusText(e.Status)
-	msg := fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
-	if e.Message == "" {
-		msg = fmt.Sprintf("the server answered %d %s", e.Status, status)
-	}
-	hint := e.Hint
-	switch {
-	case e.Wait() != "":
-		hint = "Wait " + e.Wait() + ", then retry."
-	case e.Status == http.StatusTooManyRequests:
-		hint = "Wait a little, then retry."
-	}
+	msg, hint := wordAPIError(e)
 	if hint != "" {
 		msg += "\nHint: " + hint
 	}
 	return errors.New(msg)
 }
 
-func cleanList(l []string) string {
-	if len(l) == 0 {
-		return "(none)"
+// wordAPIError words an error status as a note and a hint, which status joins
+// into one message (wordError) and version prints on its own lines. The hint
+// is empty when there is none.
+func wordAPIError(e *contract.APIError) (note, hint string) {
+	status := http.StatusText(e.Status)
+	note = fmt.Sprintf("%s (%d %s)", e.Message, e.Status, status)
+	if e.Message == "" {
+		note = fmt.Sprintf("the server answered %d %s", e.Status, status)
 	}
-	out := make([]string, len(l))
-	for i, s := range l {
-		out[i] = contract.CleanLine(s)
+	hint = e.Hint
+	switch {
+	case e.Wait() != "":
+		hint = "Wait " + e.Wait() + ", then retry."
+	case e.Status == http.StatusTooManyRequests:
+		hint = "Wait a little, then retry."
 	}
-	return strings.Join(out, ", ")
-}
-
-// dotOnly reports whether id is empty or only dots. Such an id would be
-// resolved by the URL path ("." and ".." collapse) into a different API route,
-// so it is refused before any Project, client or HTTP step.
-func dotOnly(id string) bool {
-	return strings.Trim(id, ".") == ""
+	return note, hint
 }

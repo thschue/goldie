@@ -23,7 +23,7 @@ func (f *fakeSource) set(snap *Snapshot, err error, rev string) {
 	f.snap, f.err, f.rev = snap, err, rev
 }
 
-func (f *fakeSource) Load() (*Snapshot, error) {
+func (f *fakeSource) Load(context.Context) (*Snapshot, error) {
 	f.mu.Lock()
 	snap, err := f.snap, f.err
 	f.mu.Unlock()
@@ -58,7 +58,7 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 	}
 
 	src.set(nil, errors.New("read /srv/secret/path failed: https://u:p@host/repo token=abc123"), "")
-	if err := s.Poll(); err == nil {
+	if err := s.Poll(t.Context()); err == nil {
 		t.Fatal("want error")
 	}
 	if s.Current() != nil {
@@ -80,7 +80,7 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 	first := snapOf("a")
 	src.set(first, nil, "rev1")
 	clock = clock.Add(time.Minute)
-	if err := s.Poll(); err != nil {
+	if err := s.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if s.Current() != first {
@@ -93,7 +93,7 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 
 	src.set(nil, errors.New("boom"), "")
 	clock = clock.Add(time.Minute)
-	if err := s.Poll(); err == nil {
+	if err := s.Poll(t.Context()); err == nil {
 		t.Fatal("want error")
 	}
 	if s.Current() != first {
@@ -106,7 +106,7 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 
 	second := snapOf("a", "b")
 	src.set(second, nil, "rev2")
-	if err := s.Poll(); err != nil {
+	if err := s.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if s.Current() != second || s.Status().Revision != "rev2" {
@@ -116,7 +116,7 @@ func TestSyncerPollSwapAndKeepLastGood(t *testing.T) {
 
 func TestSyncerNilSnapshotIsFailure(t *testing.T) {
 	s := NewSyncer(&fakeSource{})
-	if err := s.Poll(); err == nil || s.Current() != nil {
+	if err := s.Poll(t.Context()); err == nil || s.Current() != nil {
 		t.Fatal("a nil Snapshot without error must count as a failure")
 	}
 }
@@ -124,11 +124,11 @@ func TestSyncerNilSnapshotIsFailure(t *testing.T) {
 // plainSource has no Revision method, like DirSource.
 type plainSource struct{}
 
-func (plainSource) Load() (*Snapshot, error) { return snapOf(), nil }
+func (plainSource) Load(context.Context) (*Snapshot, error) { return snapOf(), nil }
 
 func TestSyncerRevisionEmptyWithoutRevisioner(t *testing.T) {
 	s := NewSyncer(plainSource{})
-	if err := s.Poll(); err != nil {
+	if err := s.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if r := s.Status().Revision; r != "" {
@@ -148,7 +148,7 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { s.Run(ctx, time.Hour); close(done) }()
+	go func() { s.Run(ctx, time.Hour, nil); close(done) }()
 
 	<-src.load // immediate load, before any tick
 	src.set(snapOf("a", "b"), nil, "r2")
@@ -171,7 +171,7 @@ func TestSyncerRunLoadsImmediatelyThenOnTickAndStopsOnCancel(t *testing.T) {
 func TestSyncerRunWithoutIntervalPollsOnce(t *testing.T) {
 	for _, d := range []time.Duration{0, -time.Second} {
 		s := NewSyncer(plainSource{})
-		s.Run(context.Background(), d) // must return, not panic or block
+		s.Run(context.Background(), d, nil) // must return, not panic or block
 		if s.Current() == nil {
 			t.Fatalf("interval %v: Run must poll once", d)
 		}
@@ -208,7 +208,7 @@ func TestRedactLeavesNoCredentialsOrAddresses(t *testing.T) {
 // panicSource serves good once, then panics with a secret-bearing value.
 type panicSource struct{ calls int }
 
-func (p *panicSource) Load() (*Snapshot, error) {
+func (p *panicSource) Load(context.Context) (*Snapshot, error) {
 	p.calls++
 	if p.calls == 1 {
 		return snapOf("a"), nil
@@ -218,11 +218,11 @@ func (p *panicSource) Load() (*Snapshot, error) {
 
 func TestSyncerPanicInLoadKeepsLastGood(t *testing.T) {
 	s := NewSyncer(&panicSource{})
-	if err := s.Poll(); err != nil {
+	if err := s.Poll(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	good := s.Current()
-	if err := s.Poll(); err == nil {
+	if err := s.Poll(t.Context()); err == nil {
 		t.Fatal("a panicking load must fail the poll")
 	}
 	if s.Current() != good {
@@ -241,7 +241,7 @@ type orderSource struct {
 	release chan struct{}
 }
 
-func (o *orderSource) Load() (*Snapshot, error) {
+func (o *orderSource) Load(context.Context) (*Snapshot, error) {
 	o.mu.Lock()
 	o.n++
 	n := o.n
@@ -258,11 +258,11 @@ func TestSyncerConcurrentPollsNeverRegress(t *testing.T) {
 	s := NewSyncer(src)
 
 	first := make(chan struct{})
-	go func() { _ = s.Poll(); close(first) }()
+	go func() { _ = s.Poll(t.Context()); close(first) }()
 	<-src.started // the first, older load is in flight
 
 	second := make(chan struct{})
-	go func() { _ = s.Poll(); close(second) }()
+	go func() { _ = s.Poll(t.Context()); close(second) }()
 	// Give an unserialised second poll the chance to finish first. A correct
 	// Syncer holds it back, so this wait can only hide the bug, never fail.
 	select {

@@ -86,3 +86,23 @@ linters:
           files: ["$all", "!$test"]
           deny:
             - {pkg: github.com/thschue/goldie/internal/contract/contracttest, desc: "contracttest is test-only: import it from _test.go files, never from production code"}
+        project-detection:
+          # The server never detects a Project from its own working directory (#107, #233): it would
+          # leak the server's own repo and scope answers wrongly. Only the stdio MCP role detects, on
+          # the user's machine, so only internal/app/mcpstdio.go may import the package in app.
+          # internal/mcp takes plain values (WithProject and friends) and never detects.
+          # Stdio detection calls project.Detect inline in RunMCP, with no shared helper in
+          # internal/app. If a helper is ever needed, move the stdio role to internal/app/mcpstdio/
+          # so this rule becomes a package boundary.
+          # internal/cli must not export filesystem-reading detection: cli.ProjectWords is pure. An
+          # exported cli.DetectProject(env) would let any internal/app file detect through cli with
+          # no depguard signal (#343).
+          files: ["**/internal/api/**", "**/internal/engine/**", "**/internal/mcp/**", "**/internal/app/**", "!**/internal/app/mcpstdio.go"]
+          deny:
+            - {pkg: github.com/thschue/goldie/internal/contract/project, desc: "the server must not detect a Project from its own working directory: only internal/app/mcpstdio.go (the stdio role) may import contract/project"}
+        opentelemetry:
+          # OpenTelemetry is cross-cutting and lives in internal/platform only (#325). Other modules
+          # use the platform helpers, so no transport or module is tied to the SDK.
+          files: ["$all", "!**/internal/platform/**"]
+          deny:
+            - {pkg: go.opentelemetry.io, desc: "OpenTelemetry is confined to internal/platform: use the platform telemetry helpers instead of importing go.opentelemetry.io"}

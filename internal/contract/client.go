@@ -13,7 +13,8 @@ import (
 // Every goldie client (the CLI and goldie mcp over stdio) reaches the API
 // through the client built here, so the clients cannot drift apart on the
 // rules that keep a user's token and memory safe from a hostile or broken
-// server. Each client words ErrRedirect, ErrTooLarge and an APIError itself.
+// server. Answer reads what a call returns; each client only words what it
+// found.
 
 // requestTimeout bounds every API call of a client NewAPIClient builds itself.
 const requestTimeout = 30 * time.Second

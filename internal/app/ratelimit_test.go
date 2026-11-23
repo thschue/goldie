@@ -458,7 +458,7 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 			}
 			n++
 			responses, _ := o["responses"].(map[string]any)
-			resp := specRef(doc, responses["429"])
+			resp := contracttest.ResolveRef(doc, responses["429"])
 			if resp == nil {
 				t.Errorf("%s %s: no 429 response", method, path)
 				continue
@@ -470,7 +470,7 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 				t.Errorf("%s %s: 429 body schema %v, want the ErrorEnvelope", method, path, schema)
 			}
 			headers, _ := resp["headers"].(map[string]any)
-			header := specRef(doc, headers["Retry-After"])
+			header := contracttest.ResolveRef(doc, headers["Retry-After"])
 			hs, _ := header["schema"].(map[string]any)
 			if header == nil || hs["type"] != "integer" {
 				t.Errorf("%s %s: 429 Retry-After header %v, want one with an integer schema", method, path, header)
@@ -480,20 +480,4 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 	if n == 0 {
 		t.Fatal("the spec has no /api/ operations")
 	}
-}
-
-// specRef follows a local $ref ("#/a/b") in doc, if node is one.
-func specRef(doc map[string]any, node any) map[string]any {
-	m, _ := node.(map[string]any)
-	ref, ok := m["$ref"].(string)
-	if !ok {
-		return m
-	}
-	var cur any = doc
-	for _, part := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
-		next, _ := cur.(map[string]any)
-		cur = next[part]
-	}
-	out, _ := cur.(map[string]any)
-	return out
 }

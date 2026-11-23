@@ -129,18 +129,22 @@ func registerSSHDialer() {
 }
 
 // sshDialer dials a Load's ssh connections, through ALL_PROXY when it is set,
-// as go-git would. Each connection ends at the Load's deadline and charges its
-// reads to the Load's wire budget, like an https one.
+// as go-git would. Each connection ends at the Load's deadline, or as soon as
+// load ends when it is set, and charges its reads to the Load's wire budget,
+// like an https one.
 type sshDialer struct {
 	budget   *gitBudget
 	deadline time.Time
+	// load is the Load's context. go-git's dial context is not it, so
+	// cancelling the Load reaches a connection only through here.
+	load context.Context
 }
 
-// sshProxy routes the ssh connections of one Load through an sshDialer. The
-// returned func forgets the Load.
-func sshProxy(budget *gitBudget, deadline time.Time) (transport.ProxyOptions, func()) {
+// routeSSH routes the ssh connections of one Load through d. The returned
+// func forgets the Load.
+func routeSSH(d *sshDialer) (transport.ProxyOptions, func()) {
 	id := strconv.FormatUint(sshLoadSeq.Add(1), 10)
-	sshLoads.Store(id, &sshDialer{budget: budget, deadline: deadline})
+	sshLoads.Store(id, d)
 	return transport.ProxyOptions{URL: sshDialScheme + "://" + id}, func() { sshLoads.Delete(id) }
 }
 
@@ -166,6 +170,9 @@ func (d *sshDialer) dialVia(ctx context.Context, fwd proxy.Dialer, network, addr
 	}
 	ctx, cancel := context.WithDeadline(context.WithValue(ctx, sshDialKey{}, true), d.deadline)
 	defer cancel()
+	if d.load != nil {
+		defer context.AfterFunc(d.load, cancel)()
+	}
 	var (
 		c   net.Conn
 		err error
@@ -182,6 +189,12 @@ func (d *sshDialer) dialVia(ctx context.Context, fwd proxy.Dialer, network, addr
 	if err := c.SetDeadline(d.deadline); err != nil {
 		_ = c.Close()
 		return nil, err
+	}
+	if d.load != nil {
+		// Moving the deadline to now fails a read or write in progress, so a
+		// cancelled Load stops even mid-handshake. The Load's context always
+		// ends when the Load returns, so this never outlives it.
+		context.AfterFunc(d.load, func() { _ = c.SetDeadline(time.Now()) })
 	}
 	return budgetConn{Conn: c, b: d.budget}, nil
 }

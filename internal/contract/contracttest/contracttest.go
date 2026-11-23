@@ -1,6 +1,15 @@
 // Package contracttest checks HTTP responses against the OpenAPI document in
-// internal/contract. API tests call Conforms on every response they make, so
-// the server cannot drift from the spec unnoticed. It is for tests only.
+// internal/contract. It is for tests only.
+//
+// Conforms fails the test unless a response is one the spec describes for the
+// request that produced it. API tests call it on every response they make, so
+// the server cannot drift from the spec unnoticed.
+//
+// ExamplePath builds a request path for an operation from the examples the
+// spec declares, each encoded as one path segment, and fails naming a path
+// parameter whose example is missing or empty.
+//
+// ResolveRef follows a local JSON $ref ("#/a/b") in the document.
 package contracttest
 
 import (
@@ -10,9 +19,11 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -46,7 +57,7 @@ func Check(resp *http.Response, body []byte) error {
 	if resp.Request == nil {
 		return errors.New("response has no request")
 	}
-	doc, c, err := load()
+	doc, err := Spec()
 	if err != nil {
 		return err
 	}
@@ -82,6 +93,10 @@ func Check(resp *http.Response, body []byte) error {
 	if _, ok := media["schema"]; !ok || !strings.HasSuffix(mt, "json") {
 		return nil // only JSON bodies are validated structurally
 	}
+	c, err := compiler()
+	if err != nil {
+		return err
+	}
 	sch, err := c.Compile(specURL + "#" + ptr + "/content/" + escape(mt) + "/schema")
 	if err != nil {
 		return fmt.Errorf("compile schema: %w", err)
@@ -96,31 +111,107 @@ func Check(resp *http.Response, body []byte) error {
 	return nil
 }
 
-// Spec returns the contract spec as Conforms reads it: contract.SpecJSON,
-// decoded. Each call returns a fresh document the caller may modify.
-func Spec() (map[string]any, error) {
-	doc, _, err := load()
-	return doc, err
-}
+// specJSON converts the embedded YAML once; every Spec call decodes the result.
+var specJSON = sync.OnceValues(contract.SpecJSON)
 
-func load() (map[string]any, *jsonschema.Compiler, error) {
-	raw, err := contract.SpecJSON()
+// Spec returns the contract spec as Conforms reads it: contract.SpecJSON,
+// decoded. Each call returns a fresh document the caller may modify. It only
+// decodes: Check builds the schema compiler it validates responses with.
+func Spec() (map[string]any, error) {
+	raw, err := specJSON()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var doc map[string]any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, nil, err
+		return nil, err
+	}
+	return doc, nil
+}
+
+// compiler returns a schema compiler holding the spec as its one resource.
+func compiler() (*jsonschema.Compiler, error) {
+	raw, err := specJSON()
+	if err != nil {
+		return nil, err
 	}
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	c := jsonschema.NewCompiler()
 	if err := c.AddResource(specURL, inst); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return doc, c, nil
+	return c, nil
+}
+
+// ExamplePath returns the request path for an operation of the spec: method
+// (any case) and path template in, the template with each path parameter
+// replaced by the example the spec declares for it, percent-encoded as one
+// path segment ("platform/deploy" becomes "platform%2Fdeploy"). A parameter
+// declared on the path item applies to every operation; one on the operation
+// overrides it by name. It returns an error naming the parameter when a path
+// parameter is undeclared or has no non-empty string example, and when the
+// spec has no such operation.
+func ExamplePath(method, template string) (string, error) {
+	doc, err := Spec()
+	if err != nil {
+		return "", err
+	}
+	return examplePath(doc, method, template)
+}
+
+func examplePath(doc map[string]any, method, template string) (string, error) {
+	method = strings.ToLower(method)
+	paths, _ := doc["paths"].(map[string]any)
+	item, _ := paths[template].(map[string]any)
+	op, ok := item[method].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("the spec has no %s operation for %s", strings.ToUpper(method), template)
+	}
+	examples := map[string]any{}
+	for _, list := range []any{item["parameters"], op["parameters"]} { // the operation's come last and win
+		params, _ := list.([]any)
+		for _, p := range params {
+			param, _ := p.(map[string]any)
+			param, _ = resolve(doc, param, "")
+			if name, _ := param["name"].(string); name != "" && param["in"] == "path" {
+				examples[name] = param["example"]
+			}
+		}
+	}
+	// Walk the quoted template: the text between parameter matches is literal,
+	// and QuoteMeta only adds a backslash before a character, so undoing it per
+	// pair keeps a backslash the template itself holds.
+	quoted := regexp.QuoteMeta(template)
+	var out strings.Builder
+	last := 0
+	for _, m := range paramRE.FindAllStringIndex(quoted, -1) {
+		out.WriteString(unquoteMeta.ReplaceAllString(quoted[last:m[0]], "$1"))
+		name := strings.TrimSuffix(strings.TrimPrefix(quoted[m[0]:m[1]], `\{`), `\}`)
+		ex, ok := examples[name].(string)
+		if !ok || ex == "" {
+			return "", fmt.Errorf("path parameter %q of %s has no non-empty string example in the spec", name, template)
+		}
+		out.WriteString(url.PathEscape(ex)) // one path segment, ADR 0016
+		last = m[1]
+	}
+	out.WriteString(unquoteMeta.ReplaceAllString(quoted[last:], "$1"))
+	return out.String(), nil
+}
+
+// unquoteMeta matches one backslash-quoted character of regexp.QuoteMeta output.
+var unquoteMeta = regexp.MustCompile(`\\(.)`)
+
+// ResolveRef follows a local $ref ("#/a/b") in doc if node is one. It returns
+// the referenced node, and node itself when it has no local $ref (none, or one
+// that does not start with "#/"). It returns nil when node is not an object or
+// when a local reference dangles.
+func ResolveRef(doc map[string]any, node any) map[string]any {
+	m, _ := node.(map[string]any)
+	out, _ := resolve(doc, m, "")
+	return out
 }
 
 // escape encodes one JSON Pointer reference token.
