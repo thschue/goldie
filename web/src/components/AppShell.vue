@@ -93,8 +93,7 @@ function onPopState() {
 // and main stays inert until the drawer's render has run, which can be after
 // the route's. So check that the focus held and retry on the next frame, a few
 // times at most. The h1 of the view being left is skipped: it can pass every
-// check just before the keyed view replaces it (from the second frame on it may
-// be the same element, for a route change that keeps the view). A newer call (token) stops an
+// check just before the keyed view replaces it. A newer call (token) stops an
 // older loop, and so does focus the user moved to something that is not the
 // page start, a link or the drawer.
 let focusRun = 0;
@@ -102,11 +101,11 @@ async function focusHeading(previous: Element | null) {
   const run = ++focusRun;
   await nextTick();
   for (let attempt = 0; attempt < 10 && run === focusRun; attempt++) {
-    const active = document.activeElement;
-    const chosen = active && active !== document.body && !active.closest('a[href]') && !drawer.value?.contains(active);
-    if (chosen) return;
     const h1 = main.value?.querySelector('h1');
-    if (h1 && (h1 !== previous || attempt > 0) && h1.isConnected && !open.value && !h1.closest('[inert]')) {
+    if (h1 && h1 !== previous && h1.isConnected && !open.value && !h1.closest('[inert]')) {
+      // Only once the page can take focus: focus that has moved by then is the user's.
+      const active = document.activeElement;
+      if (active && active !== document.body && !active.closest('a[href]') && !drawer.value?.contains(active)) return;
       h1.tabIndex = -1;
       h1.focus();
       if (document.activeElement === h1) return;
