@@ -237,11 +237,6 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 			return nil, nil, errors.New("content does not load: content directory is not readable")
 		}
 	}
-	closeContent = func() {
-		if content != nil {
-			_ = content.Close()
-		}
-	}
 	var addr, token string
 	var stop func()
 	switch {
@@ -268,8 +263,9 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 // goldieDir is its .goldie directory, set when .goldie/articles exists at the
 // repository root. dir is the content directory given by --dir or GOLDIE_DIR,
 // or else the one config.yaml names, which comes back already open as handle
-// (project.OpenConfigContentDir), or "" for empty content. A .goldie without articles, such as the one goldie init
-// writes, is not a local Scope: dir comes back as it was given. An address
+// (project.OpenConfigContentDir), or "" for empty content. A .goldie without
+// articles, such as the one goldie init writes, is not a local Scope: dir
+// comes back as it was given. An address
 // together with a local Scope is an error naming both, like one with a
 // directory, because the address would hide the repository's own content.
 func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, handle *os.Root, err error) {

@@ -123,9 +123,10 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	}
 	var src engine.Source = engine.EmptySource{}
 	if cfg.ContentDir != "" {
-		src = engine.Source(engine.NewDirSource(cfg.ContentDir))
 		if l.Root != nil {
 			src = engine.NewRootSource(l.Root)
+		} else {
+			src = engine.NewDirSource(cfg.ContentDir)
 		}
 		if l.Examples != nil {
 			src = engine.NewFallbackSource(src, engine.NewFSSource(l.Examples), l.examplesNotice(cfg.ContentDir))
