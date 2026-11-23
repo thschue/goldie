@@ -463,7 +463,10 @@ test.describe('the first load', () => {
     try {
       await page.goto('/decisions', { waitUntil: 'domcontentloaded' });
       await expect(loadingState(page), 'not a blank page').toBeVisible();
-      await expect(page.getByRole('heading', { level: 1 }), 'no view and no chip before the answer').toHaveCount(0);
+      // The loading state carries the page's one h1 (axe best-practice page-has-heading-one), so the
+      // check is that no view heading is there yet, and that any h1 is the loading state's.
+      await expect(page.getByRole('heading', { name: 'Decisions' }), 'no view before the answer').toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1 }).filter({ hasNotText: /loading/i }), 'no view heading before the answer').toHaveCount(0);
       await expect(page.getByRole('button', { name: /^(reader|operator)/i })).toHaveCount(0);
     } finally {
       release();
