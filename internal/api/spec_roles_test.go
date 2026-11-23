@@ -160,7 +160,7 @@ func markedNames(t *testing.T, doc *specDoc) map[string]bool {
 // same location without being the marked component itself: an unmarked
 // duplicate would reach the same value without the guard.
 func nameClash(marked map[string]bool, name, in string, isMarked bool) bool {
-	if isMarked || in != "query" {
+	if isMarked {
 		return false
 	}
 	for n := range marked {

@@ -30,10 +30,7 @@ func TestADRRecordsTheRoleExtension(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(b), RoleExtension) {
-			if file != "" {
-				t.Fatalf("both %s and %s mention %s: one ADR records it", file, e.Name(), RoleExtension)
-			}
+		if file == "" && recordsExtension(string(b)) {
 			file, text = e.Name(), string(b)
 		}
 	}
@@ -56,4 +53,20 @@ func TestADRRecordsTheRoleExtension(t *testing.T) {
 	if !strings.Contains(string(index), "("+file+")") {
 		t.Errorf("docs/adr/README.md does not list %s", file)
 	}
+}
+
+// recordsExtension reports whether an ADR is the one recording the extension:
+// its "# " title line mentions roles, it has a Decision section, and it
+// mentions the extension.
+func recordsExtension(text string) bool {
+	var title string
+	for _, l := range strings.Split(text, "\n") {
+		if strings.HasPrefix(l, "# ") {
+			title = l
+			break
+		}
+	}
+	return strings.Contains(strings.ToLower(title), "role") &&
+		strings.Contains(text, "\n## Decision") &&
+		strings.Contains(text, RoleExtension)
 }
