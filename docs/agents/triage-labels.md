@@ -15,7 +15,8 @@ Supporting labels:
 - `epic`: tracks sub-issues and is never claimed directly
 - `grilling-needed`: an open design question; run `/grilling` before it can be ready
 - `question`: a maintainer decision (issues); a product question awaiting its answer (PRs)
-- `priority`: at most 2 open at a time
+- `priority:P1` (bugs, security, the work that unblocks the most; at most 2 besides bugs),
+  `priority:P2` (value work, the default), `priority:P3` (polish): one on every ready issue
 - `bug`: ranks first; `security`: a tag (MEDIUM+ goes to a private advisory)
 
 - `area:engine`, `area:api`, `area:cli`, `area:mcp`, `area:platform`, `area:ui`, `area:contract`:
