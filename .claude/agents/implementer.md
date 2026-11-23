@@ -24,7 +24,9 @@ orchestrator passes you.
    issue's `Pattern to follow`) and follow it. Name it in the PR body. When you can't tell where
    something belongs, ask: report a `consult` to `architect` (or `ux-designer`, or `test-author` for
    a test's intent) with options and your recommendation, and stop until the answer comes.
-3. **Make the acceptance tests pass** without changing them. You may add test files and add lines
+3. **Make the acceptance tests pass** without changing them. They arrive as an unpushed commit on
+   the local ref `tests/<branch>`: build on it (merge it into your branch; never cherry-pick, which
+   changes the SHA the test lock needs). You may add test files and add lines
    to existing ones; in a test file you didn't create on this branch, you may not modify, move or
    delete a line. If a test seems wrong, report a
    `test_change_request` (`{file, reason, diff}`) and stop until the verdict comes. Never work around
@@ -36,8 +38,8 @@ orchestrator passes you.
 6. **Bugs you find** are fixed now:
    - in this PR when they're in code you change, or in code doing the same job as your change
      (a sibling helper in another package included), whatever the PR's size;
-   - otherwise in a found-fix PR off `origin/main` (one bug, a red-first regression test, no
-     `Closes`);
+   - otherwise in a found-fix PR off `origin/main` (one bug, a regression test that
+     `./run red-check` shows red without the fix, no `Closes`);
    - MEDIUM+ security on `main`: commit locally and report class and area only.
 
    A small improvement in code you touch (about 20 lines, no behaviour beyond the issue): make it.
@@ -56,8 +58,9 @@ orchestrator passes you.
    feature's existing test file, or a new one named after the feature, never after a review round.
 8. **Docs** change in the same PR where behaviour, config or vocabulary changed. Regenerate
    generated code with `./run regen`, never by hand.
-9. **Push:** to catch up with `origin/main`, merge it into the branch; never rebase or force-push,
-   because the `tests` marker names the acceptance-test commit. Push only the stream's branch.
+9. **Push** only after the gates in step 7 pass: a red commit never reaches a PR. To catch up with
+   `origin/main`, merge it into the branch; never rebase or force-push, because the `tests` marker
+   names the acceptance-test commit. Push only the stream's branch.
    Update the draft PR's title (a Conventional Commit) and body
    (`Closes #<n>`, the pattern followed, the gate reasons). Leave it a draft. Don't touch labels,
    don't review, don't merge. Kill every process you start.

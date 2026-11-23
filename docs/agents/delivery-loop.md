@@ -53,8 +53,10 @@ reason), consults, test change requests, and harness feedback filed.
    `ci`, `build` and pure `refactor`. For `test` issues the `test-author` makes every test-file
    change here, and step 2 runs only for a remaining non-test change.
    - The `test-author` writes failing tests for every acceptance criterion, at the highest seam,
-     following the existing test patterns, and pushes them as the first commit
-     (`test(acceptance): …`).
+     following the existing test patterns, and commits them (`test(acceptance): …`) on the
+     local ref `tests/<branch>` without pushing: a PR never gets a red commit.
+   - If that commit is missing when a stream resumes (another session adopted it), run step 1
+     again.
    - Record `<!-- goldie-loop:tests sha=<commit> -->` on the PR.
    - On `needs-info` (criteria unclear or contradictory): comment the exact gap with
      `reason=spec`, swap the issue's `ready-for-agent` for `needs-info`, and close the draft.
