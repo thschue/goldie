@@ -16,13 +16,14 @@ import (
 // Acceptance tests for #535: the not_found hints for a plain miss are
 // client-neutral (no API operation named), so every client can show them as
 // is. A Suppression keeps its own hint, which names the entry to remove. The
-// skill and agent hints are the article hint with "skill" or "agent" for
-// "article", word for word.
+// skill and agent hints are client-neutral too, but point to the list, not to
+// search: search returns articles only, and skills and agents are addressed by
+// name (the contract: a miss is a 404 whose hint points to the list).
 
 const (
 	missArticleHint = "Search for the article, then use an id from its results."
-	missSkillHint   = "Search for the skill, then use an id from its results."
-	missAgentHint   = "Search for the agent, then use an id from its results."
+	missSkillHint   = "List the skills, then use a name from the list."
+	missAgentHint   = "List the agents, then use a name from the list."
 	notFoundProject = "github.com/acme/shop"
 )
 
