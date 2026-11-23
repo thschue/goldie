@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -11,10 +10,9 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"time"
 )
 
-// dist holds the committed placeholder page and, when ./run ui has run, the
+// dist holds the committed placeholder page (dist/placeholder/index.html) and, when ./run ui has run, the
 // SPA build in dist/app (gitignored, ADR 0019).
 //
 //go:embed all:dist
@@ -22,7 +20,6 @@ var dist embed.FS
 
 const (
 	builtIndex      = "dist/app/index.html"
-	placeholderFile = "dist/placeholder.html"
 	maxPathLen      = 2048
 
 	// csp is the Content-Security-Policy of every UI response. The SPA loads
@@ -70,11 +67,11 @@ func Assets() fs.FS {
 		}
 		return sub
 	}
-	body, err := dist.ReadFile(placeholderFile)
+	sub, err := fs.Sub(dist, "dist/placeholder")
 	if err != nil {
-		panic("ui: " + err.Error()) // embedded at build time
+		panic("ui: " + err.Error()) // the path is a constant
 	}
-	return placeholderFS{body}
+	return sub
 }
 
 type file struct {
@@ -198,60 +195,3 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, code, messag
 		_, _ = w.Write(body)
 	}
 }
-
-// placeholderFS is a tree of one file, index.html, holding the placeholder page.
-type placeholderFS struct{ body []byte }
-
-func (p placeholderFS) Open(name string) (fs.File, error) {
-	switch name {
-	case ".":
-		return &memFile{info: memInfo{name: ".", dir: true}, dir: true}, nil
-	case "index.html":
-		return &memFile{Reader: bytes.NewReader(p.body), info: memInfo{name: name, size: int64(len(p.body))}}, nil
-	}
-	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
-}
-
-type memFile struct {
-	*bytes.Reader
-	info memInfo
-	dir  bool
-	done bool
-}
-
-func (f *memFile) Stat() (fs.FileInfo, error) { return f.info, nil }
-func (f *memFile) Close() error               { return nil }
-
-func (f *memFile) Read(b []byte) (int, error) {
-	if f.Reader == nil {
-		return 0, &fs.PathError{Op: "read", Path: f.info.name, Err: fs.ErrInvalid}
-	}
-	return f.Reader.Read(b)
-}
-
-// ReadDir lists the one file of the root.
-func (f *memFile) ReadDir(int) ([]fs.DirEntry, error) {
-	if !f.dir || f.done {
-		return nil, nil
-	}
-	f.done = true
-	return []fs.DirEntry{fs.FileInfoToDirEntry(memInfo{name: "index.html"})}, nil
-}
-
-type memInfo struct {
-	name string
-	size int64
-	dir  bool
-}
-
-func (i memInfo) Name() string { return i.name }
-func (i memInfo) Size() int64  { return i.size }
-func (i memInfo) Mode() fs.FileMode {
-	if i.dir {
-		return fs.ModeDir | 0o555
-	}
-	return 0o444
-}
-func (memInfo) ModTime() time.Time { return time.Time{} }
-func (i memInfo) IsDir() bool      { return i.dir }
-func (memInfo) Sys() any           { return nil }
