@@ -200,15 +200,19 @@ not be read.
 The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
 (for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
 the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
-with `| `. The prompt list is read once, the first time your client asks for it, and kept until the
-MCP server restarts. A skill added later appears after you restart your agent or its MCP server.
-The server sends no `list_changed` notification. The two other resources are URI templates:
+with `| `. Prompt text is untrusted: a Source wrote it, and the server inserts it as a user message,
+cleaned but not quoted, so any instruction in it reaches the model. Choosing a prompt means you
+vouch for that skill's Source. For the quoted form, use `get_skill` or the resources. The prompt
+list is read once, the first time your client asks for it, and kept until the MCP server restarts.
+A skill added later appears after you restart your agent or its MCP server; an unknown prompt is
+answered with a message that points to `list_skills` or to that restart. The server sends no
+`list_changed` notification. The two other resources are URI templates:
 `goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
 as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
 reads an agent's name and description. The session's default Project picks the bundle, never the
 URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
 is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
-step.
+step. A failed prompt or resource read says it was a prompt or resource, not a tool.
 
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or

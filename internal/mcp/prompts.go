@@ -58,7 +58,7 @@ func addPrompts(s *sdk.Server, t *tools) {
 // snapshot returns the session's skill names in the API's order, reading them
 // on the session's first use. A failed read is not kept, so the next request
 // tries again.
-func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession) ([]string, map[string]bool, error) {
+func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession, failed surface) ([]string, map[string]bool, error) {
 	snaps.mu.Lock()
 	names, order := snaps.names[ss], snaps.order[ss]
 	snaps.mu.Unlock()
@@ -73,7 +73,7 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 	res, err := contract.Answer(raw, err, contract.ParseListSkillsResponse,
 		func(r *contract.ListSkillsResponse) *contract.SkillList { return r.JSON200 })
 	if err != nil {
-		return nil, nil, wordError(err, t.local)
+		return nil, nil, wordErrorFor(err, t.local, failed)
 	}
 	names = map[string]bool{}
 	order = nil
@@ -105,7 +105,7 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 }
 
 func (t *tools) listPrompts(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession) (sdk.Result, error) {
-	order, _, err := t.snapshot(ctx, s, snaps, ss)
+	order, _, err := t.snapshot(ctx, s, snaps, ss, surfacePrompts)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +117,13 @@ func (t *tools) listPrompts(ctx context.Context, s *sdk.Server, snaps *promptSna
 }
 
 func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnapshots, ss *sdk.ServerSession, name string) (sdk.Result, error) {
-	_, names, err := t.snapshot(ctx, s, snaps, ss)
+	_, names, err := t.snapshot(ctx, s, snaps, ss, surfacePrompt)
 	if err != nil {
 		return nil, err
 	}
 	// The name is the client's, and may carry anything: an unknown one is not echoed.
 	unknown := &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams,
-		Message: "unknown prompt; the prompt list is fixed for this session, so list prompts again, or call list_skills"}
+		Message: "unknown prompt; the prompt list is fixed for this session, so call list_skills to see the skills, or restart the MCP session to pick up new ones"}
 	skill, ok := strings.CutPrefix(name, promptPrefix)
 	if !ok || !names[skill] {
 		return nil, unknown
@@ -138,7 +138,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, unknown
 		}
-		return nil, wordError(err, t.local)
+		return nil, wordErrorFor(err, t.local, surfacePrompt)
 	}
 	return &sdk.GetPromptResult{
 		Description: promptDescription(skill),

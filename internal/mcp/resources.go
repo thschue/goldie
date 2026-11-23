@@ -106,7 +106,7 @@ func (t *tools) resourceError(err error) error {
 	if errors.As(err, &e) && e.Status == http.StatusNotFound {
 		return notFound()
 	}
-	return wordError(err, t.local)
+	return wordErrorFor(err, t.local, surfaceResource)
 }
 
 // readSkillFile answers goldie://skills/{name}/{+path}: a file of the bundle,

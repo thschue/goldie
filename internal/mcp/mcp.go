@@ -289,7 +289,7 @@ func (t *tools) currentContext(ctx context.Context) *sdk.CallToolResult {
 		return res
 	}
 	text := res.Content[0].(*sdk.TextContent).Text
-	block, err := t.instructions(ctx)
+	block, err := t.instructions(ctx, surfaceTool)
 	if err != nil {
 		return success(text + "\n\nThe instruction clauses could not be read: " + contract.CleanLine(err.Error()))
 	}
@@ -346,7 +346,30 @@ func failure(err error) *sdk.CallToolResult {
 // Retry-After. The agent never sees the headers, so a wait or a 429 gets its
 // own hint instead of the server's, which points at Retry-After. Without a
 // valid wait it says none, rather than "0 seconds" or the server's raw value.
-func wordError(err error, local bool) error {
+func wordError(err error, local bool) error { return wordErrorFor(err, local, surfaceTool) }
+
+// surface is what the agent asked the server for: a tool call, a prompt or a
+// resource read. Its errors name it, so a failed prompt does not read as a tool.
+type surface struct{ failed, retry string }
+
+var (
+	surfaceTool     = surface{"", "call the tool again"}
+	surfacePrompt   = surface{"the prompt could not be read", "get the prompt again"}
+	surfacePrompts  = surface{"the prompts could not be listed", "list the prompts again"}
+	surfaceResource = surface{"the resource could not be read", "read the resource again"}
+)
+
+// wordErrorFor is wordError for one surface. A tool's wording is unchanged; a
+// prompt's or resource's names the prompt or resource and its retry step.
+func wordErrorFor(err error, local bool, s surface) error {
+	werr := wordErrorOf(err, local, s)
+	if s.failed == "" {
+		return werr
+	}
+	return errors.New(s.failed + ": " + werr.Error())
+}
+
+func wordErrorOf(err error, local bool, s surface) error {
 	var e *contract.APIError
 	switch {
 	case errors.As(err, &e):
@@ -375,9 +398,9 @@ func wordError(err error, local bool) error {
 	hint := e.Hint
 	switch {
 	case e.Wait() != "":
-		hint = "Wait " + e.Wait() + ", then call the tool again."
+		hint = "Wait " + e.Wait() + ", then " + s.retry + "."
 	case e.Status == http.StatusTooManyRequests:
-		hint = "Wait a little, then call the tool again."
+		hint = "Wait a little, then " + s.retry + "."
 	}
 	if hint == "" {
 		return errors.New(msg)
