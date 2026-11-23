@@ -258,7 +258,8 @@ type ProjectDetail struct {
 	// Examples: github.com/acme/shop
 	Id ProjectId `json:"id"`
 
-	// Suppressions The global Items the Project suppresses, as `article:<id>`, sorted.
+	// Suppressions The global Items the Project suppresses, as `<kind>:<id>` (for example
+	// `article:style` or `agent:reviewer`), sorted.
 	// A reference that names nothing is not listed. Empty when there are none.
 	//
 	//
@@ -555,7 +556,7 @@ type ClientInterface interface {
 	//
 	// Returns the Project's id, in the case the server stores it, and the
 	// global Items its `project.yaml` suppresses (ADR 0021) as
-	// `article:<id>`, sorted. A Project that suppresses nothing answers an
+	// `<kind>:<id>` (for example `article:style` or `agent:reviewer`), sorted. A Project that suppresses nothing answers an
 	// empty list. A lookup of a suppressed Item answers 404 with a hint that
 	// names the Suppression and the file that sets it, and search leaves it
 	// out.
@@ -692,7 +693,7 @@ func (c *Client) ListProjects(ctx context.Context, reqEditors ...RequestEditorFn
 //
 // Returns the Project's id, in the case the server stores it, and the
 // global Items its `project.yaml` suppresses (ADR 0021) as
-// `article:<id>`, sorted. A Project that suppresses nothing answers an
+// `<kind>:<id>` (for example `article:style` or `agent:reviewer`), sorted. A Project that suppresses nothing answers an
 // empty list. A lookup of a suppressed Item answers 404 with a hint that
 // names the Suppression and the file that sets it, and search leaves it
 // out.
@@ -1214,7 +1215,7 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns the Project's id, in the case the server stores it, and the
 	// global Items its `project.yaml` suppresses (ADR 0021) as
-	// `article:<id>`, sorted. A Project that suppresses nothing answers an
+	// `<kind>:<id>` (for example `article:style` or `agent:reviewer`), sorted. A Project that suppresses nothing answers an
 	// empty list. A lookup of a suppressed Item answers 404 with a hint that
 	// names the Suppression and the file that sets it, and search leaves it
 	// out.
@@ -2005,7 +2006,7 @@ func (c *ClientWithResponses) ListProjectsWithResponse(ctx context.Context, reqE
 //
 // Returns the Project's id, in the case the server stores it, and the
 // global Items its `project.yaml` suppresses (ADR 0021) as
-// `article:<id>`, sorted. A Project that suppresses nothing answers an
+// `<kind>:<id>` (for example `article:style` or `agent:reviewer`), sorted. A Project that suppresses nothing answers an
 // empty list. A lookup of a suppressed Item answers 404 with a hint that
 // names the Suppression and the file that sets it, and search leaves it
 // out.

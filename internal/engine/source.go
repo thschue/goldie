@@ -389,7 +389,7 @@ type project struct {
 	agents   []Article // agent records, sorted by ID
 	index    keyIndex
 	// suppressed holds the global Items the Project hides (its project.yaml),
-	// and suppressions lists them as article:<ID>, sorted.
+	// and suppressions lists them as <kind>:<ID> (article: or agent:), sorted.
 	suppressed   map[itemKey]bool
 	suppressions []string
 }
