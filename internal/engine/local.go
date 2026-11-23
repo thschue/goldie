@@ -99,12 +99,42 @@ func (s LocalSource) Load(ctx context.Context) (*Snapshot, error) {
 	}
 	// os.Root on the repository confines every read to it, so a symlinked
 	// .goldie cannot lead out of it; contentFS never blocks on a FIFO.
-	repo, err := os.OpenRoot(filepath.Dir(s.dir))
+	parent, name, err := splitGoldieDir(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := os.OpenRoot(parent)
 	if err != nil {
 		return nil, errors.New("local content directory is not readable")
 	}
 	defer func() { _ = repo.Close() }()
-	return base.withLocal(DirSource{}.contentFS(repo), filepath.Base(s.dir))
+	return base.withLocal(DirSource{}.contentFS(repo), name)
+}
+
+// splitGoldieDir splits goldieDir into the repository directory and the name
+// of the directory in it. Trailing separators are ignored, and doubled ones
+// and inner . segments are cleaned. A path that is empty, the file system root,
+// or whose last element is . or .. names no directory of its own, and cleaning
+// it would read the repository itself, or the one above, as .goldie: it fails
+// the load, with an error that names no path. Load does this, not
+// NewLocalSource, which has no error to return.
+func splitGoldieDir(dir string) (parent, name string, err error) {
+	bad := errors.New("the local directory is not a named directory, such as <repository>/.goldie")
+	trimmed := dir
+	for len(trimmed) > 0 && os.IsPathSeparator(trimmed[len(trimmed)-1]) {
+		trimmed = trimmed[:len(trimmed)-1]
+	}
+	if trimmed == "" {
+		return "", "", bad
+	}
+	if last := filepath.Base(trimmed); last == "." || last == ".." || last == string(filepath.Separator) {
+		return "", "", bad
+	}
+	clean := filepath.Clean(trimmed)
+	if parent = filepath.Dir(clean); parent == clean {
+		return "", "", bad
+	}
+	return parent, filepath.Base(clean), nil
 }
 
 // withLocal returns a copy of s with the local Scope read from dir, a path
