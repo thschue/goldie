@@ -16,9 +16,15 @@
     "@axe-core/playwright": "4.14.0",
     "@playwright/test": "1.65.1",
     "@vitejs/plugin-vue": "6.0.11",
+    "openapi-typescript": "7.13.0",
     "typescript": "6.0.3",
     "vite": "8.3.8",
     "vitest": "5.1.1",
     "vue-tsc": "3.3.14"
+  },
+  "overrides": {
+    "openapi-typescript": {
+      "typescript": "$typescript"
+    }
   }
 }

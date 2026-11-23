@@ -16,7 +16,8 @@
 #   ./run size [base]  changed lines without tests and generated code (about 400; over 600 fails)
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
-#   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs)
+#   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs,
+#                    web/src/api/schema.ts when Node is installed)
 #   ./run ui         build the SPA (npm ci --ignore-scripts, npm run build in web/) into internal/ui/dist/app;
 #                    needs Node, not part of check
 #   ./run ux         build, type-check and run the component tests, serve examples/knowledge and run the
@@ -24,6 +25,8 @@
 #                    (screenshots, axe) into ux/, the CI artifact for the UX review; needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
+#   ./run regen-ts-check  fail if web/src/api/schema.ts differs from the spec, and prove the check fires
+#                    on the drifted fixture; needs Node, not part of check (CI's ux job runs it)
 #   ./run versions   print the toolchain versions this repository expects
 #
 # `./run check` must exit 0 with no output from the linters ("zero warnings").
@@ -420,7 +423,7 @@ cmd_size() {
 	mb=$(git merge-base "$base" HEAD) || die "no merge base with $base"
 	n=$(git diff --numstat --no-renames "$mb" -- . ':(exclude)*_test.go' ':(exclude)testdata' \
 		':(exclude)**/testdata/**' ':(exclude)go.sum' ":(exclude)$CONTRACT_GEN" \
-		':(exclude)web/e2e' ':(exclude)*.spec.ts' ':(exclude)*package-lock.json' ':(exclude)*.woff2' \
+		':(exclude)web/e2e' ':(exclude)*.spec.ts' ':(exclude)*package-lock.json' ":(exclude)$TS_SCHEMA" ':(exclude)*.woff2' \
 		':(exclude)NOTICE' ':(exclude)*VENDORED.md' \
 		":(exclude)$CONTRACT_DOCS" ":(exclude)$CONFIG_DOCS" | awk '$1 != "-" { s += $1 + $2 } END { print s + 0 }')
 	say "size: $n changed lines (budget about 400)"
@@ -535,6 +538,7 @@ CONTRACT_DOCS=docs/reference/api.md
 CONFIG_DOCS=docs/reference/configuration.md
 CONTRACT_CONFIG=internal/contract/oapi-codegen.yaml
 CONTRACT_GEN=internal/contract/contract.gen.go
+TS_SCHEMA=web/src/api/schema.ts
 
 # oapi_codegen <spec> <output>: generate Go types and the strict server from
 # <spec> into <output>. Generation is written to a temporary file first, so a
@@ -653,7 +657,60 @@ cmd_regen() {
 	go run ./internal/contract/cmd/refdocs "$CONTRACT_SPEC" "$CONTRACT_DOCS" || die "cannot generate $CONTRACT_DOCS"
 	say "regen: configuration reference docs"
 	go run ./internal/platform/cmd/configdocs "$CONFIG_DOCS" || die "cannot generate $CONFIG_DOCS"
-	# TypeScript types register here as their issue lands.
+	# The TypeScript types need Node, which a Go-only checkout may lack (ADR 0019):
+	# skip them loudly there; CI's regen-ts-check fails on the stale file.
+	if command -v npm >/dev/null 2>&1; then
+		say "regen: openapi-typescript"
+		ts_generate "$CONTRACT_SPEC" "$TS_SCHEMA" || die "openapi-typescript failed for $CONTRACT_SPEC"
+	else
+		say "regen: SKIPPED $TS_SCHEMA, npm not found; run ./run regen with Node after a spec change"
+	fi
+}
+
+# ts_generate <spec> <output>: write the TypeScript types for <spec> to
+# <output> with the pinned openapi-typescript. It installs web/'s locked
+# dependencies when they are missing, and writes through a temporary file so a
+# failure never leaves a truncated types file behind.
+ts_generate() {
+	command -v npm >/dev/null 2>&1 || die "npm not found: the TypeScript types need Node"
+	if [ ! -d web/node_modules/openapi-typescript ]; then
+		(cd web && npm ci --ignore-scripts) || die "npm ci failed in web/"
+	fi
+	tmp=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for openapi-typescript"
+	# npx --no: only the pinned binary in web/node_modules, never a fetched one.
+	if (cd web && bg npx --no openapi-typescript "$ROOT/$1" -o "$tmp") >/dev/null && cat "$tmp" >"$2"; then
+		rm -f "$tmp"
+	else
+		rm -f "$tmp"
+		return 1
+	fi
+}
+
+# ts_drift <spec>: succeed when the committed types equal a fresh generation
+# from <spec>, return 1 when they differ, die when they cannot be compared.
+ts_drift() {
+	fresh=$(mktemp "$RUN_TMP/f.XXXXXX") || die "cannot create a temporary file for the TypeScript drift check"
+	if ! ts_generate "$1" "$fresh"; then
+		rm -f "$fresh"
+		die "openapi-typescript failed for $1"
+	fi
+	status=0
+	cmp -s "$fresh" "$TS_SCHEMA" || status=$?
+	rm -f "$fresh"
+	[ "$status" -le 1 ] || die "cannot compare $TS_SCHEMA with a fresh generation (cmp exit $status)"
+	return "$status"
+}
+
+# regen-ts-check: the TypeScript types must match the spec, and the check must
+# fire on the drifted fixture, or it cannot catch a stale file. Needs Node, so
+# it is not in check; CI's ux job runs it.
+cmd_regen_ts_check() {
+	say "TypeScript drift check ($TS_SCHEMA must match the spec)"
+	ts_drift "$CONTRACT_SPEC" || die "$TS_SCHEMA is out of date with $CONTRACT_SPEC (run: ./run regen)"
+	say "TypeScript drift fixture (a drifted spec must be flagged)"
+	if ts_drift testdata/openapi/drifted.yaml; then
+		die "TypeScript drift check did not fire for testdata/openapi/drifted.yaml"
+	fi
 }
 
 # drift <spec>: succeed when the committed generated code equals a fresh
@@ -806,6 +863,7 @@ ui) cmd_ui ;;
 ux) cmd_ux ;;
 regen-check) cmd_regen_check ;;
 regen-fixture) cmd_regen_fixture ;;
+regen-ts-check) cmd_regen_ts_check ;;
 versions) cmd_versions ;;
 help | -h | --help) usage ;;
 *) usage >&2; exit 2 ;;
