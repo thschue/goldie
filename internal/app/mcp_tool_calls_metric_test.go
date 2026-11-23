@@ -19,7 +19,7 @@ import (
 )
 
 // Acceptance tests for #599 at the MCP protocol seam: every tools/call that
-// /mcp serves is counted in goldie.mcp.tool.calls by tool (one of the eight
+// /mcp serves is counted in goldie.mcp.tool.calls by tool (one of the ten
 // registered names, else "other") and result (ok, or error for IsError), and
 // nothing else. Tool arguments never become attributes (PC-12). The export is
 // read from an in-process OTLP collector, as for #412.
@@ -27,6 +27,7 @@ import (
 var registeredTools = []string{
 	"search_knowledge", "get_article", "list_projects", "current_context",
 	"find_skills", "get_skill", "list_skills", "list_agents",
+	"list_loops", "get_loop",
 }
 
 // toolCallTelemetry is metrics-only telemetry exporting to col.
@@ -80,7 +81,7 @@ func TestMCPToolCallsAreCountedByToolAndResultOverMCP(t *testing.T) {
 	cs := mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport))
 
 	// The drift test: the tools the server registers are exactly the counter's
-	// eight names, and each is counted under its own name, never "other".
+	// ten names, and each is counted under its own name, never "other".
 	res, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +111,8 @@ func TestMCPToolCallsAreCountedByToolAndResultOverMCP(t *testing.T) {
 		"get_skill":        {"name": idMarker, "project": projMarker},
 		"list_skills":      {},
 		"list_agents":      {},
+		"list_loops":       {},
+		"get_loop":         {"name": idMarker, "project": projMarker},
 	}
 	want := map[string]int64{}
 	for _, tool := range registeredTools {
