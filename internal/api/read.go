@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/thschue/goldie/internal/contract"
@@ -124,8 +125,11 @@ var notReady = envelope("not_ready", "content is still loading",
 type Server struct {
 	provider func() *engine.Snapshot
 	specJSON []byte
-	activity *Activity   // see RecordInto, nil records nothing
-	sync     SyncControl // see WithSync, nil lists no Source
+	activity *Activity    // see RecordInto, nil records nothing
+	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
+	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
+	fedDown  downSet      // peers already logged as down
+	sync     SyncControl  // see WithSync, nil lists no Source
 
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
@@ -156,7 +160,7 @@ func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server,
 // every answered search and lookup is recorded when the Server was built with RecordInto. HEAD on the
 // activity stream sends its headers and ends (headOnly).
 func (s *Server) Register(m contract.ServeMux) {
-	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly},
+	strict := contract.NewStrictHandlerWithOptions(s, []contract.StrictMiddlewareFunc{nosniff, s.record, headOnly, activityRequest},
 		contract.StrictHTTPServerOptions{
 			RequestErrorHandlerFunc:  requestError,
 			ResponseErrorHandlerFunc: responseError,

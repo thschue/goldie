@@ -59,13 +59,13 @@ const activityCapacity = 1000
 // recording every search and lookup in a bounded Activity named after this
 // replica (activityReplicaName). An open activity stream with nothing to send
 // writes a keepalive comment every keepalive (zero or less keeps
-// api.DefaultActivityKeepalive). PublicHandler builds the public listener
+// api.DefaultActivityKeepalive); opts go last. PublicHandler builds the public listener
 // with it, and the tests build the bare router with it, so the route table
 // they check is the one the server serves.
-func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration) (*publicMux, error) {
+func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration, opts ...api.ServerOption) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
 	ctl := &syncControl{}
-	srv, err := api.NewServer(provider, api.RecordInto(activity), api.WithSync(ctl))
+	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity), api.WithSync(ctl)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -436,7 +436,10 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 // minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration) (*Public, error) {
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive)
+	if logger == nil {
+		logger = discardLogger
+	}
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, activityFederation(cfg, logger)...)
 	if err != nil {
 		return nil, err
 	}
@@ -444,9 +447,6 @@ func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog
 		if err := addSwaggerUI(m); err != nil {
 			return nil, err
 		}
-	}
-	if logger == nil {
-		logger = discardLogger
 	}
 	addMCP(m, m, logger)
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

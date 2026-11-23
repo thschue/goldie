@@ -57,6 +57,21 @@ func (e ItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for GetActivityParamsReplicas.
+const (
+	All GetActivityParamsReplicas = "all"
+)
+
+// Valid indicates whether the value is a known member of the GetActivityParamsReplicas enum.
+func (e GetActivityParamsReplicas) Valid() bool {
+	switch e {
+	case All:
+		return true
+	default:
+		return false
+	}
+}
+
 // ActivityDropped The `data` of an SSE event of type `dropped`: this subscriber lost
 // events because it did not keep up. Clients ignore fields they do not
 // know.
@@ -141,6 +156,28 @@ type ActivityEventKind string
 // ActivityLive The `data` of the one SSE event of type `live`: the events before it
 // are the history, the events after it are live.
 type ActivityLive = map[string]any
+
+// ActivityReplicaStatus The `data` of an SSE event of type `replica_status`, on a stream with
+// `replicas=all`: a peer is down, or up again. A peer that is up when
+// the stream opens gets none. Clients ignore fields they do not know.
+type ActivityReplicaStatus struct {
+	// LastSeen When the merge last heard from the peer, or attached it.
+	//
+	// Examples: 2026-11-23T10:00:00Z
+	LastSeen time.Time `json:"last_seen"`
+
+	// Replica The name of the peer, the first label of its pod name. Never an
+	// address.
+	//
+	//
+	// Examples: goldie-1
+	Replica string `json:"replica"`
+
+	// Up Whether the peer's stream is open.
+	//
+	// Examples: false
+	Up bool `json:"up"`
+}
 
 // Article One article.
 type Article struct {
@@ -423,6 +460,17 @@ type RateLimited = ErrorEnvelope
 // UpgradeRequired The body of every error response.
 type UpgradeRequired = ErrorEnvelope
 
+// GetActivityParams defines parameters for GetActivity.
+type GetActivityParams struct {
+	// Replicas `all` merges the streams of every replica (see the description);
+	// without it the stream is this replica's own. Any other value, and
+	// a repeated parameter, is a 400.
+	Replicas *GetActivityParamsReplicas `form:"replicas,omitempty" json:"replicas,omitempty"`
+}
+
+// GetActivityParamsReplicas defines parameters for GetActivity.
+type GetActivityParamsReplicas string
+
 // GetArticleParams defines parameters for GetArticle.
 type GetArticleParams struct {
 	// Project Look the article up for this Project (ADR 0020): its own article
@@ -545,6 +593,18 @@ type ClientInterface interface {
 	// reader's requests push older events out of it, and a restart empties
 	// it.
 	//
+	// With `replicas=all` the stream merges this replica's stream with one
+	// per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+	// this replica's stream. An event of type `replica_status` (an
+	// `ActivityReplicaStatus`) says a peer is down, and again when it is
+	// back; those for peers that are down when the stream opens come before
+	// the merged history. Each peer is asked with the caller's own token for
+	// its own events only, and checks the operator role itself. A peer is
+	// down when its stream ends or falls silent, or sends no `live` marker.
+	// An event that reached the merge after its reorder window carries
+	// `late: true`, and `dropped` counts the merge's own losses. At most 16
+	// peers are merged; the rest are ignored.
+	//
 	// Every event is one SSE event whose `data` is one line of JSON, an
 	// `ActivityEvent`. Its `id` increases per server process (per replica)
 	// and starts again at 1 when the process restarts; `replica` names the
@@ -563,9 +623,11 @@ type ClientInterface interface {
 	// replica restarts under the same name. An idle stream sends the
 	// comment `: keepalive` every 15 seconds. The stream costs one
 	// rate-limit token when it opens, and ends at the server's first stop
-	// signal. At most 32 streams are open per server process; one more is a
-	// 503 whose hint says to retry later. The history before `live` holds at
-	// most 10,000 events, and the Go client reads at most 16 MiB of the
+	// signal. At most 32 streams are open per server process, and at most 8
+	// of them with `replicas=all`, each of which costs a stream on every
+	// peer; one more is a 503 whose hint says to retry later. The history
+	// before `live` holds at most 10,000 events per replica, so a merged
+	// history can be larger, and the Go client reads at most 16 MiB of the
 	// stream before `live`.
 	//
 	// Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -573,7 +635,7 @@ type ClientInterface interface {
 	// until the stream ends.
 	//
 	// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
-	GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetArticle Look up one article
 	//
@@ -667,6 +729,18 @@ type ClientInterface interface {
 // reader's requests push older events out of it, and a restart empties
 // it.
 //
+// With `replicas=all` the stream merges this replica's stream with one
+// per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+// this replica's stream. An event of type `replica_status` (an
+// `ActivityReplicaStatus`) says a peer is down, and again when it is
+// back; those for peers that are down when the stream opens come before
+// the merged history. Each peer is asked with the caller's own token for
+// its own events only, and checks the operator role itself. A peer is
+// down when its stream ends or falls silent, or sends no `live` marker.
+// An event that reached the merge after its reorder window carries
+// `late: true`, and `dropped` counts the merge's own losses. At most 16
+// peers are merged; the rest are ignored.
+//
 // Every event is one SSE event whose `data` is one line of JSON, an
 // `ActivityEvent`. Its `id` increases per server process (per replica)
 // and starts again at 1 when the process restarts; `replica` names the
@@ -685,9 +759,11 @@ type ClientInterface interface {
 // replica restarts under the same name. An idle stream sends the
 // comment `: keepalive` every 15 seconds. The stream costs one
 // rate-limit token when it opens, and ends at the server's first stop
-// signal. At most 32 streams are open per server process; one more is a
-// 503 whose hint says to retry later. The history before `live` holds at
-// most 10,000 events, and the Go client reads at most 16 MiB of the
+// signal. At most 32 streams are open per server process, and at most 8
+// of them with `replicas=all`, each of which costs a stream on every
+// peer; one more is a 503 whose hint says to retry later. The history
+// before `live` holds at most 10,000 events per replica, so a merged
+// history can be larger, and the Go client reads at most 16 MiB of the
 // stream before `live`.
 //
 // Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -695,8 +771,8 @@ type ClientInterface interface {
 // until the stream ends.
 //
 // Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
-func (c *Client) GetActivity(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetActivityRequest(c.Server)
+func (c *Client) GetActivity(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetActivityRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -868,7 +944,7 @@ func (c *Client) GetOpenAPIYAML(ctx context.Context, reqEditors ...RequestEditor
 }
 
 // NewGetActivityRequest constructs an http.Request for the GetActivity method
-func NewGetActivityRequest(server string) (*http.Request, error) {
+func NewGetActivityRequest(server string, params *GetActivityParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -884,6 +960,33 @@ func NewGetActivityRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Replicas != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "replicas", *params.Replicas, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -1265,6 +1368,18 @@ type ClientWithResponsesInterface interface {
 	// reader's requests push older events out of it, and a restart empties
 	// it.
 	//
+	// With `replicas=all` the stream merges this replica's stream with one
+	// per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+	// this replica's stream. An event of type `replica_status` (an
+	// `ActivityReplicaStatus`) says a peer is down, and again when it is
+	// back; those for peers that are down when the stream opens come before
+	// the merged history. Each peer is asked with the caller's own token for
+	// its own events only, and checks the operator role itself. A peer is
+	// down when its stream ends or falls silent, or sends no `live` marker.
+	// An event that reached the merge after its reorder window carries
+	// `late: true`, and `dropped` counts the merge's own losses. At most 16
+	// peers are merged; the rest are ignored.
+	//
 	// Every event is one SSE event whose `data` is one line of JSON, an
 	// `ActivityEvent`. Its `id` increases per server process (per replica)
 	// and starts again at 1 when the process restarts; `replica` names the
@@ -1283,9 +1398,11 @@ type ClientWithResponsesInterface interface {
 	// replica restarts under the same name. An idle stream sends the
 	// comment `: keepalive` every 15 seconds. The stream costs one
 	// rate-limit token when it opens, and ends at the server's first stop
-	// signal. At most 32 streams are open per server process; one more is a
-	// 503 whose hint says to retry later. The history before `live` holds at
-	// most 10,000 events, and the Go client reads at most 16 MiB of the
+	// signal. At most 32 streams are open per server process, and at most 8
+	// of them with `replicas=all`, each of which costs a stream on every
+	// peer; one more is a 503 whose hint says to retry later. The history
+	// before `live` holds at most 10,000 events per replica, so a merged
+	// history can be larger, and the Go client reads at most 16 MiB of the
 	// stream before `live`.
 	//
 	// Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -1295,7 +1412,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
-	GetActivityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
+	GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error)
 
 	// GetArticleWithResponse Look up one article
 	//
@@ -1402,6 +1519,8 @@ type GetActivityResponse429Headers struct {
 type GetActivityResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -1416,6 +1535,11 @@ type GetActivityResponse struct {
 	JSONDefault *ErrorResponse
 	// Headers429 the parsed response headers for an HTTP 429 response
 	Headers429 *GetActivityResponse429Headers
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetActivityResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -2145,6 +2269,18 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // reader's requests push older events out of it, and a restart empties
 // it.
 //
+// With `replicas=all` the stream merges this replica's stream with one
+// per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+// this replica's stream. An event of type `replica_status` (an
+// `ActivityReplicaStatus`) says a peer is down, and again when it is
+// back; those for peers that are down when the stream opens come before
+// the merged history. Each peer is asked with the caller's own token for
+// its own events only, and checks the operator role itself. A peer is
+// down when its stream ends or falls silent, or sends no `live` marker.
+// An event that reached the merge after its reorder window carries
+// `late: true`, and `dropped` counts the merge's own losses. At most 16
+// peers are merged; the rest are ignored.
+//
 // Every event is one SSE event whose `data` is one line of JSON, an
 // `ActivityEvent`. Its `id` increases per server process (per replica)
 // and starts again at 1 when the process restarts; `replica` names the
@@ -2163,9 +2299,11 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // replica restarts under the same name. An idle stream sends the
 // comment `: keepalive` every 15 seconds. The stream costs one
 // rate-limit token when it opens, and ends at the server's first stop
-// signal. At most 32 streams are open per server process; one more is a
-// 503 whose hint says to retry later. The history before `live` holds at
-// most 10,000 events, and the Go client reads at most 16 MiB of the
+// signal. At most 32 streams are open per server process, and at most 8
+// of them with `replicas=all`, each of which costs a stream on every
+// peer; one more is a 503 whose hint says to retry later. The history
+// before `live` holds at most 10,000 events per replica, so a merged
+// history can be larger, and the Go client reads at most 16 MiB of the
 // stream before `live`.
 //
 // Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -2175,8 +2313,8 @@ func (r GetOpenAPIYAMLResponse) ContentType() string {
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v1/activity (the `GetActivity` operationId).
-func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
-	rsp, err := c.GetActivity(ctx, reqEditors...)
+func (c *ClientWithResponses) GetActivityWithResponse(ctx context.Context, params *GetActivityParams, reqEditors ...RequestEditorFn) (*GetActivityResponse, error) {
+	rsp, err := c.GetActivity(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -2341,6 +2479,13 @@ func ParseGetActivityResponse(rsp *http.Response) (*GetActivityResponse, error) 
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -2978,7 +3123,7 @@ func ParseGetOpenAPIYAMLResponse(rsp *http.Response) (*GetOpenAPIYAMLResponse, e
 type ServerInterface interface {
 	// GetActivity Stream recent searches and lookups
 	// (GET /api/v1/activity)
-	GetActivity(w http.ResponseWriter, r *http.Request)
+	GetActivity(w http.ResponseWriter, r *http.Request, params GetActivityParams)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
@@ -3017,8 +3162,27 @@ type MiddlewareFunc func(http.Handler) http.Handler
 // GetActivity operation middleware
 func (siw *ServerInterfaceWrapper) GetActivity(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetActivityParams
+
+	// ------------- Optional query parameter "replicas" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "replicas", r.URL.Query(), &params.Replicas, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "replicas"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "replicas", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetActivity(w, r)
+		siw.Handler.GetActivity(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3387,6 +3551,7 @@ type RateLimitedJSONResponse struct {
 type UpgradeRequiredJSONResponse ErrorEnvelope
 
 type GetActivityRequestObject struct {
+	Params GetActivityParams
 }
 
 type GetActivityResponseObject interface {
@@ -3434,6 +3599,20 @@ func (response GetActivity200TexteventStreamResponse) VisitGetActivityResponse(w
 			return err
 		}
 	}
+}
+
+type GetActivity400JSONResponse ErrorEnvelope
+
+func (response GetActivity400JSONResponse) VisitGetActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type GetActivity401JSONResponse ErrorEnvelope
@@ -4443,8 +4622,10 @@ type strictHandler struct {
 }
 
 // GetActivity operation middleware
-func (sh *strictHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) GetActivity(w http.ResponseWriter, r *http.Request, params GetActivityParams) {
 	var request GetActivityRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.GetActivity(ctx, request.(GetActivityRequestObject))

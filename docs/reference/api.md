@@ -27,6 +27,18 @@ view, not an audit log: the buffer is bounded and shared, so any
 reader's requests push older events out of it, and a restart empties
 it.
 
+With `replicas=all` the stream merges this replica's stream with one
+per peer, as `GOLDIE_ACTIVITY_PEERS` names them; without peers it is
+this replica's stream. An event of type `replica_status` (an
+`ActivityReplicaStatus`) says a peer is down, and again when it is
+back; those for peers that are down when the stream opens come before
+the merged history. Each peer is asked with the caller's own token for
+its own events only, and checks the operator role itself. A peer is
+down when its stream ends or falls silent, or sends no `live` marker.
+An event that reached the merge after its reorder window carries
+`late: true`, and `dropped` counts the merge's own losses. At most 16
+peers are merged; the rest are ignored.
+
 Every event is one SSE event whose `data` is one line of JSON, an
 `ActivityEvent`. Its `id` increases per server process (per replica)
 and starts again at 1 when the process restarts; `replica` names the
@@ -45,9 +57,11 @@ connections ids are no key, because they start again at 1 when a
 replica restarts under the same name. An idle stream sends the
 comment `: keepalive` every 15 seconds. The stream costs one
 rate-limit token when it opens, and ends at the server's first stop
-signal. At most 32 streams are open per server process; one more is a
-503 whose hint says to retry later. The history before `live` holds at
-most 10,000 events, and the Go client reads at most 16 MiB of the
+signal. At most 32 streams are open per server process, and at most 8
+of them with `replicas=all`, each of which costs a stream on every
+peer; one more is a 503 whose hint says to retry later. The history
+before `live` holds at most 10,000 events per replica, so a merged
+history can be larger, and the Go client reads at most 16 MiB of the
 stream before `live`.
 
 Go clients use `StreamActivity` on the client `NewAPIClient` builds:
@@ -58,7 +72,8 @@ Operation ID: `getActivity`
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | The event stream, not an audit log. Sent with 'Cache-Control: no-store'; the headers are sent at once, before the first event. | `text/event-stream` (`string`) |
+| `200` | The event stream, not an audit log. Sent with 'Cache-Control: no-store'; the headers are sent before the first event, at once, except with 'replicas=all', which first waits up to a few seconds for its peers. | `text/event-stream` (`string`) |
+| `400` | 'replicas' is not 'all', or is repeated. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or not a configured token. | `application/json` (`ErrorEnvelope`) |
 | `403` | The token is valid but its role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
@@ -263,6 +278,18 @@ when empty. Clients ignore fields they do not know.
 
 The `data` of the one SSE event of type `live`: the events before it
 are the history, the events after it are live.
+
+### `ActivityReplicaStatus`
+
+The `data` of an SSE event of type `replica_status`, on a stream with
+`replicas=all`: a peer is down, or up again. A peer that is up when
+the stream opens gets none. Clients ignore fields they do not know.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `last_seen` | `string` | yes | When the merge last heard from the peer, or attached it. |
+| `replica` | `string` | yes | The name of the peer, the first label of its pod name. Never an address. |
+| `up` | `boolean` | yes | Whether the peer's stream is open. |
 
 ### `Article`
 
