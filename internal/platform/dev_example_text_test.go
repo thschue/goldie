@@ -80,6 +80,12 @@ func TestServerDevSectionChecksEveryBacktickedUsage(t *testing.T) {
 				if !strings.Contains(span, "goldie server -dev") || span == "goldie server -dev [dir]" {
 					continue
 				}
+				// A stop command names the server, it does not run it. It must be one
+				// command: no ;, &, | or substitution that could smuggle a launch in.
+				if (strings.HasPrefix(span, "pkill ") || strings.HasPrefix(span, "killall ")) &&
+					!strings.ContainsAny(span, ";&|$`\n") {
+					continue
+				}
 				examples++
 				if strings.Contains(span, "eval") || strings.Contains(span, "$(") {
 					t.Errorf("usage %q substitutes or evals the server's output, which blocks while it runs", span)
