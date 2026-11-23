@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -398,5 +399,68 @@ func TestDigestOfTheDefaultBlockIsPresentAndStable(t *testing.T) {
 	_, d2 := snap.Instructions("", "agents", testVars)
 	if d1 == "" || d1 != d2 {
 		t.Errorf("default digests = %q and %q", d1, d2)
+	}
+}
+
+// Issue #520: the body an author wrote is Source text an agent reads as
+// instructions, so a hidden format character in it fails the load, naming the
+// file and never echoing the body or the rune. Tabs and line breaks stay.
+var bodyHiddenRunes = []rune{0x202e, 0x200b, 0xe0041, 0x1b}
+
+func assertBodyRejection(t *testing.T, msg string, r rune) {
+	t.Helper()
+	if strings.ContainsRune(msg, r) {
+		t.Errorf("error %q carries %U raw", msg, r)
+	}
+	if strings.Contains(msg, "SECRETBODY") {
+		t.Errorf("error %q echoes the body", msg)
+	}
+}
+
+func TestClauseBodyWithAHiddenRuneFailsTheLoadNamingTheFile(t *testing.T) {
+	for _, r := range bodyHiddenRunes {
+		t.Run(fmt.Sprintf("%U", r), func(t *testing.T) {
+			body := "SECRETBODY visible" + string(r) + "hidden"
+			msg := loadErr(t, map[string]string{
+				globalClauseFile("ok"):  clause("ok", 1, "claude", "fine {{cli}}"),
+				globalClauseFile("bad"): clause("bad", 2, "claude", body),
+			}, globalClauseFile("bad"))
+			if strings.Contains(msg, globalClauseFile("ok")) {
+				t.Errorf("error names the good file too: %q", msg)
+			}
+			assertBodyRejection(t, msg, r)
+		})
+	}
+}
+
+func TestClauseBodyWithAHiddenRuneFailsTheLoadInEveryScopeAndStatus(t *testing.T) {
+	body := "SECRETBODY a\u202eb"
+	assertBodyRejection(t, loadErr(t, map[string]string{
+		projectClauseFile("bad"): clause("bad", 1, "claude", body),
+	}, projectClauseFile("bad")), 0x202e)
+	assertBodyRejection(t, loadLocalErr(t, map[string]string{
+		localClauseFile("bad"): clause("bad", 1, "claude", body),
+	}, localClauseFile("bad")), 0x202e)
+	assertBodyRejection(t, loadErr(t, map[string]string{
+		globalClauseFile("bad"): clause("bad", 1, "claude", body, "status: draft"),
+	}, globalClauseFile("bad")), 0x202e)
+}
+
+func TestClauseBodyOfVisibleTextTabsAndLineBreaksLoadsUnchanged(t *testing.T) {
+	for name, body := range map[string]string{
+		"visible with tab":    "first\tcolumn\nsecond line",
+		"crlf line breaks":    "first line\r\nsecond line",
+		"unicode and symbols": "caf\u00e9 \u2713 mid\u00a0dle",
+	} {
+		t.Run(name, func(t *testing.T) {
+			snap := load(t, map[string]string{globalClauseFile("use"): clause("use", 1, "claude", body)})
+			got, _ := snap.Instructions(govProject, "claude", testVars)
+			// The block normalises CRLF to LF, so compare line by line.
+			for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+				if !strings.Contains(got, line) {
+					t.Errorf("block %q does not hold the line %q", got, line)
+				}
+			}
+		})
 	}
 }

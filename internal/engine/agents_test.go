@@ -904,3 +904,59 @@ func TestAgentErrorsNameTheFileAndNoHostPath(t *testing.T) {
 		t.Errorf("error = %q, want prefix %q and no host path", err, want)
 	}
 }
+
+// Issue #520: an agent body is read as instructions too, so a hidden format
+// character in it fails the load, naming the file and never echoing the body
+// or the rune. Tabs and line breaks stay.
+func agentWithBody(name, body string) string {
+	return "---\nname: " + name + "\ndescription: d\n---\n" + body + "\n"
+}
+
+func TestAgentBodyWithAHiddenRuneFailsTheLoadNamingTheFile(t *testing.T) {
+	for _, r := range bodyHiddenRunes {
+		t.Run(fmt.Sprintf("%U", r), func(t *testing.T) {
+			msg := loadErr(t, map[string]string{
+				globalAgentFile("ok"):  agentDoc("ok", "d"),
+				globalAgentFile("bad"): agentWithBody("bad", "SECRETBODY visible"+string(r)+"hidden"),
+			}, globalAgentFile("bad"))
+			if strings.Contains(msg, globalAgentFile("ok")) {
+				t.Errorf("error names the good file too: %q", msg)
+			}
+			assertBodyRejection(t, msg, r)
+		})
+	}
+}
+
+func TestAgentBodyWithAHiddenRuneFailsTheLoadInEveryScopeAndStatus(t *testing.T) {
+	body := "SECRETBODY a\u202eb"
+	assertBodyRejection(t, loadErr(t, map[string]string{
+		projectAgentFile("bad"): agentWithBody("bad", body),
+	}, projectAgentFile("bad")), 0x202e)
+	assertBodyRejection(t, loadLocalErr(t, map[string]string{
+		localAgentFile("bad"): agentWithBody("bad", body),
+	}, localAgentFile("bad")), 0x202e)
+	draft := "---\nname: bad\ndescription: d\nstatus: draft\n---\n" + body + "\n"
+	assertBodyRejection(t, loadErr(t, map[string]string{
+		globalAgentFile("bad"): draft,
+	}, globalAgentFile("bad")), 0x202e)
+}
+
+func TestAgentBodyOfVisibleTextTabsAndLineBreaksLoadsUnchanged(t *testing.T) {
+	for name, body := range map[string]string{
+		"visible with tab":    "first\tcolumn\nsecond line",
+		"crlf line breaks":    "first line\r\nsecond line",
+		"unicode and symbols": "caf\u00e9 \u2713 \u00a0",
+	} {
+		t.Run(name, func(t *testing.T) {
+			orig := agentWithBody("planner", body)
+			snap := loadLocal(t, map[string]string{globalAgentFile("planner"): orig})
+			a, ok := snap.AgentIn(govProject, "planner")
+			if !ok {
+				t.Fatal("agent is not served")
+			}
+			if string(a.Raw) != orig {
+				t.Errorf("Raw = %q, want the file unchanged %q", a.Raw, orig)
+			}
+		})
+	}
+}
