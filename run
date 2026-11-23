@@ -427,12 +427,13 @@ cmd_test() {
 	out=$(mktemp) || die "test: mktemp failed"
 	status=0
 	go test -count=1 -v "$@" ./... >"$out" 2>&1 || status=$?
-	# tr drops NUL bytes first: grep would otherwise treat the file as
-	# binary and swallow the failure text, and tr is POSIX where grep -a is not.
-	tr -d '\000' <"$out" | grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' || true
+	# tr drops NUL bytes first, and both run under LC_ALL=C: grep would otherwise
+	# treat the file as binary and swallow the failure text, and a UTF-8 locale
+	# makes BSD tr stop at, and GNU grep flag, invalid UTF-8. tr is POSIX; grep -a is not.
+	LC_ALL=C tr -d '\000' <"$out" | LC_ALL=C grep -Ev '^(=== (RUN|PAUSE|CONT|NAME)|[[:space:]]*--- PASS)' || true
 	# go test -v streams a test's log lines between its "=== RUN" and its
 	# "--- SKIP", so the test is the latest name from a RUN/NAME/CONT line.
-	skipped=$(tr -d '\000' <"$out" | awk '
+	skipped=$(LC_ALL=C tr -d '\000' <"$out" | awk '
 		/^=== (RUN|NAME|CONT)[ \t]/ { n = $3 }
 		/^[ \t]+[^ \t:]+:[0-9]+: TIMING-SKIP:/ { if (n != "" && !(n in seen)) { seen[n] = 1; print n } }
 	' | tr '\n' ' ')
