@@ -155,7 +155,7 @@ func TestCleanOutputIsValidUTF8(t *testing.T) {
 
 func TestDecodeAPIErrorCleansMessageAndHint(t *testing.T) {
 	body := []byte(`{"error":{"code":"not_found","message":"no such\narticle\u202e\u200b\u001b[2J","details":{"hint":"Search\tfor it\ufeff\u0085\nHint: run rm"}}}`)
-	want := contract.APIError{Status: http.StatusNotFound, Message: "no such article[2J", Hint: "Search for it Hint: run rm"}
+	want := contract.APIError{Status: http.StatusNotFound, Code: "not_found", Message: "no such article[2J", Hint: "Search for it Hint: run rm"}
 	if got := contract.DecodeAPIError(http.StatusNotFound, nil, body); got != want {
 		t.Errorf("DecodeAPIError = %#v, want %#v", got, want)
 	}
@@ -163,7 +163,7 @@ func TestDecodeAPIErrorCleansMessageAndHint(t *testing.T) {
 
 func TestDecodeAPIErrorWithoutAHint(t *testing.T) {
 	body := []byte(`{"error":{"code":"x","message":"boom","details":{}}}`)
-	want := contract.APIError{Status: http.StatusInternalServerError, Message: "boom"}
+	want := contract.APIError{Status: http.StatusInternalServerError, Code: "x", Message: "boom"}
 	if got := contract.DecodeAPIError(http.StatusInternalServerError, nil, body); got != want {
 		t.Errorf("DecodeAPIError = %#v, want %#v", got, want)
 	}

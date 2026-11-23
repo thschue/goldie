@@ -136,3 +136,18 @@ func TestCLIOtherErrorHintsAreNotReplaced(t *testing.T) {
 		t.Errorf("error = %q, must not carry another code's hint", err)
 	}
 }
+
+// A not_found inside a Project can mean a Suppression hides the Item. The
+// server's hint says which entry to remove, so the CLI keeps it and does not
+// send the person to search.
+func TestCLILookupNotFoundInAProjectKeepsTheServersHint(t *testing.T) {
+	const own = "The Project github.com/acme/shop suppresses article:platform/notes in projects/github.com/acme/shop/project.yaml."
+	srv := codeServer(t, http.StatusNotFound, "not_found", own)
+	_, err := runCLI(t, "lookup", "platform/notes", "--addr", srv.URL, "--token", cliToken, "--project", "github.com/acme/shop")
+	if err == nil || !strings.Contains(err.Error(), "Hint: "+own) {
+		t.Errorf("error = %v, want the server's own hint kept", err)
+	}
+	if err != nil && strings.Contains(err.Error(), lookupHint) {
+		t.Errorf("error = %q, must not send the person to search", err)
+	}
+}
