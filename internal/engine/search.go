@@ -39,7 +39,8 @@ type Hit struct {
 }
 
 // ReadOptions widens what a read returns. The zero value is the default view:
-// drafts are left out (CONTEXT: Status).
+// drafts are left out (CONTEXT: Status). A read takes it as a variadic
+// argument and uses only the first value; any further values are ignored.
 type ReadOptions struct {
 	// Drafts includes draft Items. A draft then shadows like any other Item,
 	// except that a Project draft never shadows an enforced global Item

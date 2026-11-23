@@ -47,7 +47,12 @@
 //
 // Search and Article see global articles only; SearchIn and ArticleIn take a
 // Project and resolve its articles before global ones, ranking with the keyword
-// scoring of ADR 0005.
+// scoring of ADR 0005. Each takes an optional ReadOptions; by default draft
+// Items are left out, and a draft left out never shadows anything, so the
+// published Item with the same identity answers. ReadOptions{Drafts: true}
+// includes drafts, and a draft then shadows like any other Item.
+// Snapshot.Articles lists every global Item, drafts included, and is not a
+// reader view.
 //
 // A Syncer polls one Source and serves its latest good Snapshot. A successful
 // load swaps the Snapshot atomically for concurrent readers; a failed or

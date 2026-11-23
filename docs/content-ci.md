@@ -37,7 +37,11 @@ A reference is at most 256 bytes:
 - The name is slash separated, with no empty, `.` or `..` segment, so it has no leading or trailing
   `/`.
 - The name holds only printable characters: no Unicode space (the plain space included), no
-  control, format or bidi character, no extra colon and no backslash.
+  control, format or bidi character, no private-use or unassigned code point, no extra colon and no
+  backslash. The invisible characters outside those categories are refused too: the variation
+  selectors, the combining grapheme joiner U+034F, the Hangul fillers, the Mongolian free variation
+  selectors and the blank Braille pattern U+2800. It is the same set the clients strip from text
+  they show.
 
 An article whose path holds a character outside that set still loads, but it cannot be referenced.
 
@@ -48,6 +52,11 @@ Two more checks fail the load:
 - A lookup line must resolve in the article's own view, by the same rule as `replaced_by`, and a
   draft does not resolve. A lookup line is a fenced code block line or a one-line inline code span
   whose whole content is `goldie lookup <id>`. A line with extra words or `--project` is skipped.
+  A placeholder id is skipped too: `goldie lookup <id>` or `goldie lookup …`, as in the README.
+  An id with a hidden or control character, or one longer than a reference may be, is not a
+  placeholder and fails the load. The scan follows CommonMark: a fence is indented at most 3
+  spaces, a fence in a list item counts, and an indented code block or a `<pre>` HTML block is
+  not scanned.
 
 An article with `status: draft` is left out of search and lookup, and a draft project article does
 not shadow the global article with the same id. An operator token can ask for drafts with
