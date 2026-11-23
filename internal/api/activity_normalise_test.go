@@ -107,10 +107,10 @@ func TestRecordedDropsAProjectIDTheCheckRejects(t *testing.T) {
 			t.Errorf("%s: lookup Project = %.20q (recorded %v), want empty", name, e.Project, ok)
 		}
 	}
-	good := contract.ProjectId("Shop")
+	good := contract.ProjectId("github.com/acme/Shop")
 	if e, _ := recorded(contract.SearchArticlesRequestObject{Params: contract.SearchArticlesParams{Project: &good}},
-		contract.SearchArticles200JSONResponse{}); e.Project != "Shop" {
-		t.Errorf("valid Project = %q, want Shop", e.Project)
+		contract.SearchArticles200JSONResponse{}); e.Project != "github.com/acme/Shop" {
+		t.Errorf("valid Project = %q, want github.com/acme/Shop", e.Project)
 	}
 }
 
