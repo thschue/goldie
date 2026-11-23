@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import HitCard from './HitCard.vue';
-import { searchItems, SearchError, type SearchHit } from './api';
+import { ApiError } from '../api/client';
+import { searchItems, type SearchHit } from './api';
 
 // Home (handoff §3.2, §3.3): the question and the search field at `/`, the
 // hits at `/?q=`. The query lives in the URL, so a search is shared by link and
@@ -46,7 +47,7 @@ async function search(q: string) {
   } catch (e) {
     if (current !== mine) return;
     state.value =
-      e instanceof SearchError ? { kind: 'error', message: e.message, hint: e.hint } : { kind: 'error', message: "Couldn't load search results." };
+      e instanceof ApiError ? { kind: 'error', message: e.message, hint: e.hint } : { kind: 'error', message: "Couldn't load search results." };
   }
 }
 
