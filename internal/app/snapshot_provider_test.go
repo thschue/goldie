@@ -79,6 +79,9 @@ func readOperationPaths(t *testing.T) []string {
 		if path == "/api/v1/instructions" {
 			path += "?target=claude" // a valid read: a bad target is a 400, tested apart
 		}
+		if path == "/api/v1/bundle" {
+			path += "?target=claude" // a valid read: a bad target is a 400, tested apart
+		}
 		out = append(out, path)
 	}
 	if len(out) < 3 {

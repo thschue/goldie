@@ -214,7 +214,7 @@ func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.toke
 // remote address by SignInLimiter.
 var (
 	unauthorizedSignIn = envelope("unauthorized", "missing or invalid API token",
-		"Send the API token in the body: {\"token\": \"<token>\"}.")
+		"Tokens are case-sensitive, so copy yours exactly as issued.")
 	unauthorizedSession = envelope("unauthorized", "no valid session",
 		"Sign in with POST /api/v1/session and the token in the body, or send the token in the Authorization header.")
 )

@@ -46,13 +46,15 @@ const mcpIOTimeout = 10 * time.Second
 // servers against DNS rebinding, but here every request needs the token, and
 // it would reject a reverse proxy on the same host as the /api/ paths are not.
 //
+// opts go to each request's MCP server, such as the tool call counter.
+//
 // A panic in api is recovered into the 500 envelope and logged to logger, the
 // server's component logger, as one line naming the API request's method and
 // path.
-func addMCP(m *publicMux, api http.Handler, logger *slog.Logger) {
+func addMCP(m *publicMux, api http.Handler, logger *slog.Logger, opts ...gmcp.Option) {
 	t := handlerTransport{h: api, log: logger}
 	h := sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
-		return gmcp.New(transportClient(t, r.Header.Get("Authorization")))
+		return gmcp.New(transportClient(t, r.Header.Get("Authorization")), opts...)
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true})
 	m.handle(http.MethodPost, mcpPath, withDeadline(mcpIOTimeout, h))
 }

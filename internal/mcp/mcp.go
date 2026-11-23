@@ -83,6 +83,13 @@ func WithRejectedRemote(name string) Option {
 	return func(t *tools) { t.rejected = name }
 }
 
+// CountToolCalls counts every tools/call the server answers in c, by tool
+// and result (IsError, or a protocol error, is error). Without it nothing is
+// counted, as on the stdio transport (PC-12).
+func CountToolCalls(c *platform.ToolCallCounter) Option {
+	return func(t *tools) { t.calls = c }
+}
+
 // New returns an MCP server with the tools search_knowledge, get_article,
 // list_projects, current_context, find_skills, get_skill, list_skills and
 // list_agents.
@@ -119,6 +126,9 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, any, error) {
 			return t.currentContext(ctx), nil, nil
 		})
+	if t.calls != nil {
+		s.AddReceivingMiddleware(t.countToolCalls)
+	}
 	addSkillTools(s, t)
 	addPrompts(s, t)
 	addInstructionsResource(s, t)
@@ -129,11 +139,12 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 // tools are the tool handlers of one server.
 type tools struct {
 	client   contract.ClientInterface
-	local    bool   // client reaches an embedded server over local content
-	project  string // the default Project from WithProject, or ""
-	source   string // where project came from
-	problem  string // why there is no default, from WithProjectProblem, or ""
-	rejected string // the remote from WithRejectedRemote, or ""
+	local    bool                      // client reaches an embedded server over local content
+	project  string                    // the default Project from WithProject, or ""
+	source   string                    // where project came from
+	problem  string                    // why there is no default, from WithProjectProblem, or ""
+	rejected string                    // the remote from WithRejectedRemote, or ""
+	calls    *platform.ToolCallCounter // from CountToolCalls, nil counts nothing
 }
 
 // errInvalidProject refuses a project argument that is not a ProjectId. It
@@ -168,8 +179,24 @@ func projectParam(p string) (param *contract.ProjectId, ok bool) {
 // empty project takes the default, and fails with the Project problem when
 // there is one, before any request.
 func (t *tools) sessionProject(p string) (*contract.ProjectId, error) {
+	return t.sessionProjectFor(p, surfaceTool)
+}
+
+// sessionProjectFor is sessionProject for one surface. A tool may pass a
+// project, so its hint names that and list_projects; a prompt or resource
+// only ever uses the session's Project, so its error tells the agent to ask
+// the user to fix it and restart.
+func (t *tools) sessionProjectFor(p string, s surface) (*contract.ProjectId, error) {
 	if p == "" && t.problem != "" {
-		return nil, withHint("the default Project has a problem: "+contract.CleanLine(t.problem),
+		msg := "the default Project has a problem: " + contract.CleanLine(t.problem)
+		if s.failed != "" {
+			// The problem may end in sentence punctuation; the ". " below
+			// supplies the one full stop.
+			msg = strings.TrimRight(msg, ".?! ")
+			return nil, errors.New(s.failed + ": " + msg +
+				". Ask the user to fix it and restart the MCP server; the session's Project is the only one prompts and resources use.")
+		}
+		return nil, withHint(msg,
 			"Fix it and restart the MCP server, or pass project as host/org/repo; list_projects names the registered Projects.")
 	}
 	if p == "" {
@@ -412,4 +439,19 @@ func wordErrorOf(err error, local bool, s surface) error {
 // next step.
 func withHint(msg, hint string) error {
 	return errors.New(msg + "\nHint: " + hint)
+}
+
+// countToolCalls is the receiving middleware that counts each tools/call. It
+// reads the tool name and the outcome only, never an argument.
+func (t *tools) countToolCalls(next sdk.MethodHandler) sdk.MethodHandler {
+	return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
+		res, err := next(ctx, method, req)
+		cr, ok := req.(*sdk.CallToolRequest)
+		if !ok || method != "tools/call" || cr.Params == nil {
+			return res, err
+		}
+		out, _ := res.(*sdk.CallToolResult)
+		t.calls.Add(ctx, cr.Params.Name, err != nil || (out != nil && out.IsError))
+		return res, err
+	}
 }
