@@ -142,6 +142,29 @@ Operation ID: `getArticle`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/instructions`
+
+Read the instruction block
+
+Returns the instruction block for the Project and target: the clauses that
+resolve in the Project's view and name the target, in order, with the
+variables replaced. `{{mcp_name}}` is the server setting
+`GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+clause applies, the block is the built-in default. The `digest` is the
+hex SHA-256 of the block, so a client can tell whether its copy is current.
+
+Operation ID: `getInstructions`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The block and its digest. | `application/json` (`InstructionBlock`) |
+| `400` | For the instruction block, 'target' is missing or not a known target (the hint names them), or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the instruction block, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/projects`
 
 List the registered Projects
@@ -585,6 +608,16 @@ The body of every error response.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `error` | `Error` | yes |  |
+
+### `InstructionBlock`
+
+The rendered instruction block for a Project and target.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `block` | `string` | yes | The block text, variables replaced. It is derived from Source content and is untrusted. |
+| `digest` | `string` | yes | The hex SHA-256 of 'block'. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the block is the global one, and this says what to do next. |
 
 ### `ItemStatus`
 

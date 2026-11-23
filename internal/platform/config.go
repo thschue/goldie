@@ -34,6 +34,9 @@ const (
 
 	EnvMinClientVersion = "GOLDIE_MIN_CLIENT_VERSION"
 
+	// The name instruction blocks give the MCP server (#415).
+	EnvMCPName = "GOLDIE_MCP_NAME"
+
 	// Federated activity (ADR 0022).
 	EnvActivityPeers         = "GOLDIE_ACTIVITY_PEERS"
 	EnvActivityReorderWindow = "GOLDIE_ACTIVITY_REORDER_WINDOW"
@@ -88,6 +91,8 @@ type Config struct {
 	DrainTimeout time.Duration // time between failing readiness and shutdown
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
+
+	MCPName string // {{mcp_name}} of the instruction blocks; validated by validMCPName
 
 	// Every role that loads the configuration (server and health) validates
 	// these at startup.
@@ -206,6 +211,12 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	} else {
 		cfg.ActivityReorderWindow = d
 	}
+	cfg.MCPName = str(EnvMCPName, def(EnvMCPName))
+	if !validMCPName(cfg.MCPName) {
+		// The value is never echoed: it ends up in text agents read.
+		errs = append(errs, fmt.Errorf("%s: must be 1 to 64 letters, digits, hyphens, dots or underscores", EnvMCPName))
+		cfg.MCPName = def(EnvMCPName)
+	}
 	cfg.telemetryClientInfo, _ = clientInfoEnabled(lookup) // SetupTelemetry reports the error
 	cfg.SwaggerUIEnabled = true
 	switch strings.ToLower(str(EnvSwaggerUIEnabled, def(EnvSwaggerUIEnabled))) {
@@ -290,6 +301,22 @@ func CheckOneSource(contentDir, gitURL string, sources bool) error {
 		return fmt.Errorf("%s and %s are both set: set only one, or declare the Sources in %s", EnvContentDir, EnvGitURL, EnvSources)
 	}
 	return nil
+}
+
+// validMCPName reports whether s may be {{mcp_name}}: a name an operator
+// registers an MCP server under, 1 to 64 ASCII letters, digits, hyphens, dots
+// or underscores. Nothing else reaches the text agents are told to follow.
+func validMCPName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '.' || r == '_'
+		if !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // isDNSName reports whether s is a DNS name as written: dot-separated

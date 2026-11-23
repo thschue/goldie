@@ -113,6 +113,10 @@ func lifecycle(status, replacedBy string) (*contract.ItemStatus, *string) {
 // operation under; the mux reports it as the request's Pattern.
 const searchPattern = http.MethodGet + " /api/v1/search"
 
+// instructionsPattern is the pattern the generated router registers the
+// instructions operation under, for the same reason.
+const instructionsPattern = http.MethodGet + " /api/v1/instructions"
+
 // notReady is the 503 envelope for a read before the first successful load.
 // Answering it keeps a direct caller from reading an empty result as "no
 // matches" (ADR 0014).
@@ -135,6 +139,8 @@ type Server struct {
 	sync     SyncControl  // see WithSync, nil lists no Source
 	tokens   *Tokens      // see WithSessions, nil: no sign-in
 
+	instructionVars engine.InstructionVars // see WithInstructionVars
+
 	keepalive   time.Duration // see KeepStreamsAlive
 	streamsDone chan struct{} // closed by EndStreams
 	endOnce     sync.Once
@@ -150,7 +156,8 @@ func NewServer(provider func() *engine.Snapshot, opts ...ServerOption) (*Server,
 		return nil, err
 	}
 	s := &Server{provider: provider, specJSON: specJSON,
-		keepalive: DefaultActivityKeepalive, streamsDone: make(chan struct{})}
+		instructionVars: engine.InstructionVars{MCPName: "goldie", CLI: "goldie"},
+		keepalive:       DefaultActivityKeepalive, streamsDone: make(chan struct{})}
 	for _, o := range opts {
 		o(s)
 	}
@@ -459,6 +466,10 @@ func nosniff(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFu
 func requestError(w http.ResponseWriter, r *http.Request, err error) {
 	if r.Pattern == searchPattern && paramName(err) == "q" {
 		writeJSON(w, http.StatusBadRequest, badSearch)
+		return
+	}
+	if r.Pattern == instructionsPattern && paramName(err) == "target" {
+		writeJSON(w, http.StatusBadRequest, badTarget)
 		return
 	}
 	WriteError(w, http.StatusBadRequest, "bad_request", "invalid request parameters",

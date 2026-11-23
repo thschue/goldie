@@ -386,6 +386,26 @@ type ErrorEnvelope struct {
 	Error Error `json:"error"`
 }
 
+// InstructionBlock The rendered instruction block for a Project and target.
+type InstructionBlock struct {
+	// Block The block text, variables replaced. It is derived from Source content and is untrusted.
+	//
+	// Examples: This repository (github.com/acme/shop) uses Goldie for its golden paths.
+	Block string `json:"block"`
+
+	// Digest The hex SHA-256 of `block`.
+	//
+	// Examples: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+	Digest string `json:"digest"`
+
+	// Hint Present when the request named a Project that is not registered: the
+	// block is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	Hint *string `json:"hint,omitempty"`
+}
+
 // ItemStatus An Item's lifecycle when it is not published: `deprecated` (still
 // served; read `replaced_by` instead when present) or `draft` (only with
 // `drafts=true`, for operators). Absent for a published Item. Clients
@@ -792,6 +812,19 @@ type GetArticleParams struct {
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
+// GetInstructionsParams defines parameters for GetInstructions.
+type GetInstructionsParams struct {
+	// Target The file the block is written into: `claude` (CLAUDE.md) or `agents`
+	// (AGENTS.md). Anything else, or none, is a 400.
+	Target string `form:"target" json:"target"`
+
+	// Project Render for this Project (ADR 0020): its own clauses win over the
+	// global ones with the same name. Matched ignoring case. An
+	// unregistered Project answers the global block with a `hint`; a value
+	// that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
 // SearchArticlesParams defines parameters for SearchArticles.
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
@@ -1024,6 +1057,18 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetInstructions Read the instruction block
+	//
+	// Returns the instruction block for the Project and target: the clauses that
+	// resolve in the Project's view and name the target, in order, with the
+	// variables replaced. `{{mcp_name}}` is the server setting
+	// `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+	// clause applies, the block is the built-in default. The `digest` is the
+	// hex SHA-256 of the block, so a client can tell whether its copy is current.
+	//
+	// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
+	GetInstructions(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListProjects List the registered Projects
 	//
@@ -1342,6 +1387,28 @@ func (c *Client) GetAgent(ctx context.Context, name string, params *GetAgentPara
 // Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetArticleRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetInstructions Read the instruction block
+//
+// Returns the instruction block for the Project and target: the clauses that
+// resolve in the Project's view and name the target, in order, with the
+// variables replaced. `{{mcp_name}}` is the server setting
+// `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+// clause applies, the block is the built-in default. The `digest` is the
+// hex SHA-256 of the block, so a client can tell whether its copy is current.
+//
+// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
+func (c *Client) GetInstructions(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetInstructionsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1953,6 +2020,68 @@ func NewGetArticleRequest(server string, id string, params *GetArticleParams) (*
 		if params.Drafts != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetInstructionsRequest constructs an http.Request for the GetInstructions method
+func NewGetInstructionsRequest(server string, params *GetInstructionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/instructions"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target", params.Target, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -2708,6 +2837,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticleWithResponse(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
 
+	// GetInstructionsWithResponse Read the instruction block
+	//
+	// Returns the instruction block for the Project and target: the clauses that
+	// resolve in the Project's view and name the target, in order, with the
+	// variables replaced. `{{mcp_name}}` is the server setting
+	// `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+	// clause applies, the block is the built-in default. The `digest` is the
+	// hex SHA-256 of the block, so a client can tell whether its copy is current.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
+	GetInstructionsWithResponse(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*GetInstructionsResponse, error)
+
 	// ListProjectsWithResponse List the registered Projects
 	//
 	// Returns the Projects the server holds Scope for, sorted, as
@@ -3332,6 +3475,96 @@ func (r GetArticleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetArticleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetInstructionsResponse429Headers the declared response headers of an HTTP 429 response for GetInstructions
+type GetInstructionsResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetInstructionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InstructionBlock
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetInstructionsResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetInstructionsResponse) GetJSON200() *InstructionBlock {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetInstructionsResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetInstructionsResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetInstructionsResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetInstructionsResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetInstructionsResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetInstructionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetInstructionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetInstructionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetInstructionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetInstructionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4603,6 +4836,26 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 	return ParseGetArticleResponse(rsp)
 }
 
+// GetInstructionsWithResponse Read the instruction block
+//
+// Returns the instruction block for the Project and target: the clauses that
+// resolve in the Project's view and name the target, in order, with the
+// variables replaced. `{{mcp_name}}` is the server setting
+// `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+// clause applies, the block is the built-in default. The `digest` is the
+// hex SHA-256 of the block, so a client can tell whether its copy is current.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/instructions (the `GetInstructions` operationId).
+func (c *ClientWithResponses) GetInstructionsWithResponse(ctx context.Context, params *GetInstructionsParams, reqEditors ...RequestEditorFn) (*GetInstructionsResponse, error) {
+	rsp, err := c.GetInstructions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetInstructionsResponse(rsp)
+}
+
 // ListProjectsWithResponse List the registered Projects
 //
 // Returns the Projects the server holds Scope for, sorted, as
@@ -5273,6 +5526,87 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetArticleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetInstructionsResponse parses an HTTP response from a GetInstructionsWithResponse call
+func ParseGetInstructionsResponse(rsp *http.Response) (*GetInstructionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetInstructionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InstructionBlock
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetInstructionsResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -6314,6 +6648,9 @@ type ServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
+	// GetInstructions Read the instruction block
+	// (GET /api/v1/instructions)
+	GetInstructions(w http.ResponseWriter, r *http.Request, params GetInstructionsParams)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
@@ -6547,6 +6884,52 @@ func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetArticle(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInstructions operation middleware
+func (siw *ServerInterfaceWrapper) GetInstructions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetInstructionsParams
+
+	// ------------- Required query parameter "target" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "target", r.URL.Query(), &params.Target, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInstructions(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7084,6 +7467,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}/files/{path}", wrapper.GetSkillFile)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents", wrapper.ListAgents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}/items", wrapper.GetProjectItems)
@@ -7690,6 +8074,124 @@ type GetArticledefaultJSONResponse struct {
 }
 
 func (response GetArticledefaultJSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructionsRequestObject struct {
+	Params GetInstructionsParams
+}
+
+type GetInstructionsResponseObject interface {
+	VisitGetInstructionsResponse(w http.ResponseWriter) error
+}
+
+type GetInstructions200JSONResponse InstructionBlock
+
+func (response GetInstructions200JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructions400JSONResponse ErrorEnvelope
+
+func (response GetInstructions400JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructions401JSONResponse ErrorEnvelope
+
+func (response GetInstructions401JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructions426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetInstructions426JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructions429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetInstructions429JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructions503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetInstructions503JSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstructionsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetInstructionsdefaultJSONResponse) VisitGetInstructionsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -9216,6 +9718,9 @@ type StrictServerInterface interface {
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
+	// GetInstructions Read the instruction block
+	// (GET /api/v1/instructions)
+	GetInstructions(ctx context.Context, request GetInstructionsRequestObject) (GetInstructionsResponseObject, error)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
@@ -9401,6 +9906,32 @@ func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetArticleResponseObject); ok {
 		if err := validResponse.VisitGetArticleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInstructions operation middleware
+func (sh *strictHandler) GetInstructions(w http.ResponseWriter, r *http.Request, params GetInstructionsParams) {
+	var request GetInstructionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetInstructions(ctx, request.(GetInstructionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInstructions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInstructionsResponseObject); ok {
+		if err := validResponse.VisitGetInstructionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
