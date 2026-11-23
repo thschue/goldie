@@ -43,8 +43,8 @@ Every loop comment ends with exactly one marker, as its final line. A marker cou
 ## Labels
 
 Triage labels are in [triage-labels.md](./triage-labels.md). Flow labels:
-- `in-progress` + assignee: display only. `scripts/claim` sets it; delivery removes it when the PR
-  merges or closes.
+- `in-progress` + assignee: display only. `scripts/claim` sets both; delivery removes both when the
+  PR merges or closes. The frontier skips any assigned issue, so a leftover assignee hides it.
 - `needs-maintainer` on a PR: the gate holds it; the maintainer approves by merging.
 - `needs-info` with a `reason=`:
   - `spec`, `product`, `decision`: owned by the product session;

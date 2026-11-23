@@ -84,7 +84,8 @@ Each step runs only after the steps before it are done.
    - a stream idle for over 2 h, or an owned PR `red` or `dirty` for over 30 min;
    - a red workflow on `main`.
 
-   Release `in-progress` claims older than 24 h that have no PR.
+   Release `in-progress` claims older than 24 h that have no PR, and remove an assignee left on an
+   open issue without `in-progress` and without an open PR.
 5. **Audit** (only when the buffer is full). Each day, sample about 1 in 5 merged PRs that no gate
    held, with the `reviewer` in audit mode on the merged diff. File each finding as a follow-up; a
    bug becomes a found-fix issue with `bug`, and a security finding takes the disclosure path.
