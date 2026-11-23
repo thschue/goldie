@@ -19,7 +19,7 @@ import (
 
 const viewProject = "github.com/acme/shop"
 
-func viewItem(id, scope, name string) engine.Article {
+func sourceViewItem(id, scope, name string) engine.Article {
 	return engine.Article{ID: id, Scope: scope, Name: name, Keywords: []string{id}, Content: "Body of " + name + ".\n", Status: engine.StatusPublished}
 }
 
@@ -28,12 +28,12 @@ func viewSource(v engine.View, rev string, err error) engine.Source {
 }
 
 func goodView() engine.View {
-	rules := viewItem("rules", engine.ScopeGlobal, "Rules")
+	rules := sourceViewItem("rules", engine.ScopeGlobal, "Rules")
 	rules.Enforced = true
-	deploy := viewItem("deploy", viewProject, "Shop deploy")
+	deploy := sourceViewItem("deploy", viewProject, "Shop deploy")
 	return engine.View{Items: []engine.Article{
-		viewItem("deploy", engine.ScopeGlobal, "Global deploy"), deploy, rules,
-		viewItem("runbook", viewProject, "Runbook"),
+		sourceViewItem("deploy", engine.ScopeGlobal, "Global deploy"), deploy, rules,
+		sourceViewItem("runbook", viewProject, "Runbook"),
 	}}
 }
 
@@ -108,13 +108,13 @@ func TestViewSourceWithAnEndedContextDoesNotFetch(t *testing.T) {
 // that is not global or a Project id, a reference that does not resolve and a
 // lookup that does not resolve each fail the Load.
 func TestViewSourceRefusesAnInvalidView(t *testing.T) {
-	deprecated := viewItem("old", engine.ScopeGlobal, "Old")
+	deprecated := sourceViewItem("old", engine.ScopeGlobal, "Old")
 	deprecated.Status, deprecated.ReplacedBy = engine.StatusDeprecated, "article:missing"
-	lookup := viewItem("guide", engine.ScopeGlobal, "Guide")
+	lookup := sourceViewItem("guide", engine.ScopeGlobal, "Guide")
 	lookup.Content = "Run `goldie lookup nothere` first.\n"
 	for name, item := range map[string]engine.Article{
-		"scope local (an upstream cannot make local Items)": viewItem("x", engine.ScopeLocal, "X"),
-		"scope that is a path":                              viewItem("x", "../../etc/passwd", "X"),
+		"scope local (an upstream cannot make local Items)": sourceViewItem("x", engine.ScopeLocal, "X"),
+		"scope that is a path":                              sourceViewItem("x", "../../etc/passwd", "X"),
 		"replaced_by that does not resolve":                 deprecated,
 		"lookup that does not resolve":                      lookup,
 	} {
