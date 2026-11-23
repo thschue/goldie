@@ -7,8 +7,10 @@ Status: accepted (maintainer decision, 2026-11-23, #258)
 A git Source fetches from the URL in `GOLDIE_GIT_URL`, so the server makes outbound requests to a
 host someone chose: the classic shape of server-side request forgery (SSRF). Who chooses decides the
 risk. Today only the operator does, through the environment (PC-04), and the main case is a
-self-hosted git server behind a firewall, on a private or internal address. #7 plans Declarative
-Sources, whose URLs would come from content or the API, not from the operator.
+self-hosted git server behind a firewall, on a private or internal address. #33 plans Declarative
+Sources: Sources and credentials applied as Kubernetes Secrets, by teams as well as the operator, so
+their URLs would not come only from the operator's environment. (The decision comment on #258 cited
+ADR 0004 and #7 for this; #7 is `GOLDIE_SOURCES`, an operator-supplied list, which this ADR trusts.)
 
 Two options were weighed:
 
@@ -28,7 +30,7 @@ Option (a): git Source URLs are operator-trusted.
   redirect to http is refused.
 - file:// is refused unless `GOLDIE_GIT_ALLOW_FILE_URL=true`, so a repository on the server's own
   filesystem is an explicit choice.
-- URLs supplied by anyone other than the operator, such as future Declarative Sources (#7), need a new
+- URLs supplied by anyone other than the operator, such as future Declarative Sources (#33), need a new
   decision before they ship.
 
 The startup report logs `GOLDIE_GIT_URL` with its userinfo, query and fragment redacted, whether or
