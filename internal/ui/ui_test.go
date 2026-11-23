@@ -604,3 +604,20 @@ func TestRefusedUIRequestsCarryTheHardeningHeadersToo(t *testing.T) {
 		}
 	}
 }
+
+// A nested id travels as one %2F segment (ADR 0016): the article route must
+// reach the SPA, while an escaped slash or dot segment elsewhere stays rejected.
+func TestItemRoutesWithAnEscapedSlashFallBackToIndex(t *testing.T) {
+	h := mustHandler(t, spaFS())
+	for _, p := range []string{"/items/article/platform%2Fdeploy", "/items/article/x%2F%3Cimg%20src%3Dx%20onerror%3Dalert(1)%3E"} {
+		rec := get(t, h, p)
+		if rec.Code != http.StatusOK || !isHTML(rec) {
+			t.Errorf("GET %s: status %d, want the index page", p, rec.Code)
+		}
+	}
+	for _, p := range []string{"/items/%2e%2e/secret.txt", "/items/article/%2e%2e%2f%2e%2e%2fsecret.txt", "/items/a%00b", "/items/article/a%2Fb.js"} {
+		if rec := get(t, h, p); rec.Code == http.StatusOK {
+			t.Errorf("GET %s: status 200, want a rejection", p)
+		}
+	}
+}
