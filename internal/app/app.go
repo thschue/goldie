@@ -564,7 +564,10 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 			return nil, err
 		}
 	}
-	addMCP(m, m, logger, gmcp.CountToolCalls(calls))
+	full := cfg.Mode != platform.ModeAPI
+	if full {
+		addMCP(m, m, logger, gmcp.CountToolCalls(calls))
+	}
 	notFound := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
 			"Check the request path against the OpenAPI document.")
@@ -578,7 +581,12 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 		m.mux.Handle("/swagger-ui", m.guard("/swagger-ui", notFound))
 	}
 	m.mux.Handle("/swagger-ui/{rest...}", m.guard("/swagger-ui/", notFound))
-	addUI(m, notFound, logger)
+	if full {
+		addUI(m, notFound, logger)
+	} else {
+		// api mode: /mcp and / answer the 404 envelope; nothing falls back to the UI.
+		m.mux.Handle("/", notFound)
+	}
 	m.sync.bind(src.syncer)
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {
