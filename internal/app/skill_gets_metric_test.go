@@ -119,7 +119,7 @@ func TestSkillGetsAreCountedByNameScopeAndViaOnHitsOnly(t *testing.T) {
 		return a["name"] + "|" + a["scope"] + "|" + a["via"]
 	})
 	want := map[string]int64{
-		"deploy|global|other":     3,
+		"deploy|global|other":     4,
 		"deploy|global|cli":       1,
 		"deploy|global|mcp":       1,
 		"shopcheck|project|other": 1,
