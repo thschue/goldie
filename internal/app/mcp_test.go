@@ -80,10 +80,10 @@ func TestMCPToolsAreAdvertised(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = tl.Description
 	}
-	if len(got) != 4 {
-		t.Fatalf("tools = %v, want search_knowledge, get_article, list_projects and current_context", got)
+	if len(got) != 8 {
+		t.Fatalf("tools = %v, want search_knowledge, get_article, list_projects, current_context, find_skills, get_skill, list_skills and list_agents", got)
 	}
-	for _, name := range []string{"search_knowledge", "get_article", "list_projects", "current_context"} {
+	for _, name := range []string{"search_knowledge", "get_article", "list_projects", "current_context", "find_skills", "get_skill", "list_skills", "list_agents"} {
 		if d, ok := got[name]; !ok || d == "" {
 			t.Errorf("tool %s missing or has no description", name)
 		}
