@@ -39,8 +39,8 @@ For one issue draft, return:
 
 ## Review (delivery stream)
 
-You run when a PR adds a package or an ADR, changes `internal/contract/**` or `go.mod`, changes
-or imports across modules. You get the PR number, the head SHA, the issue and the round.
+You run when a PR adds a package or an ADR, changes `internal/contract/**` or `go.mod`, or changes
+imports across modules. You get the PR number, the head SHA, the issue and the round.
 1. **The record:** a contradiction of an accepted ADR or the module table is blocking. Never work
    around it: draft the ADR that would change the decision.
 2. **Boundaries:**
