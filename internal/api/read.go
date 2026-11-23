@@ -269,7 +269,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 			return contract.GetArticle404JSONResponse(envelope("not_found", "no such article", suppressedHint(project, ref, file))), nil
 		}
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
-			"Search for the article, then use an id from its results.")), nil
+			contract.ArticleMissHint)), nil
 	}
 	status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 	return contract.GetArticle200JSONResponse{

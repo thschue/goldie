@@ -102,14 +102,11 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
-		var ae *contract.APIError
 		// Only lookup words the plain-miss hint: other commands keep the
 		// server's hint, and so does any other not_found, such as a
 		// Suppression's, whose hint names the entry to remove.
-		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
-			ae.Hint = "Search for the article with: goldie search <words>, then use an id from its results."
-		}
-		return wordError(err, c.local)
+		return wordError(contract.RewordMiss(err, contract.ArticleMissHint,
+			"Search for the article with: goldie search <words>, then use an id from its results."), c.local)
 	}
 	// Only the warning goes to stderr, so stdout stays the article alone and
 	// --json stays one machine-readable document, lifecycle fields included.
@@ -135,10 +132,6 @@ func deprecationNotice(ref string) string {
 	}
 	return "Warning: this article is deprecated. Use " + ref + " instead."
 }
-
-// plainMissHint is the server's hint for an id that is no article, in any
-// Scope (api/read.go); lookup words it with the CLI's search command.
-const plainMissHint = "Search for the article, then use an id from its results."
 
 // writeHint adds the server's hint for an unregistered Project, if any.
 func writeHint(b *strings.Builder, hint *string) {

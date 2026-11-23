@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: pr-title-${{ github.ref }}
-  cancel-in-progress: true
+  # opened and edited fire together; cancelling would leave a cancelled run on the PR.
+  cancel-in-progress: false
 
 jobs:
   lint-pr-title:

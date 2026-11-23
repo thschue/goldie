@@ -12,9 +12,9 @@ import (
 // nothing in the view. They echo nothing of the request.
 var (
 	noSuchSkill = envelope("not_found", "no such skill",
-		"List the skills, then use a name from the list.")
+		contract.SkillMissHint)
 	noSuchAgent = envelope("not_found", "no such agent",
-		"List the agents, then use a name from the list.")
+		contract.AgentMissHint)
 )
 
 // skillAnswer is an engine skill as the contract sends it, files already
