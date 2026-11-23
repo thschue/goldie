@@ -221,7 +221,7 @@ func newTelemetry(res *resource.Resource, ts traceSettings, spans sdktrace.SpanE
 			t.mp = newMeterProvider(res, cfg.metricReader)
 		}
 		if spans != nil {
-			t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(spans),
+			t.tp = sdktrace.NewTracerProvider(sdktrace.WithResource(res), sdktrace.WithBatcher(hostFreeExporter{spans}),
 				sdktrace.WithSampler(ts.sampler), sdktrace.WithRawSpanLimits(ts.limits))
 		}
 		if logs != nil {
