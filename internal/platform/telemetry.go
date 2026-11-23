@@ -496,7 +496,7 @@ func setupTelemetry(ctx context.Context, lookup Lookup, role string, extra ...te
 		opts = append(opts, withMetricReader(reader))
 	}
 	// An invalid GOLDIE_MODE is LoadConfig's startup error; here it reads as all.
-	rawMode, _ := lookup(EnvMode)
+	rawMode, _ := Setting(lookup, os.ReadFile, EnvMode)
 	mode, _ := ParseMode(strings.TrimSpace(rawMode))
 	t := newTelemetry(roleResource(role, mode, cfg.serviceName, cfg.resAttrs), cfg.trace, spans, logs, opts...)
 	t.notice = notice

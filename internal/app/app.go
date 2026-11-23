@@ -585,7 +585,10 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 		addUI(m, notFound, logger)
 	} else {
 		// api mode: /mcp and / answer the 404 envelope; nothing falls back to the UI.
-		m.mux.Handle("/", notFound)
+		m.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			api.WriteError(w, http.StatusNotFound, "not_found", "no such endpoint",
+				"This server runs with GOLDIE_MODE=api and does not serve /mcp or the UI.")
+		}))
 	}
 	m.sync.bind(src.syncer)
 	p := &Public{publicMux: m, source: src}
