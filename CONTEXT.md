@@ -19,7 +19,8 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 
 **Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case.
 It is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
-request naming an unregistered Project gets the global answer with a hint, which copy shown to users phrases as "global guidance only".
+request naming an unregistered Project gets the global answer with a hint; copy shown to users
+calls the global answer "global guidance only".
 
 **Resolution**: the rule that decides which Item wins when several share an identity. Scope first
 (local > project > global), then Source preference (first listed wins).
