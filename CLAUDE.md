@@ -100,7 +100,7 @@ internal/platform config, logging, admin port, readiness, drain, telemetry
 Issues and PRs live on GitHub in `thschue/goldie`, driven through `gh` (recipes in
 [docs/agents/issue-tracker.md](docs/agents/issue-tracker.md)). Triage labels: `needs-triage`,
 `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, plus `epic`, `grilling-needed`,
-`question`, `priority`, `bug`, `security`
+`question`, `priority:P1`–`P3`, `bug`, `security`
 ([docs/agents/triage-labels.md](docs/agents/triage-labels.md)). Flow labels and who may set them are
 defined only in the [shared loop rules](docs/agents/README.md#labels).
 
