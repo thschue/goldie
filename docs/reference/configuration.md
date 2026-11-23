@@ -117,16 +117,16 @@ spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
 
 ### Metrics goldie emits
 
-The server exports these counters when metrics export is on. The meter is named `goldie`.
+The server exports these counters when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.
 Each metric has fixed attributes, so no request value (query text, article id, Project id,
-Source URL) becomes a label, and each holds at most 2000 data points. goldie registers no
+Source URL) becomes a label, and each metric keeps at most 2000 attribute combinations. goldie registers no
 other instruments: there are no HTTP server duration or runtime metrics.
 
 | Metric | Unit | Attributes | Meaning |
 |---|---|---|---|
 | `goldie.searches` | `{request}` | `result`: `hit` or `miss` | Searches answered; a miss is a search with no results. |
 | `goldie.lookups` | `{request}` | `result`: `hit` or `miss` | Article lookups answered; a miss is an id that was not found. |
-| `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded an error. |
+| `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |
 
 ## Client commands
 
