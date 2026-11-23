@@ -14,11 +14,14 @@ onMounted(() => void router.isReady().then(() => (ready.value = true)));
 
 // A failed sign out keeps the person signed in and says so, with a retry.
 const signOutFailed = ref(false);
+// Keys the alert so each failure remounts it and a screen reader announces it again.
+const failures = ref(0);
 const retry = ref<HTMLButtonElement | null>(null);
 
 async function onSignOut() {
   signOutFailed.value = !(await signOut());
   if (signOutFailed.value) {
+    failures.value++;
     // The menu that held focus has closed; put it where the person can act.
     await nextTick();
     retry.value?.focus();
@@ -33,7 +36,7 @@ async function onSignOut() {
   <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
   <AppShell v-else :role="role()" :account="!route.meta.public" @signout="onSignOut">
     <SessionBanner />
-    <div v-if="signOutFailed" role="alert" class="signout-error">
+    <div v-if="signOutFailed" :key="failures" role="alert" class="signout-error">
       Could not sign you out. You are still signed in.
       <button ref="retry" type="button" @click="onSignOut">Retry</button>
     </div>
