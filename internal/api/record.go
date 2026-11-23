@@ -9,15 +9,18 @@ import (
 	"github.com/thschue/goldie/internal/platform"
 )
 
-// RecordInto makes s record every search and lookup it answers in a, one
-// Event each. A nil a records nothing. Call it before Register.
-func (s *Server) RecordInto(a *Activity) { s.activity = a }
+// ServerOption configures NewServer.
+type ServerOption func(*Server)
+
+// RecordInto makes the Server record every search and lookup it answers in a,
+// one Event each. A nil a records nothing.
+func RecordInto(a *Activity) ServerOption { return func(s *Server) { s.activity = a } }
 
 // record is the recording point: a strict middleware that records the
 // searches and lookups the operations answered. Only an answer the Snapshot
 // gave is recorded: a request a guard rejected (401, 426, 429) never reaches
-// it, and one the operation refused (400, 503 not_ready) answers with a type
-// recorded leaves out, so no rejected request's query text is kept. The text
+// it, and one the operation refused (400, 503 not_ready) does not match a type
+// recorded takes, so no rejected request's query text is kept. The text
 // goes to the Activity only, never to a log, a metric or a span.
 func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
@@ -67,11 +70,9 @@ func (s *Server) projectSpelling(sent string) string {
 	return strings.ToLower(sent)
 }
 
-// sentProject is the project parameter as sent, or "" without one. The
-// operation answered, so validProject has passed it.
+// sentProject is the project parameter as sent, or "" without one or when
+// validProject rejects it, so an unchecked id is never recorded.
 func sentProject(p *contract.ProjectId) string {
-	if p == nil {
-		return ""
-	}
-	return *p
+	project, _ := validProject(p)
+	return string(project)
 }

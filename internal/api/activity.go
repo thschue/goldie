@@ -22,7 +22,10 @@ const (
 	// ActivitySubscriberBuffer is the capacity of every subscriber's live channel.
 	ActivitySubscriberBuffer = 64
 	// MaxActivityCapacity is the most events one Activity keeps; NewActivity
-	// clamps a larger capacity to it. 10,000 events are about 2 MiB.
+	// clamps a larger capacity to it. Every string field of an Event is cut to
+	// maxQueryBytes (1,024), so a full ring of events with 1,024-byte queries
+	// is a worst case of about 12 to 15 MiB (10,000 events of 1.2 to 1.5 KiB);
+	// 10,000 short events are about 2 MiB.
 	MaxActivityCapacity = 10_000
 )
 
@@ -92,15 +95,15 @@ func NewActivity(capacity int, replica string, now func() time.Time) *Activity {
 
 // Record stores e with the next ID, the replica name and the current time,
 // never a caller's Late,
-// keeps at most maxQueryBytes of its query, and offers it to every
-// subscriber without waiting.
+// keeps at most maxQueryBytes of every string field (boundEvent), and offers
+// it to every subscriber without waiting.
 func (a *Activity) Record(e Event) {
 	if a == nil || len(a.ring) == 0 {
 		return
 	}
 	e.Replica = a.replica
 	e.Late = false // only the Merger sets it
-	e.Query = truncateQuery(e.Query)
+	e = boundEvent(e)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	e.ID = a.next
@@ -162,6 +165,20 @@ func (a *Activity) Dropped() uint64 {
 		return 0
 	}
 	return a.dropped.Load()
+}
+
+// boundEvent is the one normalise step for the string fields of an Event: it
+// cuts Kind, Query, Token, ClientVersion, Project and TraceID to a whole-rune
+// prefix of at most maxQueryBytes. Replica is left alone: the Merger requires
+// it to equal its input's name.
+func boundEvent(e Event) Event {
+	e.Kind = EventKind(truncateQuery(string(e.Kind)))
+	e.Query = truncateQuery(e.Query)
+	e.Token = truncateQuery(e.Token)
+	e.ClientVersion = truncateQuery(e.ClientVersion)
+	e.Project = truncateQuery(e.Project)
+	e.TraceID = truncateQuery(e.TraceID)
+	return e
 }
 
 // truncateQuery cuts q to at most maxQueryBytes without splitting a rune:
