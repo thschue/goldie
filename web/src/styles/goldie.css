@@ -1,0 +1,63 @@
+/* goldie's brand layer (handoff §6.2): the brand colours and the role tokens
+   every component uses, over the shared scales. Light is the default; dark
+   applies with data-theme='dark' (ThemeToggle), or with the system preference
+   when no theme is chosen. An explicit data-theme='light' always wins. The
+   values are §6.2's; --scrim and --color-on-brand are added for the shell. */
+@import './tokens.css';
+
+:root {
+  color-scheme: light;
+  --color-brand-primary: #1e56c8; --color-brand-primary-dark: #1844a0; --color-brand-accent: #f5b455;
+  --color-gradient-start: #1e56c8; --color-gradient-end: #15357a; --color-on-brand: #ffffff;
+  --color-brand-primary-on-dark: #7fa6f5;
+  --surface-1: #ffffff; --surface-2: #f6f8fc; --surface-3: #eef1f6;
+  --fg-default: #0e1726; --fg-secondary: #43506a; --fg-muted: #5d6a82;
+  --border-default: #dde3ee; --border-subtle: #eef1f6; --border-strong: #7d879b;
+  --brand: #1e56c8; --brand-hover: #1844a0; --brand-tint: #eef4ff; --brand-tint-ink: #1844a0;
+  --brand-tint-strong: #dce7fe; --brand-edge-active: #5b7fc4; --on-brand-muted: #dce7fe;
+  --focus-ring: #1e56c8;
+  --miss-bg: #fff6e5; --miss-surface: #fff6e5; --miss-pressed: #fce7c2;
+  --miss-border: #f3ddb0; --miss-ink: #8a4b05; --miss-solid: #f5b455; --miss-line: #e9c88a;
+  --ok-ink: #147a4b; --ok-bg: #e7f5ee;
+  --danger-ink: #b42318; --danger-bg: #fef3f2; --danger-border: #f1c4bf;
+  --stream-stage: #f4f7fe; --stream-line: #c9d6ee; --stream-line-faint: #e3e9f4;
+  --row-flash: #e8effe; --code-surface: #0b1220;
+  --scrim: rgb(14 23 38 / 0.5);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-1: #0b1220; --surface-2: #121b2e; --surface-3: #18233a;
+  --fg-default: #e6ecf7; --fg-secondary: #b8c3d9; --fg-muted: #9aa8c2;
+  --border-default: #26324b; --border-subtle: #1c2740; --border-strong: #5a6782;
+  --brand: #7fa6f5; --brand-hover: #b9cffc; --brand-tint: #17284a; --brand-tint-ink: #b9cffc;
+  --brand-tint-strong: #1c3366; --brand-edge-active: #4a6aa8; --on-brand-muted: #dce7fe;
+  --focus-ring: #7fa6f5;
+  --miss-bg: #2a2112; --miss-surface: #1a1710; --miss-pressed: #3a2d14;
+  --miss-border: #4a3a1c; --miss-ink: #f5b455; --miss-solid: #f5b455; --miss-line: #5a4520;
+  --ok-ink: #5fd39a; --ok-bg: #11291f;
+  --danger-ink: #ff8a7a; --danger-bg: #2a1513; --danger-border: #6b2e28;
+  --stream-stage: #13213f; --stream-line: #2a3a5c; --stream-line-faint: #1f2b44;
+  --row-flash: #1c3366;
+  --scrim: rgb(0 0 0 / 0.6);
+}
+
+/* The same dark block for the system preference, unless a theme is chosen. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --surface-1: #0b1220; --surface-2: #121b2e; --surface-3: #18233a;
+    --fg-default: #e6ecf7; --fg-secondary: #b8c3d9; --fg-muted: #9aa8c2;
+    --border-default: #26324b; --border-subtle: #1c2740; --border-strong: #5a6782;
+    --brand: #7fa6f5; --brand-hover: #b9cffc; --brand-tint: #17284a; --brand-tint-ink: #b9cffc;
+    --brand-tint-strong: #1c3366; --brand-edge-active: #4a6aa8; --on-brand-muted: #dce7fe;
+    --focus-ring: #7fa6f5;
+    --miss-bg: #2a2112; --miss-surface: #1a1710; --miss-pressed: #3a2d14;
+    --miss-border: #4a3a1c; --miss-ink: #f5b455; --miss-solid: #f5b455; --miss-line: #5a4520;
+    --ok-ink: #5fd39a; --ok-bg: #11291f;
+    --danger-ink: #ff8a7a; --danger-bg: #2a1513; --danger-border: #6b2e28;
+    --stream-stage: #13213f; --stream-line: #2a3a5c; --stream-line-faint: #1f2b44;
+    --row-flash: #1c3366;
+    --scrim: rgb(0 0 0 / 0.6);
+  }
+}
