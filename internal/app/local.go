@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 	"slices"
 
@@ -85,7 +84,7 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	}
 	syncer, err := loadDir(ctx, cfg.ContentDir)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("content does not load: %w", err)
+		return "", "", nil, contentLoadError(err)
 	}
 	token, err = newLocalToken()
 	if err != nil {

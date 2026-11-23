@@ -19,7 +19,7 @@ Identified by Kind plus name, so an article and a skill can share a name. The na
 
 **Project**: one repository, identified as `host/org/repo` (ADR 0020) and matched ignoring case.
 It is registered by its `projects/<host>/<org>/<repo>/` directory in a Source, articles or not; a
-request naming an unregistered Project gets the global answer with a hint.
+request naming an unregistered Project gets the global answer with a hint, which copy shown to users phrases as "global guidance only".
 
 **Resolution**: the rule that decides which Item wins when several share an identity. Scope first
 (local > project > global), then Source preference (first listed wins).
@@ -32,6 +32,9 @@ non-enforced global Item does not apply to it.
 
 **Status**: an Item's lifecycle value: `draft` (hidden from agents, visible in the UI), `published`
 or `deprecated` (with `replaced_by`).
+
+**Reference**: how one Item names another, `<kind>:<name>` (for example `article:platform/deploy`),
+resolved in the referring Item's Resolution view (ADR 0021).
 
 **Decision**: an architecture decision (ADR) served as an Item. Its lifecycle is `proposed`,
 `accepted`, `rejected`, `deprecated` or `superseded`. Accepted Decisions are binding for agents.
@@ -80,7 +83,7 @@ One-way dependencies, enforced by import rules in `.golangci.yml` (see
 | UI | `internal/ui` | Vue SPA, embedded, talking only to the API |
 | MCP | `internal/mcp` | Talks to the API only through the client |
 | CLI | `internal/cli` | Talks to the API only through the client |
-| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), the decoding of error responses (`ParseOK`, `DecodeAPIError`), and client-side Project detection (`internal/contract/project`) |
+| Contract | `internal/contract` | The OpenAPI document plus what every API client shares: the hardened client, the cleaning of untrusted server text (`CleanText`, `CleanLine`), reading API answers (`ParseOK`, `DecodeAPIError`), and client-side Project detection and the writing of `.goldie/config.yaml` that `goldie init` does (`internal/contract/project`) |
 | Platform | `internal/platform` | Config, logging, admin port, readiness, drain, telemetry |
 | Composition root | `internal/app` | Wires modules into roles; the only client-side code that may reach the server (embedded server) |
 

@@ -28,7 +28,7 @@ const (
 
 // Usage is the one-line usage of the client commands, without the program
 // name, so the dispatcher can list it after its own commands.
-const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | version  [--addr URL | --dir PATH] [--token TOKEN] [--json]"
+const Usage = "search <words> [--project ID] | lookup <id> [--project ID] | status [--project ID] | init [--project ID] | version  [--addr URL | --dir PATH] [--token TOKEN] [--json]"
 
 // TokenNote follows the usage text: it recommends the token variables over
 // --token, whose value shows in the process list.
@@ -38,7 +38,7 @@ const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: 
 // cmd/goldie.
 func IsCommand(name string) bool {
 	switch name {
-	case "search", "lookup", "status", "version":
+	case "search", "lookup", "status", "init", "version":
 		return true
 	}
 	return false
@@ -81,17 +81,25 @@ func Run(ctx context.Context, args []string, env Env) error {
 	if name != "version" { // version has no use for a Project
 		fs.StringVar(&s.project, "project", "", "Project as host/org/repo")
 	}
-	fs.BoolVar(&s.json, "json", false, "print JSON")
+	if name != "init" { // init prints three fixed lines
+		fs.BoolVar(&s.json, "json", false, "print JSON")
+	}
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
 		return fmt.Errorf("%w\nusage: goldie %s\n%s", err, Usage, TokenNote)
 	}
 	// version needs no token, and must keep working where the token settings
 	// are absent or broken.
+	// init checks registration against a running server only: it writes into
+	// the repository and has no use for an embedded server (#282 is silent on
+	// local mode), so like version it ignores --dir and GOLDIE_DIR.
 	var c *commander
-	if name == "version" {
+	switch name {
+	case "version":
 		c, err = f.commander(env, false)
-	} else {
+	case "init":
+		c, err = f.commander(env, true)
+	default:
 		var stop func()
 		if c, stop, err = f.open(ctx, env); stop != nil {
 			defer stop()
@@ -117,6 +125,11 @@ func Run(ctx context.Context, args []string, env Env) error {
 			return errors.New("usage: goldie status")
 		}
 		return c.status(ctx)
+	case "init":
+		if len(pos) != 0 {
+			return errors.New("usage: goldie init [--project ID]")
+		}
+		return c.initProject(ctx)
 	default:
 		if len(pos) != 0 {
 			return errors.New("usage: goldie version")
@@ -129,7 +142,10 @@ func Run(ctx context.Context, args []string, env Env) error {
 // or the content directory of an embedded server.
 // Every client command reads them the same way, and so does any other role
 // that talks to the API as a client (goldie mcp --transport stdio).
-type ClientFlags struct{ s settings }
+type ClientFlags struct {
+	s     settings
+	local bool // Open started an embedded server
+}
 
 // BindClientFlags registers --addr, --dir and --token on fs.
 func BindClientFlags(fs *flag.FlagSet) *ClientFlags {
@@ -159,8 +175,14 @@ func (f *ClientFlags) Open(ctx context.Context, env Env) (addr, token string, st
 		stop()
 		return "", "", nil, err
 	}
+	f.local = c.local
 	return c.s.addr, c.s.token, stop, nil
 }
+
+// Local reports whether Open started an embedded server over local content,
+// so a role words a failure to reach it without pointing at an address the
+// user never gave.
+func (f *ClientFlags) Local() bool { return f.local }
 
 // open resolves the settings and, in local mode, starts the embedded server
 // and takes its address and token. stop is never nil without an error.
@@ -183,7 +205,7 @@ func (f *ClientFlags) open(ctx context.Context, env Env) (*commander, func(), er
 	if err != nil {
 		return nil, nil, err
 	}
-	c.s.addr, c.s.token = addr, token
+	c.s.addr, c.s.token, c.local = addr, token, true
 	return c, stop, nil
 }
 
@@ -245,9 +267,10 @@ func parseInterleaved(fs *flag.FlagSet, args []string) ([]string, error) {
 
 // commander holds what the commands share.
 type commander struct {
-	s   settings
-	out io.Writer
-	env Env
+	s     settings
+	out   io.Writer
+	env   Env
+	local bool // an embedded server over local content, not a remote one
 }
 
 // check reports a missing or invalid address and, with withToken, a missing

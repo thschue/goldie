@@ -3,9 +3,10 @@
 // .git/config and .goldie/config.yaml of a checkout.
 //
 // Detect detects the Project, trying in order: the flag value, the environment
-// value, .goldie/config.yaml, then the git remotes upstream and origin. The
-// package owns detection only and words nothing for the user: callers map a
-// Source, and the Source of a SourceError, to their own text. It imports no
+// value, .goldie/config.yaml, then the git remotes upstream and origin.
+// WriteConfig writes the .goldie/config.yaml that Detect reads (write.go). The
+// package words nothing for the user: callers map a Source, the Source of a
+// SourceError and the refusals of WriteConfig to their own text. It imports no
 // other goldie module except contract.
 package project
 
@@ -111,7 +112,7 @@ func normaliseConfigured(v string) (string, error) {
 	}
 	// Anything that looks like a URL or carries userinfo but cannot be read is
 	// refused without echoing it: it may hold a credential.
-	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, contract.UnsafeRune) {
+	if strings.ContainsAny(v, "@:") || strings.ContainsFunc(v, contract.HiddenRune) {
 		return "", errors.New("the Project is not a host/org/repo name or a git remote URL")
 	}
 	// A plain host/org/repo gets the same shape as a detected one.
