@@ -79,7 +79,7 @@ func walkKeys(n *yaml.Node, key string, path []string, names bool, stack map[*ya
 			if k == key {
 				visit(strings.Join(child, " > "))
 			}
-			if err := walkKeys(n.Content[i+1], key, child, k == "headers" || k == "properties", stack, steps, visit); err != nil {
+			if err := walkKeys(n.Content[i+1], key, child, enterNames(path, k), stack, steps, visit); err != nil {
 				return err
 			}
 		}
@@ -91,6 +91,28 @@ func walkKeys(n *yaml.Node, key string, path []string, names bool, stack map[*ya
 		}
 	}
 	return nil
+}
+
+// enterNames reports whether the value of key k, found in the mapping at path,
+// is a headers or schema properties map of names. A component or path item
+// that merely carries such a name, and anything under an x- extension, is
+// ordinary content and stays checked.
+func enterNames(path []string, k string) bool {
+	if k != "headers" && k != "properties" {
+		return false
+	}
+	if len(path) == 2 && path[0] == "components" {
+		return false
+	}
+	if len(path) == 1 && path[0] == "paths" {
+		return false
+	}
+	for _, p := range path {
+		if strings.HasPrefix(strings.ToLower(p), "x-") {
+			return false
+		}
+	}
+	return true
 }
 
 // location renders a path for an error, "(root)" for the document root.

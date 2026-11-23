@@ -59,7 +59,7 @@ A `$ref` inside an operation's responses, request body or parameters stays legal
 
 ## Consequences
 
-One mechanism covers both kinds of rule. The guard cannot drift from the spec, and the wire format and handler signatures (the generated code gains only a `Drafts` alias for the shared parameter): the extension is additive (ADR 0011), and clients ignore it. The mark on a
+One mechanism covers both kinds of rule. The guard cannot drift from the spec, and the wire format and handler signatures are unchanged (the generated code gains only a `Drafts` alias for the shared parameter): the extension is additive (ADR 0011), and clients ignore it. The mark on a
 parameter does not change its wire shape.
 
 Tools that read only standard OpenAPI (Swagger UI's lock icons, outside generators) do not see the
