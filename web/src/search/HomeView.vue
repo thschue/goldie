@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import HitCard from './HitCard.vue';
 import { ApiError } from '../api/client';
+import { ended } from '../auth/session';
 import { searchItems, type SearchHit } from './api';
 
 // Home (handoff §3.2, §3.3): the question and the search field at `/`, the
@@ -47,7 +48,7 @@ async function search(q: string) {
   } catch (e) {
     if (current !== mine) return;
     state.value =
-      e instanceof ApiError ? { kind: 'error', message: e.message, hint: e.hint } : { kind: 'error', message: "Couldn't load search results." };
+      e instanceof ApiError ? { kind: 'error', message: e.message, hint: e.status === 401 && ended.value ? undefined : e.hint } : { kind: 'error', message: "Couldn't load search results." };
   }
 }
 
