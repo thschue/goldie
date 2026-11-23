@@ -445,7 +445,7 @@ type ItemStatus string
 
 // Loop One loop definition with its resolved closure.
 //
-// Examples: {"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"content":"Check the build, fix what is red, and report what you changed.\n","description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","stop":"when CI is green"}
+// Examples: {"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"content":"Check the build, fix what is red, and report what you changed.\n","description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","scope":"global","stop":"when CI is green"}
 type Loop struct {
 	// Closure The agents and skills a loop names, resolved in the view.
 	Closure LoopClosure `json:"closure"`
@@ -494,6 +494,14 @@ type Loop struct {
 	// Examples: nightly
 	Name string `json:"name"`
 
+	// Scope Where the winning copy lives, as `Article.scope` says it: `global`,
+	// `host/org/repo` or `local`. Sent by `listLoops` and `getLoop`. Absent from an
+	// older server, where it means unknown, not global.
+	//
+	//
+	// Examples: global
+	Scope *string `json:"scope,omitempty"`
+
 	// Stop When the loop ends. It comes from a Source and is untrusted.
 	//
 	// Examples: when CI is green
@@ -520,7 +528,7 @@ type LoopList struct {
 
 	// Loops The loops, sorted by name.
 	//
-	// Examples: [{"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","stop":"when CI is green"}]
+	// Examples: [{"closure":{"agents":[{"name":"reviewer","scope":"global"}],"skills":[]},"description":"Keep the nightly build green","digest":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","dynamic":false,"interval":"30m","name":"nightly","scope":"global","stop":"when CI is green"}]
 	Loops []Loop `json:"loops"`
 }
 

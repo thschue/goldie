@@ -11,7 +11,7 @@ syntax, and content in many repositories will be written against whatever is cho
 
 One reference form, `<kind>:<name>`, at most 256 bytes:
 
-- The Kind is lower-case letters and must be a Kind goldie knows (today `article`).
+- The Kind is lower-case letters and must be a Kind goldie knows (today `article`, `agent` and `loop`).
 - The name is compared ignoring case (0015). It is slash separated, with no empty, `.` or `..`
   segment, so it has no leading or trailing `/`. It holds only printable characters: no Unicode
   space (the plain space included), no control, format or bidi character, and no colon or backslash.
