@@ -207,7 +207,7 @@ func assertNoTraceparent(t *testing.T, headers []http.Header) {
 }
 
 // assertClientExport checks what the collector got from one client run:
-// traces only, carrying goldie.mode=mode and the trace ids the API saw, and
+// traces only, carrying goldie.role=mode (and no goldie.mode) and the trace ids the API saw, and
 // nothing of the token, the article id or the Project.
 func assertClientExport(t *testing.T, c *otlpCollector, mode string, ids [][]byte) {
 	t.Helper()
@@ -221,11 +221,14 @@ func assertClientExport(t *testing.T, c *otlpCollector, mode string, ids [][]byt
 	if len(body) == 0 {
 		t.Fatalf("the collector got no traces (hits: %v)", hits)
 	}
-	i := bytes.Index(body, []byte("goldie.mode"))
+	i := bytes.Index(body, []byte("goldie.role"))
 	if i < 0 {
-		t.Error("the export carries no goldie.mode resource attribute")
-	} else if rest := body[i+len("goldie.mode"):]; !bytes.Contains(rest[:min(len(rest), 16)], []byte(mode)) {
-		t.Errorf("goldie.mode is not %q", mode)
+		t.Error("the export carries no goldie.role resource attribute")
+	} else if rest := body[i+len("goldie.role"):]; !bytes.Contains(rest[:min(len(rest), 16)], []byte(mode)) {
+		t.Errorf("goldie.role is not %q", mode)
+	}
+	if bytes.Contains(body, []byte("goldie.mode")) {
+		t.Error("a client export carries goldie.mode; that stays a server-mode attribute")
 	}
 	for _, id := range ids {
 		if !bytes.Contains(body, id) {
@@ -268,7 +271,7 @@ func TestCLIWithoutClientTracingSendsNoTraceparentAndExportsNothing(t *testing.T
 }
 
 // Criterion: configured, every API request carries traceparent and the
-// collector gets exactly one export, of traces only, as goldie.mode=cli.
+// collector gets exactly one export, of traces only, as goldie.role=cli.
 func TestCLIWithClientTracingSendsTraceparentAndExportsOnce(t *testing.T) {
 	api := newHeaderAPI(t)
 	want := baselineLookup(t, api.srv.URL)
@@ -454,7 +457,7 @@ func assertStdoutIsProtocolOnly(t *testing.T, lines []string) {
 	}
 }
 
-// Criterion: goldie mcp over stdio traces its API calls as goldie.mode=mcp:
+// Criterion: goldie mcp over stdio traces its API calls as goldie.role=mcp:
 // the request carries traceparent and the collector gets traces only.
 // Without OTEL_* it sends no traceparent.
 func TestMCPStdioClientTracingSendsTraceparentAndExportsAsMCP(t *testing.T) {

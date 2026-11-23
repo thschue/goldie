@@ -339,7 +339,7 @@ func decodeTraces(t *testing.T, body []byte) *coltracepb.ExportTraceServiceReque
 }
 
 // Criterion: SetupClientTelemetry sets up traces only, with service.name
-// goldie and goldie.mode cli or mcp. Logs and metrics are never exported,
+// goldie and goldie.role cli or mcp (never goldie.mode). Logs and metrics are never exported,
 // even when their exporters are selected, and nothing planted in a request
 // reaches the collector.
 func TestSetupClientTelemetryExportsTracesOnlyWithTheClientMode(t *testing.T) {
@@ -388,11 +388,14 @@ func TestSetupClientTelemetryExportsTracesOnlyWithTheClientMode(t *testing.T) {
 				for _, kv := range rs.GetResource().GetAttributes() {
 					res[kv.Key] = kv.Value.GetStringValue()
 				}
-				want := map[string]string{"service.name": "goldie", "goldie.mode": mode, "service.version": CurrentVersion().Version}
+				want := map[string]string{"service.name": "goldie", "goldie.role": mode, "service.version": CurrentVersion().Version}
 				for k, v := range want {
 					if res[k] != v {
 						t.Errorf("resource %s = %q, want %q", k, res[k], v)
 					}
+				}
+				if v, ok := res["goldie.mode"]; ok {
+					t.Errorf("client resource carries goldie.mode=%q; that stays a server-mode attribute", v)
 				}
 				for _, ss := range rs.ScopeSpans {
 					for _, sp := range ss.Spans {
