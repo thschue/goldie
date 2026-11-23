@@ -52,13 +52,41 @@ func (g *ClientVersionGate) Require(next http.Handler) http.Handler {
 // clientVersion reads the version from exactly one X-Goldie-Client value of
 // the form goldie/<semver>, where a leading v (a release tag's) is skipped.
 func clientVersion(values []string) (platform.Semver, bool) {
-	if len(values) != 1 || len(values[0]) > maxClientHeader {
-		return platform.Semver{}, false
-	}
-	raw, ok := strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
+	raw, ok := goldieClient(values)
 	if !ok {
 		return platform.Semver{}, false
 	}
 	v, err := platform.ParseSemver(strings.TrimPrefix(raw, "v"))
 	return v, err == nil
+}
+
+// goldieClient is what follows goldie/ in exactly one X-Goldie-Client value of
+// at most maxClientHeader bytes.
+func goldieClient(values []string) (string, bool) {
+	if len(values) != 1 || len(values[0]) > maxClientHeader {
+		return "", false
+	}
+	return strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
+}
+
+// Client kinds, the via attribute of goldie.skill.gets.
+const (
+	viaCLI   = "cli"
+	viaMCP   = "mcp"
+	viaOther = "other"
+)
+
+// clientVia is the surface a request came through: viaMCP when it carries
+// exactly one X-Goldie-Via of mcp, else viaCLI when it names a goldie client
+// (goldie/<anything>, a dev build included), else viaOther: no header, several,
+// an oversized or foreign one. It returns one of three constants, never a value
+// derived from the request (PC-12).
+func clientVia(h http.Header) string {
+	if v := h.Values(contract.ViaHeader); len(v) == 1 && v[0] == contract.ViaMCP {
+		return viaMCP
+	}
+	if _, ok := goldieClient(h.Values(contract.ClientHeader)); ok {
+		return viaCLI
+	}
+	return viaOther
 }

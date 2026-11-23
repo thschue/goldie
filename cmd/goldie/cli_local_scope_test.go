@@ -638,6 +638,14 @@ func TestCLILocalScopeOutputMatchesRemoteMode(t *testing.T) {
 				// every other byte is still compared.
 				local = lsAssertScopeThenNormalise(t, local, remote)
 			}
+			if c.name == "lookup local json" {
+				// The article response names its Scope too (#577): the same
+				// difference as above, asserted before it is normalised.
+				if !strings.Contains(local, `"scope": "local"`) || !strings.Contains(remote, `"scope": "global"`) {
+					t.Errorf("lookup JSON lacks its scope: local %q, remote %q", local, remote)
+				}
+				local = strings.ReplaceAll(local, `"scope": "local"`, `"scope": "global"`)
+			}
 			if local != remote {
 				t.Errorf("local output differs from remote\n--- local ---\n%s\n--- remote ---\n%s", local, remote)
 			}

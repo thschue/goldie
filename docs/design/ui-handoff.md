@@ -135,7 +135,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 - Header with a `goldie pull --dry-run` snippet, then tabs: Skills · Agents · Loops · Instructions.
 - **Skills**: a card grid, sortable by **uses (30d)** (the default) or name, with a line naming the usage data source. Each card shows name, Scope, `requires_sync` badge, a "not used in 30 days" badge (published Items with zero uses, #32), uses (30d), description and slash command (`/goldie:<name>`). Script skills add the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents**: a list. Each row shows the materialised path `.claude/agents/goldie-<name>.md` and uses (30d).
-- **Loops**: a featured loop with interval/self-paced, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
+- **Loops**: a featured loop with interval or dynamic, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
 - **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34; rendered with the same Markdown rules as articles, #21), and `goldie instructions apply`.
 
 ### 3.6 Activity (`/ops/activity`, operator)
@@ -490,6 +490,9 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Operators only | This page is for operators. (The 403 page a reader gets on Activity and Sources, §5.3.) |
 | Sign-in lead | The golden path for **`<org>`** — the same guidance your coding agents get. |
 | Token help | Exchanged once for a secure session. The token is never stored in your browser. |
+| Wrong token | That token wasn't accepted. Check it and try again, or ask your platform team for a new one. (A danger `Alert` with `role="alert"`, followed by the error envelope's `details.hint`, tied to the token field with `aria-describedby`.) |
+| Sign-in failed | Couldn't sign in. Try again in a moment. (Any other failure of the sign-in call, same `Alert`.) |
+| Sign out | Sign out (the one item in the role chip's menu; returns to `/signin`) |
 | Activity live | Live · merged from all replicas (`<up>` of `<n>` answering) |
 | Partial view | **Partial view.** `<replica>` stopped answering `<t>` ago — its newer events are missing until it's back. |
 | Miss board heading | What people looked for and didn't find |

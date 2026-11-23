@@ -30,8 +30,12 @@ tags:
     description: List and read skill bundles.
   - name: agents
     description: List and read agent definitions.
+  - name: loops
+    description: List and read loop definitions with their resolved closure.
   - name: instructions
     description: The managed instruction block for a repository's CLAUDE.md or AGENTS.md.
+  - name: bundle
+    description: The resolved skills and agents as an archive, for goldie pull.
   - name: projects
     description: The Projects whose Scope the server holds.
   - name: sync
@@ -207,7 +211,11 @@ paths:
       description: |
         Returns the skills that answer in the Project's view, sorted by name, one
         per name: the nearest Scope wins with its whole bundle. Each carries its
-        file list.
+        file list, `scope`, `status`, `description` and `requires_sync`. A
+        draft skill is listed only with `drafts=true` and the operator role.
+
+        Fetch one of a skill's files with `getSkillFile`
+        (`GET /api/v1/skills/{name}/files/{path}`).
       parameters:
         - name: project
           in: query
@@ -418,7 +426,9 @@ paths:
       summary: List the agents
       description: |
         Returns the agents that answer in the Project's view, sorted by name,
-        one per name: the nearest Scope wins.
+        one per name: the nearest Scope wins. Each carries its `scope` and
+        `status`. A draft agent is listed only with `drafts=true` and the
+        operator role.
       parameters:
         - name: project
           in: query
@@ -531,6 +541,131 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/loops:
+    get:
+      operationId: listLoops
+      tags:
+        - loops
+      summary: List the loops
+      description: |
+        Returns the loops that answer in the Project's view, sorted by name, one per
+        name: the nearest Scope wins. Each entry carries its resolved closure, the
+        agents and skills it names as they resolve in this view, and the `digest` of
+        the loop and its closure. A loop whose agent or skill does not resolve in the
+        view (for example one the Project suppresses) is left out.
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the loop list for this Project (ADR 0020): its own entry wins over the
+            global one with the same name, and each closure resolves in this view. Matched
+            ignoring case. An unregistered Project answers the global view with a `hint`;
+            a value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The loops.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoopList"
+        "400":
+          description: 'For the loop list, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the loop list, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the loop list, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/loops/{name}:
+    get:
+      operationId: getLoop
+      tags:
+        - loops
+      summary: Read one loop
+      description: |
+        Returns one loop by name with its iteration prompt (`content`), its resolved
+        closure and its `digest`. A miss is a 404 whose hint points to the list.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The loop name, one path segment. A name that is not one is a miss.
+          schema:
+            type: string
+            minLength: 1
+          example: nightly
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the loop named in the path for this Project (ADR 0020): its own entry
+            wins over the global one with the same name, and the closure resolves in this
+            view. Matched ignoring case. An unregistered Project answers the global view
+            with a `hint`; a value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The loop.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loop"
+        "400":
+          description: 'For the loop read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the loop read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the loop read, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No loop has this name in the view; the hint points to the loop list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/instructions:
     get:
       operationId: getInstructions
@@ -578,6 +713,91 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: 'For the instruction block, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/bundle:
+    get:
+      operationId: getBundle
+      tags:
+        - bundle
+      summary: Download the resolved set as an archive
+      description: |
+        Returns the skills and agents that resolve in the Project's view (the
+        view of `GET /api/v1/skills` and `GET /api/v1/agents`: the nearest Scope
+        wins, drafts are left out) as a gzip-compressed tar, laid out for the
+        target. For `claude` the entries are regular files with clean relative
+        slash paths: `.claude/skills/goldie-<name>/<path in the bundle>` for each
+        file of each skill and `.claude/agents/goldie-<name>.md` for each agent.
+        A script keeps its executable bit in the entry's mode. A skill or agent
+        whose name, or a skill file whose path, cannot be a safe path is left out
+        on purpose, and nothing in the response marks the omission. A Project
+        whose view holds no skill and no agent gets a 200 with an empty archive and
+        a stable `ETag`. The `ETag` is the digest of the set, quoted: the same set
+        always gives the same ETag. Compare ETags, not bytes: gzip output can
+        change between Go toolchains. `If-None-Match` with that ETag answers 304
+        with no body. `goldie pull` writes the archive into the Goldie namespace.
+      parameters:
+        - name: target
+          in: query
+          required: true
+          description: The layout of the archive. `claude` is the only target. Anything else, or none, is a 400.
+          schema:
+            type: string
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve for this Project (ADR 0020). Matched ignoring case. An
+            unregistered Project answers the global set; a value that is not a
+            `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - name: If-None-Match
+          in: header
+          required: false
+          description: The `ETag` of the archive the client already has.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The archive.
+          headers:
+            ETag:
+              description: The digest of the set, in double quotes.
+              required: true
+              schema:
+                type: string
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: The set is the one `If-None-Match` names. No body.
+          headers:
+            ETag:
+              description: The digest of the set, unchanged, in double quotes.
+              required: true
+              schema:
+                type: string
+        "400":
+          description: 'For the bundle, `target` is missing or not a known target, or `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the bundle, no bearer token was sent, or it is wrong.'
           content:
             application/json:
               schema:
@@ -1300,6 +1520,39 @@ components:
           examples:
             - - path: SKILL.md
                 size: 16
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+            `host/org/repo` or `local`. Sent by `listSkills` only; `getSkill`
+            omits it, and a missing value means unknown.
+          examples:
+            - global
+        status:
+          type: string
+          description: |
+            The `status` in the frontmatter of SKILL.md: `draft` or
+            `deprecated`; absent for a published skill. Sent by `listSkills`
+            only. Draft skills are hidden unless `drafts=true` is asked for
+            with the operator role.
+          examples:
+            - draft
+        description:
+          type: string
+          description: |
+            The `description` in the frontmatter of SKILL.md. Sent by
+            `listSkills` only; absent when the skill has none.
+          examples:
+            - Deploys the app
+        requires_sync:
+          type: boolean
+          description: |
+            True when the bundle holds a script (a file under `scripts/`), so an
+            agent must sync it to run it; false for a text-only bundle. Sent by
+            `listSkills` only. A missing value on `getSkill` is not false: it
+            means unknown.
+          examples:
+            - true
         hint:
           type: string
           minLength: 1
@@ -1349,6 +1602,23 @@ components:
           description: The frontmatter description. It comes from a Source and is untrusted.
           examples:
             - Reviews code
+        scope:
+          type: string
+          description: |
+            Where the winning copy lives, as `SearchHit.scope` says it: `global`,
+            `host/org/repo` or `local`. Sent by `listAgents` only; `getAgent`
+            omits it, and a missing value means unknown.
+          examples:
+            - global
+        status:
+          type: string
+          description: |
+            The agent's status: `published`, `draft` or `deprecated`. Sent by
+            `listAgents` only; `getAgent` omits it, and a missing value means
+            unknown. Draft agents are hidden unless `drafts=true` is asked for
+            with the operator role.
+          examples:
+            - draft
         hint:
           type: string
           minLength: 1
@@ -1402,6 +1672,147 @@ components:
           description: |
             Present when the request named a Project that is not registered: the
             agent list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    LoopRef:
+      type: object
+      description: One agent or skill a loop names, as it resolves in the view.
+      required:
+        - name
+        - scope
+      properties:
+        name:
+          type: string
+          description: The agent or skill name.
+          examples:
+            - reviewer
+        scope:
+          type: string
+          description: The Scope that answered in the view, `global`, `local` or the Project id.
+          examples:
+            - global
+    LoopClosure:
+      type: object
+      description: The agents and skills a loop names, resolved in the view.
+      required:
+        - agents
+        - skills
+      properties:
+        agents:
+          type: array
+          description: The agents the loop names, sorted by name.
+          items:
+            $ref: "#/components/schemas/LoopRef"
+        skills:
+          type: array
+          description: The skills the loop names, sorted by name.
+          items:
+            $ref: "#/components/schemas/LoopRef"
+    Loop:
+      type: object
+      description: One loop definition with its resolved closure.
+      examples:
+        - name: nightly
+          description: Keep the nightly build green
+          interval: 30m
+          dynamic: false
+          stop: when CI is green
+          content: "Check the build, fix what is red, and report what you changed.\n"
+          closure:
+            agents:
+              - name: reviewer
+                scope: global
+            skills: []
+          digest: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+      required:
+        - name
+        - description
+        - dynamic
+        - stop
+        - closure
+        - digest
+      properties:
+        name:
+          type: string
+          description: The loop's name, its file name without `.md`.
+          examples:
+            - nightly
+        description:
+          type: string
+          description: What the loop is for, from its frontmatter. It comes from a Source and is untrusted.
+          examples:
+            - Keep the nightly build green
+        interval:
+          type: string
+          description: |
+            How often the loop runs, a positive duration such as `30m`. Absent for a
+            dynamic loop.
+          examples:
+            - 30m
+        dynamic:
+          type: boolean
+          description: True when the loop paces itself instead of running at a fixed `interval`.
+          examples:
+            - false
+        stop:
+          type: string
+          description: When the loop ends. It comes from a Source and is untrusted.
+          examples:
+            - when CI is green
+        content:
+          type: string
+          description: |
+            The iteration prompt, the loop file's body. Only a get carries it. It comes
+            from a Source and is untrusted.
+          examples:
+            - "Check the build, fix what is red, and report what you changed.\n"
+        closure:
+          $ref: "#/components/schemas/LoopClosure"
+        digest:
+          type: string
+          description: |
+            The hex SHA-256 over the loop file and every byte of the agent and skill
+            files in the closure, as resolved in the view asked for. It changes when
+            any of them changes.
+          examples:
+            - 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    LoopList:
+      type: object
+      description: The loops that answer in a view.
+      required:
+        - loops
+      properties:
+        loops:
+          type: array
+          description: The loops, sorted by name.
+          items:
+            $ref: "#/components/schemas/Loop"
+          examples:
+            - - name: nightly
+                description: Keep the nightly build green
+                interval: 30m
+                dynamic: false
+                stop: when CI is green
+                closure:
+                  agents:
+                    - name: reviewer
+                      scope: global
+                  skills: []
+                digest: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            loop list answer is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     ProjectDetail:
@@ -1511,12 +1922,12 @@ components:
             - article:platform/deploy-v2
         scope:
           type: string
-          description: '`global`, or the Project (`host/org/repo`) whose copy won.'
+          description: '`global`, `local` (the repository''s own `.goldie/`), or the Project (`host/org/repo`) whose copy won.'
           examples:
             - github.com/acme/shop
         enforced:
           type: boolean
-          description: Whether the Item is enforced, as its frontmatter says.
+          description: "Whether the Item is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it."
     SessionRequest:
       type: object
       description: The token to sign in with.
@@ -1681,7 +2092,7 @@ components:
             - article
         scope:
           type: string
-          description: Where the Item applies, such as `global` (ADR 0005).
+          description: "Where the Item applies: `global`, `local` (the repository's own `.goldie/`), or the Project (`host/org/repo`) whose copy won (ADR 0005)."
           examples:
             - global
         keywords:
@@ -1809,6 +2220,14 @@ components:
             before printing it.
           examples:
             - article:platform/deploy-v2
+        scope:
+          type: string
+          description: |
+            `global`, `local` (the repository's own `.goldie/`), or the Project
+            (`host/org/repo`) whose copy won in the requested view. Absent from an older server, where it means unknown,
+            not global.
+          examples:
+            - github.com/acme/shop
         overrides:
           type: array
           description: |
@@ -1827,7 +2246,7 @@ components:
     ActivityEvent:
       type: object
       description: |
-        One search or lookup on the activity stream, the `data` of an SSE
+        One search, lookup or get on the activity stream, the `data` of an SSE
         event without a type. Every field is always sent; text fields are `""`
         when empty. Clients ignore fields they do not know.
       additionalProperties: false
@@ -1848,7 +2267,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: Increases per server process (per replica); starts again at 1 on restart.
+          description: Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it.
           examples:
             - 42
         time:
@@ -1872,7 +2291,11 @@ components:
             - search
         query:
           type: string
-          description: The search words, the article id a lookup asked for, or the skill or agent name a get asked for, as text.
+          description: |
+            The search words, the article id a lookup asked for (bare), or for a
+            get the Reference `<kind>:<name>` (ADR 0021), such as `skill:review`
+            or `agent:review`. A replica older than this form shows the bare name
+            of a get in a federated stream.
           examples:
             - deploy kubernetes
         project:
@@ -1887,7 +2310,7 @@ components:
             - ci-reader
         client_version:
           type: string
-          description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`.'
+          description: 'The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.'
           examples:
             - 1.5.0
         trace_id:
@@ -1897,7 +2320,7 @@ components:
             - 4bf92f3577b34da6a3ce929d0e0e4736
         miss:
           type: boolean
-          description: A search with no results, or a lookup answering 404.
+          description: A search with no results, or a lookup or get answering 404.
           examples:
             - false
         replica:
@@ -2032,7 +2455,8 @@ components:
         minimum version: upgrade goldie, then retry. Requests without the
         header, or whose header is not `goldie/<semver>`, are not refused;
         requests without a valid token are rejected with 401 first, and a
-        refused request does not count against the rate limit.
+        refused request does not count against the rate limit. `goldie mcp` and
+        the server's `/mcp` add `X-Goldie-Via: mcp`, which the gate does not read.
       content:
         application/json:
           schema:

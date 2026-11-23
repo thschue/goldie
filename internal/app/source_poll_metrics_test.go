@@ -52,8 +52,9 @@ func TestSourcePollsAreCountedByResult(t *testing.T) {
 		code, _ := pubGet(t, pub, "/api/v1/articles/git-first")
 		return code == http.StatusOK
 	})
-	// The first load's callback runs just after the Snapshot is served.
-	time.Sleep(300 * time.Millisecond)
+	// The first load's callback runs just after the Snapshot is served. Poll
+	// waits for that poll and its callback to end; it records no metric itself.
+	_ = pub.sync.syncer.Poll(ctx)
 
 	if err := os.RemoveAll(repo.dir); err != nil {
 		t.Fatal(err)
@@ -72,7 +73,7 @@ func TestSourcePollsAreCountedByResult(t *testing.T) {
 		pub.ServeHTTP(w, r)
 		return strings.Contains(w.Body.String(), `"last_error":"`)
 	})
-	time.Sleep(300 * time.Millisecond) // the failed poll's callback runs after its status is set
+	_ = pub.sync.syncer.Poll(ctx) // the failed poll's callback runs after its status is set; Poll waits for it
 
 	cancel()
 	sctx, scancel := context.WithTimeout(context.Background(), 10*time.Second)

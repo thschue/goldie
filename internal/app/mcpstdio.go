@@ -46,7 +46,7 @@ func serveMCPStdio(ctx context.Context, settings *cli.ClientFlags, env cli.Env, 
 		return fmt.Errorf("invalid client settings: %w", err)
 	}
 	defer stop()
-	client, err := contract.NewAPIClient(addr, token, platform.Version, env.Client)
+	client, err := contract.NewMCPAPIClient(addr, token, platform.Version, env.Client)
 	if err != nil {
 		return fmt.Errorf("invalid client settings: %w", err)
 	}

@@ -38,13 +38,13 @@ const (
 )
 
 type searchInput struct {
-	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	Query   string `json:"query" jsonschema:"words describing the technology, pattern or task to look up, for example message queue"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 type articleInput struct {
-	ID      string `json:"id" jsonschema:"an article id from search_knowledge"`
-	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+	ID      string `json:"id" jsonschema:"an article id from search_knowledge, for example rollout-guide"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
 }
 
 // noInput is the input of a tool that takes no arguments.
@@ -83,16 +83,25 @@ func WithRejectedRemote(name string) Option {
 	return func(t *tools) { t.rejected = name }
 }
 
+// CountToolCalls counts every tools/call the server answers in c, by tool
+// and result (IsError, or a protocol error, is error). Without it nothing is
+// counted, as on the stdio transport (PC-12).
+func CountToolCalls(c *platform.ToolCallCounter) Option {
+	return func(t *tools) { t.calls = c }
+}
+
 // New returns an MCP server with the tools search_knowledge, get_article,
 // list_projects, current_context, find_skills, get_skill, list_skills and
 // list_agents.
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
 //
-// The tool set and the one resource, goldie://instructions, are fixed, so the
-// server advertises tools and resources without listChanged: a client cannot
-// park a request waiting for list changes that never come, and hold up a
-// drain with it.
+// The tool set is fixed, so the server advertises tools without listChanged:
+// a client cannot park a request waiting for tool-list changes that never
+// come, and hold up a drain with it. The same goes for prompts and resources:
+// the prompt list is fixed once a session has asked for it, and the resources
+// (goldie://instructions and the two templates) never change, so no
+// list_changed notification is ever sent.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
 	for _, o := range opts {
@@ -100,7 +109,7 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "goldie", Version: platform.Version},
 		&sdk.ServerOptions{Capabilities: &sdk.ServerCapabilities{
-			Tools: &sdk.ToolCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
+			Tools: &sdk.ToolCapabilities{}, Prompts: &sdk.PromptCapabilities{}, Resources: &sdk.ResourceCapabilities{}}})
 	sdk.AddTool(s, &sdk.Tool{Name: "search_knowledge", Description: searchDescription},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in searchInput) (*sdk.CallToolResult, any, error) {
 			return t.search(ctx, in.Query, in.Project), nil, nil
@@ -117,19 +126,25 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 		func(ctx context.Context, _ *sdk.CallToolRequest, _ noInput) (*sdk.CallToolResult, any, error) {
 			return t.currentContext(ctx), nil, nil
 		})
+	if t.calls != nil {
+		s.AddReceivingMiddleware(t.countToolCalls)
+	}
 	addSkillTools(s, t)
+	addPrompts(s, t)
 	addInstructionsResource(s, t)
+	addResources(s, t)
 	return s
 }
 
 // tools are the tool handlers of one server.
 type tools struct {
 	client   contract.ClientInterface
-	local    bool   // client reaches an embedded server over local content
-	project  string // the default Project from WithProject, or ""
-	source   string // where project came from
-	problem  string // why there is no default, from WithProjectProblem, or ""
-	rejected string // the remote from WithRejectedRemote, or ""
+	local    bool                      // client reaches an embedded server over local content
+	project  string                    // the default Project from WithProject, or ""
+	source   string                    // where project came from
+	problem  string                    // why there is no default, from WithProjectProblem, or ""
+	rejected string                    // the remote from WithRejectedRemote, or ""
+	calls    *platform.ToolCallCounter // from CountToolCalls, nil counts nothing
 }
 
 // errInvalidProject refuses a project argument that is not a ProjectId. It
@@ -164,8 +179,24 @@ func projectParam(p string) (param *contract.ProjectId, ok bool) {
 // empty project takes the default, and fails with the Project problem when
 // there is one, before any request.
 func (t *tools) sessionProject(p string) (*contract.ProjectId, error) {
+	return t.sessionProjectFor(p, surfaceTool)
+}
+
+// sessionProjectFor is sessionProject for one surface. A tool may pass a
+// project, so its hint names that and list_projects; a prompt or resource
+// only ever uses the session's Project, so its error tells the agent to ask
+// the user to fix it and restart.
+func (t *tools) sessionProjectFor(p string, s surface) (*contract.ProjectId, error) {
 	if p == "" && t.problem != "" {
-		return nil, withHint("the default Project has a problem: "+contract.CleanLine(t.problem),
+		msg := "the default Project has a problem: " + contract.CleanLine(t.problem)
+		if s.failed != "" {
+			// The problem may end in sentence punctuation; the ". " below
+			// supplies the one full stop.
+			msg = strings.TrimRight(msg, ".?! ")
+			return nil, errors.New(s.failed + ": " + msg +
+				". Ask the user to fix it and restart the MCP server; the session's Project is the only one prompts and resources use.")
+		}
+		return nil, withHint(msg,
 			"Fix it and restart the MCP server, or pass project as host/org/repo; list_projects names the registered Projects.")
 	}
 	if p == "" {
@@ -203,12 +234,19 @@ func (t *tools) search(ctx context.Context, q, project string) *sdk.CallToolResu
 	return success(b.String())
 }
 
+// plainMissHint is the server's hint for an id that is no article; the tool
+// words the next step with its own name.
+const (
+	plainMissHint   = "Search for the article, then use an id from its results."
+	searchFirstHint = "Search for the article with search_knowledge, then use an id from its results."
+)
+
 func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolResult {
 	// An empty or dot-only id would be cleaned out of the article path and
 	// reach another endpoint, so it is refused before any request.
 	if contract.CheckArticleID(id) != nil {
 		return failure(withHint("the article id is empty or made only of dots",
-			"Search for the article with search_knowledge, then use an id from its results."))
+			searchFirstHint))
 	}
 	proj, err := t.sessionProject(project)
 	if err != nil {
@@ -218,11 +256,17 @@ func (t *tools) article(ctx context.Context, id, project string) *sdk.CallToolRe
 	a, err := contract.Answer(raw, err, contract.ParseGetArticleResponse,
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
+		// Only the plain miss is reworded: the agent has no search operation,
+		// and a Suppression's not_found keeps the hint naming its entry.
+		var ae *contract.APIError
+		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
+			ae.Hint = searchFirstHint
+		}
 		return failure(wordError(err, t.local))
 	}
-	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\n%s",
+	return success(deprecationLine(*a) + fmt.Sprintf("Article %s (id: %s)\nkeywords: %s\n\nThe article (each line starts with \"| \"; drop that prefix to read it):\n\n%s",
 		contract.CleanLine(a.Name), contract.CleanLine(a.Id), contract.CleanList(a.Keywords),
-		strings.TrimRight(contract.CleanText(a.Content), "\n")) + hintLine(a.Hint))
+		quote(strings.TrimRight(contract.CleanText(a.Content), "\n"))) + hintLine(a.Hint))
 }
 
 // deprecationLine is the notice get_article starts with for a deprecated
@@ -272,7 +316,7 @@ func (t *tools) currentContext(ctx context.Context) *sdk.CallToolResult {
 		return res
 	}
 	text := res.Content[0].(*sdk.TextContent).Text
-	block, err := t.instructions(ctx)
+	block, err := t.instructions(ctx, surfaceTool)
 	if err != nil {
 		return success(text + "\n\nThe instruction clauses could not be read: " + contract.CleanLine(err.Error()))
 	}
@@ -329,7 +373,30 @@ func failure(err error) *sdk.CallToolResult {
 // Retry-After. The agent never sees the headers, so a wait or a 429 gets its
 // own hint instead of the server's, which points at Retry-After. Without a
 // valid wait it says none, rather than "0 seconds" or the server's raw value.
-func wordError(err error, local bool) error {
+func wordError(err error, local bool) error { return wordErrorFor(err, local, surfaceTool) }
+
+// surface is what the agent asked the server for: a tool call, a prompt or a
+// resource read. Its errors name it, so a failed prompt does not read as a tool.
+type surface struct{ failed, retry string }
+
+var (
+	surfaceTool     = surface{"", "call the tool again"}
+	surfacePrompt   = surface{"the prompt could not be read", "get the prompt again"}
+	surfacePrompts  = surface{"the prompts could not be listed", "list the prompts again"}
+	surfaceResource = surface{"the resource could not be read", "read the resource again"}
+)
+
+// wordErrorFor is wordError for one surface. A tool's wording is unchanged; a
+// prompt's or resource's names the prompt or resource and its retry step.
+func wordErrorFor(err error, local bool, s surface) error {
+	werr := wordErrorOf(err, local, s)
+	if s.failed == "" {
+		return werr
+	}
+	return errors.New(s.failed + ": " + werr.Error())
+}
+
+func wordErrorOf(err error, local bool, s surface) error {
 	var e *contract.APIError
 	switch {
 	case errors.As(err, &e):
@@ -358,9 +425,9 @@ func wordError(err error, local bool) error {
 	hint := e.Hint
 	switch {
 	case e.Wait() != "":
-		hint = "Wait " + e.Wait() + ", then call the tool again."
+		hint = "Wait " + e.Wait() + ", then " + s.retry + "."
 	case e.Status == http.StatusTooManyRequests:
-		hint = "Wait a little, then call the tool again."
+		hint = "Wait a little, then " + s.retry + "."
 	}
 	if hint == "" {
 		return errors.New(msg)
@@ -372,4 +439,19 @@ func wordError(err error, local bool) error {
 // next step.
 func withHint(msg, hint string) error {
 	return errors.New(msg + "\nHint: " + hint)
+}
+
+// countToolCalls is the receiving middleware that counts each tools/call. It
+// reads the tool name and the outcome only, never an argument.
+func (t *tools) countToolCalls(next sdk.MethodHandler) sdk.MethodHandler {
+	return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
+		res, err := next(ctx, method, req)
+		cr, ok := req.(*sdk.CallToolRequest)
+		if !ok || method != "tools/call" || cr.Params == nil {
+			return res, err
+		}
+		out, _ := res.(*sdk.CallToolResult)
+		t.calls.Add(ctx, cr.Params.Name, err != nil || (out != nil && out.IsError))
+		return res, err
+	}
 }

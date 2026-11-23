@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -128,16 +129,17 @@ var notReady = envelope("not_ready", "content is still loading",
 // parameters; these methods return the spec's response types. It carries no
 // auth: the caller wraps /api/ in RequireToken.
 type Server struct {
-	provider func() *engine.Snapshot
-	specJSON []byte
-	activity *Activity               // see RecordInto, nil records nothing
-	searches *platform.ResultCounter // see CountResults, nil counts nothing
-	lookups  *platform.ResultCounter
-	fed      *Federation  // see FederateActivity, nil serves ?replicas=all as the local stream
-	fedOpen  atomic.Int32 // merged streams open, at most MaxFederatedSubscribers
-	fedDown  downSet      // peers already logged as down
-	sync     SyncControl  // see WithSync, nil lists no Source
-	tokens   *Tokens      // see WithSessions, nil: no sign-in
+	provider  func() *engine.Snapshot
+	specJSON  []byte
+	activity  *Activity               // see RecordInto, nil records nothing
+	searches  *platform.ResultCounter // see CountResults, nil counts nothing
+	lookups   *platform.ResultCounter
+	skillGets *platform.SkillGetCounter // see CountSkillGets, nil counts nothing
+	fed       *Federation               // see FederateActivity, nil serves ?replicas=all as the local stream
+	fedOpen   atomic.Int32              // merged streams open, at most MaxFederatedSubscribers
+	fedDown   downSet                   // peers already logged as down
+	sync      SyncControl               // see WithSync, nil lists no Source
+	tokens    *Tokens                   // see WithSessions, nil: no sign-in
 
 	instructionVars engine.InstructionVars // see WithInstructionVars
 
@@ -278,6 +280,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		Hint:       hint,
 		Status:     status,
 		ReplacedBy: replacedBy,
+		Scope:      new(a.Scope),
 		Overrides:  new(list(a.Overrides)),
 		Enforced:   new(a.Enforced),
 	}, nil
@@ -379,27 +382,35 @@ func (s *Server) GetProjectItems(_ context.Context, req contract.GetProjectItems
 			return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
 		}
 	}
-	res := contract.GetProjectItems200JSONResponse{Items: make([]contract.ProjectItem, 0, len(view)),
+	res := contract.ProjectView{Items: make([]contract.ProjectItem, 0, len(view)),
 		Suppressions: list(snap.Suppressions(proj)), Hint: hint}
 	for _, a := range view {
+		status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 		item := contract.ProjectItem{Id: a.ID, Name: a.Name, Keywords: list(a.Keywords), Content: a.Content,
-			Status: contract.ProjectItemStatusPublished, Scope: a.Scope, Enforced: a.Enforced}
-		if a.Status == engine.StatusDeprecated {
-			item.Status = contract.ProjectItemStatusDeprecated
-		}
-		if a.ReplacedBy != "" {
-			item.ReplacedBy = &a.ReplacedBy
+			Status: contract.ProjectItemStatusPublished, ReplacedBy: replacedBy, Scope: a.Scope, Enforced: a.Enforced}
+		if status != nil {
+			item.Status = contract.ProjectItemStatus(*status)
 		}
 		res.Items = append(res.Items, item)
 	}
-	body, err := json.Marshal(res)
-	if err != nil {
+	// Encode once, as the response writer would (a trailing newline), so the
+	// size checked is the size sent.
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(res); err != nil {
 		return nil, err
 	}
-	if len(body) > maxViewBytes {
+	if buf.Len() > maxViewBytes {
 		return contract.GetProjectItems422JSONResponse(viewTooLarge), nil
 	}
-	return res, nil
+	return projectViewBody(buf.Bytes()), nil
+}
+
+// projectViewBody is the 200 response with the view already encoded, written
+// as it is (pattern: specDocument).
+type projectViewBody []byte
+
+func (b projectViewBody) VisitGetProjectItemsResponse(w http.ResponseWriter) error {
+	return writeFixed(w, "application/json", b, true)
 }
 
 // GetOpenAPIYAML answers GET /openapi.yaml with the embedded document.

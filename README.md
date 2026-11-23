@@ -35,17 +35,21 @@ help you ask for goes to stdout and exits 0.
 and file list) and agent definitions (name and description) that answer for the Project. They take
 `--project`, `--json` and the same address and token settings, and print the server's hint for an
 unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. `goldie skills show <name> --file <path>` writes one file of the skill, as
-listed by `show <name>`, to stdout as its raw bytes and nothing else. Redirect it to a file for
-anything binary. An unknown path exits 1 and names `goldie skills show <name>`. `--file` belongs to
-`skills show` only. An empty or dot-only path is refused before any request.
+before any request. Skill and agent names match case-insensitively, and the answer shows the
+name as written. Two skills, or two agents, in one Scope whose names differ only in case fail the
+load; the error names both. File paths inside a skill stay exact. `goldie skills show <name>
+--file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
+bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
+`goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
+refused before any request.
 
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
 takes `--addr` (or `GOLDIE_ADDR`), `--token` (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it
 from a file) and `--json`. Prefer `GOLDIE_TOKEN` or `GOLDIE_TOKEN_FILE` to `--token`: a `--token`
 value shows in the process list (`ps`) of the machine. The CLI follows no redirects, so a server
-cannot send the token elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`.
+cannot send the token elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`
+(`goldie mcp` adds `X-Goldie-Via: mcp`).
 `status` reports whether the server answers and accepts the token (`--json` adds `tokenGiven`) and
 which Project the CLI works for; without an accepted token it cannot read the API document, so it
 reports the API as unknown, and `version` leaves out the server's API version. `search`, `lookup`
@@ -177,17 +181,41 @@ with an explicit `project` still answer. Fix the file and restart the MCP server
 
 The skill and agent tools take the same optional `project`. `find_skills` searches skills only, by
 keyword or name. `get_skill` answers a skill's file paths and the text of its `SKILL.md`, each line
-quoted with `| `; a name that is empty, dots only or holds a separator is refused before any
-request. `list_skills` and `list_agents` list every name for the Project, sorted, an agent with its
-description.
+quoted with `| `; its optional `file` (a path from that list, such as `scripts/run.sh`) reads that
+file of the bundle instead, quoted the same way. A name that is empty, dots only or holds a
+separator, and a `file` that leaves the bundle, is refused before any request. A skill without a
+`SKILL.md` is reported as that, not as unknown. `get_article` quotes the article text with `| `
+too; the server's own hint stays a plain line after it. Every tool parameter's description carries
+an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent
+with its description.
 
-The server also has one resource, `goldie://instructions` (`resources/list`, `resources/read`): the
+The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
 instruction block the API renders for the default Project, or the global block without one, with
 `{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
 `goldie instructions`; the target changes only the file the block is written into. The text is cleaned
-of hidden characters like any Source content, no other URI is a resource, and a failed read is an
+of hidden characters like any Source content and a failed read is an
 error without the address or token. `current_context` ends with the same clauses, or says they could
-not be read. Resources are advertised without `listChanged`.
+not be read.
+
+The server also offers prompts and two more resources. Each skill is a prompt named `goldie-<skill name>`
+(for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
+the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
+with `| `. Prompt text is untrusted: a Source wrote it, and the server inserts it as a user message,
+cleaned but not quoted, so any instruction in it reaches the model. Choosing a prompt means you
+vouch for that skill's Source. For the quoted form, use `get_skill` or the resources. The prompt
+list is read once, the first time your client asks for it, and kept until the MCP server restarts.
+A skill added later appears after you restart your agent or its MCP server; an unknown prompt is
+answered with a message that points to `list_skills` or to that restart. The server sends no
+`list_changed` notification. The two other resources are URI templates:
+`goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
+as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
+reads an agent's name and description. The session's default Project picks the bundle, never the
+URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
+is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
+step. A failed prompt or resource read says it was a prompt or resource, not a tool.
+When the default Project has a problem, a prompt or resource error names the problem and tells the
+agent to ask the user to fix it and restart the MCP server: those surfaces take no `project`
+argument, so it does not point at `list_projects`.
 
 An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
 settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or

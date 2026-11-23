@@ -12,6 +12,7 @@ import (
 
 	"github.com/thschue/goldie/internal/contract"
 	gmcp "github.com/thschue/goldie/internal/mcp"
+	"github.com/thschue/goldie/internal/platform"
 )
 
 // These tests drive the MCP component over the real public handler and the
@@ -219,5 +220,42 @@ func TestMCPGetArticleUnreachableAPIDoesNotLeakTheAddress(t *testing.T) {
 	text, isErr := call(t, cs, "get_article", map[string]any{"id": "agent-loops"})
 	if !isErr || strings.Contains(text, "127.0.0.1") || strings.Contains(text, "/api/") {
 		t.Errorf("want a tool error without the address: %v %s", isErr, text)
+	}
+}
+
+// #515: over MCP the agent's tool is search_knowledge, so the not-found hint
+// names it and not the API's "search operation".
+func TestMCPGetArticleUnknownIDHintNamesSearchKnowledge(t *testing.T) {
+	cs := connect(t, testToken)
+	text, isErr := call(t, cs, "get_article", map[string]any{"id": "no-such-article"})
+	if !isErr {
+		t.Fatalf("want a tool error, got %s", text)
+	}
+	const want = "Search for the article with search_knowledge, then use an id from its results."
+	if !strings.Contains(text, want) {
+		t.Errorf("error lacks the hint %q: %s", want, text)
+	}
+	if strings.Contains(text, "search operation") {
+		t.Errorf("error still passes on the API's wording: %s", text)
+	}
+	if strings.Contains(text, "Search for the article, then use an id from its results.") {
+		t.Errorf("error still carries the API's unreworded hint: %s", text)
+	}
+}
+
+// #515: a suppressed article keeps the API's suppression hint unchanged.
+func TestMCPGetArticleSuppressedKeepsTheSuppressionHint(t *testing.T) {
+	cs := session(t, newServerWith(t, platform.Config{ContentDir: suppressContent}).URL, testToken)
+	text, isErr := call(t, cs, "get_article", map[string]any{"id": "platform/notes", "project": shopProject})
+	if !isErr {
+		t.Fatalf("want a tool error, got %s", text)
+	}
+	const want = "The Project " + shopProject + " suppresses article:platform/notes in " + shopYAML +
+		". Remove that entry to read the Item, or look it up without the project."
+	if !strings.Contains(text, want) {
+		t.Errorf("error lacks the suppression hint %q: %s", want, text)
+	}
+	if strings.Contains(text, "search_knowledge") {
+		t.Errorf("suppression error got the not-found hint: %s", text)
 	}
 }
