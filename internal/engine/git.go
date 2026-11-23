@@ -32,12 +32,13 @@ import (
 // GitOptions configures a git Source. Credentials are passed in as values: the
 // engine reads no environment, file or SSH agent for them.
 type GitOptions struct {
-	// URL is https://host/path, ssh://[user@]host[:port]/path or
-	// file:///path. It carries no password; credentials go in Token or SSHKey.
-	// An ssh URL's user is the login name, git when there is none.
+	// URL is https://host/path, ssh://[user@]host[:port]/path, the scp-like
+	// user@host:path or file:///path. It carries no password; credentials go
+	// in Token or SSHKey. An ssh URL's user is the login name, git when there
+	// is none. It never starts with "-".
 	URL string
 	// Ref is a branch, a tag or a full ref name (refs/...). Empty means the
-	// remote's HEAD.
+	// remote's HEAD. It never starts with "-".
 	Ref string
 	// Token is an HTTPS access token, sent as the basic-auth password. It is
 	// only accepted with an https URL.
@@ -54,11 +55,13 @@ type GitOptions struct {
 	CABundle string
 }
 
-// String describes o without the token, the SSH key, the known hosts, the CA
-// bundle or URL user info, so logging GitOptions with %v or %+v never prints a
-// credential.
+// String describes o with the URL, the token, the SSH key, the known hosts
+// and the CA bundle shown only as set or unset, so logging GitOptions with %v
+// or %+v never prints a credential. No part of the URL is printed: no parse
+// tells every password from a path. The composition root logs the URL itself,
+// through platform's redactor.
 func (o GitOptions) String() string {
-	return fmt.Sprintf("{URL:%s Ref:%q Token:%s SSHKey:%s KnownHosts:%s CABundle:%s}", redactURL(o.URL), o.Ref,
+	return fmt.Sprintf("{URL:%s Ref:%q Token:%s SSHKey:%s KnownHosts:%s CABundle:%s}", redactToken(o.URL), o.Ref,
 		redactToken(o.Token), redactToken(o.SSHKey), redactToken(o.KnownHosts), redactToken(o.CABundle))
 }
 
@@ -67,31 +70,17 @@ func (o GitOptions) GoString() string { return "engine.GitOptions" + o.String() 
 
 // LogValue implements slog.LogValuer with the same redaction as String.
 func (o GitOptions) LogValue() slog.Value {
-	return slog.GroupValue(slog.String("url", redactURL(o.URL)), slog.String("ref", o.Ref),
+	return slog.GroupValue(slog.String("url", redactToken(o.URL)), slog.String("ref", o.Ref),
 		slog.String("token", redactToken(o.Token)), slog.String("ssh_key", redactToken(o.SSHKey)),
 		slog.String("known_hosts", redactToken(o.KnownHosts)), slog.String("ca_bundle", redactToken(o.CABundle)))
 }
 
+// redactToken shows only whether t is set.
 func redactToken(t string) string {
 	if t == "" {
 		return ""
 	}
 	return "[redacted]"
-}
-
-func redactURL(raw string) string {
-	u, err := url.Parse(raw)
-	// url.Parse reads usr:pw@host:path as the scheme usr with an opaque rest
-	// and no User, so an opaque URL is never printed: it could hold a password.
-	if err != nil || u.Opaque != "" {
-		return "[invalid URL]"
-	}
-	if u.User != nil {
-		u.User = url.User("[redacted]")
-	}
-	u.RawQuery = redactToken(u.RawQuery)
-	u.Fragment, u.RawFragment = redactToken(u.Fragment), ""
-	return u.String()
 }
 
 // gitLoadTimeout bounds one Load inside its context, so a stalled server cannot
@@ -145,35 +134,46 @@ type GitSource struct {
 }
 
 // NewGitSource validates opts and returns a git Source. It contacts no server.
-// Its errors are fixed messages that never contain the URL or a credential.
+// Every error is a *GitOptionError naming the option to fix, with a fixed
+// message that never contains the URL, the ref or a credential.
 func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if strings.TrimSpace(opts.URL) == "" {
-		return nil, errors.New("git source: URL is empty")
+		return nil, optionError(GitOptionURL, "URL is empty")
+	}
+	// A git command line reads a leading "-" as an option.
+	if strings.HasPrefix(opts.URL, "-") {
+		return nil, optionError(GitOptionURL, "URL must not start with -")
 	}
 	// A query or a fragment is where a token gets pasted, and git needs
 	// neither; in a valid URL, ? and # appear only to start them.
 	if strings.ContainsAny(opts.URL, "?#") {
-		return nil, errors.New("git source: URL must not carry a query or a fragment")
+		return nil, optionError(GitOptionURL, "URL must not carry a query or a fragment")
 	}
-	u, err := url.Parse(opts.URL)
+	u, err := parseGitURL(opts.URL)
 	if err != nil {
-		return nil, errors.New("git source: URL is not valid")
+		return nil, err
 	}
 	scheme := strings.ToLower(u.Scheme)
 	if _, hasPassword := u.User.Password(); hasPassword || (u.User != nil && scheme != "ssh") {
-		return nil, errors.New("git source: URL must not carry credentials; use Token or SSHKey")
+		return nil, optionError(GitOptionURL, "URL must not carry credentials; use Token or SSHKey")
+	}
+	if strings.HasPrefix(u.Hostname(), "-") {
+		return nil, optionError(GitOptionURL, "URL is not valid")
 	}
 	if scheme != "https" && opts.Token != "" {
-		return nil, errors.New("git source: Token needs an HTTPS URL")
+		return nil, optionError(GitOptionToken, "Token needs an HTTPS URL")
 	}
-	if scheme != "ssh" && (opts.SSHKey != "" || opts.KnownHosts != "") {
-		return nil, errors.New("git source: SSHKey and KnownHosts need an ssh URL")
+	if scheme != "ssh" && opts.SSHKey != "" {
+		return nil, optionError(GitOptionSSHKey, "SSHKey needs an ssh URL")
+	}
+	if scheme != "ssh" && opts.KnownHosts != "" {
+		return nil, optionError(GitOptionKnownHosts, "KnownHosts needs an ssh URL")
 	}
 	if scheme != "https" && opts.CABundle != "" {
-		return nil, errors.New("git source: CABundle needs an HTTPS URL")
+		return nil, optionError(GitOptionCABundle, "CABundle needs an HTTPS URL")
 	}
 	if opts.CABundle != "" && !isCertBundle(opts.CABundle) {
-		return nil, errors.New("git source: CABundle is not a PEM certificate bundle")
+		return nil, optionError(GitOptionCABundle, "CABundle is not a PEM certificate bundle")
 	}
 	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
 	if opts.CABundle != "" {
@@ -193,13 +193,16 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	case scheme == "file" && u.Host == "" && u.Opaque == "" && u.Path != "":
 		// go-git's in-process server does not serve shallow clones.
 	default:
-		return nil, errors.New("git source: URL must be HTTPS or SSH with a host, or FILE with an absolute path")
+		return nil, optionError(GitOptionURL, errURLForm)
 	}
 	if _, err := transport.NewEndpoint(opts.URL); err != nil {
-		return nil, errors.New("git source: URL is not valid")
+		return nil, optionError(GitOptionURL, "URL is not valid")
+	}
+	if strings.HasPrefix(opts.Ref, "-") {
+		return nil, optionError(GitOptionRef, "Ref must not start with -")
 	}
 	if opts.Ref != "" && plumbing.ReferenceName(fullRef(opts.Ref)).Validate() != nil {
-		return nil, fmt.Errorf("git source: ref %q is not a valid ref name", opts.Ref)
+		return nil, optionError(GitOptionRef, "Ref is not a valid ref name")
 	}
 	useGitTransports()
 	return s, nil
@@ -233,18 +236,18 @@ func isCertBundle(bundle string) bool {
 // is always verified against KnownHosts; there is no option to skip it.
 func newSSHAuth(u *url.URL, opts GitOptions) (*sshAuth, error) {
 	if opts.SSHKey == "" {
-		return nil, errors.New("git source: an ssh URL needs SSHKey")
+		return nil, optionError(GitOptionSSHKey, "an ssh URL needs SSHKey")
 	}
 	if strings.TrimSpace(opts.KnownHosts) == "" {
-		return nil, errors.New("git source: an ssh URL needs KnownHosts; host keys are always verified")
+		return nil, optionError(GitOptionKnownHosts, "an ssh URL needs KnownHosts; host keys are always verified")
 	}
 	signer, err := ssh.ParsePrivateKey([]byte(opts.SSHKey))
 	if err != nil {
-		return nil, errors.New("git source: SSHKey is not an unencrypted PEM private key")
+		return nil, optionError(GitOptionSSHKey, "SSHKey is not an unencrypted PEM private key")
 	}
 	kh, err := parseKnownHosts(opts.KnownHosts)
 	if err != nil {
-		return nil, err
+		return nil, &GitOptionError{Option: GitOptionKnownHosts, err: err}
 	}
 	port := u.Port()
 	if port == "" {

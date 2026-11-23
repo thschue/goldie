@@ -38,8 +38,28 @@ const (
 	EnvPollInterval     = "GOLDIE_POLL_INTERVAL"
 )
 
-// MinPollInterval is the shortest GOLDIE_POLL_INTERVAL LoadConfig accepts.
+// MinPollInterval is the shortest GOLDIE_POLL_INTERVAL LoadConfig accepts in
+// a release build.
 const MinPollInterval = 10 * time.Second
+
+// pollIntervalFloor is a test seam, set only at link time, by the process
+// tests' binary: -X github.com/thschue/goldie/internal/platform.pollIntervalFloor=100ms.
+// It is a Go duration that lowers the poll interval floor, so those tests can
+// poll a git Source within seconds. A release build leaves it empty. Nothing
+// reads it from the environment, a file or a flag, so whoever runs the binary
+// cannot change it; only whoever links the binary can.
+var pollIntervalFloor string
+
+// PollIntervalFloor is the shortest poll interval LoadConfig accepts and the
+// server polls at: MinPollInterval, unless the binary was linked with a
+// shorter positive pollIntervalFloor. A floor that does not parse, or is not
+// shorter, is ignored, so the seam can only lower it.
+func PollIntervalFloor() time.Duration {
+	if d, err := time.ParseDuration(pollIntervalFloor); err == nil && d > 0 && d < MinPollInterval {
+		return d
+	}
+	return MinPollInterval
+}
 
 // Config is the effective server configuration. It is read once at startup
 // by LoadConfig and never changes afterwards.
@@ -70,8 +90,8 @@ type Config struct {
 	APITokens  string // name:role:token lines, as read; secret
 
 	// The git Source, as read; LoadConfig checks only that GitURL and
-	// ContentDir are not both set. GitURL may carry userinfo: log it only
-	// through the startup report, which redacts it.
+	// ContentDir are not both set. GitURL may carry userinfo: log it only as
+	// RedactedGitURL, as the startup report does.
 	GitURL           string
 	GitRef           string // empty for the remote's HEAD
 	GitToken         string // secret
@@ -80,7 +100,7 @@ type Config struct {
 	GitCABundle      string // PEM; logged only as set or unset
 	GitAllowFileURL  bool   // accept a file:// GitURL
 
-	PollInterval     time.Duration // how often every Source is polled; at least MinPollInterval
+	PollInterval     time.Duration // how often every Source is polled; at least PollIntervalFloor
 	pollIntervalText string        // PollInterval as written, for the startup report
 }
 
@@ -157,7 +177,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.GitSSHKey = str(EnvGitSSHKey, def(EnvGitSSHKey))
 	cfg.GitSSHKnownHosts = str(EnvGitSSHKnownHosts, def(EnvGitSSHKnownHosts))
 	cfg.GitCABundle = str(EnvGitCABundle, def(EnvGitCABundle))
-	if err := checkOneSource(cfg.ContentDir, cfg.GitURL); err != nil {
+	if err := CheckOneSource(cfg.ContentDir, cfg.GitURL); err != nil {
 		errs = append(errs, err)
 	}
 	switch strings.ToLower(str(EnvGitAllowFileURL, def(EnvGitAllowFileURL))) {
@@ -168,9 +188,9 @@ func LoadConfig(lookup Lookup) (Config, error) {
 		errs = append(errs, fmt.Errorf("%s: must be true or false", EnvGitAllowFileURL))
 	}
 	cfg.pollIntervalText = str(EnvPollInterval, def(EnvPollInterval))
-	if d, err := time.ParseDuration(cfg.pollIntervalText); err != nil || d < MinPollInterval {
+	if d, err := time.ParseDuration(cfg.pollIntervalText); err != nil || d < PollIntervalFloor() {
 		// The value is never echoed: time.ParseDuration's error quotes it.
-		errs = append(errs, fmt.Errorf("%s: must be a Go duration of at least %s, such as 1m or 90s", EnvPollInterval, MinPollInterval))
+		errs = append(errs, fmt.Errorf("%s: must be a Go duration of at least %s, such as 1m or 90s", EnvPollInterval, PollIntervalFloor()))
 	} else {
 		cfg.PollInterval = d
 	}
@@ -198,12 +218,13 @@ func CheckAPITokenPairing(token, tokens string) error {
 	return nil
 }
 
-// checkOneSource refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL set together,
+// CheckOneSource refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL set together,
 // after their _FILE forms are read: until several Sources are configurable
 // (ADR 0004), a process serves one. Like the token pairing it is part of
-// LoadConfig, so goldie health refuses it too. The error names both variables
-// and neither value: the URL may hold a password.
-func checkOneSource(contentDir, gitURL string) error {
+// LoadConfig, so goldie health refuses it too; neither set is the server
+// role's check. The error names both variables and neither value: the URL may
+// hold a password.
+func CheckOneSource(contentDir, gitURL string) error {
 	if contentDir != "" && gitURL != "" {
 		return fmt.Errorf("%s and %s are both set: for now a process serves one Source, so set only one", EnvContentDir, EnvGitURL)
 	}
@@ -211,8 +232,9 @@ func checkOneSource(contentDir, gitURL string) error {
 }
 
 // Setting resolves one variable that may also be given as NAME_FILE (PC-05).
-// Setting both forms is an error. A trailing newline in the file is trimmed.
-// Errors name the variable and never include the value or the file path.
+// Setting both forms is an error. Every trailing CR and LF in the file is
+// dropped, in any order and number; nothing before them is. Errors name the
+// variable and never include the value or the file path.
 func Setting(lookup Lookup, readFile func(string) ([]byte, error), name string) (string, error) {
 	val, hasVal := lookup(name)
 	path, hasFile := lookup(name + "_FILE")
@@ -268,6 +290,10 @@ func setOrUnset(v string) string {
 	}
 	return "(set)"
 }
+
+// RedactedGitURL is GOLDIE_GIT_URL as it may be logged, the one form the URL
+// takes in any log line: redactGitURL of it.
+func (c Config) RedactedGitURL() string { return redactGitURL(c.GitURL) }
 
 // redactGitURL is GOLDIE_GIT_URL as the startup report logs it: the userinfo,
 // the query and the fragment replaced by (redacted), whether or not the value
