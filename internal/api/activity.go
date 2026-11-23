@@ -21,18 +21,37 @@ const (
 	MaxActivitySubscribers = 32
 	// ActivitySubscriberBuffer is the capacity of every subscriber's live channel.
 	ActivitySubscriberBuffer = 64
+	// MaxActivityCapacity is the most events one Activity keeps; NewActivity
+	// clamps a larger capacity to it. 10,000 events are about 2 MiB.
+	MaxActivityCapacity = 10_000
 )
 
 // Event is one search or lookup, as the activity feed shows it. Record
-// assigns ID, Replica and Time; the caller sets Kind and Query. Late is set
-// only by the Merger, for an event that reached it after its reorder window.
+// assigns ID, Replica and Time; the caller sets the rest. Late is set only by
+// the Merger, for an event that reached it after its reorder window.
 type Event struct {
 	ID      uint64
 	Replica string
 	Time    time.Time
 	Kind    EventKind
-	Query   string
-	Late    bool
+	// Query is a search's words, or the article id a lookup asked for.
+	Query string
+	// Token is the name of the token that authenticated the request, never
+	// its secret.
+	Token string
+	// ClientVersion is the X-Goldie-Client version in Semver.String form
+	// ("1.5.0" for goldie/v1.5.0), or "" when the header is not exactly one
+	// goldie/<semver> value.
+	ClientVersion string
+	// Project is the project parameter as sent, registered or not, or "".
+	Project string
+	// TraceID is the trace id of the request's span, or "" without one.
+	TraceID string
+	// Miss is a search with zero results, or a lookup answering 404.
+	Miss bool
+	// Late is set only by the Merger: the event reached it after its reorder
+	// window.
+	Late bool
 }
 
 // Activity is a fixed-capacity ring of recent Events with a hub that fans new
@@ -56,15 +75,16 @@ type activitySub struct {
 	once sync.Once
 }
 
-// NewActivity keeps the last capacity events (at least one), stamping each
-// with replica and the time from now. A nil now means time.Now.
+// NewActivity keeps the last capacity events (at least one, at most
+// MaxActivityCapacity), stamping each with replica and the time from now. A
+// nil now means time.Now.
 func NewActivity(capacity int, replica string, now func() time.Time) *Activity {
 	if now == nil {
 		now = time.Now
 	}
 	return &Activity{
 		replica: replica, now: now,
-		ring: make([]Event, max(capacity, 1)),
+		ring: make([]Event, min(max(capacity, 1), MaxActivityCapacity)),
 		next: 1, subs: map[*activitySub]struct{}{},
 	}
 }
