@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from './components/AppShell.vue';
 import SessionBanner from './auth/SessionBanner.vue';
@@ -21,7 +21,15 @@ const retry = ref<HTMLButtonElement | null>(null);
 // The session check got no answer: the routed page waits behind a notice, and
 // Retry asks again. A 401 on the retry is a real "signed out".
 const checking = ref(false);
+// Keys the alert so a repeat failure remounts it and is announced again.
+const checkFailures = ref(0);
 const checkRetry = ref<HTMLButtonElement | null>(null);
+// Retry takes focus when the alert first appears and after each failure.
+watch([ready, checkFailed, checkFailures], async ([isReady, failed]) => {
+  if (!isReady || !failed) return;
+  await nextTick();
+  checkRetry.value?.focus();
+});
 async function retryCheck() {
   if (checking.value) return;
   checking.value = true;
@@ -32,9 +40,8 @@ async function retryCheck() {
     return;
   }
   if (checkFailed.value) {
-    // Still no answer: the alert stays and so does focus.
-    await nextTick();
-    checkRetry.value?.focus();
+    // Still no answer: a new alert replaces the old one and takes focus.
+    checkFailures.value++;
   }
 }
 
@@ -60,7 +67,7 @@ async function onSignOut() {
       Could not sign you out. You are still signed in.
       <button ref="retry" type="button" @click="onSignOut">Retry</button>
     </div>
-    <div v-if="checkFailed && !route.meta.public" role="alert" class="page-alert">
+    <div v-if="checkFailed && !route.meta.public" :key="checkFailures" role="alert" class="page-alert">
       <h1>Could not check your session</h1>
       <p>Your sign-in is not affected.</p>
       <button ref="checkRetry" type="button" :aria-disabled="checking" @click="retryCheck">Retry</button>
