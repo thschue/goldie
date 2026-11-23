@@ -5,7 +5,7 @@ const route = useRoute();
 </script>
 
 <template>
-  <h1>{{ route.meta.heading ?? route.meta.title }}</h1>
+  <h1>{{ route.meta.title }}</h1>
   <!-- Copy: handoff §8, "Empty state". Neutral, never gold (§1.3). -->
   <div role="status" class="panel">Nothing to show yet. Content appears here as goldie's pages come online.</div>
 </template>
