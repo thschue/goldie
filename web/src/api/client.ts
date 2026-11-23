@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-const fallback = "Couldn't load this. Try again in a moment.";
+export const fallback = "Couldn't load this. Try again in a moment.";
 const clip = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
 
 export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {

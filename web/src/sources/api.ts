@@ -21,8 +21,33 @@ export async function loadSources(signal?: AbortSignal): Promise<SourceStatus[]>
   return failingFirst(sources);
 }
 
-// Starts a sync (POST /api/v1/sync, 202): the outcome is read from the status afterwards.
+// Starts a sync (POST /api/v1/sync, 202): the poll runs on after the answer, so its outcome is
+// read from the status afterwards (waitForSync).
 export const resync = () => post('/api/v1/sync');
+
+const pollTimes = (sources: SourceStatus[]) => sources.map((s) => s.last_poll ?? '').join('|');
+
+// The sync has ended once a Source's last_poll differs from `before`. Polls the status every
+// `every` ms for at most `limit` ms and resolves with the latest list read (undefined when no read
+// worked); an aborted signal rejects with the AbortError.
+export async function waitForSync(before: SourceStatus[], signal: AbortSignal, every = 1000, limit = 45000) {
+  const start = pollTimes(before);
+  const deadline = Date.now() + limit;
+  let latest: SourceStatus[] | undefined;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve, reject) => {
+      const t = setTimeout(resolve, every);
+      signal.addEventListener('abort', () => (clearTimeout(t), reject(new DOMException('', 'AbortError'))), { once: true });
+    });
+    try {
+      latest = await loadSources(signal);
+      if (pollTimes(latest) !== start) break;
+    } catch (e) {
+      if (signal.aborted) throw e;
+    }
+  }
+  return latest;
+}
 
 let pending: Promise<unknown> | undefined;
 
