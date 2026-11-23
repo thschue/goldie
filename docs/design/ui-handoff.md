@@ -133,7 +133,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 ![Agent assets, Skills tab](screenshots/assets.png)
 
 - Header with a `goldie pull --dry-run` snippet, then tabs: Skills · Agents · Loops · Instructions.
-- **Skills**: a card grid, sortable by **uses (30d)** (the default) or name, with a line naming the usage data source. Each card shows name, Scope, `requires_sync` badge, a "not used in 30 days" badge (published Items with zero uses, #32), uses (30d), description and slash command (`/goldie:<name>`). Script skills add the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
+- **Skills** (MVP cut, #587): a card grid sorted by name, ascending, with no sort control. Usage figures, the "not used in 30 days" badge and the sort by uses come with #32. Each card shows the name (an h2), Scope (no chip when the API sends none), description and the MCP prompt name `goldie-<name>` (pinned by #411; it replaces the earlier `/goldie:<name>`). Script skills add the `requires_sync` badge and the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents**: a list. Each row shows the materialised path `.claude/agents/goldie-<name>.md` and uses (30d).
 - **Loops**: a featured loop with interval or dynamic, stop condition, the dependency closure (loop → agents/skills as chips), and the start commands (`goldie pull`, `/loop /goldie-<name>`).
 - **Instructions**: a target switch (CLAUDE.md / AGENTS.md), the digest, a rendered managed block preview in the code surface (including the built-in decisions clause from #34; rendered with the same Markdown rules as articles, #21), and `goldie instructions apply`.
