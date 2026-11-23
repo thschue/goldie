@@ -1,4 +1,4 @@
-# 25. Item digests
+# 26. Item digests
 
 Status: proposed (the maintainer decides; #406)
 

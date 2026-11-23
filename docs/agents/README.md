@@ -134,8 +134,9 @@ either/or with a recommendation, through the product session's `Maintainer inbox
 
 **Harness feedback.** When a rule is missing, wrong or slows the flow, append one comment to the
 pinned `Harness feedback` issue: what happened, its cost in time, the evidence, and a proposed rule.
-Never open a harness PR; the maintainer ships a batch weekly. Host problems (disk, network,
-toolchain, sandbox) go to the user in the session report, never in a public issue.
+Never open a harness PR; the maintainer ships a batch weekly. The host is fixed: on low disk,
+remove finished worktrees and their `node_modules` and run `go clean -testcache`, unreported. A
+host problem that still blocks work goes to the user once in the session report, never in an issue.
 
 ## Guardrails enforced by the harness
 
@@ -144,8 +145,7 @@ toolchain, sandbox) go to the user in the session report, never in a public issu
   writes, statuses, settings, labels, secrets, containers and cloud CLIs. Cases are in
   `testdata/loop-guard/cases.tsv`. It matches command text, so post every comment and PR body
   with `--body-file`, and never `go clean -cache` (the cache is shared between sessions).
-- The allowlist in `.claude/settings.json` means a permission prompt in a loop is a harness bug: file
-  it as harness feedback.
+- With the allowlist in `.claude/settings.json`, a permission prompt in a loop is harness feedback.
 - Agent definitions pin model and tools; they are copies of `examples/knowledge/global/agents/`
   (`./run sync-agents`).
 

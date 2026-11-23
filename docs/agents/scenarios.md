@@ -13,7 +13,7 @@ number names the case that motivated the rule.
 | S5 | Implementer wants to change an acceptance-test assertion | delivery | `tests request` marker → `test-author`: `tests approved=` (its own commit) or `tests rejected`; never an implementer edit |
 | S6 | Implementer edited a `main` test line without approval | delivery | `scripts/merge-pr` exits 3; a blocking finding, back to the implementer |
 | S7 | Review: one blocking and two `fix: now` LOWs; or only `now` LOWs (#345–#349) | delivery | Same implementer fixes all of them (`SendMessage`), a polish pass if only LOWs; only those reviewers re-check; no follow-up issue |
-| S8 | Blocking finding still open after 2 fix rounds | delivery | `review reason=round-cap` marker, `needs-info reason=round-cap`; inbox "Decide" |
+| S8 | Blocking finding still open after 3 fix rounds | delivery | `review reason=round-cap` marker, `needs-info reason=round-cap`; inbox "Decide" |
 | S9 | Clean review, gate exits 1 (new direct dependency, verified brief, #50) | delivery | `needs-maintainer`, marker lists the reasons and the brief; nothing merged |
 | S10 | Clean review, `run` gains a task (#58); another PR adds `\|\| true` to an existing step | delivery | First: `review:` reason judged not significant in the marker, merged. Second: significant, `needs-maintainer` |
 | S12 | Diff adds a package under `internal/` and touches `internal/api/auth.go` | delivery | `reviewer`, `architect` and `security-reviewer` from the review table |

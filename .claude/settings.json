@@ -61,6 +61,7 @@
     }
   },
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "160000"
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "160000",
+    "GOFLAGS": "-trimpath"
   }
 }

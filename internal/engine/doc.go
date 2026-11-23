@@ -13,7 +13,7 @@
 // local, then Project, then global, whole. A bundle is capped on files and
 // bytes, and a path inside it is exact: a symlink, a FIFO or a device is
 // skipped and never followed, and two paths that differ only in case fail the
-// load. Its Digest follows ADR 0025 and RequiresSync says whether pull must
+// load. Its Digest follows ADR 0026 and RequiresSync says whether pull must
 // write more than Markdown. Every Source shares one loader over an fs.FS: DirSource hands it
 // the os.Root-confined directory, and a read-only fs.FS over a git tree lets a
 // commit load the same way without a working tree. That tree fs.FS never

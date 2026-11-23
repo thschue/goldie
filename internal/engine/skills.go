@@ -57,7 +57,7 @@ type Skill struct {
 	// Files is every file of the bundle, SKILL.md included, sorted by the
 	// byte order of Path.
 	Files []SkillFile
-	// Digest is "sha256:" and 64 lowercase hex digits (ADR 0025).
+	// Digest is "sha256:" and 64 lowercase hex digits (ADR 0026).
 	Digest string
 	// RequiresSync is true when any file is not a .md file, or any file is
 	// executable: such a bundle cannot be served as Markdown alone.
@@ -254,7 +254,7 @@ func esc(p string) string {
 	return q[1 : len(q)-1]
 }
 
-// digestFiles is the Item digest of a bundle (ADR 0025): SHA-256 over the
+// digestFiles is the Item digest of a bundle (ADR 0026): SHA-256 over the
 // files in the byte order of their paths, each as
 //
 //	path 0x00 x 0x00 length 0x00 bytes
