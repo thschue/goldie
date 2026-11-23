@@ -120,13 +120,18 @@ func TestParseRolesRejectsAMisspeltRoleKey(t *testing.T) {
 	}
 }
 
-// Nested anchors that each alias the previous one ten times expand to 10^7
+// Nested anchors that each alias the previous one ten times expand to 10^9
 // nodes from a few lines. The walk bound fires and the parse fails, quickly.
 func TestParseRolesFailsOnAnAliasBomb(t *testing.T) {
+	const fanout, levels = 10, 8 // a0 holds fanout leaves; each later anchor aliases the previous one fanout times
+	nodes := 1
+	for i := 0; i <= levels; i++ {
+		nodes *= fanout
+	}
 	var b strings.Builder
 	b.WriteString("paths:\n  /a:\n    get:\n      x-goldie-role: operator\nx-bomb:\n  - &a0 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n")
-	for i := 1; i <= 8; i++ {
-		fmt.Fprintf(&b, "  - &a%d [%s]\n", i, strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d, ", i-1), 10), ", "))
+	for i := 1; i <= levels; i++ {
+		fmt.Fprintf(&b, "  - &a%d [%s]\n", i, strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d, ", i-1), fanout), ", "))
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -136,10 +141,61 @@ func TestParseRolesFailsOnAnAliasBomb(t *testing.T) {
 	select {
 	case err := <-done:
 		if err == nil {
-			t.Fatal("an alias bomb of 10^8 nodes was accepted: the walk must stop at maxWalkSteps and fail")
+			t.Fatalf("an alias bomb of %d (10^9) nodes was accepted: the walk must stop at maxWalkSteps and fail", nodes)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the walk of an alias bomb did not stop within 5s: maxWalkSteps must bound it")
+	}
+}
+
+// goldie's own header X-Goldie-Client and a schema property named like an
+// extension are names, not extension keys: they stay legal as KEYS of a
+// headers or properties mapping. These cases fail until the narrowed rejection
+// in roles.go lands.
+func TestParseRolesAcceptsXGoldieNamesAsHeaderAndPropertyKeys(t *testing.T) {
+	const op = "paths:\n  /a:\n    get:\n      x-goldie-role: operator\n"
+	for name, tail := range map[string]string{
+		"header name in a response": "components:\n  responses:\n    R:\n      description: d\n      headers:\n        X-Goldie-Client:\n          schema:\n            type: string\n",
+		"schema property name":      "components:\n  schemas:\n    S:\n      type: object\n      properties:\n        x-goldie-roles:\n          type: string\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := op + tail
+			got, err := parseOperatorPaths([]byte(spec))
+			if err != nil || !got["/a"] || len(got) != 1 {
+				t.Errorf("paths: got %v, %v, want only /a", got, err)
+			}
+			if p, err := parseOperatorParameters([]byte(spec)); err != nil || len(p) != 0 {
+				t.Errorf("parameters: got %v, %v, want an empty set", p, err)
+			}
+		})
+	}
+}
+
+// The narrowing must not open a hole: a misspelt key next to those mappings, a
+// role mark in the VALUES under them, and a misspelt key at the root still
+// fail. Only the root case needs the roles.go change (the (root) location);
+// the others must keep failing.
+func TestParseRolesStillRejectsWhatTheNarrowingMustNotOpen(t *testing.T) {
+	const op = "paths:\n  /a:\n    get:\n      x-goldie-role: operator\n"
+	for name, c := range map[string]struct{ tail, key, where string }{
+		"misspelt key next to headers":  {"components:\n  responses:\n    R:\n      description: d\n      x-goldie-roles: operator\n      headers:\n        X-Goldie-Client:\n          schema:\n            type: string\n", "x-goldie-roles", "R"},
+		"mark inside a header object":   {"components:\n  responses:\n    R:\n      description: d\n      headers:\n        X-Goldie-Client:\n          x-goldie-role: operator\n          schema:\n            type: string\n", "x-goldie-role", "X-Goldie-Client"},
+		"mark inside a property schema": {"components:\n  schemas:\n    S:\n      type: object\n      properties:\n        p:\n          x-goldie-role: operator\n", "x-goldie-role", "p"},
+		"misspelt key at the root":      {"x-goldie-roles: operator\n", "x-goldie-roles", "(root)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			spec := op + c.tail
+			got, err := parseOperatorPaths([]byte(spec))
+			if err == nil {
+				t.Fatalf("accepted, got %v", got)
+			}
+			if !strings.Contains(err.Error(), c.key) || !strings.Contains(err.Error(), c.where) {
+				t.Errorf("error %q does not name the key %q and the location %q", err, c.key, c.where)
+			}
+			if p, err := parseOperatorParameters([]byte(spec)); err == nil {
+				t.Errorf("parseOperatorParameters accepted it, got %v", p)
+			}
+		})
 	}
 }
 
