@@ -100,7 +100,7 @@ func TestLifecycleFrontmatterIsParsed(t *testing.T) {
 		"not-forced": {"published", false, ""},
 		"old":        {"deprecated", true, "article:published"},
 	} {
-		a, ok := snap.Article(id)
+		a, ok := snap.Article(id, engine.ReadOptions{Drafts: true})
 		if !ok {
 			t.Fatalf("%s: not found", id)
 		}
@@ -459,7 +459,7 @@ func TestSnapshotRecoversOnceTheContentIsFixed(t *testing.T) {
 	if s.Current() == first {
 		t.Fatal("a good load must swap the Snapshot")
 	}
-	a, ok := s.Current().Article("bad")
+	a, ok := s.Current().Article("bad", engine.ReadOptions{Drafts: true})
 	if !ok {
 		t.Fatal("the fixed article is not served")
 	}
