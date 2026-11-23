@@ -40,12 +40,16 @@ if nobody would notice, it isn't a finding.
    - every criterion has one;
    - no existing test was weakened, including through tests the implementer added (the test lock
      checks existing files mechanically; you check intent);
-   - changed lines are covered.
+   - changed lines are covered;
+   - the tests are in proportion: one case per behaviour, not a matrix of every input.
+   **Over-engineering:** code, checks, caps, options or tests beyond what the criteria and a real
+   risk need are blocking, with what to cut. The criteria themselves can over-reach: say so.
 7. **Sweep the class:** for each finding, search the whole diff for the same mistake and report all
    instances as one finding.
 8. **Classify:**
    - **blocking:** incorrect behaviour, an unmet criterion, a broken user flow, a MEDIUM+ security
-     issue, a new pattern where one exists, a failed dependency brief, an untested behaviour;
+     issue, a new pattern where one exists, a failed dependency brief, an untested behaviour,
+     over-engineering;
    - **LOW:** everything else with real impact, each with a concrete fix and `fix: now` (about 20
      lines in the PR's files, or the same job done elsewhere, such as a second copy of what the PR
      changes, at any size; the implementer makes it in this PR) or `fix: follow-up` (with the value
