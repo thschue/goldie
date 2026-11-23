@@ -1,6 +1,6 @@
 # 24. API wire names are snake_case
 
-Status: proposed (the maintainer decides; #365)
+Status: accepted
 
 ## Context
 

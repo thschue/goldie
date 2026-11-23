@@ -1,6 +1,6 @@
 # 25. Role rules are marked once in the spec, with `x-goldie-role`
 
-Status: proposed
+Status: accepted
 
 ## Context
 
