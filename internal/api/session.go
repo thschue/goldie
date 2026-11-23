@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ const SessionPath = "/api/v1/session"
 
 const (
 	// sessionTTL is how long a session lives without use: each authenticated
-	// GET or HEAD re-issues the cookie for another sessionTTL.
+	// request with the cookie re-issues it for another sessionTTL.
 	sessionTTL = 30 * time.Minute
 	// sessionMaxAge is the absolute cap after sign-in.
 	sessionMaxAge = 7 * 24 * time.Hour
@@ -116,7 +115,7 @@ func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenE
 // send it back.
 const CSRFHeader = "X-Goldie-CSRF"
 
-// csrf is the double-submit token of the session of e that began at issued
+// csrf is the CSRF token, an HMAC bound to the session, sent in a header, of the session of e that began at issued
 // (Unix seconds): an HMAC under the session key over the token's name, its
 // digest and the sign-in time. It is the same for the life of the session,
 // across cookie re-issues, and for no other session, key or token value.
@@ -135,18 +134,8 @@ var crossOrigin = http.NewCrossOriginProtection()
 
 // crossSite reports a request whose Origin or Sec-Fetch-Site says another
 // site sent it. A request with neither header (a non-browser client) passes;
-// the CSRF token is what it needs. The Origin scheme is compared too when the
-// request came over TLS, which http.CrossOriginProtection leaves out.
-func crossSite(r *http.Request) bool {
-	if crossOrigin.Check(r) != nil {
-		return true
-	}
-	if o := r.Header.Get("Origin"); o != "" && r.TLS != nil {
-		u, err := url.Parse(o)
-		return err != nil || u.Scheme != "https"
-	}
-	return false
-}
+// the CSRF token is what it needs.
+func crossSite(r *http.Request) bool { return crossOrigin.Check(r) != nil }
 
 // plain reports a plain-http request to the dev server, where a browser would
 // drop a Secure or __Host- cookie. Any other server keeps both.
@@ -171,9 +160,9 @@ func (s *Sessions) setCookie(w http.ResponseWriter, r *http.Request, value strin
 	})
 }
 
-// serveCookie authenticates a GET or HEAD with a valid session cookie: the
+// serveCookie authenticates a request with a valid session cookie (an unsafe method also needs the CSRF token): the
 // token is looked up by name, so its Role is the configuration's now and a
-// removed token ends the session. It re-issues the cookie. handled is false
+// removed token ends the session. It re-issues the cookie on every request it lets through. handled is false
 // when the request carries no cookie.
 func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Role, next http.Handler) (handled bool) {
 	c, err := r.Cookie(t.sessions.cookieName(r))
@@ -238,9 +227,8 @@ func NoStore(next http.Handler) http.Handler {
 // (sign-in and sign-out): no caching, a small body, and a cross-origin
 // request is refused (http.CrossOriginProtection).
 func SessionEntry(next http.Handler) http.Handler {
-	cop := http.NewCrossOriginProtection()
 	return NoStore(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := cop.Check(r); err != nil {
+		if crossSite(r) {
 			WriteError(w, http.StatusForbidden, "forbidden", "cross-origin requests to the session are refused",
 				"Send the request from the same origin.")
 			return

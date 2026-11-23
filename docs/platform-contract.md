@@ -93,7 +93,8 @@ and running `./run regen`.
   session cookie `POST /api/v1/session` issues for a valid token (ADR 0027): a signed, `HttpOnly`,
   `SameSite=Strict` cookie that authenticates `GET` and `HEAD`, and an unsafe method only with the
   signed CSRF token (`X-Goldie-CSRF`, returned by sign-in and `GET /api/v1/session`) and no
-  cross-site `Origin` or `Sec-Fetch-Site`; a bearer token beats it and needs no CSRF token. The session cookie is a credential, so it is never logged; it is signed with
+  cross-site `Origin` or `Sec-Fetch-Site`; a bearer token beats it and needs no CSRF token. The
+  session cookie is a credential, so it is never logged; it is signed with
   `GOLDIE_SESSION_KEY` (or `_FILE`), a secret the startup report shows as `(redacted)` or `(unset)`,
   and a random per-process key is used when it is unset. No other header or query parameter is a
   credential. The server hashes the token and compares it with every configured
