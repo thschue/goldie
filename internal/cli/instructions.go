@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -182,24 +181,31 @@ var (
 // comment, or a link reference definition (which applies to the whole file).
 // Markers are refused by ReplaceBlock. The block is untrusted Source content.
 func checkBlockContent(block []byte) error {
-	inFence := false
+	var fence string // the open fence's marker, "" outside one
 	for _, line := range strings.Split(string(block), "\n") {
+		if m := fenceRE.FindStringSubmatch(line); m != nil {
+			switch fence {
+			case "":
+				fence = m[1]
+			case m[1]:
+				fence = ""
+			}
+			continue
+		}
 		switch {
-		case fenceRE.MatchString(line):
-			inFence = !inFence
-		case inFence:
+		case fence != "":
 		case htmlRE.MatchString(line):
 			return errBlockRender("raw HTML")
 		case linkDefRE.MatchString(line):
 			return errBlockRender("a link reference definition")
 		}
 	}
-	if inFence {
+	if fence != "" {
 		return errBlockRender("a code fence that is never closed")
 	}
 	return nil
 }
 
 func errBlockRender(what string) error {
-	return fmt.Errorf("the block goldie wants to write holds %s, which could change how the rest of %s renders; nothing was written. Report it to the platform team", what, filepath.Base("the file"))
+	return fmt.Errorf("the block the server sent holds %s, which could change how the rest of the file renders; nothing was written. Report it to the platform team", what)
 }
