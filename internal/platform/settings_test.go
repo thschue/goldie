@@ -38,6 +38,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got[envGitCABundle] = "" // reported only as set or unset; it has no default
 	// The session key is a secret with no default: unset means a random per-process key.
 	got[EnvSessionKey] = ""
+	got[EnvMCPName] = cfg.MCPName
 
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
@@ -179,5 +180,21 @@ func TestConfigReferenceOpenTelemetryIntroMatchesPC12(t *testing.T) {
 	}
 	if strings.Contains(section, "Traces of the public listener and logs are exported") {
 		t.Error("the old intro, which leaves out metrics, is still there")
+	}
+}
+
+func TestMCPNameSetting(t *testing.T) {
+	load := func(env map[string]string) (Config, error) {
+		return LoadConfig(func(k string) (string, bool) { v, ok := env[k]; return v, ok })
+	}
+	cfg, err := load(map[string]string{EnvMCPName: "acme-golden"})
+	if err != nil || cfg.MCPName != "acme-golden" {
+		t.Errorf("MCPName = %q, err %v, want acme-golden", cfg.MCPName, err)
+	}
+	for _, bad := range []string{"has space", "a\nb", "{{cli}}", strings.Repeat("a", 65), "nämé"} {
+		_, err := load(map[string]string{EnvMCPName: bad})
+		if err == nil || !strings.Contains(err.Error(), EnvMCPName) || strings.Contains(err.Error(), bad) {
+			t.Errorf("%s=%q: err %v, want a rejection naming the variable and not the value", EnvMCPName, bad, err)
+		}
 	}
 }

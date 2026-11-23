@@ -46,6 +46,10 @@ func (stub) GetAgent(context.Context, GetAgentRequestObject) (GetAgentResponseOb
 	return GetAgent200JSONResponse{}, nil
 }
 
+func (stub) GetInstructions(context.Context, GetInstructionsRequestObject) (GetInstructionsResponseObject, error) {
+	return GetInstructions200JSONResponse{}, nil
+}
+
 func (stub) ListProjects(context.Context, ListProjectsRequestObject) (ListProjectsResponseObject, error) {
 	return ListProjects200JSONResponse{Projects: []ProjectId{}}, nil
 }

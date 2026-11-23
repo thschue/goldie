@@ -133,6 +133,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instructions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the instruction block
+         * @description Returns the instruction block for the Project and target: the clauses that
+         *     resolve in the Project's view and name the target, in order, with the
+         *     variables replaced. `{{mcp_name}}` is the server setting
+         *     `GOLDIE_MCP_NAME` (default `goldie`) and `{{cli}}` is `goldie`. When no
+         *     clause applies, the block is the built-in default. The `digest` is the
+         *     hex SHA-256 of the block, so a client can tell whether its copy is current.
+         */
+        get: operations["getInstructions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -546,6 +571,25 @@ export interface components {
             /**
              * @description Present when the request named a Project that is not registered: the
              *     agent answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /** @description The rendered instruction block for a Project and target. */
+        InstructionBlock: {
+            /**
+             * @description The block text, variables replaced. It is derived from Source content and is untrusted.
+             * @example This repository (github.com/acme/shop) uses Goldie for its golden paths.
+             */
+            block: string;
+            /**
+             * @description The hex SHA-256 of `block`.
+             * @example 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+             */
+            digest: string;
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     block is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
              */
             hint?: string;
@@ -1591,6 +1635,61 @@ export interface operations {
             };
             /** @description No agent has this name; the hint points to the agent list. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getInstructions: {
+        parameters: {
+            query: {
+                /**
+                 * @description The file the block is written into: `claude` (CLAUDE.md) or `agents`
+                 *     (AGENTS.md). Anything else, or none, is a 400.
+                 */
+                target: string;
+                /**
+                 * @description Render for this Project (ADR 0020): its own clauses win over the
+                 *     global ones with the same name. Matched ignoring case. An
+                 *     unregistered Project answers the global block with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The block and its digest. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstructionBlock"];
+                };
+            };
+            /** @description For the instruction block, `target` is missing or not a known target (the hint names them), or `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the instruction block, no bearer token was sent, or it is wrong. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

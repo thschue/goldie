@@ -518,7 +518,7 @@ func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src so
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, append(activityFederation(cfg, logger), opts...)...)
+	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, append([]api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"})}, append(activityFederation(cfg, logger), opts...)...)...)
 	if err != nil {
 		return nil, err
 	}

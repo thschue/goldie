@@ -115,3 +115,35 @@ func (s *Server) GetAgent(ctx context.Context, req contract.GetAgentRequestObjec
 	}
 	return contract.GetAgent200JSONResponse{Name: a.Name, Description: a.Description, Hint: hint}, nil
 }
+
+// badTarget is the 400 envelope for a missing or unknown target. It names the
+// valid ones and echoes nothing of the request.
+var badTarget = envelope("bad_request", "invalid target",
+	"Pass target as claude (for CLAUDE.md) or agents (for AGENTS.md).")
+
+// WithInstructionVars sets the variables of the instruction blocks the Server
+// renders: {{mcp_name}} is GOLDIE_MCP_NAME and {{cli}} is goldie. Without it
+// both are goldie.
+func WithInstructionVars(v engine.InstructionVars) ServerOption {
+	return func(s *Server) { s.instructionVars = v }
+}
+
+// GetInstructions answers GET /api/v1/instructions. The target is checked
+// against the two the engine knows before anything else, so it never reaches a
+// lookup or the answer.
+func (s *Server) GetInstructions(_ context.Context, req contract.GetInstructionsRequestObject) (contract.GetInstructionsResponseObject, error) {
+	if req.Params.Target != engine.TargetClaude && req.Params.Target != engine.TargetAgents {
+		return contract.GetInstructions400JSONResponse(badTarget), nil
+	}
+	project, ok := validProject(req.Params.Project)
+	if !ok {
+		return contract.GetInstructions400JSONResponse(badProject), nil
+	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.GetInstructions503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, hint := scopeHint(snap, project)
+	block, digest := snap.Instructions(proj, req.Params.Target, s.instructionVars)
+	return contract.GetInstructions200JSONResponse{Block: block, Digest: digest, Hint: hint}, nil
+}
