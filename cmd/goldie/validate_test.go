@@ -198,8 +198,11 @@ func TestValidateUnusableDirectories(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			stdout, stderr, code := runValidate(t, t.TempDir(), validateEnv(), "validate", dir)
 			reason := wantInvalid(t, stdout, stderr, code, dir, "s3cret", base)
-			if reason != "content directory is not readable" {
-				t.Errorf("reason = %q, want %q", reason, "content directory is not readable")
+			// #485: the reason is the message plus the next step, nothing else.
+			if !strings.HasPrefix(reason, "content directory is not readable") ||
+				!strings.HasSuffix(reason, "check that the content directory exists and is readable") {
+				t.Errorf("reason = %q, want %q followed by the hint %q", reason,
+					"content directory is not readable", "check that the content directory exists and is readable")
 			}
 		})
 	}
