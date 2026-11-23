@@ -240,7 +240,7 @@ func openStream(t *testing.T, ctx context.Context, client *http.Client, url stri
 }
 
 // nextEvent returns the next dispatched event, skipping comments and the live
-// marker that ends the history (#245; activity_federated_test.go pins it).
+// marker that ends the history (#245; activity_live_marker_test.go pins it).
 func nextEvent(t *testing.T, s *sseLive, within time.Duration) sseEvent {
 	t.Helper()
 	deadline := time.After(within)
