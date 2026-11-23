@@ -464,13 +464,16 @@ func minTime(a, b time.Time) time.Time {
 }
 
 // markSeen remembers k and evicts keys that are too old or over the bound.
+// The bound is on the queue, not the set: Add forgets keys from seen but
+// leaves their entries queued, and every key in seen has an entry, so a
+// bounded queue bounds both.
 func (m *Merger) markSeen(k eventKey, now time.Time) {
 	m.seenSeq++
 	m.seen[k] = m.seenSeq
 	m.seenFIFO = append(m.seenFIFO, seenEntry{k, now, m.seenSeq})
 	for m.seenHead < len(m.seenFIFO) {
 		old := m.seenFIFO[m.seenHead]
-		if len(m.seen) <= m.seenMax && now.Sub(old.at) <= seenRetentionWindows*m.window {
+		if len(m.seenFIFO)-m.seenHead <= m.seenMax && now.Sub(old.at) <= seenRetentionWindows*m.window {
 			break
 		}
 		if m.seen[old.key] == old.seq { // not the same key seen again since Add forgot it

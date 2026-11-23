@@ -359,3 +359,79 @@ func TestLookupActivityPeersCapsThePeers(t *testing.T) {
 		t.Errorf("%d PTR queries for %d peers, all of them named: no PTR query past the cap", len(r.ptrAsked), len(peers))
 	}
 }
+
+// Only global unicast addresses are peers; private ranges are. Loopback,
+// link-local, multicast, unspecified and broadcast answers are dropped before
+// any PTR query and are not counted as skipped: the forwarded token never
+// goes to them (#398 review).
+func TestLookupActivityPeersTakesGlobalUnicastAddressesOnly(t *testing.T) {
+	refused := []string{"127.0.0.1", "::1", "169.254.169.254", "fe80::1", "224.0.0.1", "ff02::1", "0.0.0.0", "::", "255.255.255.255"}
+	r := &fakeResolver{
+		hosts: map[string][]string{headless: append(slices.Clone(refused), "10.0.2.5", "192.168.2.6", "fd00::2:7")},
+		ptrs: map[string][]string{
+			"10.0.2.5":    {"goldie-0.goldie-headless.goldie.svc.cluster.local."},
+			"192.168.2.6": {"goldie-1.goldie-headless.goldie.svc.cluster.local."},
+			"fd00::2:7":   {"goldie-2.goldie-headless.goldie.svc.cluster.local."},
+		},
+	}
+	for i, a := range refused {
+		r.ptrs[a] = []string{fmt.Sprintf("goldie-%d.goldie-headless.goldie.svc.cluster.local.", 10+i)}
+	}
+	peers, skipped, err := lookupActivityPeers(t.Context(), r, headless, "8080")
+	if err != nil {
+		t.Fatalf("lookupActivityPeers: %v", err)
+	}
+	want := []activityPeer{
+		{Name: "goldie-0", URL: "http://10.0.2.5:8080"},
+		{Name: "goldie-1", URL: "http://192.168.2.6:8080"},
+		{Name: "goldie-2", URL: "http://[fd00::2:7]:8080"},
+	}
+	if !slices.Equal(peers, want) || skipped != 0 {
+		t.Errorf("peers %+v skipped %d, want %+v and 0", peers, skipped, want)
+	}
+	for _, a := range r.ptrAsked {
+		if slices.Contains(refused, a) {
+			t.Errorf("a PTR query went out for %s", a)
+		}
+	}
+}
+
+// A name is one replica. This replica's own name, the "goldie" fallback
+// included, is no peer and not counted. One IPv4 and one IPv6 address may
+// share a name (a dual-stack pod); two addresses of one family claiming a name
+// make it no peer, and every address claiming it counts as skipped (#398
+// review).
+func TestLookupActivityPeersKeepsNamesUnique(t *testing.T) {
+	g0 := activityPeer{Name: "goldie-0", URL: "http://10.0.3.1:8080"}
+	g1 := activityPeer{Name: "goldie-1", URL: "http://10.0.3.2:8080"}
+	g := activityPeer{Name: "goldie", URL: "http://10.0.3.7:8080"}
+	g4 := activityPeer{Name: "goldie-4", URL: "http://10.0.3.8:8080"}
+	for self, want := range map[string][]activityPeer{"goldie-0": {g1, g, g4}, "goldie": {g0, g1, g4}} {
+		old := activityReplicaName
+		activityReplicaName = func() string { return self }
+		r := &fakeResolver{
+			hosts: map[string][]string{headless: {
+				"10.0.3.1", "10.0.3.2", "fd00::3:2", "10.0.3.3", "10.0.3.4", "fd00::3:5", "fd00::3:6", "10.0.3.7", "10.0.3.8",
+			}},
+			ptrs: map[string][]string{
+				"10.0.3.1":  {"goldie-0.goldie-headless.goldie.svc.cluster.local."}, // this replica, maybe
+				"10.0.3.2":  {"goldie-1.goldie-headless.goldie.svc.cluster.local."}, // dual-stack goldie-1
+				"fd00::3:2": {"goldie-1.goldie-headless.goldie.svc.cluster.local."},
+				"10.0.3.3":  {"goldie-2.goldie-headless.goldie.svc.cluster.local."}, // two IPv4 claim goldie-2
+				"10.0.3.4":  {"goldie-2.goldie-headless.goldie.svc.cluster.local."},
+				"fd00::3:5": {"goldie-3.goldie-headless.goldie.svc.cluster.local."}, // two IPv6 claim goldie-3
+				"fd00::3:6": {"goldie-3.goldie-headless.goldie.svc.cluster.local."},
+				"10.0.3.7":  {"goldie.goldie-headless.goldie.svc.cluster.local."}, // the fallback name
+				"10.0.3.8":  {"goldie-4.goldie-headless.goldie.svc.cluster.local."},
+			},
+		}
+		peers, skipped, err := lookupActivityPeers(t.Context(), r, headless, "8080")
+		activityReplicaName = old
+		if err != nil {
+			t.Fatalf("self %q: lookupActivityPeers: %v", self, err)
+		}
+		if !slices.Equal(peers, want) || skipped != 4 {
+			t.Errorf("self %q: peers %+v skipped %d, want %+v and 4", self, peers, skipped, want)
+		}
+	}
+}

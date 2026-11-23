@@ -33,19 +33,22 @@ const (
 )
 
 // lookupActivityPeers resolves name, the operator's GOLDIE_ACTIVITY_PEERS and
-// never request input, to the peers. Each address of name that is an IP
-// address and not one of this host's own gives a peer named by the first PTR
-// answer of the form <label>.<name's labels>[.more] whose label passes
-// replicaLabel and is not a dashed IP (10-1-2-3, CoreDNS's name for an
-// endpoint without a hostname): activityPeer{label lower-cased,
-// http://<address>:<port>}. A PTR answer only names a peer; the URL is always
-// the A address. An address without such an answer is skipped and counted,
-// never named after its address. Answers that are not IP addresses, repeated
-// addresses, this host's own addresses and a second address of a name
-// already found (a dual-stack pod) are dropped and not counted; past
-// maxActivityPeers addresses no PTR query goes out. err is the A query's
-// failure only; it may name the DNS server, so log it, never send it to a
-// client.
+// never request input, to the peers. Each address of name that is a global
+// unicast IP address (private ranges included) and not one of this host's
+// own gives a peer named by the first PTR answer of the form
+// <label>.<name's labels>[.more] whose label passes replicaLabel and is not a
+// dashed IP (10-1-2-3, CoreDNS's name for an endpoint without a hostname):
+// activityPeer{label lower-cased, http://<address>:<port>}. A PTR answer only
+// names a peer; the URL is always the A address. A name is one replica: it
+// may be claimed by at most one IPv4 and one IPv6 address (a dual-stack pod,
+// one peer at the first address DNS gave); a name two addresses of one family
+// claim is no peer, and every address claiming it is skipped and counted. An
+// address without such an answer is skipped and counted, never named after
+// its address. Answers that are not global unicast IP addresses, repeated
+// addresses, this host's own addresses and addresses named as this replica
+// (activityReplicaName) are dropped and not counted; past maxActivityPeers
+// addresses no PTR query goes out. err is the A query's failure only; it may
+// name the DNS server, so log it, never send it to a client.
 func lookupActivityPeers(ctx context.Context, r peerResolver, name, port string) (peers []activityPeer, skipped int, err error) {
 	ctx, cancel := context.WithTimeout(ctx, peerLookupTimeout)
 	defer cancel()
@@ -53,11 +56,16 @@ func lookupActivityPeers(ctx context.Context, r peerResolver, name, port string)
 	if err != nil {
 		return nil, 0, err
 	}
-	own := ownAddresses()
-	addrs, names := map[string]bool{}, map[string]bool{}
+	own, self := ownAddresses(), activityReplicaName()
+	type claim struct {
+		first string // the first address DNS gave for the name
+		n     [2]int // addresses claiming it, IPv4 and IPv6
+	}
+	addrs, claims := map[string]bool{}, map[string]*claim{}
+	var order []string
 	for _, a := range answers {
 		ip := net.ParseIP(a)
-		if ip == nil || addrs[ip.String()] || slices.ContainsFunc(own, ip.Equal) {
+		if ip == nil || !ip.IsGlobalUnicast() || addrs[ip.String()] || slices.ContainsFunc(own, ip.Equal) {
 			continue
 		}
 		if len(addrs) == maxActivityPeers {
@@ -70,10 +78,27 @@ func lookupActivityPeers(ctx context.Context, r peerResolver, name, port string)
 		switch {
 		case !ok:
 			skipped++
-		case !names[label]:
-			names[label] = true
-			peers = append(peers, activityPeer{Name: label, URL: "http://" + net.JoinHostPort(addr, port)})
+		case label != self:
+			c := claims[label]
+			if c == nil {
+				c = &claim{first: addr}
+				claims[label] = c
+				order = append(order, label)
+			}
+			family := 1
+			if ip.To4() != nil {
+				family = 0
+			}
+			c.n[family]++
 		}
+	}
+	for _, label := range order {
+		c := claims[label]
+		if c.n[0] > 1 || c.n[1] > 1 {
+			skipped += c.n[0] + c.n[1]
+			continue
+		}
+		peers = append(peers, activityPeer{Name: label, URL: "http://" + net.JoinHostPort(c.first, port)})
 	}
 	return peers, skipped, nil
 }

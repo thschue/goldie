@@ -165,6 +165,12 @@ func TestActivityPeersRejectsAnythingButADNSName(t *testing.T) {
 		"marker\u200b.svc",
 		"marker\u202e.svc",
 		"\uff4darker.svc", // fullwidth m
+		"10.0.0.1",        // an IPv4 literal is no name: it would bypass the PTR naming
+		"127.0.0.1",
+		"192.168.1.255",
+		"marker.123", // a numeric last label (a top-level domain is never all digits)
+		"marker.0",
+		"1.2.3",
 	} {
 		_, err := loadEnv(map[string]string{envActivityPeers: v})
 		if err == nil || !strings.Contains(err.Error(), envActivityPeers) {

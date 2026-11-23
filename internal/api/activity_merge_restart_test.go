@@ -87,3 +87,38 @@ func TestMerger_RestartedPeerReattachedSoonGetsItsNewHistoryThrough(t *testing.T
 	}
 	r.expectNone()
 }
+
+// A peer that restarts again and again, each time sending fewer events than
+// the dedup bound, must not grow the Merger: Add forgets its keys, so the
+// queue of seen keys, not only the set, is what the bound has to cap.
+func TestMerger_RepeatedRestartsKeepTheDedupQueueBounded(t *testing.T) {
+	r := startMerger(t, MergeConfig{MaxBuffered: 1}) // a bound of 64 keys
+	go func() {
+		for range r.out { // drained: only the Merger's memory is checked
+		}
+	}()
+	down := func() bool {
+		r.m.mu.Lock()
+		defer r.m.mu.Unlock()
+		st, ok := r.m.inputs["p"]
+		return ok && !st.up
+	}
+	var id uint64
+	for round := range 40 {
+		live := make(chan Event)
+		if !r.m.Add(MergeInput{Name: "p", Live: live}) {
+			t.Fatalf("round %d: Add refused", round)
+		}
+		for range 50 {
+			id++
+			sendEv(t, live, mergeEv("p", id, mergeT0.Add(time.Duration(id)*time.Millisecond)))
+		}
+		close(live)
+		r.waitFor("p down", down)
+	}
+	r.m.mu.Lock()
+	defer r.m.mu.Unlock()
+	if q := len(r.m.seenFIFO) - r.m.seenHead; q > r.m.seenMax || len(r.m.seen) > r.m.seenMax {
+		t.Errorf("after 2000 events in 40 restarts: %d queued keys, %d seen keys; want both at most %d", q, len(r.m.seen), r.m.seenMax)
+	}
+}

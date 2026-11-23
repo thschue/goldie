@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -256,9 +257,15 @@ func CheckOneSource(contentDir, gitURL string) error {
 }
 
 // isDNSName reports whether s is a DNS name as written: dot-separated
-// IsDNSLabel labels, at most 253 bytes, without a trailing dot.
+// IsDNSLabel labels, at most 253 bytes, without a trailing dot, and not an
+// address: neither an IP literal nor a name whose last label is all digits
+// (no top-level domain is), such as 10.0.0.1.
 func isDNSName(s string) bool {
-	if len(s) > 253 {
+	if len(s) > 253 || net.ParseIP(s) != nil {
+		return false
+	}
+	last := s[strings.LastIndexByte(s, '.')+1:]
+	if strings.Trim(last, "0123456789") == "" {
 		return false
 	}
 	for label := range strings.SplitSeq(s, ".") {
