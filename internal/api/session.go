@@ -24,8 +24,7 @@ const (
 	// sessionTTL is how long a session lives without use: each authenticated
 	// GET or HEAD re-issues the cookie for another sessionTTL.
 	sessionTTL = 30 * time.Minute
-	// sessionMaxAge is the absolute cap: re-issuing never moves a session's
-	// end past this long after sign-in.
+	// sessionMaxAge is the absolute cap after sign-in.
 	sessionMaxAge = 7 * 24 * time.Hour
 	// MinSessionKeyLength is the shortest signing key accepted, in bytes.
 	MinSessionKeyLength = 32
@@ -217,7 +216,6 @@ func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.toke
 var unauthorizedSession = envelope("unauthorized", "missing or invalid API token",
 	"Send the API token in the body: {\"token\": \"<token>\"}.")
 
-// PostSession answers POST /api/v1/session; the cookie is set by sessionCookies.
 func (s *Server) PostSession(_ context.Context, req contract.PostSessionRequestObject) (contract.PostSessionResponseObject, error) {
 	if s.tokens == nil || s.tokens.sessions == nil || req.Body == nil {
 		return contract.PostSession401JSONResponse(unauthorizedSession), nil
@@ -230,7 +228,6 @@ func (s *Server) PostSession(_ context.Context, req contract.PostSessionRequestO
 	return contract.PostSession200JSONResponse{Name: e.name, Role: contract.SessionRole(e.role.String())}, nil
 }
 
-// GetSession answers GET /api/v1/session for a request the guard let through.
 func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObject) (contract.GetSessionResponseObject, error) {
 	if s.provider() == nil {
 		return contract.GetSession503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
@@ -243,8 +240,6 @@ func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObj
 	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String())}, nil
 }
 
-// DeleteSession answers DELETE /api/v1/session; the cookie is cleared by
-// sessionCookies.
 func (s *Server) DeleteSession(context.Context, contract.DeleteSessionRequestObject) (contract.DeleteSessionResponseObject, error) {
 	return contract.DeleteSession204Response{}, nil
 }

@@ -843,10 +843,9 @@ type ClientInterface interface {
 
 	// GetSession Read who the session cookie signs in
 	//
-	// Returns the name and the current role of the token behind a valid
-	// session cookie (or a bearer token). The role is read from the
-	// configuration on each request, so a change shows at once, and a token
-	// removed from it ends the session. Any other request is a 401. The
+	// Returns the name and current role of the token behind a valid
+	// session cookie (or a bearer token); a token removed from the
+	// configuration ends its sessions. Any other request is a 401. The
 	// response is `Cache-Control: no-store`.
 	//
 	// Corresponds with GET /api/v1/session (the `GetSession` operationId).
@@ -857,13 +856,11 @@ type ClientInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-	// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-	// the token's name and its times, signed (ADR 0027), never the token or
-	// its role, and expires after a short idle time and at an absolute
-	// limit; each use re-issues it. The cookie authenticates `GET` and
-	// `HEAD` requests only, and a bearer token beats it. This operation takes
-	// no bearer token: the token in the body is the credential, and a
+	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+	// loopback listener, `goldie server --dev`). It names the token and its
+	// times under a signature (ADR 0027), expires after a short idle time and
+	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. The response is
 	// `Cache-Control: no-store`.
 	//
@@ -877,13 +874,11 @@ type ClientInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-	// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-	// the token's name and its times, signed (ADR 0027), never the token or
-	// its role, and expires after a short idle time and at an absolute
-	// limit; each use re-issues it. The cookie authenticates `GET` and
-	// `HEAD` requests only, and a bearer token beats it. This operation takes
-	// no bearer token: the token in the body is the credential, and a
+	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+	// loopback listener, `goldie server --dev`). It names the token and its
+	// times under a signature (ADR 0027), expires after a short idle time and
+	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. The response is
 	// `Cache-Control: no-store`.
 	//
@@ -1129,10 +1124,9 @@ func (c *Client) DeleteSession(ctx context.Context, reqEditors ...RequestEditorF
 
 // GetSession Read who the session cookie signs in
 //
-// Returns the name and the current role of the token behind a valid
-// session cookie (or a bearer token). The role is read from the
-// configuration on each request, so a change shows at once, and a token
-// removed from it ends the session. Any other request is a 401. The
+// Returns the name and current role of the token behind a valid
+// session cookie (or a bearer token); a token removed from the
+// configuration ends its sessions. Any other request is a 401. The
 // response is `Cache-Control: no-store`.
 //
 // Corresponds with GET /api/v1/session (the `GetSession` operationId).
@@ -1153,13 +1147,11 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-// the token's name and its times, signed (ADR 0027), never the token or
-// its role, and expires after a short idle time and at an absolute
-// limit; each use re-issues it. The cookie authenticates `GET` and
-// `HEAD` requests only, and a bearer token beats it. This operation takes
-// no bearer token: the token in the body is the credential, and a
+// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+// loopback listener, `goldie server --dev`). It names the token and its
+// times under a signature (ADR 0027), expires after a short idle time and
+// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. The response is
 // `Cache-Control: no-store`.
 //
@@ -1183,13 +1175,11 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-// the token's name and its times, signed (ADR 0027), never the token or
-// its role, and expires after a short idle time and at an absolute
-// limit; each use re-issues it. The cookie authenticates `GET` and
-// `HEAD` requests only, and a bearer token beats it. This operation takes
-// no bearer token: the token in the body is the credential, and a
+// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+// loopback listener, `goldie server --dev`). It names the token and its
+// times under a signature (ADR 0027), expires after a short idle time and
+// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. The response is
 // `Cache-Control: no-store`.
 //
@@ -1970,10 +1960,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetSessionWithResponse Read who the session cookie signs in
 	//
-	// Returns the name and the current role of the token behind a valid
-	// session cookie (or a bearer token). The role is read from the
-	// configuration on each request, so a change shows at once, and a token
-	// removed from it ends the session. Any other request is a 401. The
+	// Returns the name and current role of the token behind a valid
+	// session cookie (or a bearer token); a token removed from the
+	// configuration ends its sessions. Any other request is a 401. The
 	// response is `Cache-Control: no-store`.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -1986,13 +1975,11 @@ type ClientWithResponsesInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-	// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-	// the token's name and its times, signed (ADR 0027), never the token or
-	// its role, and expires after a short idle time and at an absolute
-	// limit; each use re-issues it. The cookie authenticates `GET` and
-	// `HEAD` requests only, and a bearer token beats it. This operation takes
-	// no bearer token: the token in the body is the credential, and a
+	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+	// loopback listener, `goldie server --dev`). It names the token and its
+	// times under a signature (ADR 0027), expires after a short idle time and
+	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. The response is
 	// `Cache-Control: no-store`.
 	//
@@ -2006,13 +1993,11 @@ type ClientWithResponsesInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-	// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-	// the token's name and its times, signed (ADR 0027), never the token or
-	// its role, and expires after a short idle time and at an absolute
-	// limit; each use re-issues it. The cookie authenticates `GET` and
-	// `HEAD` requests only, and a bearer token beats it. This operation takes
-	// no bearer token: the token in the body is the credential, and a
+	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+	// loopback listener, `goldie server --dev`). It names the token and its
+	// times under a signature (ADR 0027), expires after a short idle time and
+	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// token beats it. This operation takes no bearer token, and a
 	// cross-origin request is refused with a 403. The response is
 	// `Cache-Control: no-store`.
 	//
@@ -3317,10 +3302,9 @@ func (c *ClientWithResponses) DeleteSessionWithResponse(ctx context.Context, req
 
 // GetSessionWithResponse Read who the session cookie signs in
 //
-// Returns the name and the current role of the token behind a valid
-// session cookie (or a bearer token). The role is read from the
-// configuration on each request, so a change shows at once, and a token
-// removed from it ends the session. Any other request is a 401. The
+// Returns the name and current role of the token behind a valid
+// session cookie (or a bearer token); a token removed from the
+// configuration ends its sessions. Any other request is a 401. The
 // response is `Cache-Control: no-store`.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -3339,13 +3323,11 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-// the token's name and its times, signed (ADR 0027), never the token or
-// its role, and expires after a short idle time and at an absolute
-// limit; each use re-issues it. The cookie authenticates `GET` and
-// `HEAD` requests only, and a bearer token beats it. This operation takes
-// no bearer token: the token in the body is the credential, and a
+// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+// loopback listener, `goldie server --dev`). It names the token and its
+// times under a signature (ADR 0027), expires after a short idle time and
+// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. The response is
 // `Cache-Control: no-store`.
 //
@@ -3365,13 +3347,11 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix; on a plain-http loopback listener
-// (`goldie server --dev`) `Secure` and the prefix are dropped. It holds
-// the token's name and its times, signed (ADR 0027), never the token or
-// its role, and expires after a short idle time and at an absolute
-// limit; each use re-issues it. The cookie authenticates `GET` and
-// `HEAD` requests only, and a bearer token beats it. This operation takes
-// no bearer token: the token in the body is the credential, and a
+// `Secure` with the `__Host-` prefix (both dropped on a plain-http
+// loopback listener, `goldie server --dev`). It names the token and its
+// times under a signature (ADR 0027), expires after a short idle time and
+// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// token beats it. This operation takes no bearer token, and a
 // cross-origin request is refused with a 403. The response is
 // `Cache-Control: no-store`.
 //

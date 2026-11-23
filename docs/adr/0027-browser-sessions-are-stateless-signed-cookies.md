@@ -4,10 +4,9 @@ Status: accepted
 
 ## Context
 
-The UI is a browser app, and a bearer token kept in page script is readable by any script that runs
-in the page. The server has no database (it keeps no state beyond its content), and it runs as
-several replicas that share nothing. A browser needs a way to sign in with a token once and then
-read the API without holding the token.
+A bearer token kept in a browser page is readable by any script in it. The server keeps no state
+beyond its content and runs as replicas that share nothing, yet a browser must sign in once and
+then read the API without holding the token.
 
 ## Decision
 
@@ -20,8 +19,7 @@ once.
 
 - The cookie authenticates `GET` and `HEAD` only. An unsafe method with only a cookie is refused
   (403), so a cookie cannot be used to change anything. A bearer token beats a cookie.
-- Sign-in and sign-out are the operations that take no bearer token. A cross-origin request to them
-  is refused (`http.CrossOriginProtection`).
+- Sign-in and sign-out take no bearer token; a cross-origin request to them is refused.
 - A session ends after a short idle time, which each use extends, and at an absolute limit from
   sign-in.
 - The signing key is `GOLDIE_SESSION_KEY` (or its `_FILE` form). Without one, each process makes a
