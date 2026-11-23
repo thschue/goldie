@@ -80,10 +80,10 @@ func TestMCPToolsAreAdvertised(t *testing.T) {
 	for _, tl := range res.Tools {
 		got[tl.Name] = tl.Description
 	}
-	if len(got) != 2 {
-		t.Fatalf("tools = %v, want search_knowledge and get_article", got)
+	if len(got) != 4 {
+		t.Fatalf("tools = %v, want search_knowledge, get_article, list_projects and current_context", got)
 	}
-	for _, name := range []string{"search_knowledge", "get_article"} {
+	for _, name := range []string{"search_knowledge", "get_article", "list_projects", "current_context"} {
 		if d, ok := got[name]; !ok || d == "" {
 			t.Errorf("tool %s missing or has no description", name)
 		}
@@ -94,7 +94,8 @@ func TestMCPToolsAreAdvertised(t *testing.T) {
 }
 
 // The tool shapes are part of the frozen contract (ADR 0011): each tool takes
-// exactly one required string argument.
+// exactly one required string argument, plus the optional string project
+// added by #107.
 func TestMCPToolInputSchemas(t *testing.T) {
 	res, err := connect(t, testToken).ListTools(context.Background(), nil)
 	if err != nil {
@@ -122,9 +123,9 @@ func TestMCPToolInputSchemas(t *testing.T) {
 		if err := json.Unmarshal(raw, &schema); err != nil {
 			t.Fatalf("%s: input schema: %v", tl.Name, err)
 		}
-		if schema.Type != "object" || len(schema.Properties) != 1 || schema.Properties[arg].Type != "string" ||
-			!slices.Equal(schema.Required, []string{arg}) {
-			t.Errorf("%s: want one required string property %q, got %s", tl.Name, arg, raw)
+		if schema.Type != "object" || len(schema.Properties) != 2 || schema.Properties[arg].Type != "string" ||
+			schema.Properties["project"].Type != "string" || !slices.Equal(schema.Required, []string{arg}) {
+			t.Errorf("%s: want one required string property %q and an optional string project, got %s", tl.Name, arg, raw)
 		}
 	}
 	if seen != len(want) {
