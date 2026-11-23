@@ -166,14 +166,19 @@ func TestPublicHandlerReportsEveryConfigErrorInOneRun(t *testing.T) {
 // line naming that variable and not the others.
 func TestPublicHandlerReportsOnlyTheProblemsThereAre(t *testing.T) {
 	const marker = "s3cret marker 0123456789abcdef0123"
+	shortKey := strings.Repeat("k", 31)
 	good := platform.Config{ContentDir: testContent, APIToken: testToken, RateLimit: platform.DefaultRateLimit()}
 	bad := func(mutate func(*platform.Config)) platform.Config { c := good; mutate(&c); return c }
 	for want, cfg := range map[string]platform.Config{
 		platform.EnvAPIToken:   bad(func(c *platform.Config) { c.APIToken = marker }),
 		platform.EnvRateLimit:  bad(func(c *platform.Config) { c.RateLimit = platform.RateLimit{} }),
 		platform.EnvContentDir: bad(func(c *platform.Config) { c.ContentDir = filepath.Join(t.TempDir(), "missing") }),
+		platform.EnvSessionKey: bad(func(c *platform.Config) { c.SessionKey = shortKey }),
 	} {
 		lines, err := configErrors(t, want, cfg)
+		if strings.Contains(err.Error(), shortKey) {
+			t.Errorf("only %s bad: err = %q contains the key", want, err)
+		}
 		if len(lines) != 1 || !strings.Contains(err.Error(), want) {
 			t.Errorf("only %s bad: err = %q, want one line naming it", want, err)
 		}
@@ -182,6 +187,21 @@ func TestPublicHandlerReportsOnlyTheProblemsThereAre(t *testing.T) {
 				t.Errorf("only %s bad: err = %q also names %s", want, err, other)
 			}
 		}
+	}
+}
+
+// A too-short session key is reported together with another bad setting, and
+// the key text is never echoed.
+func TestShortSessionKeyIsReportedWithOtherProblems(t *testing.T) {
+	shortKey := strings.Repeat("k", 31)
+	_, err := configErrors(t, "short key and no rate limit", platform.Config{ContentDir: testContent, APIToken: testToken, SessionKey: shortKey})
+	for _, name := range []string{platform.EnvSessionKey, platform.EnvRateLimit} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("err = %q, want it to name %s", err, name)
+		}
+	}
+	if strings.Contains(err.Error(), shortKey) {
+		t.Errorf("err = %q contains the key", err)
 	}
 }
 
