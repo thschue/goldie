@@ -199,12 +199,13 @@ func CheckAPITokenPairing(token, tokens string) error {
 }
 
 // checkOneSource refuses GOLDIE_CONTENT_DIR and GOLDIE_GIT_URL set together,
-// after their _FILE forms are read: a process serves one Source. Like the
-// token pairing it is part of LoadConfig, so goldie health refuses it too. The
-// error names both variables and neither value: the URL may hold a password.
+// after their _FILE forms are read: until several Sources are configurable
+// (ADR 0004), a process serves one. Like the token pairing it is part of
+// LoadConfig, so goldie health refuses it too. The error names both variables
+// and neither value: the URL may hold a password.
 func checkOneSource(contentDir, gitURL string) error {
 	if contentDir != "" && gitURL != "" {
-		return fmt.Errorf("%s and %s are both set: set exactly one Source", EnvContentDir, EnvGitURL)
+		return fmt.Errorf("%s and %s are both set: for now a process serves one Source, so set only one", EnvContentDir, EnvGitURL)
 	}
 	return nil
 }
@@ -274,7 +275,9 @@ func setOrUnset(v string) string {
 // scheme usr with an opaque rest. Everything before the last @ that is not a
 // scheme is userinfo, so an @ in a path costs the host, never a password; from
 // the first ?, # or character a URL cannot hold (a space, a control or
-// non-ASCII character, a quote), the rest is dropped.
+// non-ASCII character, a quote), the rest is dropped. When such a byte comes
+// before the last @, nothing tells a password holding it from a query or
+// fragment holding the @, so all but the scheme is dropped.
 func redactGitURL(raw string) string {
 	if raw == "" {
 		return ""
@@ -287,30 +290,45 @@ func redactGitURL(raw string) string {
 		rest = afterScheme
 	}
 	if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+		if end := urlEnd(rest); end < at {
+			return b.String() + "(redacted)"
+		}
 		b.WriteString("(redacted)@")
 		rest = rest[at+1:]
 	}
-	for i := 0; i < len(rest); i++ {
-		switch c := rest[i]; {
-		case c == '?':
-			return b.String() + "?(redacted)"
-		case c == '#':
-			return b.String() + "#(redacted)"
-		case !isURLByte(c):
-			return b.String() + "(redacted)"
-		default:
-			b.WriteByte(c)
-		}
+	end := urlEnd(rest)
+	b.WriteString(rest[:end])
+	switch {
+	case end == len(rest):
+	case rest[end] == '?':
+		b.WriteString("?(redacted)")
+	case rest[end] == '#':
+		b.WriteString("#(redacted)")
+	default:
+		b.WriteString("(redacted)")
 	}
 	return b.String()
 }
 
-// isURLScheme reports whether s is a URL scheme (RFC 3986 3.1).
+// urlEnd is the index of the first ?, # or byte a URL's authority or path
+// cannot hold in s, or len(s) when there is none.
+func urlEnd(s string) int {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c == '?' || c == '#' || !isURLByte(c) {
+			return i
+		}
+	}
+	return len(s)
+}
+
+// isURLScheme reports whether s is a URL scheme (RFC 3986 3.1): a letter, then
+// letters, digits, '+', '-' or '.'.
 func isURLScheme(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		letter := 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z'
-		if !letter && (i == 0 || !('0' <= c && c <= '9' || c == '+' || c == '-' || c == '.')) {
+		other := '0' <= c && c <= '9' || c == '+' || c == '-' || c == '.'
+		if !letter && (i == 0 || !other) {
 			return false
 		}
 	}
