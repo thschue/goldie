@@ -1,7 +1,7 @@
 // The Sources calls (#633): the sync status of every Source, for operators (GET /api/v1/sync).
 import { ref } from 'vue';
 import { plain } from '../assets/api';
-import { get } from '../api/client';
+import { get, post } from '../api/client';
 import type { components } from '../api/schema';
 
 export type SourceStatus = components['schemas']['SourceSyncStatus'];
@@ -21,6 +21,35 @@ export async function loadSources(signal?: AbortSignal): Promise<SourceStatus[]>
   return failingFirst(sources);
 }
 
+// Starts a sync (POST /api/v1/sync, 202): the poll runs on after the answer, so its outcome is
+// read from the status afterwards (waitForSync).
+export const resync = () => post('/api/v1/sync');
+
+const pollTimes = (sources: SourceStatus[]) => sources.map((s) => s.last_poll ?? '').join('|');
+
+// The sync has ended once a Source's last_poll differs from `before` (or, with no Source at all,
+// once a read comes back empty). Polls the status every `every` ms for at most `limit` ms and
+// resolves with the latest list read (undefined when no read worked) and whether the sync ended;
+// an aborted signal rejects with the AbortError.
+export async function waitForSync(before: SourceStatus[], signal: AbortSignal, every = 1000, limit = 45000) {
+  const start = pollTimes(before);
+  const deadline = Date.now() + limit;
+  let rows: SourceStatus[] | undefined;
+  while (Date.now() < deadline) {
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => (clearTimeout(t), reject(new DOMException('', 'AbortError')));
+      const t = setTimeout(() => (signal.removeEventListener('abort', onAbort), resolve()), every);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      rows = await loadSources(signal);
+      if (pollTimes(rows) !== start || (!before.length && !rows.length)) return { rows, ended: true };
+    } catch (e) {
+      if (signal.aborted) throw e;
+    }
+  }
+  return { rows, ended: false };
+}
 let pending: Promise<unknown> | undefined;
 
 // The nav's one load: it never throws (a nav count that can't load is just absent) and several

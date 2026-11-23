@@ -2,9 +2,10 @@
 // from GET /api/v1/sync, failing ones first, and the nav count of failing
 // Sources. Read-only. The API is stubbed per test (page.route) so every state
 // is deterministic. The session role is stubbed too: the page is for
-// operators, a reader gets the 403 page.
-import { expect, test, type Page, type Route } from '@playwright/test';
-import { eachViewport, evidence, sideNav, withNav } from './ux';
+// operators, a reader gets the 403 page. The Resync button (#634) calls
+// POST /api/v1/sync with the session's CSRF token (#490).
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import { eachViewport, evidence, expectFocusRing, sideNav, withNav } from './ux';
 
 const apiSync = /\/api\/v1\/sync$/;
 
@@ -22,6 +23,42 @@ const asRole = (page: Page, role: 'reader' | 'operator') =>
 
 const stubSync = (page: Page, sources: Source[]) =>
   page.route(apiSync, (route) => json(route, 200, { sources, warnings: [] }));
+
+const csrf = 'csrf-token-for-the-session';
+
+// An operator whose session answers with a CSRF token, as GET /api/v1/session does (ADR 0027).
+const asOperatorWithCsrf = (page: Page) =>
+  page.route('**/api/v1/session', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'X-Goldie-CSRF': csrf },
+          body: JSON.stringify({ name: 'ux', role: 'operator' }),
+        })
+      : route.continue(),
+  );
+
+// stubResync answers GET with `before` until a POST has been answered, then with `after`. The POST
+// waits for release(), so a test can look at the page while the sync runs. Posts holds the requests.
+function stubResync(page: Page, before: Source[], after: Source[], answer: (route: Route) => unknown) {
+  const posts: Request[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let done = false;
+  void page.route(apiSync, async (route) => {
+    if (route.request().method() === 'POST') {
+      posts.push(route.request());
+      await gate;
+      done = true;
+      return answer(route);
+    }
+    return json(route, 200, { sources: done ? after : before, warnings: [] });
+  });
+  return { posts, release };
+}
+
+const resync = (page: Page) => main(page).getByRole('button', { name: /^(resync|syncing)/i });
 
 const main = (page: Page) => page.getByRole('main');
 const rows = (page: Page) => main(page).getByRole('listitem');
@@ -68,6 +105,28 @@ eachViewport((width, theme) => {
     await page.goto('/ops/sources');
     await expect(main(page).getByRole('alert')).toBeVisible();
     await evidence(page, width, theme, '-error', 'sources');
+  });
+
+  test('the Sources page while a Resync runs is captured and axe-clean', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [healthy], (route) => json(route, 202, {}));
+    await page.goto('/ops/sources');
+    await resync(page).click();
+    await expect(resync(page)).toHaveText(/syncing/i);
+    await evidence(page, width, theme, '-syncing', 'sources');
+    sync.release();
+  });
+
+  test('the Sources page with a refused Resync is captured and axe-clean', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [failing], (route) =>
+      json(route, 429, envelope('sync_running', 'A sync is already running.', 'Wait for the running sync to end.')),
+    );
+    await page.goto('/ops/sources');
+    sync.release();
+    await resync(page).click();
+    await expect(main(page).getByRole('alert')).toContainText('Wait for the running sync to end.');
+    await evidence(page, width, theme, '-resync-error', 'sources');
   });
 
   test('the Sources page for a reader is captured and axe-clean', async ({ page }) => {
@@ -217,5 +276,104 @@ test.describe('the Sources page', () => {
     await expect(h1(page)).toHaveText('Sources');
     await expect(h1(page)).toBeFocused();
     expect(await h1(page).evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+  });
+
+  test('an operator Resync posts to the sync endpoint, shows "Syncing…" disabled until it ends, then refreshes the rows', async ({
+    page,
+  }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [healthy], (route) => json(route, 202, {}));
+    await page.goto('/ops/sources');
+    await expect(rows(page).first()).toContainText(failing.last_error!);
+    await expect(resync(page)).toHaveText('Resync');
+    await expect(resync(page)).toBeEnabled();
+
+    await resync(page).click();
+    await expect(resync(page)).toHaveText('Syncing…');
+    await expect(resync(page)).toBeDisabled();
+    expect(sync.posts, 'one POST so far').toHaveLength(1);
+    expect(sync.posts[0].method()).toBe('POST');
+
+    sync.release();
+    await expect(resync(page)).toHaveText('Resync');
+    await expect(resync(page)).toBeEnabled();
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page).first()).not.toContainText(failing.last_error!);
+    await expect(rows(page).first()).toContainText('1111111');
+    expect(sync.posts, 'still one POST').toHaveLength(1);
+  });
+
+  test('the Resync request carries the session CSRF token', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [healthy], [healthy], (route) => json(route, 202, {}));
+    sync.release();
+    await page.goto('/ops/sources');
+    await resync(page).click();
+    await expect.poll(() => sync.posts.length).toBe(1);
+    expect(await sync.posts[0].headerValue('x-goldie-csrf')).toBe(csrf);
+  });
+
+  test('a 429 sync_running shows its details.hint and the button works again', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [failing], (route) =>
+      json(route, 429, envelope('sync_running', 'A sync is already running.', 'Wait for the running sync to end.')),
+    );
+    sync.release();
+    await page.goto('/ops/sources');
+    await resync(page).click();
+    await expect(main(page).getByRole('alert')).toContainText('Wait for the running sync to end.');
+    await expect(resync(page)).toHaveText('Resync');
+    await expect(resync(page)).toBeEnabled();
+    await expect(rows(page)).toHaveCount(1);
+  });
+
+  test('any other Resync error shows as text, never more than the envelope', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [failing], (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: 'text/html',
+        body: '<pre>panic at /srv/goldie/x.go:12 10.0.0.7:8080</pre>',
+      }),
+    );
+    sync.release();
+    await page.goto('/ops/sources');
+    await resync(page).click();
+    const alert = main(page).getByRole('alert');
+    await expect(alert).toBeVisible();
+    await expect(alert).not.toContainText('panic');
+    await expect(alert).not.toContainText('10.0.0.7');
+    await expect(alert).not.toContainText('/srv/');
+    await expect(resync(page)).toBeEnabled();
+  });
+
+  test('a 5xx Resync error shows its details.hint', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [healthy], [healthy], (route) =>
+      json(route, 500, envelope('internal', 'Something went wrong.', 'Try again in a moment.')),
+    );
+    sync.release();
+    await page.goto('/ops/sources');
+    await resync(page).click();
+    await expect(main(page).getByRole('alert')).toContainText('Try again in a moment.');
+  });
+
+  test('a reader does not see the Resync button', async ({ page }) => {
+    await asRole(page, 'reader');
+    await page.goto('/ops/sources');
+    await expect(main(page)).toContainText('This page is for operators.');
+    await expect(page.getByRole('button', { name: /resync|syncing/i })).toHaveCount(0);
+  });
+
+  test('the Resync button shows a visible focus ring on keyboard focus', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    await stubSync(page, [healthy]);
+    await page.goto('/ops/sources');
+    await resync(page).focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(resync(page)).toBeFocused();
+    expect(await resync(page).evaluate((el) => el.matches(':focus-visible'))).toBe(true);
+    await expectFocusRing(resync(page));
   });
 });

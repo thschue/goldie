@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
 import { plain } from '../assets/api';
-import { isFailing, loadSources, when } from './api';
+import { ApiError, fallback } from '../api/client';
+import { isFailing, loadSources, resync, waitForSync, when, type SourceStatus } from './api';
 
 // The Sources page (#633, handoff §3.7, §5.3): a row per Source from GET /api/v1/sync, failing
 // ones first. Read-only. A reader gets the operators-only message and no request. The h1 renders
@@ -12,11 +13,62 @@ const operator = computed(() => role() === 'operator');
 const key = computed(() => (operator.value ? 'sync' : ''));
 const { state, data, failure, skeleton, limited, wait, retry } = useLoad(key, (_k, signal) => loadSources(signal));
 const forbidden = computed(() => !operator.value || (state.value === 'error' && failure.value?.status === 403));
+
+// Resync (#634): the POST answers 202 at once, so the button stays "Syncing…" until a poll of the
+// status shows the sync ended (or it times out), then the rows are replaced without a skeleton.
+// The button stays focusable (aria-disabled, not disabled) so focus is not lost.
+const rows = ref<SourceStatus[]>();
+const syncing = ref(false);
+const syncError = ref('');
+const note = ref('');
+const stillRunning = ref(false);
+const running = 'The sync is still running. Check back in a moment, or resync again.';
+const stop = new AbortController();
+onBeforeUnmount(() => stop.abort());
+watch(data, (v) => {
+  if (!v) return;
+  rows.value = v;
+  syncError.value = '';
+});
+async function startSync() {
+  if (syncing.value) return;
+  syncing.value = true;
+  syncError.value = '';
+  stillRunning.value = false;
+  note.value = '';
+  await nextTick(); // a changed text is what a live region announces
+  note.value = 'Sync started. Waiting for it to end.';
+  try {
+    const before = rows.value ?? [];
+    await resync();
+    const done = await waitForSync(before, stop.signal);
+    if (done.rows) rows.value = done.rows;
+    stillRunning.value = !done.ended;
+    note.value = done.ended ? 'Sync finished. Sources updated.' : running;
+  } catch (e) {
+    if (stop.signal.aborted) return;
+    note.value = '';
+    syncError.value = syncMessage(e);
+  } finally {
+    if (!stop.signal.aborted) syncing.value = false;
+  }
+}
+function syncMessage(e: unknown) {
+  if (!(e instanceof ApiError)) return "Couldn't start a sync. Try again in a moment.";
+  if (e.message === fallback) return "Couldn't start a sync. Try again in a moment.";
+  return e.hint ? `${e.message} ${e.hint}` : e.message;
+}
 </script>
 
 <template>
   <h1>Sources</h1>
   <p v-if="!forbidden" class="intro">Failing Sources first. A failing Source keeps serving its last good Snapshot.</p>
+  <div v-if="!forbidden" class="actions">
+    <button type="button" class="sync" :aria-disabled="syncing" @click="startSync">{{ syncing ? 'Syncing…' : 'Resync' }}</button>
+    <span aria-live="polite" aria-atomic="true" class="sr-only">{{ note }}</span>
+  </div>
+  <p v-if="stillRunning" class="intro" aria-hidden="true">{{ running }}</p>
+  <div v-if="syncError" role="alert" class="box danger sync-error"><p>{{ syncError }}</p></div>
   <div v-if="forbidden" role="status" class="box"><p>This page is for operators.</p></div>
 
   <div v-else-if="skeleton" aria-busy="true" class="list">
@@ -38,9 +90,9 @@ const forbidden = computed(() => !operator.value || (state.value === 'error' && 
   </div>
 
   <template v-else-if="state === 'ready'">
-    <div v-if="!data?.length" role="status" class="box"><p>No Source is configured.</p></div>
+    <div v-if="!rows?.length" role="status" class="box"><p>No Source is configured.</p></div>
     <ul v-else class="list">
-      <li v-for="(s, i) in data" :key="i" class="row" :class="{ bad: isFailing(s) }">
+      <li v-for="(s, i) in rows" :key="i" class="row" :class="{ bad: isFailing(s) }">
         <p class="head">
           <code>{{ s.revision ? plain(s.revision).slice(0, 7) : 'no revision' }}</code>
           <strong v-if="isFailing(s)" class="badge">Failing</strong>
@@ -149,6 +201,18 @@ dd {
   border-color: var(--miss-border);
   background: var(--miss-bg);
   color: var(--miss-ink);
+}
+.actions {
+  max-width: 940px;
+  margin: 0 0 var(--space-4);
+}
+.sync-error {
+  margin: 0 0 var(--space-4);
+}
+button[aria-disabled='true'] {
+  border-style: dashed;
+  color: var(--fg-secondary);
+  cursor: progress;
 }
 button {
   min-height: var(--target-min);
