@@ -212,8 +212,7 @@ Operation ID: `deleteSession`
 | Status | Description | Body |
 |---|---|---|
 | `204` | The cookie is cleared in 'Set-Cookie'. | none |
-| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
-| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `403` | The sign-out came from another origin, so the cookie is kept. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/session`
@@ -243,13 +242,16 @@ Sign in with a token and get a session cookie
 Exchanges a configured API token, sent as `token` in the JSON body,
 for a signed session cookie, so a browser never holds the token. The
 cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-`Secure` with the `__Host-` prefix (both dropped on a plain-http
-loopback listener, `goldie server --dev`). It names the token and its
-times under a signature (ADR 0027), expires after a short idle time and
-at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+`Secure` with the `__Host-` prefix (both dropped only on the
+plain-http loopback dev server, `goldie server --dev`; any other
+server, one behind a TLS proxy included, always sets both). It names
+the token and its times under a signature (ADR 0027), expires after 30
+minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+sign-in at the latest, ends when the token is removed or given a new
+value, and authenticates `GET` and `HEAD` only; a bearer
 token beats it. This operation takes no bearer token, and a
-cross-origin request is refused with a 403. The response is
-`Cache-Control: no-store`.
+cross-origin request is refused with a 403. Sign-in is not rate
+limited. The response is `Cache-Control: no-store`.
 
 Operation ID: `postSession`
 
@@ -257,8 +259,7 @@ Operation ID: `postSession`
 |---|---|---|
 | `200` | The token is valid; the session cookie is in 'Set-Cookie'. | `application/json` (`Session`) |
 | `401` | The body holds no configured token. | `application/json` (`ErrorEnvelope`) |
-| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. | `application/json` (`ErrorEnvelope`) |
-| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `403` | The request came from another origin. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/sync`
@@ -528,7 +529,7 @@ Who a session signs in.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `name` | `string` | yes | The name of the token behind the session. |
-| `role` | `string` | yes | The token's role, read from the configuration now. |
+| `role` | `string` | yes | The token's role, read from the configuration now. Clients ignore values they do not know. |
 
 ### `SessionRequest`
 

@@ -13,13 +13,16 @@ then read the API without holding the token.
 `POST /api/v1/session` exchanges a configured API token for a session cookie. The cookie is
 `HttpOnly`, `SameSite=Strict` and scoped to the whole site, and it carries the token's name and its
 issue and expiry times under an HMAC. It never carries the token or its Role. The server keeps no
-session store: it checks the HMAC, then looks the token name up in the current configuration, so the
-Role is always the configured one and a token removed from the configuration ends its sessions at
+session store: it looks the token name up in the current configuration, then checks the HMAC, which
+covers the name and the digest of the token's value. So the Role is always the configured one, and a
+token removed from the configuration, or given a new value under the same name, ends its sessions at
 once.
 
 - The cookie authenticates `GET` and `HEAD` only. An unsafe method with only a cookie is refused
   (403), so a cookie cannot be used to change anything. A bearer token beats a cookie.
-- Sign-in and sign-out take no bearer token; a cross-origin request to them is refused.
+- Sign-in and sign-out take no bearer token; a cross-origin request to them is refused. They are
+  deliberately unthrottled: sign-in is the same constant-time compare of a high-entropy token as any
+  bearer request, and neither reaches the rate limiter.
 - A session ends after a short idle time, which each use extends, and at an absolute limit from
   sign-in.
 - The signing key is `GOLDIE_SESSION_KEY` (or its `_FILE` form). Without one, each process makes a
@@ -27,7 +30,9 @@ once.
   must share the key. The key is never derived from token digests, so a leaked digest cannot forge
   a cookie. Rotating the key signs everyone out.
 - Over TLS the cookie is `Secure` with the `__Host-` prefix. On a plain-http loopback listener
-  (`goldie server --dev`) a browser would drop both, so they are left off there only.
+  (`goldie server --dev`, local mode) a browser would drop both, so they are left off there only. That
+  is decided by the configuration the composition root passes in, never by the Host header or a
+  forwarded header: goldie terminates no TLS, so a server behind a TLS proxy always gets both.
 
 ## Alternatives rejected
 

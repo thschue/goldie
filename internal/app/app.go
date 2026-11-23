@@ -466,10 +466,17 @@ func resultCounters(tel *platform.Telemetry) api.ServerOption {
 // minimum client version, the Swagger UI switch and the poll interval. PublicHandler and Local share it, so a local
 // server serves exactly what goldie server serves.
 func newPublic(cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
+	return newPublicSessions(false, cfg, tokens, src, logger, keepalive, opts...)
+}
+
+// newPublicSessions is newPublic; dev is true only for the loopback dev
+// server Local starts, whose plain-http session cookies drop Secure and
+// __Host-. It is never read from a request.
+func newPublicSessions(dev bool, cfg platform.Config, tokens *api.Tokens, src source, logger *slog.Logger, keepalive time.Duration, opts ...api.ServerOption) (*Public, error) {
 	if logger == nil {
 		logger = discardLogger
 	}
-	tokens, err := tokens.WithSessions(cfg.SessionKey)
+	tokens, err := tokens.WithSessions(cfg.SessionKey, dev)
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}

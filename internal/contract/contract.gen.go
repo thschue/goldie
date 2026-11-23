@@ -514,13 +514,13 @@ type Session struct {
 	// Examples: ci-reader
 	Name string `json:"name"`
 
-	// Role The token's role, read from the configuration now.
+	// Role The token's role, read from the configuration now. Clients ignore values they do not know.
 	//
 	// Examples: reader
 	Role SessionRole `json:"role"`
 }
 
-// SessionRole The token's role, read from the configuration now.
+// SessionRole The token's role, read from the configuration now. Clients ignore values they do not know.
 //
 // Examples: reader
 type SessionRole string
@@ -856,13 +856,16 @@ type ClientInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-	// loopback listener, `goldie server --dev`). It names the token and its
-	// times under a signature (ADR 0027), expires after a short idle time and
-	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. The response is
-	// `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -874,13 +877,16 @@ type ClientInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-	// loopback listener, `goldie server --dev`). It names the token and its
-	// times under a signature (ADR 0027), expires after a short idle time and
-	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. The response is
-	// `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1147,13 +1153,16 @@ func (c *Client) GetSession(ctx context.Context, reqEditors ...RequestEditorFn) 
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-// loopback listener, `goldie server --dev`). It names the token and its
-// times under a signature (ADR 0027), expires after a short idle time and
-// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. The response is
-// `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type.
 //
@@ -1175,13 +1184,16 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-// loopback listener, `goldie server --dev`). It names the token and its
-// times under a signature (ADR 0027), expires after a short idle time and
-// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. The response is
-// `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -1975,13 +1987,16 @@ type ClientWithResponsesInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-	// loopback listener, `goldie server --dev`). It names the token and its
-	// times under a signature (ADR 0027), expires after a short idle time and
-	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. The response is
-	// `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -1993,13 +2008,16 @@ type ClientWithResponsesInterface interface {
 	// Exchanges a configured API token, sent as `token` in the JSON body,
 	// for a signed session cookie, so a browser never holds the token. The
 	// cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-	// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-	// loopback listener, `goldie server --dev`). It names the token and its
-	// times under a signature (ADR 0027), expires after a short idle time and
-	// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+	// `Secure` with the `__Host-` prefix (both dropped only on the
+	// plain-http loopback dev server, `goldie server --dev`; any other
+	// server, one behind a TLS proxy included, always sets both). It names
+	// the token and its times under a signature (ADR 0027), expires after 30
+	// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+	// sign-in at the latest, ends when the token is removed or given a new
+	// value, and authenticates `GET` and `HEAD` only; a bearer
 	// token beats it. This operation takes no bearer token, and a
-	// cross-origin request is refused with a 403. The response is
-	// `Cache-Control: no-store`.
+	// cross-origin request is refused with a 403. Sign-in is not rate
+	// limited. The response is `Cache-Control: no-store`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -2624,32 +2642,18 @@ func (r SearchArticlesResponse) ContentType() string {
 	return ""
 }
 
-// DeleteSessionResponse429Headers the declared response headers of an HTTP 429 response for DeleteSession
-type DeleteSessionResponse429Headers struct {
-	RetryAfter *int
-}
-
 type DeleteSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	// JSON426 the response for an HTTP 426 `application/json` response
-	JSON426 *UpgradeRequired
-	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *RateLimited
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
-	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *DeleteSessionResponse429Headers
 }
 
-// GetJSON426 returns the response for an HTTP 426 `application/json` response
-func (r DeleteSessionResponse) GetJSON426() *UpgradeRequired {
-	return r.JSON426
-}
-
-// GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r DeleteSessionResponse) GetJSON429() *RateLimited {
-	return r.JSON429
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r DeleteSessionResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -2769,11 +2773,6 @@ func (r GetSessionResponse) ContentType() string {
 	return ""
 }
 
-// PostSessionResponse429Headers the declared response headers of an HTTP 429 response for PostSession
-type PostSessionResponse429Headers struct {
-	RetryAfter *int
-}
-
 type PostSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2781,14 +2780,10 @@ type PostSessionResponse struct {
 	JSON200 *Session
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
-	// JSON426 the response for an HTTP 426 `application/json` response
-	JSON426 *UpgradeRequired
-	// JSON429 the response for an HTTP 429 `application/json` response
-	JSON429 *RateLimited
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
-	// Headers429 the parsed response headers for an HTTP 429 response
-	Headers429 *PostSessionResponse429Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -2801,14 +2796,9 @@ func (r PostSessionResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
 }
 
-// GetJSON426 returns the response for an HTTP 426 `application/json` response
-func (r PostSessionResponse) GetJSON426() *UpgradeRequired {
-	return r.JSON426
-}
-
-// GetJSON429 returns the response for an HTTP 429 `application/json` response
-func (r PostSessionResponse) GetJSON429() *RateLimited {
-	return r.JSON429
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r PostSessionResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -3323,13 +3313,16 @@ func (c *ClientWithResponses) GetSessionWithResponse(ctx context.Context, reqEdi
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-// loopback listener, `goldie server --dev`). It names the token and its
-// times under a signature (ADR 0027), expires after a short idle time and
-// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. The response is
-// `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -3347,13 +3340,16 @@ func (c *ClientWithResponses) PostSessionWithBodyWithResponse(ctx context.Contex
 // Exchanges a configured API token, sent as `token` in the JSON body,
 // for a signed session cookie, so a browser never holds the token. The
 // cookie is `HttpOnly`, `SameSite=Strict` and `Path=/`, and over TLS
-// `Secure` with the `__Host-` prefix (both dropped on a plain-http
-// loopback listener, `goldie server --dev`). It names the token and its
-// times under a signature (ADR 0027), expires after a short idle time and
-// at an absolute limit, and authenticates `GET` and `HEAD` only; a bearer
+// `Secure` with the `__Host-` prefix (both dropped only on the
+// plain-http loopback dev server, `goldie server --dev`; any other
+// server, one behind a TLS proxy included, always sets both). It names
+// the token and its times under a signature (ADR 0027), expires after 30
+// minutes without use (each `GET` or `HEAD` extends it) and 7 days after
+// sign-in at the latest, ends when the token is removed or given a new
+// value, and authenticates `GET` and `HEAD` only; a bearer
 // token beats it. This operation takes no bearer token, and a
-// cross-origin request is refused with a 403. The response is
-// `Cache-Control: no-store`.
+// cross-origin request is refused with a 403. Sign-in is not rate
+// limited. The response is `Cache-Control: no-store`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -3970,19 +3966,12 @@ func ParseDeleteSessionResponse(rsp *http.Response) (*DeleteSessionResponse, err
 	case rsp.StatusCode == 204:
 		break // No content-type
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
-		var dest UpgradeRequired
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON426 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest RateLimited
-		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -3991,19 +3980,6 @@ func ParseDeleteSessionResponse(rsp *http.Response) (*DeleteSessionResponse, err
 		}
 		response.JSONDefault = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 429:
-		var headers DeleteSessionResponse429Headers
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value int
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -4111,19 +4087,12 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 		}
 		response.JSON401 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
-		var dest UpgradeRequired
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON426 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
-		var dest RateLimited
-		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON429 = &dest
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -4132,19 +4101,6 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 		}
 		response.JSONDefault = &dest
 
-	}
-
-	switch {
-	case rsp.StatusCode == 429:
-		var headers PostSessionResponse429Headers
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value int
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -5715,39 +5671,16 @@ func (response DeleteSession204Response) VisitDeleteSessionResponse(w http.Respo
 	return nil
 }
 
-type DeleteSession426JSONResponse struct{ UpgradeRequiredJSONResponse }
+type DeleteSession403JSONResponse ErrorEnvelope
 
-func (response DeleteSession426JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
+func (response DeleteSession403JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(426)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type DeleteSession429JSONResponse struct{ RateLimitedJSONResponse }
-
-func (response DeleteSession429JSONResponse) VisitDeleteSessionResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		{
-			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
-			if err != nil {
-				return fmt.Errorf("error styling response header Retry-After: %w", err)
-			}
-			w.Header().Set("Retry-After", v)
-		}
-	}
-	w.WriteHeader(429)
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5908,39 +5841,16 @@ func (response PostSession401JSONResponse) VisitPostSessionResponse(w http.Respo
 	return err
 }
 
-type PostSession426JSONResponse struct{ UpgradeRequiredJSONResponse }
+type PostSession403JSONResponse ErrorEnvelope
 
-func (response PostSession426JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
+func (response PostSession403JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(426)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type PostSession429JSONResponse struct{ RateLimitedJSONResponse }
-
-func (response PostSession429JSONResponse) VisitPostSessionResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	if response.Headers.RetryAfter != nil {
-		{
-			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
-			if err != nil {
-				return fmt.Errorf("error styling response header Retry-After: %w", err)
-			}
-			w.Header().Set("Retry-After", v)
-		}
-	}
-	w.WriteHeader(429)
+	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }
