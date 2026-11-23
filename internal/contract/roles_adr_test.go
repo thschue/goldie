@@ -7,10 +7,14 @@ import (
 	"testing"
 )
 
-// #420: the PR adds the ADR recording x-goldie-role (status proposed, next
-// free number, listed in the ADR index). It states what the mark means, where
-// it may sit, the fail-closed rule for the whole document, and the known
-// limitations that stay deliberate fail-closed defaults.
+// #420: an ADR records x-goldie-role and is listed in the ADR index. It states
+// what the mark means, where it may sit, the fail-closed rule for the whole
+// document, and the known limitations that stay deliberate fail-closed
+// defaults. The test pins neither the Status (the ADR is accepted later) nor
+// uniqueness (a later ADR, for example the auth work, may cite the extension):
+// it finds the recording ADR by its stable marker, the first file in sorted
+// order that mentions the extension, has a Decision section and is titled
+// about roles.
 func TestADRRecordsTheRoleExtension(t *testing.T) {
 	const dir = "../../docs/adr"
 	entries, err := os.ReadDir(dir)
@@ -34,10 +38,7 @@ func TestADRRecordsTheRoleExtension(t *testing.T) {
 		}
 	}
 	if file == "" {
-		t.Fatalf("no ADR in %s mentions %s: the PR must add the ADR recording it", dir, RoleExtension)
-	}
-	if !strings.Contains(text, "Status: proposed") {
-		t.Errorf("ADR %s lacks the line \"Status: proposed\"", file)
+		t.Fatalf("no ADR in %s mentions %s in a Decision section under a title about roles: the ADR recording it is missing", dir, RoleExtension)
 	}
 	lower := strings.ToLower(text)
 	for _, want := range []string{

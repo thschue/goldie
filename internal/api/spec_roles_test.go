@@ -45,6 +45,7 @@ type specParam struct {
 	Marked   bool
 	Schema   map[string]any
 	Example  any
+	Ref      string // the $ref it was reached through, empty when inline
 }
 
 type specDoc struct {
@@ -71,14 +72,19 @@ func resolveParam(t *testing.T, doc *specDoc, raw any) specParam {
 	if !ok {
 		t.Fatalf("parameter entry %v is not a mapping", raw)
 	}
+	var p specParam
 	if ref, ok := m["$ref"].(string); ok {
 		name, found := strings.CutPrefix(ref, "#/components/parameters/")
 		if !found || doc.Components.Parameters[name] == nil {
 			t.Fatalf("parameter $ref %q does not point into components/parameters", ref)
 		}
 		m = doc.Components.Parameters[name]
+		if chained, ok := m["$ref"].(string); ok {
+			t.Fatalf("parameter $ref %q points to a component that is itself a $ref to %q: a chained reference hides the mark from the walk, reference the component parameter directly", ref, chained)
+		}
+		p.Ref = ref
 	}
-	p := specParam{Example: m["example"]}
+	p.Example = m["example"]
 	p.Name, _ = m["name"].(string)
 	p.In, _ = m["in"].(string)
 	p.Required, _ = m["required"].(bool)
@@ -133,6 +139,75 @@ func TestSpecMarksTheDraftsParameterAsOperatorOnly(t *testing.T) {
 	}
 }
 
+// markedNames returns the query parameter names the spec marks on a component.
+func markedNames(t *testing.T, doc *specDoc) map[string]bool {
+	t.Helper()
+	names := map[string]bool{}
+	for key, c := range doc.Components.Parameters {
+		if c[contract.RoleExtension] == nil {
+			continue
+		}
+		n, _ := c["name"].(string)
+		if n == "" || c["in"] != "query" {
+			t.Fatalf("components/parameters/%s is marked but is not a named query parameter: %v", key, c)
+		}
+		names[n] = true
+	}
+	return names
+}
+
+// nameClash reports a parameter that shares its name with a marked one in the
+// same location without being the marked component itself: an unmarked
+// duplicate would reach the same value without the guard.
+func nameClash(marked map[string]bool, name, in string, isMarked bool) bool {
+	if isMarked || in != "query" {
+		return false
+	}
+	for n := range marked {
+		if strings.EqualFold(n, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNoUnmarkedParameterSharesTheNameOfAMarkedOne(t *testing.T) {
+	doc := loadSpec(t)
+	marked := markedNames(t, doc)
+	if len(marked) == 0 {
+		t.Fatal("the spec marks no parameter: drafts must be marked")
+	}
+	// Every component parameter, referenced or not.
+	for key, c := range doc.Components.Parameters {
+		if ref, ok := c["$ref"].(string); ok {
+			t.Errorf("components/parameters/%s is a $ref to %q: a chained reference hides the mark, declare the parameter in full", key, ref)
+		}
+		name, _ := c["name"].(string)
+		in, _ := c["in"].(string)
+		if nameClash(marked, name, in, c[contract.RoleExtension] != nil) {
+			t.Errorf("components/parameters/%s is the query parameter %q without %s: a second component with the name of a marked parameter bypasses the guard", key, name, contract.RoleExtension)
+		}
+	}
+	// Every operation, whatever it declares inline or references.
+	for path, item := range doc.Paths {
+		pathLevel := asList(item["parameters"])
+		for method, rawOp := range item {
+			op, ok := rawOp.(map[string]any)
+			if !ok || method == "parameters" || method == "servers" {
+				continue
+			}
+			for _, raw := range append(append([]any{}, pathLevel...), asList(op["parameters"])...) {
+				p := resolveParam(t, doc, raw)
+				// Only a $ref to a marked component is the guarded parameter;
+				// an inline declaration never is.
+				if nameClash(marked, p.Name, p.In, p.Marked && p.Ref != "") {
+					t.Errorf("%s %s declares the query parameter %q (%s) that is not a $ref to the marked component: it would reach the restricted value without the guard", strings.ToUpper(method), path, p.Name, map[bool]string{true: "via " + p.Ref, false: "inline"}[p.Ref != ""])
+				}
+			}
+		}
+	}
+}
+
 func TestEveryOperationWithAMarkedParameterRefusesAReader(t *testing.T) {
 	doc := loadSpec(t)
 	h := specHandler(t)
@@ -154,6 +229,9 @@ func TestEveryOperationWithAMarkedParameterRefusesAReader(t *testing.T) {
 				}
 			}
 			for _, m := range marked {
+				if m.Ref == "" {
+					t.Fatalf("%s %s: marked parameter %s is declared inline: it must be a $ref to its components/parameters entry", method, path, m.Name)
+				}
 				if m.In != "query" {
 					t.Fatalf("%s %s: marked parameter %s is in %s: this test drives query parameters only", method, path, m.Name, m.In)
 				}

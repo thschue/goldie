@@ -1,8 +1,10 @@
 package contract
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // #420: the guard is fail-closed for the whole document. A mark in a component
@@ -89,6 +91,55 @@ func TestParseOperatorPathsRejectsAMarkInAComponentAnOperationReferences(t *test
 				t.Errorf("an erroring parse yielded paths %v", got)
 			}
 		})
+	}
+}
+
+// A misspelt key (another suffix, another case) would be ignored and leave the
+// path or value open, so any key matching x-goldie- case-insensitively that is
+// not exactly x-goldie-role fails the parse, naming the key and the location.
+func TestParseRolesRejectsAMisspeltRoleKey(t *testing.T) {
+	for _, key := range []string{"x-goldie-roles", "X-Goldie-Role", "x-goldie-Role", "X-GOLDIE-ROLE", "x-goldie-rol", "x-goldie-"} {
+		for name, c := range map[string]struct{ spec, where string }{
+			"on an operation":          {"paths:\n  /a:\n    get:\n      " + key + ": operator\n", "/a"},
+			"at path-item level":       {"paths:\n  /a:\n    " + key + ": operator\n    get:\n      x-goldie-role: operator\n", "/a"},
+			"on a component parameter": {"paths:\n  /a:\n    get:\n      x-goldie-role: operator\ncomponents:\n  parameters:\n    Drafts:\n      name: drafts\n      in: query\n      " + key + ": operator\n", "Drafts"},
+		} {
+			t.Run(key+" "+name, func(t *testing.T) {
+				got, err := parseOperatorPaths([]byte(c.spec))
+				if err == nil {
+					t.Fatalf("a misspelt %q was accepted, got %v", key, got)
+				}
+				if !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), c.where) {
+					t.Errorf("error %q does not name the key %q and the location %q", err, key, c.where)
+				}
+				if p, err := parseOperatorParameters([]byte(c.spec)); err == nil {
+					t.Errorf("parseOperatorParameters accepted the misspelt key, got %v", p)
+				}
+			})
+		}
+	}
+}
+
+// Nested anchors that each alias the previous one ten times expand to 10^7
+// nodes from a few lines. The walk bound fires and the parse fails, quickly.
+func TestParseRolesFailsOnAnAliasBomb(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("paths:\n  /a:\n    get:\n      x-goldie-role: operator\nx-bomb:\n  - &a0 [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n")
+	for i := 1; i <= 8; i++ {
+		fmt.Fprintf(&b, "  - &a%d [%s]\n", i, strings.TrimSuffix(strings.Repeat(fmt.Sprintf("*a%d, ", i-1), 10), ", "))
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := parseOperatorPaths([]byte(b.String()))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("an alias bomb of 10^8 nodes was accepted: the walk must stop at maxWalkSteps and fail")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the walk of an alias bomb did not stop within 5s: maxWalkSteps must bound it")
 	}
 }
 
