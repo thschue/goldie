@@ -103,10 +103,10 @@ func (c *commander) lookup(ctx context.Context, id string) error {
 		func(r *contract.GetArticleResponse) *contract.Article { return r.JSON200 })
 	if err != nil {
 		var ae *contract.APIError
-		// Only lookup words not_found: other commands keep the server's hint.
-		// Inside a Project a not_found can be a Suppression, and the server's
-		// hint names the entry to remove, so it is kept there.
-		if errors.As(err, &ae) && ae.Code == "not_found" && projectParam(proj) == nil {
+		// Only lookup words the plain-miss hint: other commands keep the
+		// server's hint, and so does any other not_found, such as a
+		// Suppression's, whose hint names the entry to remove.
+		if errors.As(err, &ae) && ae.Code == "not_found" && ae.Hint == plainMissHint {
 			ae.Hint = "Search for the article with: goldie search <words>, then use an id from its results."
 		}
 		return wordError(err, c.local)
@@ -135,6 +135,10 @@ func deprecationNotice(ref string) string {
 	}
 	return "Warning: this article is deprecated. Use " + ref + " instead."
 }
+
+// plainMissHint is the server's hint for an id that is no article, in any
+// Scope (api/read.go); lookup words it with the CLI's search command.
+const plainMissHint = "Search for the article, then use an id from its results."
 
 // writeHint adds the server's hint for an unregistered Project, if any.
 func writeHint(b *strings.Builder, hint *string) {
@@ -182,6 +186,9 @@ func (c *commander) status(ctx context.Context) error {
 		}
 	case probe.tokenState == tokenRejected:
 		auth = "token rejected"
+	}
+	if c.tokenBroken != "" {
+		auth = c.tokenBroken
 	}
 	var suppressions []string
 	if accepted && proj.ID != "" {
@@ -327,6 +334,10 @@ func (c *commander) version(ctx context.Context) error {
 	case probe.answered():
 		info["serverApiVersion"] = probe.apiVersion
 		return c.printVersion(info, line+"\nserver API: "+contract.CleanLine(probe.apiVersion))
+	case probe.tokenState == tokenMissing && c.tokenBroken != "":
+		note = c.tokenBroken
+		h := "check " + EnvToken + " and " + EnvToken + "_FILE"
+		hint = &h
 	case probe.tokenState == tokenMissing:
 		note = "no token given"
 		h := "set " + EnvToken + " or " + EnvToken + "_FILE (or pass --token) to see the server API version"
