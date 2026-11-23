@@ -23,7 +23,7 @@ func TestMerger_AddAfterALongOutageSkipsHistoryAlreadyTaken(t *testing.T) {
 	}
 	r.clock.Advance(time.Hour) // far past the dedup retention
 
-	now := mergeT0.Add(time.Hour)
+	now := r.clock.Now()
 	again := make(chan Event)
 	ok := r.m.Add(MergeInput{Name: "p", Live: again, History: []Event{
 		mergeEv("p", 1, mergeT0), mergeEv("p", 2, mergeT0), mergeEv("p", 3, mergeT0), mergeEv("p", 4, now),
@@ -35,6 +35,7 @@ func TestMerger_AddAfterALongOutageSkipsHistoryAlreadyTaken(t *testing.T) {
 		t.Fatalf("status = %+v", st)
 	}
 	r.waitFor("only the new one buffered", func() bool { return r.m.Buffered() == 1 && r.m.Duplicates() == 3 })
+	t.Logf("b=%d d=%d", r.m.Buffered(), r.m.Duplicates())
 	r.clock.Advance(2 * time.Second)
 	if e := r.recvEvent(); e.ID != 4 || e.Late {
 		t.Fatalf("event = %+v, want p/4 on time", e)
