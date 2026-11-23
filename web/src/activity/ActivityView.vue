@@ -192,8 +192,8 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 }
 .control[aria-pressed='true'] {
   border-width: 2px;
-  background: var(--brand-tint);
-  color: var(--brand-tint-ink);
+  background: var(--miss-solid);
+  color: var(--miss-solid-ink);
 }
 .box {
   max-width: 760px;

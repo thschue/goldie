@@ -13,28 +13,17 @@ export const announceEvery = 30_000;
 
 export const queryText = (e: ActivityEvent) => plain(e.query);
 
-// The noun a get asked for, from the Reference it was sent as (ADR 0021). A bare name comes from
-// a replica older than that form, so the kind is unknown.
-function nounOf(e: ActivityEvent): string {
-  if (e.kind === 'search') return 'result';
-  if (e.kind === 'lookup') return 'article';
-  const m = /^(skill|agent|article):/.exec(e.query);
-  return m ? m[1] : 'item';
-}
-
-// The Result cell: a served row says so, and a miss says Miss in words with copy that names
-// what was asked for (#576). The Reference is shown as sent in the Query cell, so it is not
-// repeated here.
+// The Result cell: a served row says so, and a miss says Miss in words with the copy of handoff
+// §8 that names what was asked for (#576): "No skill named x", "No agent named x", "No article
+// named x", "No results for x", and for a bare name from a replica older than ADR 0021's
+// Reference form "No skill or agent named x".
 export function resultText(e: ActivityEvent): string {
   if (!e.miss) return 'Served';
-  switch (nounOf(e)) {
-    case 'result':
-      return 'Miss · no results';
-    case 'item':
-      return 'Miss · no skill or agent matched';
-    default:
-      return `Miss · no ${nounOf(e)} matched`;
-  }
+  const q = queryText(e);
+  if (e.kind === 'search') return `Miss · No results for ${q}`;
+  if (e.kind === 'lookup') return `Miss · No article named ${q}`;
+  const m = /^(skill|agent|article):(.*)$/s.exec(q);
+  return m ? `Miss · No ${m[1]} named ${m[2]}` : `Miss · No skill or agent named ${q}`;
 }
 
 // add puts new events (oldest first, as the stream sends them) on top, newest first, and keeps
