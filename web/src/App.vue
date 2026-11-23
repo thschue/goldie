@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import AppShell from './components/AppShell.vue';
-import EmptyView from './views/EmptyView.vue';
 </script>
 
 <template>
+  <!-- Every visitor is a reader until sign-in (#25) brings the role. -->
   <AppShell>
-    <EmptyView />
+    <RouterView />
   </AppShell>
 </template>

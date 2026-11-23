@@ -1,6 +1,11 @@
+<script setup lang="ts">
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+</script>
+
 <template>
-  <!-- Home's h1 is the Home question (handoff §8). -->
-  <h1>What are you deciding today?</h1>
+  <h1>{{ route.meta.heading ?? route.meta.title }}</h1>
   <!-- Copy: handoff §8, "Empty state". Neutral, never gold (§1.3). -->
   <div role="status" class="panel">Nothing to show yet. Content appears here as goldie's pages come online.</div>
 </template>
