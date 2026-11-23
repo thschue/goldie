@@ -624,11 +624,15 @@ cmd_ux() {
 # configuration ./run ux sets, since a token or address from the caller's
 # environment would clash with it. Port 0 on loopback takes a free port, which
 # the server logs (ux_addr). Call it in a subshell: it changes the environment
-# and execs, so the subshell's pid is goldie's.
+# and execs, so the subshell's pid is goldie's. GOLDIE_RATE_LIMIT is raised
+# because every Playwright worker shares one reader token on this one server,
+# and the default 20/s with a burst of 40 can answer a 429 the specs never
+# asked for (the 429 specs stub the status with page.route).
 ux_goldie() {
 	for v in $(env | sed -n 's/^\(GOLDIE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 	export GOLDIE_ADMIN_ADDR="$1" GOLDIE_ADDR=127.0.0.1:0 GOLDIE_DRAIN_SECONDS=0 \
-		GOLDIE_CONTENT_DIR="$ROOT/examples/knowledge" GOLDIE_API_TOKENS_FILE="$ux_tmp/tokens"
+		GOLDIE_CONTENT_DIR="$ROOT/examples/knowledge" GOLDIE_API_TOKENS_FILE="$ux_tmp/tokens" \
+		GOLDIE_RATE_LIMIT=1000/s,burst=2000
 	shift
 	exec "$ux_tmp/goldie" "$@"
 }
