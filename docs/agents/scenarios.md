@@ -26,6 +26,7 @@ number names the case that motivated the rule.
 | S18 | Reviewer reproduces a MEDIUM bug on `main` | delivery | Draft advisory, fix pushed to its private fork; the id to the user; nothing public |
 | S19 | Buffer is 3, target 8; issues #6–#34 are epic-sized | product | Epics sliced into sub-issues with `blocked_by` chains, each with Acceptance, Pattern to follow and `area:`; audit skipped this tick |
 | S20 | Loop-filed follow-ups in one area (#89–#91), one pure wording polish (#329) | product | The polish closed `wontfix` "overengineered: …" (tier 1); the rest bundled into the oldest issue with a P level, duplicates closed |
+| S27 | A stream adds a git URL redactor; an engine sibling leaks the same way (#383, #386, #392) | delivery, product | Both fixed in the one PR (same job, any size); no found-fix PR. A follow-up that only matters once the URL is logged is folded into the issue that logs it (#96) |
 | S25 | Frontier: a new `security` follow-up, a slice of started epic #11, and an older slice of unstarted epic #161 (#170, #101, #164) | delivery | `scripts/frontier` order: #101, then #170, then #164; the session claims #101 |
 | S21 | Question the record answers (`/version` vs PC-01) | product | Tier 1: decided and filed ready; no `question` |
 | S22 | UI issue whose handoff isn't approved (#21) | product | `question` to approve the handoff; inbox "Decide" |

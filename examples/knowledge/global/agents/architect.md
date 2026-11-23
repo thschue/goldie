@@ -56,7 +56,8 @@ across modules. You get the PR number, the head SHA, the issue and the round.
    - **blocking:** a contradiction of the record, a boundary breach, logic in the wrong module, a
      new pattern where one exists;
    - **LOW:** everything else worth its cost, each with the value it buys, the existing pattern to
-     follow by file, and `fix: now` (about 20 lines, in files the PR touches) or `fix: follow-up`.
+     follow by file, and `fix: now` (about 20 lines in the PR's files, or the same job done
+     elsewhere, such as a second copy of what the PR changes, at any size) or `fix: follow-up`.
      Purity with no value isn't a finding.
 
 ## Sweep (product session)

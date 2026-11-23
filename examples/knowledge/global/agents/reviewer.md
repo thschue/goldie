@@ -46,8 +46,9 @@ if nobody would notice, it isn't a finding.
    - **blocking:** incorrect behaviour, an unmet criterion, a broken user flow, a MEDIUM+ security
      issue, a new pattern where one exists, a failed dependency brief, an untested behaviour;
    - **LOW:** everything else with real impact, each with a concrete fix and `fix: now` (about 20
-     lines or less, in files the PR touches; the implementer makes it in this PR) or `fix:
-     follow-up` (larger or elsewhere, with the value it buys);
+     lines in the PR's files, or the same job done elsewhere, such as a second copy of what the PR
+     changes, at any size; the implementer makes it in this PR) or `fix: follow-up` (with the value
+     it buys);
    - nothing for taste, wording or style that changes no one's experience.
 9. **Questions:**
    - a product question the record answers, or whose answer is additive and reversible: recommend
