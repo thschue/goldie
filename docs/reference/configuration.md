@@ -64,7 +64,7 @@ accept a _FILE form; for any other OTEL_* name it is an error.
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_SDK_DISABLED` | (none) | true turns telemetry off even when an endpoint is set. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (none) | OTLP collector base URL (http or https, without surrounding space); signals go to /v1/traces, /v1/logs and /v1/metrics below it. Setting it, or a signal endpoint, turns on trace, log and metrics export: a generic endpoint also turns metrics on, and OTEL_METRICS_EXPORTER=none opts out of them. With an exporter selected and no endpoint, signals go to https://localhost:4318. The scheme decides between plain HTTP and TLS, so OTEL_EXPORTER_OTLP_INSECURE and its signal forms have no effect. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | (none) | Collector URL for traces only, used as-is; wins over the base URL. |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | (none) | Collector URL for logs only, used as-is; wins over the base URL. |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | (none) | Collector URL for metrics only, used as-is; wins over the base URL. |
