@@ -167,10 +167,12 @@ func (s *Snapshot) applySuppressions(scope string, refs []string) error {
 }
 
 // suppressWarning says that a suppress reference names nothing. The file path
-// is built from validated Project segments, so it is printable ASCII and is
-// kept as is; the reference is escaped to ASCII, bounded and redacted.
+// is built from validated Project segments, so it is printable ASCII. The
+// reference has passed parseRef, so, like a lookup id (quoteID), it is shown
+// escaped to ASCII and cut, not redacted: article:team/gone stays readable. A
+// reference that fails parseRef is a load error and goes through quoteRef.
 func suppressWarning(file, ref string) string {
-	w := fmt.Sprintf("%s: suppress %s names no published Item this Project can see", file, redact(quoteID(ref)))
+	w := fmt.Sprintf("%s: suppress %s names no published Item this Project can see", file, quoteID(ref))
 	if len(w) > maxWarningBytes {
 		w = w[:maxWarningBytes-3] + "..."
 	}
