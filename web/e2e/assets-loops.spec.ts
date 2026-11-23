@@ -8,7 +8,7 @@
 //   listitems are the chips, one per agent and skill; with an empty closure the
 //   list is not rendered at all;
 // - the start commands are two CommandSnippets in the article, the exact texts
-//   `goldie pull` and `/loop /goldie-<name>`, each with its own "Copy command" button;
+//   `goldie pull` and `/loop <interval> /goldie-loop-<name>` (`/loop /goldie-loop-<name>` for a dynamic loop), each with its own "Copy command" button;
 // - states follow #587: an error is a role=alert in the panel, the 429 warning
 //   and the empty panel are role=status, the loading skeletons carry aria-busy="true".
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -211,31 +211,62 @@ test.describe('the Loops tab', () => {
     await expect(detail(page, 'bare').getByRole('listitem')).toHaveCount(0);
   });
 
-  test('each loop shows goldie pull and /loop /goldie-<name>, each with a Copy command button', async ({ page }) => {
+  const startCommand: Record<string, string> = {
+    bare: '/loop 1h /goldie-loop-bare',
+    drift: '/loop /goldie-loop-drift',
+    nightly: '/loop 30m /goldie-loop-nightly',
+  };
+
+  test('each loop shows goldie pull and its /loop start command, each with a Copy command button', async ({ page }) => {
     await stubProjects(page);
     await stubLoops(page, sample);
     await open(page);
     for (const name of ['bare', 'drift', 'nightly']) {
       const l = detail(page, name);
       await expect(l.getByText('goldie pull', { exact: true })).toBeVisible();
-      await expect(l.getByText(`/loop /goldie-${name}`, { exact: true })).toBeVisible();
+      await expect(l.getByText(startCommand[name], { exact: true })).toBeVisible();
       const copy = l.getByRole('button', { name: 'Copy command', exact: true });
       await expect(copy).toHaveCount(2);
       for (const b of await copy.all()) await expect(b).toHaveAttribute('aria-label', 'Copy command');
     }
   });
 
-  test('the loop copy button copies exactly /loop /goldie-<name>', async ({ page, context }) => {
+  test('the loop copy button copies exactly /loop <interval> /goldie-loop-<name>', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await stubProjects(page);
     await stubLoops(page, sample);
     await open(page);
     const l = detail(page, 'nightly');
-    const snippet = l.locator('div', { has: page.getByText('/loop /goldie-nightly', { exact: true }) }).last();
+    const snippet = l.locator('div', { has: page.getByText('/loop 30m /goldie-loop-nightly', { exact: true }) }).last();
     const copy = snippet.getByRole('button', { name: 'Copy command', exact: true });
     await copy.focus();
     await page.keyboard.press('Enter');
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('/loop /goldie-nightly');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('/loop 30m /goldie-loop-nightly');
+  });
+
+  test('a dynamic loop shows and copies /loop /goldie-loop-<name> with no interval', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stubProjects(page);
+    await stubLoops(page, [{ name: 'drift', dynamic: true, interval: '45m', stop: 's' }]);
+    await open(page);
+    const l = detail(page, 'drift');
+    await expect(l.getByText('/loop /goldie-loop-drift', { exact: true })).toBeVisible();
+    await expect(l).not.toContainText('45m');
+    const snippet = l.locator('div', { has: page.getByText('/loop /goldie-loop-drift', { exact: true }) }).last();
+    const copy = snippet.getByRole('button', { name: 'Copy command', exact: true });
+    await copy.focus();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('/loop /goldie-loop-drift');
+  });
+
+  test('no start command names a skill without the loop- part', async ({ page }) => {
+    await stubProjects(page);
+    await stubLoops(page, sample);
+    await open(page);
+    await expect(details(page)).toHaveCount(3);
+    const text = await panel(page).innerText();
+    expect(text).toContain('/goldie-loop-nightly');
+    expect(text).not.toMatch(/\/goldie-(?!loop-)/);
   });
 
   test('a loop shows no usage figure and no featured marker (out of scope)', async ({ page }) => {
