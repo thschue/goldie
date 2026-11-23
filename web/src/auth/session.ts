@@ -13,6 +13,9 @@ const endpoint = '/api/v1/session';
 export const session = ref<Session | null>(null);
 // True once a session that was signed in has answered 401.
 export const ended = ref(false);
+// True when the first session check got no answer (429, 5xx, offline): who the
+// cookie signs in is unknown, which is not the same as signed out (#673).
+export const checkFailed = ref(false);
 
 export const role = (): Role => (session.value?.role === 'operator' ? 'operator' : 'reader');
 
@@ -37,7 +40,11 @@ export async function api(path: string, init?: RequestInit): Promise<Response> {
 
 // refresh asks who the cookie signs in. True when there is a session to show:
 // a known session that now answers 401 is marked ended and the view stays.
+// Only a 401 means signed out. Any other failure with no known session sets
+// checkFailed and reports true, so the guard keeps the route and the app shows
+// a retryable notice instead of sending the person to /signin.
 export async function refresh(): Promise<boolean> {
+  checkFailed.value = false;
   try {
     const res = await api(endpoint);
     if (res.ok) {
@@ -45,10 +52,12 @@ export async function refresh(): Promise<boolean> {
       ended.value = false;
       return true;
     }
+    if (res.status === 401) return session.value !== null;
   } catch {
-    // Offline or the server is down: carry on with what is known.
+    // Offline or the server is down: treated like any other failed check.
   }
-  return session.value !== null;
+  checkFailed.value = session.value === null;
+  return true;
 }
 
 export type SignInResult =
