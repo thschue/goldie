@@ -158,6 +158,14 @@ goldie lookup platform/deploy
 
 ## Try it on your own content
 
+First get the binary. Install it with `go install github.com/thschue/goldie/cmd/goldie@latest`, or
+build it from a clone with `go build ./cmd/goldie`. A build from source serves a "goldie (UI not
+built)" placeholder at `/` until the web UI has been built: run `./run ui` (needs Node) before the
+build, and see [ADR 0019](docs/adr/0019-ui-build-output-not-committed.md).
+
+Then run `goldie server --dev`, open the address it prints (the `GOLDIE_ADDR` in the export line),
+and sign in by pasting the token from that same line (`GOLDIE_TOKEN=…`).
+
 `goldie server --dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
 the working directory) with a random token made for this run, and prints the line that points the
 client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
