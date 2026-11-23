@@ -118,7 +118,7 @@ spans for at most 2 seconds on exit, and the fixed warning goes to stderr.
 
 ### Metrics goldie emits
 
-The server exports these counters when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.
+The server exports these metrics when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.
 Each metric has fixed attributes, so no request value (query text, article id, Project id,
 Source URL) becomes a label, and each metric keeps at most 2000 attribute combinations. goldie registers no
 other instruments: there are no HTTP server duration or runtime metrics.

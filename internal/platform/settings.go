@@ -187,7 +187,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("spans for at most 2 seconds on exit, and the fixed warning goes to stderr.\n\n")
 	table(&b, TelemetrySettings)
 	b.WriteString("\n### Metrics goldie emits\n\n")
-	b.WriteString("The server exports these counters when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.\n")
+	b.WriteString("The server exports these metrics when metrics export is on (see `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_METRICS_EXPORTER` above). The meter is named `goldie`.\n")
 	b.WriteString("Each metric has fixed attributes, so no request value (query text, article id, Project id,\n")
 	b.WriteString("Source URL) becomes a label, and each metric keeps at most 2000 attribute combinations. goldie registers no\n")
 	b.WriteString("other instruments: there are no HTTP server duration or runtime metrics.\n\n")
