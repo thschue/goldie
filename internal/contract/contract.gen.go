@@ -370,6 +370,9 @@ type SyncStatus struct {
 	Warnings []ContentWarning `json:"warnings"`
 }
 
+// Drafts defines model for Drafts.
+type Drafts = bool
+
 // ErrorResponse The body of every error response.
 type ErrorResponse = ErrorEnvelope
 
@@ -396,7 +399,7 @@ type GetArticleParams struct {
 	// published Item answers. Even with drafts, a draft Project article
 	// never shadows an enforced global Item (ADR 0021). MCP never asks
 	// for drafts.
-	Drafts *bool `form:"drafts,omitempty" json:"drafts,omitempty"`
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // SearchArticlesParams defines parameters for SearchArticles.
@@ -416,7 +419,7 @@ type SearchArticlesParams struct {
 	// published Item answers. Even with drafts, a draft Project article
 	// never shadows an enforced global Item (ADR 0021). MCP never asks
 	// for drafts.
-	Drafts *bool `form:"drafts,omitempty" json:"drafts,omitempty"`
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // RequestEditorFn is the function signature for the RequestEditor callback function

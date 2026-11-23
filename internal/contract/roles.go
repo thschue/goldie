@@ -63,6 +63,9 @@ func walkKeys(n *yaml.Node, key string, path []string, stack map[*yaml.Node]bool
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k := n.Content[i].Value
+			if k != key && strings.HasPrefix(strings.ToLower(k), "x-goldie-") {
+				return fmt.Errorf("openapi.yaml: %s: unknown key %q, want exactly %s", strings.Join(path, " > "), k, key)
+			}
 			child := append(path[:len(path):len(path)], k)
 			if k == key {
 				visit(strings.Join(child, " > "))

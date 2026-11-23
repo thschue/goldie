@@ -25,14 +25,19 @@ A role rule is marked once, in `internal/contract/openapi.yaml`, with `x-goldie-
   where the parameter is bound, in `internal/api` (`readOptions`, a reader token asking for
   `drafts=true` gets 403 `forbidden`), because a generic guard in `app` would parse query strings the
   generated code already binds. A spec-walking test in `internal/api` finds every marked parameter
-  and requires that a reader token sending the restricted value is refused, so an operation that takes
-  `drafts` but forgets `readOptions` fails the build instead of leaking drafts.
+  and requires that a reader token sending the restricted value is refused. An operation that takes
+  `drafts` through the marked `$ref` but forgets `readOptions` is caught by that test, and so is an
+  unmarked inline parameter named `drafts`, which the test fails because it is not the marked `$ref`.
+  Code that never goes through `readOptions` and is not reached by the walk is not caught.
 - `security` scopes are not used for roles. A second mechanism would drift from the first.
 
 The check is fail-closed for the whole document. A mark is accepted only directly on an operation or
 directly on a `components/parameters` entry, and its value must be `operator`. A mark anywhere else, an
 unknown role value or a misspelt one fails startup with the location, the extension and the key it
-sits under. That includes the root, `info`, `webhooks`, security schemes, and a component an operation
+sits under. A misspelt key fails too: any key that matches `x-goldie-` case-insensitively but is not
+exactly `x-goldie-role` (`x-goldie-roles`, `X-Goldie-Role`) is rejected with its location, because it
+would be ignored and leave the operation open. A document with so many nested aliases that the walk
+exceeds its step limit also fails startup. The failures include the root, `info`, `webhooks`, security schemes, and a component an operation
 reaches through `$ref` or an alias, such as `components/responses/X` or `components/requestBodies/X`:
 the mark does not apply through the reference, so accepting it would leave the rule open while the
 author believes it closed.
@@ -60,7 +65,8 @@ parameter does not change its wire shape.
 
 Tools that read only standard OpenAPI (Swagger UI's lock icons, outside generators) do not see the
 role, so the `bearerAuth` description names the extension. Under ADR 0011 the mark is part of the
-contract from the first release: removing or weakening one is a breaking change.
+contract from the first release: removing or weakening a mark is a breaking change, and so is adding one to an existing operation or
+parameter, because it changes its meaning and readers lose access.
 
 A future operation that needs a role takes one line in the spec and no code, and a future parameter
 rule takes one mark plus its binding code, which the spec-walking test checks.
