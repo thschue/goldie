@@ -68,9 +68,7 @@ var brokenTokenSettings = map[string]struct {
 	},
 	"unreadable token file": {
 		vars: map[string]string{platform.EnvToken + "_FILE": brokenTokenPath},
-		readFile: func(string) ([]byte, error) {
-			return nil, errors.New("open " + brokenTokenPath + ": permission denied")
-		},
+		readFile: func(string) ([]byte, error) { return nil, errors.New("open " + brokenTokenPath + ": permission denied") },
 	},
 	"empty token file": {
 		vars:     map[string]string{platform.EnvToken + "_FILE": brokenTokenPath},
