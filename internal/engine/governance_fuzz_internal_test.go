@@ -46,12 +46,41 @@ var refSeeds = []string{
 	"article:a\xffb",
 	"art\u00a0icle:x",
 	"article :x",
+	// #317: the invisible runes contract.HiddenRune (#249) names outside Cf,
+	// which unicode.IsPrint admits: the variation selectors, the combining
+	// grapheme joiner, the Hangul fillers, the Mongolian free variation
+	// selectors and the blank Braille pattern.
+	"article:a\ufe00b",
+	"article:a\ufe0fb",
+	"article:a\U000e0100b",
+	"article:a\U000e01efb",
+	"article:a\u034fb",
+	"article:a\u115fb",
+	"article:a\u1160b",
+	"article:a\u3164b",
+	"article:a\uffa0b",
+	"article:a\u180bb",
+	"article:a\u180db",
+	"article:a\u180fb",
+	"article:a\u2800b",
+	"article:\ufe0f",
+	"article:\u2800/x",
+	"article:x/\u3164",
+	// Private-use and unassigned code points.
+	"article:a\ue000b",
+	"article:a\uf8ffb",
+	"article:a\U000f0000b",
+	"article:a\U0010fffdb",
+	"article:a\u0378b",
+	"article:a\ufffeb",
+	"article:a\U0010ffffb",
 }
 
 // FuzzParseRef checks that parsing a reference never panics, and that an
 // accepted reference has a lower-case letter Kind and a name with only
 // non-empty, non-dot segments and no space, control, format, colon or
-// backslash character, and that its key is the lower-cased reference.
+// backslash character, no rune unicode.IsPrint refuses and no rune HiddenRune
+// names, and that its key is the lower-cased reference.
 func FuzzParseRef(f *testing.F) {
 	for _, s := range refSeeds {
 		f.Add(s)
@@ -155,6 +184,11 @@ func checkAcceptedRef(t *testing.T, ref string, key itemKey) {
 			t.Fatalf("accepted %q with the space %U in the name", ref, r)
 		case unicode.In(r, unicode.Cc, unicode.Cf):
 			t.Fatalf("accepted %q with the control or invisible character %U in the name", ref, r)
+		case !unicode.IsPrint(r) || HiddenRune(r):
+			// #317: everything unicode.IsPrint refuses (private use,
+			// unassigned, surrogates) and every rune contract.HiddenRune
+			// names, through the engine's own copy of that predicate.
+			t.Fatalf("accepted %q with the non-printing or hidden rune %U in the name", ref, r)
 		}
 	}
 	for _, seg := range strings.Split(name, "/") {
