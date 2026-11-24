@@ -63,7 +63,6 @@ let controller: AbortController | undefined;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let attempts = 0;
 const maxPause = 30_000;
-const maxPending = 20_000;
 
 const shown = computed(() =>
   rows.value.filter(
@@ -112,7 +111,6 @@ const choose = (name?: string) => (only.value = name);
 let pending: Frame[] = [];
 function replay(frames: Frame[]) {
   pending.push(...frames);
-  if (pending.length > maxPending) pending = pending.slice(-maxPending);
   if (!frames.some((f) => f.type === 'live')) return;
   const all = pending;
   pending = [];
@@ -258,8 +256,8 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 <template>
   <h1>Activity</h1>
 
-  <p v-if="status === 403" class="box">This page is for operators.</p>
-  <p v-else-if="status === 401" class="box">Sign in to see what is being asked of goldie.</p>
+  <p v-if="status === 403" class="box" role="alert">This page is for operators.</p>
+  <p v-else-if="status === 401" class="box" role="alert">Sign in to see what is being asked of goldie.</p>
   <div v-else-if="phase === 'error'" class="box danger" role="alert">
     <p v-if="status === 429">Too many requests. Try again in a moment.</p>
     <p v-else-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
