@@ -56,10 +56,16 @@ async function startSync(name?: string) {
     if (!stop.signal.aborted) syncing.value = false;
   }
 }
+const copied = ref<string>();
+let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+onBeforeUnmount(() => clearTimeout(copiedTimer));
 async function copy(revision: string) {
   try {
     await navigator.clipboard.writeText(revision);
     note.value = 'Revision copied.';
+    copied.value = revision;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied.value = undefined), 2000);
   } catch {
     note.value = "Couldn't copy the revision.";
   }
@@ -106,11 +112,11 @@ function syncMessage(e: unknown) {
           <strong v-if="isFailing(s)" class="badge">Failing</strong>
           <span class="chip">{{ origin(s.name) }}</span>{{ " " }}
           <span v-if="s.preference" class="chip">Order {{ s.preference }}</span>{{ " " }}
-          <span class="chip">{{ s.shadowed?.length ?? 0 }} shadowed Items</span>{{ " " }}
+          <span class="chip">{{ s.shadowed?.length ?? 0 }} shadowed {{ s.shadowed?.length === 1 ? 'Item' : 'Items' }}</span>{{ " " }}
         </div>
         <p v-if="s.revision" class="rev">
           <code>{{ plain(s.revision).slice(0, 7) }}</code>
-          <button type="button" :aria-label="`Copy revision${s.name ? ' of ' + plain(s.name) : ''}`" @click="copy(s.revision)">Copy</button>
+          <button type="button" :aria-label="`Copy revision${s.name ? ' of ' + plain(s.name) : ''}`" @click="copy(s.revision)">{{ copied === s.revision ? 'Copied' : 'Copy' }}</button>
         </p>
         <dl>
           <dt>Last poll</dt>

@@ -563,3 +563,28 @@ test.describe('the Sources page: one card per Source (#733)', () => {
     await expect(page.getByRole('button', { name: /resync|syncing|copy revision/i })).toHaveCount(0);
   });
 });
+
+// #733 polish: a visible "Copied" and the singular "1 shadowed Item".
+test.describe('the Sources card polish (#733)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the copy button reads "Copied" for a moment, then "Copy" again', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await asRole(page, 'operator');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    const copy = card(page, 'team').getByRole('button', { name: /copy revision/i });
+    await expect(copy).toHaveText('Copy');
+    await copy.click();
+    await expect(copy).toHaveText('Copied');
+    await expect(copy).toHaveText('Copy', { timeout: 5000 });
+  });
+
+  test('one shadowed Item is singular, any other count plural', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, [cards[0], { ...cards[1], shadowed: [shadow('style', 'platform')] }, cards[2]]);
+    await page.goto('/ops/sources');
+    await expect(card(page, 'team')).toContainText(/\b1 shadowed Item(?!s)/);
+    await expect(card(page, 'platform')).toContainText(/\b0 shadowed Items\b/);
+  });
+});
