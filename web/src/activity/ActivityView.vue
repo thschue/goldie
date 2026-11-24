@@ -406,7 +406,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
             <span class="q">{{ plain(g.query) }}</span>
             <span class="n">×{{ g.count }}</span>
             <span class="meta">
-              {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ timeText(g.latest.time) }}
+              {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ agoText(g.latest.time, now) }}
             </span>
           </button>
         </li>
@@ -501,7 +501,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           </tbody>
         </table>
       </div>
-      <section v-if="chosen" ref="panel" class="detail" aria-label="Event detail">
+      <section v-if="chosen" ref="panel" class="detail" :class="{ miss: chosen.miss }" aria-label="Event detail">
         <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
         <dl>
           <dt>Query</dt>
@@ -538,6 +538,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           </template>
         </dl>
         <p v-if="chosen.miss">{{ resultText(chosen) }}</p>
+        <p v-if="chosen.miss" class="nearest">
+          No Item matched<template v-for="k in chosen.nearest ?? []" :key="k">{{ ' · ' }}<RouterLink :to="{ path: '/', query: { q: k } }">{{ plain(k) }}</RouterLink></template>
+        </p>
         <p v-if="chosen.miss" class="actions">
           <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
           <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
@@ -733,6 +736,15 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   margin-bottom: var(--space-4);
 }
 .label,
+.detail.miss {
+  border-color: var(--miss-border);
+  background: var(--miss-surface);
+  color: var(--miss-ink);
+}
+.detail.miss a {
+  color: var(--miss-ink);
+}
+
 .misses {
   margin: 0;
   color: var(--fg-secondary);
