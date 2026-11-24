@@ -135,7 +135,8 @@ const missesOnly = (page: Page) =>
     .or(main(page).getByRole('button', { name: /misses only/i }));
 const pause = (page: Page) => main(page).getByRole('button', { name: 'Pause', exact: true });
 const resume = (page: Page) => main(page).getByRole('button', { name: 'Resume', exact: true });
-const missStatus = (page: Page) => main(page).getByRole('status').filter({ hasText: /\bmiss(es)?\b/i });
+// The feed's own miss count; the Live stream stage summary is also a role=status that mentions misses.
+const missStatus = (page: Page) => main(page).locator('p.misses[role="status"]');
 const text = async (l: Locator) => ((await l.innerText()) ?? '').replace(/\s+/g, ' ').trim();
 
 // mainTextOutsideTable is what a person reads in main besides the table.
