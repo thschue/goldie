@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -356,27 +358,28 @@ func TestDecisionPayloadIsSnakeCase(t *testing.T) {
 // #757 criterion 1: for a Project whose view holds a non-accepted copy of a
 // decision, the list and the get answer the same record.
 func TestDecisionListAndGetAgreeOnAProjectNonAcceptedCopy(t *testing.T) {
-	srv, _ := decisionServer(t, map[string]string{
+	srv, dir := decisionServer(t, map[string]string{
 		"projects/" + decisionsShop + "/decisions/alpha.md": decisionFile("Shop Alpha", "proposed", "2023-07-02"),
 	})
+	// The fixture holds both copies: the Project's proposed alpha on disk and
+	// the global accepted alpha in the global view.
+	raw, err := os.ReadFile(filepath.Join(dir, "projects", decisionsShop, "decisions", "alpha.md"))
+	if err != nil || !strings.Contains(string(raw), "proposed") {
+		t.Fatalf("the Project's alpha is not the proposed copy (%v): %s", err, raw)
+	}
+	global, _ := listDecisions(t, srv, readerToken, decisionsAPI)
+	if i := slices.IndexFunc(global, func(e decisionEntry) bool { return e.Name == "alpha" }); i < 0 ||
+		global[i].Status != "accepted" || global[i].Scope != "global" {
+		t.Fatalf("the global view lacks the accepted global alpha: %+v", global)
+	}
+
 	q := "?project=" + decisionsShop
 	list, _ := listDecisions(t, srv, readerToken, decisionsAPI+q)
-	var listed *decisionEntry
-	for i := range list {
-		if list[i].Name == "alpha" {
-			listed = &list[i]
-		}
+	i := slices.IndexFunc(list, func(e decisionEntry) bool { return e.Name == "alpha" })
+	if i < 0 {
+		t.Fatalf("the Project list omits alpha: %v", decisionNameList(list))
 	}
-	status, body := itemsGet(t, srv, readerToken, decisionsAPI+"/alpha"+q)
-	if listed == nil {
-		if status != http.StatusNotFound {
-			t.Fatalf("the list omits alpha but GET answers %d: %s", status, body)
-		}
-		return
-	}
-	if status != http.StatusOK {
-		t.Fatalf("the list holds alpha but GET answers %d: %s", status, body)
-	}
+	listed := list[i]
 	got := getDecision(t, srv, readerToken, decisionsAPI+"/alpha"+q)
 	if got.Title != listed.Title || got.Status != listed.Status || got.Scope != listed.Scope || got.Date != listed.Date {
 		t.Errorf("GET alpha = %q/%s/%s/%s, the list holds %q/%s/%s/%s; want the same record",
