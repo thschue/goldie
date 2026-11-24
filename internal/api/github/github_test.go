@@ -444,7 +444,7 @@ func TestExchangeRejectsAMalformedOrEmptyTokenAnswer(t *testing.T) {
 }
 
 func TestExchangeRejectsALoginThatCouldRedirectTheMembershipCall(t *testing.T) {
-	for _, login := range []string{"", "../../admin", "alice/../x", "alice?x=1", "ali ce", "alice#", "al‮ice"} {
+	for _, login := range []string{"", "../../admin", "alice/../x", "alice?x=1", "ali ce", "alice#", "al\u202eice"} {
 		t.Run(fmt.Sprintf("%q", login), func(t *testing.T) {
 			f := newFake(t)
 			f.login = login
