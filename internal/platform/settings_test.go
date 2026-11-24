@@ -41,6 +41,9 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	got[EnvMCPName] = cfg.MCPName
 	got[EnvMode] = cfg.Mode
 	got[EnvUpstreamAddr] = cfg.UpstreamAddr
+	for _, n := range []string{EnvGitHubClientID, EnvGitHubClientSecret, EnvGitHubURL, EnvGitHubOrgs, EnvGitHubTeams, EnvPublicURL} {
+		got[n] = "" // GitHub sign-in is off by default
+	}
 
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
