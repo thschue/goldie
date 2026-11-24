@@ -33,3 +33,4 @@ Consequences.
 - [0027. Browser sessions are stateless signed cookies](0027-browser-sessions-are-stateless-signed-cookies.md)
 - [0028. A session cookie authenticates unsafe methods only with a CSRF token](0028-a-session-cookie-authenticates-unsafe-methods-only-with-a-csrf-token.md)
 - [0029. The milestone is the loop's only input; one stage may subtract; growth is counted](0029-milestone-subtraction-and-growth.md)
+- [0030. The server is configured by flags, the environment or a config file](0030-the-server-is-configured-by-flags-the-environment-or-a-config-file.md)

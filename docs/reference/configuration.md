@@ -2,8 +2,30 @@
 
 # Goldie configuration reference
 
-Configuration is environment only (PC-04). Every variable in the table below also accepts
-a `NAME_FILE` form that reads the value from a file; setting both is an error (PC-05).
+`goldie server` takes each setting in three ways (PC-04). A setting's value is the first of these
+that sets it: a flag, then an environment variable, then the config file, then the default
+in the table below.
+
+- **Flag.** The variable's name without `GOLDIE_`, in lower case with hyphens: `--poll-interval`
+  for `GOLDIE_POLL_INTERVAL`. `goldie server --help` lists them. A flag takes text, as the variable does.
+- **Environment variable.** The name in the table.
+- **Config file.** A YAML file named by `--config <file>` or `GOLDIE_CONFIG=<file>`. Each key is the
+  variable's name without `GOLDIE_`, in lower case: `poll_interval: 45s`. `sources` is a YAML list of
+  the entries of the `GOLDIE_SOURCES` document (`name`, `type`, `claims`, ...), in preference order. A
+  list of values may be a YAML list. An unknown key stops the server. The file cannot set `config`.
+
+A secret is never a flag or a value in the config file, which would show in the process list or in
+a file that is easy to share: giving one stops the server, naming the flag or key and never the value.
+Name the file that holds it instead, with `NAME_FILE` in the environment, `--name-file` as a flag or
+`name_file` in the config file (`git_token_file`); setting a value and its file form in the same
+place is an error (PC-05). Every variable in the table below also accepts a `NAME_FILE` form in the environment, which
+reads the value from a file. A `GOLDIE_GIT_URL` may hold a password in its userinfo: given as a flag it
+shows in the process list, so name the token with `git_token_file` instead.
+
+Every check applies whichever way a value arrives. A bad value stops the server, naming the
+variable and whether it came from a flag, the environment or the config file, never the value.
+The startup report (PC-06) shows each value with its source: `flag`, `environment`, `file` or
+`default`, secrets redacted. `goldie health` reads the environment only.
 
 | Variable | Default | Meaning |
 |---|---|---|
