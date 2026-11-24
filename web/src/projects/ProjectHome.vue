@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useLoad } from '../api/useLoad';
+import SearchField from '../search/SearchField.vue';
 import EmptyView from '../views/EmptyView.vue';
 import { projectItems, projectOf } from './api';
 
-// Home with a Project (`/?project=host/org/repo`, handoff §3.2, §5.1, §5.2): its Items, as text only.
+// Home with a Project (`/?project=host/org/repo`, handoff §3.2, §5.1, §5.2): the question and the
+// search field, then its Items, as text only. A search goes to `/?q=&project=`, which Home runs (#730).
 const route = useRoute();
+const router = useRouter();
 const project = computed(() => projectOf(route.query));
+const draft = ref('');
+
+function submit() {
+  const q = draft.value.trim();
+  if (q) void router.push({ path: '/', query: { q, project: project.value } });
+}
 
 // Delay 0: the skeleton shows as soon as the load starts.
 const { state: loadState, data: view, failure, wait, limited, retry: load } = useLoad(project, projectItems, 0);
@@ -21,6 +30,8 @@ const heading = computed(() => (state.value === 'notfound' ? 'Project not found'
   <EmptyView v-if="!project" />
   <template v-else>
     <h1>{{ heading }}</h1>
+
+    <SearchField v-if="state !== 'notfound'" v-model="draft" @submit="submit" @clear="draft = ''" />
 
     <template v-if="state === 'notfound'">
       <p class="lead">There's no Project at this address. Pick one from the Project selector, or start again from Home.</p>

@@ -12,8 +12,9 @@
 // - a Miss is the only role=status panel with a dashed border in main; an
 //   error is a role=alert in main;
 // - the Item link's path is /items/<kind>/<id>, the id's slash encoded or not;
-// - the whole result set comes from one GET /api/v1/search per query, and the
-//   Kind filter never calls the API again;
+// - one GET /api/v1/search per query carries `q`, `project` when one is selected
+//   and `kind` when a Kind pill is pressed; a Kind pill is a new call, the browser
+//   no longer filters (#730);
 // - the "Overrides" line names the hit's own kind and its name or its id:
 //   "Overrides article:<name|id> from <scope>", one "from" per Scope.
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -98,6 +99,23 @@ eachViewport((width, theme) => {
     await page.goto('/?q=database');
     await expect(main(page).getByRole('alert')).toBeVisible();
     await evidence(page, width, theme, '-error', 'search');
+  });
+
+  test('a Kind with no hits is captured and axe-clean', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto(`/?q=x&kind=decision&project=${encodeURIComponent(shop)}`);
+    await expect(main(page).getByRole('status').filter({ hasText: `No decisions for ${shop} yet.` })).toBeVisible();
+    await evidence(page, width, theme, '-empty-kind', 'search');
+  });
+
+  test('the unregistered-Project hint is captured and axe-clean, and wraps without scrolling', async ({ page }) => {
+    const hint = `The Project ${none} is not registered on this server, so this is global guidance only. To register it, add a projects/${none}/ directory to one of goldie's Sources.`;
+    await stubScoped(page, { unregistered: none, hint });
+    await page.goto(`/?q=database&project=${encodeURIComponent(none)}`);
+    await expect(main(page).getByText('is not registered on this server')).toBeVisible();
+    await expect(rows(page)).toHaveCount(5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await evidence(page, width, theme, '-hint', 'search');
   });
 });
 
@@ -348,56 +366,246 @@ test.describe('absent enforced and overrides (#529)', () => {
   });
 });
 
-test.describe('the Kind filter', () => {
+// The search call carries the Project and the Kind (#730): the API does the
+// scoping and the filtering, the browser shows what it answers.
+const apiProjects = /\/api\/v1\/projects$/;
+const apiProjectItems = /\/api\/v1\/projects\/[^/]+\/items$/;
+const billing = 'github.com/acme/billing';
+const none = 'github.com/acme/none';
+
+type Call = URLSearchParams;
+
+// stubScoped answers like the API: a Kind narrows the hits, and a Project's copy
+// of an Item replaces the global one with `overrides: ['global']`. Every request's
+// parameters are recorded. A Project the test names unregistered gets the hint.
+async function stubScoped(page: Page, opts: { unregistered?: string; hint?: string } = {}) {
+  const calls: Call[] = [];
+  await page.route(apiProjects, (route) => json(route, 200, { projects: [shop, billing] }));
+  await page.route(apiProjectItems, (route) => json(route, 200, { items: [], suppressions: [] }));
+  await page.route(apiSearch, (route) => {
+    const p = new URL(route.request().url()).searchParams;
+    calls.push(p);
+    const project = p.get('project');
+    const kind = p.get('kind');
+    let hits = sample.filter((h) => !kind || (h.kind ?? 'article') === kind);
+    if (project === shop) {
+      hits = hits.map((h) => (h.id === 'platform/deploy' ? { ...h, scope: shop, name: 'Deploying to Kubernetes (shop)', overrides: ['global'] } : h));
+    }
+    const body: Record<string, unknown> = results(p.get('q') ?? '', hits);
+    if (project && project === opts.unregistered) body.hint = opts.hint;
+    return json(route, 200, body);
+  });
+  return calls;
+}
+
+test.describe('the Kind pills', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('shows a pill per Kind with its count, all hits first, and filters on the client', async ({ page }) => {
-    const seen = await stubSearch(page, sample);
+  test('are one per Kind plus All, with All pressed first', async ({ page }) => {
+    await stubScoped(page);
     await page.goto('/?q=x');
     await expect(rows(page)).toHaveCount(5);
-    const all = pill(page, /all/i);
-    await expect(all).toHaveAttribute('aria-pressed', 'true');
-    await expect(all).toContainText('5');
-    await expect(pill(page, /article/i)).toContainText('3');
-    await expect(pill(page, /skill/i)).toContainText('1');
-    await expect(pill(page, /agent/i)).toContainText('1');
-    await expect(pill(page, /article/i)).toHaveAttribute('aria-pressed', 'false');
+    await expect(pill(page, /all/i)).toHaveAttribute('aria-pressed', 'true');
+    for (const kind of [/article/i, /skill/i, /agent/i]) await expect(pill(page, kind)).toHaveAttribute('aria-pressed', 'false');
+  });
 
-    const calls = seen.length;
-    await pill(page, /article/i).click();
-    await expect(pill(page, /article/i)).toHaveAttribute('aria-pressed', 'true');
-    await expect(all).toHaveAttribute('aria-pressed', 'false');
-    await expect(rows(page)).toHaveCount(3);
-    for (const t of await links(page).allInnerTexts()) expect(t).toMatch(/article/);
+  test('a Kind pill sets kind on the API call and in the URL, and shows what the API answers', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto('/?q=x');
+    await expect(rows(page)).toHaveCount(5);
+    expect(calls[0].has('kind'), 'All sends no kind').toBe(false);
+
     await pill(page, /skill/i).click();
+    await expect(pill(page, /skill/i)).toHaveAttribute('aria-pressed', 'true');
+    await expect(pill(page, /all/i)).toHaveAttribute('aria-pressed', 'false');
     await expect(rows(page)).toHaveCount(1);
     await expect(rows(page).first()).toContainText('skill-retry');
-    await expect(pill(page, /skill/i)).toHaveAttribute('aria-pressed', 'true');
-    await expect(pill(page, /article/i)).toHaveAttribute('aria-pressed', 'false');
-    await all.click();
+    expect(new URL(page.url()).searchParams.get('kind')).toBe('skill');
+    expect(new URL(page.url()).searchParams.get('q')).toBe('x');
+    expect(calls.at(-1)?.getAll('kind')).toEqual(['skill']);
+    expect(calls.at(-1)?.get('q')).toBe('x');
+
+    await pill(page, /agent/i).click();
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page).first()).toContainText('reviewer');
+    expect(calls.at(-1)?.getAll('kind')).toEqual(['agent']);
+
+    await pill(page, /all/i).click();
     await expect(rows(page)).toHaveCount(5);
-    expect(seen.length, 'the filter made no API request').toBe(calls);
+    await expect(pill(page, /all/i)).toHaveAttribute('aria-pressed', 'true');
+    expect(new URL(page.url()).searchParams.has('kind')).toBe(false);
+    expect(calls.at(-1)?.has('kind')).toBe(false);
   });
 
-  test('a Kind with no hit has no pill, and the pill counts never show the Miss panel', async ({ page }) => {
-    await stubSearch(page, sample.slice(0, 2));
-    await page.goto('/?q=x');
-    await expect(pill(page, /article/i)).toContainText('2');
-    await expect(pill(page, /skill/i)).toHaveCount(0);
-    await expect(pill(page, /agent/i)).toHaveCount(0);
-    await expect(missPanel(page)).toHaveCount(0);
+  test('a shared /?q=&kind= link searches that Kind at once and shows its pill pressed', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto('/?q=x&kind=skill');
+    await expect(rows(page)).toHaveCount(1);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].getAll('kind')).toEqual(['skill']);
+    await expect(pill(page, /skill/i)).toHaveAttribute('aria-pressed', 'true');
+    await page.reload();
+    await expect(pill(page, /skill/i)).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows(page)).toHaveCount(1);
   });
 
-  test('a new search keeps working after a filter: the filter starts from all hits', async ({ page }) => {
+  test('the browser no longer filters: every hit the API sends is shown whatever pill is pressed', async ({ page }) => {
     await stubSearch(page, sample);
     await page.goto('/?q=x');
+    await expect(rows(page)).toHaveCount(5);
+    await pill(page, /skill/i).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('kind')).toBe('skill');
+    await expect(rows(page)).toHaveCount(5);
+  });
+
+  test('a Kind with a Project sends both, and the Project stays in the URL', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto(`/?q=x&project=${encodeURIComponent(shop)}`);
+    await expect(rows(page)).toHaveCount(5);
     await pill(page, /skill/i).click();
     await expect(rows(page)).toHaveCount(1);
-    await field(page).fill('y');
-    await field(page).press('Enter');
-    await expect.poll(() => qParam(page)).toBe('y');
-    await expect(pill(page, /all/i)).toHaveAttribute('aria-pressed', 'true');
+    expect(calls.at(-1)?.get('project')).toBe(shop);
+    expect(calls.at(-1)?.get('kind')).toBe('skill');
+    expect(new URL(page.url()).searchParams.get('project')).toBe(shop);
+  });
+});
+
+test.describe('search with a selected Project', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  // The request's parameters (q, project, kind, never drafts) are pinned in HomeView.test.ts.
+  test('shows the Project copy overriding the global one, from one search', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto(`/?q=kubernetes&project=${encodeURIComponent(shop)}`);
     await expect(rows(page)).toHaveCount(5);
+    expect(calls, 'one search per query').toHaveLength(1);
+    const first = (await links(page).first().innerText()).replace(/\s+/g, ' ');
+    expect(first).toContain('Deploying to Kubernetes (shop)');
+    expect(first).toContain(shop);
+    expect(first).toMatch(/Overrides\s+article:\S.*from\s+global/);
+    await expect(main(page)).not.toContainText(/Deploying to Kubernetes(?! \(shop\))/);
+  });
+
+  test('without a Project shows the global copy', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto('/?q=kubernetes');
+    await expect(rows(page)).toHaveCount(5);
+    await expect(links(page).first()).toContainText('Deploying to Kubernetes');
+    expect((await links(page).first().innerText()).replace(/\s+/g, ' ')).not.toContain('(shop)');
+  });
+
+  test('choosing a Project on the results searches again with it', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto('/?q=kubernetes');
+    await expect(rows(page)).toHaveCount(5);
+    await page.locator('header').getByRole('combobox', { name: /project/i }).click();
+    await page.getByRole('option').filter({ hasText: billing }).click();
+    await expect.poll(() => calls.some((c) => c.get('project') === billing && c.get('q') === 'kubernetes')).toBe(true);
+    expect(new URL(page.url()).searchParams.get('q')).toBe('kubernetes');
+  });
+
+  test('Home keeps the question and the one search field, and makes no search without a query', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto(`/?project=${encodeURIComponent(shop)}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    await expect(field(page)).toHaveCount(1);
+    await expect(field(page)).toHaveAccessibleName(/.+/);
+    await expect(field(page)).toHaveAttribute('placeholder', 'database, logging, retries, feature flags…');
+    expect(calls, 'no query, no search').toEqual([]);
+  });
+
+  test('typing in the field with a Project selected searches it and keeps the Project in the URL', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto(`/?project=${encodeURIComponent(shop)}`);
+    await field(page).fill('database');
+    await field(page).press('Enter');
+    await expect(rows(page)).toHaveCount(5);
+    expect(new URL(page.url()).searchParams.get('q')).toBe('database');
+    expect(new URL(page.url()).searchParams.get('project')).toBe(shop);
+    expect(calls.at(-1)?.get('project')).toBe(shop);
+    expect(calls.at(-1)?.get('q')).toBe('database');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+  });
+
+  test('clearing the field with a Project selected drops q, keeps the Project and shows no hits', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto(`/?q=database&project=${encodeURIComponent(shop)}`);
+    await expect(rows(page)).toHaveCount(5);
+    await main(page).getByRole('button', { name: /clear/i }).click();
+    await expect(field(page)).toHaveValue('');
+    await expect.poll(() => qParam(page)).toBeNull();
+    expect(new URL(page.url()).searchParams.get('project')).toBe(shop);
+    await expect(links(page).filter({ hasText: 'skill-retry' })).toHaveCount(0);
+  });
+
+  test('a ?q= of only spaces with a Project is not a search', async ({ page }) => {
+    const calls = await stubScoped(page);
+    await page.goto(`/?q=%20%20&project=${encodeURIComponent(shop)}`);
+    await expect(field(page)).toBeVisible();
+    await expect(missPanel(page)).toHaveCount(0);
+    expect(calls).toEqual([]);
+  });
+});
+
+test.describe('the unregistered-Project hint', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const hint = `The Project ${none} is not registered on this server, so this is global guidance only. To register it, add a projects/${none}/ directory to one of goldie's Sources.`;
+  const shown = (page: Page) => main(page).getByText('is not registered on this server');
+
+  test('shows the API hint once, above the results, as served', async ({ page }) => {
+    await stubScoped(page, { unregistered: none, hint });
+    await page.goto(`/?q=x&project=${encodeURIComponent(none)}`);
+    await expect(rows(page)).toHaveCount(5);
+    await expect(shown(page)).toHaveCount(1);
+    await expect(shown(page)).toContainText(hint);
+    const above = await shown(page).evaluate((el) => {
+      const ul = document.querySelector('main ul');
+      return !!ul && !!(el.compareDocumentPosition(ul) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+    expect(above, 'the hint comes before the hits').toBe(true);
+  });
+
+  test('stays once after the Kind changes, and is gone for a registered Project', async ({ page }) => {
+    await stubScoped(page, { unregistered: none, hint });
+    await page.goto(`/?q=x&project=${encodeURIComponent(none)}`);
+    await expect(shown(page)).toHaveCount(1);
+    await pill(page, /skill/i).click();
+    await expect(rows(page)).toHaveCount(1);
+    await expect(shown(page)).toHaveCount(1);
+    await page.goto(`/?q=x&project=${encodeURIComponent(shop)}`);
+    await expect(rows(page)).toHaveCount(5);
+    await expect(main(page)).not.toContainText('not registered');
+  });
+
+  test('is shown with a Miss too, and nothing is shown without a hint', async ({ page }) => {
+    await page.route(apiProjects, (route) => json(route, 200, { projects: [shop] }));
+    await page.route(apiProjectItems, (route) => json(route, 200, { items: [], suppressions: [] }));
+    await page.route(apiSearch, (route) => {
+      const withProject = new URL(route.request().url()).searchParams.has('project');
+      return json(route, 200, withProject ? { query: 'quantum', results: [], hint } : { query: 'quantum', results: [] });
+    });
+    await page.goto(`/?q=quantum&project=${encodeURIComponent(none)}`);
+    await expect(missPanel(page)).toBeVisible();
+    await expect(shown(page)).toHaveCount(1);
+    await page.goto('/?q=quantum');
+    await expect(missPanel(page)).toBeVisible();
+    await expect(main(page)).not.toContainText('not registered');
+  });
+
+  test('is plain text: markup and links in it are not rendered or followed', async ({ page }) => {
+    let alerted = false;
+    page.on('dialog', async (d) => {
+      alerted = true;
+      await d.dismiss();
+    });
+    const evil = 'Register at <a href="https://evil.example/x">here</a> <img src=x onerror=alert(1)> **bold** [x](javascript:alert(2))';
+    await stubScoped(page, { unregistered: none, hint: evil });
+    await page.goto(`/?q=x&project=${encodeURIComponent(none)}`);
+    await expect(rows(page)).toHaveCount(5);
+    await expect(main(page)).toContainText(evil);
+    await expect(main(page).locator('a[href*="evil.example"], img, script, strong, b')).toHaveCount(0);
+    expect(alerted).toBe(false);
   });
 });
 
@@ -590,5 +798,44 @@ test.describe('rapid typing', () => {
     await field(page).press('Enter');
     await expect.poll(() => qParam(page)).toBe('second');
     await expect(field(page)).toHaveValue('second');
+  });
+});
+
+test.describe('a Kind that matches nothing, and the pills while loading', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows the neutral Empty Kind panel, not the Miss, and keeps the pills to go back', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto(`/?q=x&kind=decision&project=${encodeURIComponent(shop)}`);
+    const panel = main(page).getByRole('status').filter({ hasText: `No decisions for ${shop} yet.` });
+    await expect(panel).toHaveCount(1);
+    await expect(main(page)).not.toContainText('Miss');
+    await expect(panel).not.toHaveCSS('border-top-style', 'dashed');
+    await expect(pill(page, /decision/i)).toHaveAttribute('aria-pressed', 'true');
+    await pill(page, /all/i).click();
+    await expect(rows(page)).toHaveCount(5);
+  });
+
+  test('without a Project the Empty Kind panel names only the Kind', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto('/?q=x&kind=decision');
+    await expect(main(page).getByRole('status').filter({ hasText: 'No decisions yet.' })).toHaveCount(1);
+    await expect(missPanel(page)).toHaveCount(0);
+  });
+
+  test('an unfiltered search with no hits is still the Miss', async ({ page }) => {
+    await stubSearch(page, []);
+    await page.goto('/?q=quantum');
+    await expect(missPanel(page)).toBeVisible();
+  });
+
+  test('a pressed Kind pill keeps keyboard focus while the search loads', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto('/?q=x');
+    await expect(rows(page)).toHaveCount(5);
+    await pill(page, /skill/i).focus();
+    await page.keyboard.press('Enter');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(pill(page, /skill/i)).toBeFocused();
   });
 });
