@@ -1,26 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue';
+import { useCopy } from './useCopy';
 
 // CommandSnippet, inline (handoff §4): a command on the code surface with a
 // copy button. The button's name is fixed ("Copy command"); the result is
 // announced through a polite status, never by renaming the button.
 const props = defineProps<{ command: string }>();
 
-const status = ref('');
-let timer: ReturnType<typeof setTimeout> | undefined;
-
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(props.command);
-    status.value = 'Copied';
-  } catch {
-    status.value = 'Copy failed. Select the command and copy it.';
-  }
-  clearTimeout(timer);
-  timer = setTimeout(() => (status.value = ''), 2500);
-}
-
-onBeforeUnmount(() => clearTimeout(timer));
+const { status, copy: write } = useCopy('command');
+const copy = () => write(props.command);
 </script>
 
 <template>

@@ -57,8 +57,8 @@ function render(tokens: Token[]): VNodeChild[] {
 }
 
 export default defineComponent({
-  props: { source: { type: String, required: true } },
-  setup: (props) => () => h('div', { class: 'article-body' }, render(parse(props.source))),
+  props: { source: { type: String, required: true }, contiguous: Boolean },
+  setup: (props) => () => h('div', { class: 'article-body' }, render(parse(props.source, props.contiguous))),
 });
 </script>
 

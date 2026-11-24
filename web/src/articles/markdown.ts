@@ -42,11 +42,16 @@ md.core.ruler.push('goldie_headings', (state) => {
   // it: no gap after the h1, WCAG 1.3.1) and the rest move by the same amount, between h2 and h6.
   let shift: number | undefined;
   let tag = 'h2';
+  // With `contiguous` (a body inside a page that has its own outline) a heading sits at most one level
+  // below the one before it, so a source that skips a level leaves no gap either.
+  let prev = 1;
   for (const t of state.tokens) {
     if (t.type === 'heading_open') {
       const level = Number(t.tag.slice(1));
       shift ??= 2 - level;
-      tag = `h${Math.min(Math.max(level + shift, 2), 6)}`;
+      const limit = state.env?.contiguous ? prev + 1 : 6;
+      tag = `h${Math.min(Math.max(level + shift, 2), 6, limit)}`;
+      prev = Number(tag.slice(1));
       t.tag = tag;
     } else if (t.type === 'heading_close') {
       t.tag = tag;
@@ -54,4 +59,4 @@ md.core.ruler.push('goldie_headings', (state) => {
   }
 });
 
-export const parse = (source: string): Token[] => md.parse(source, {});
+export const parse = (source: string, contiguous = false): Token[] => md.parse(source, { contiguous });
