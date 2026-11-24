@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useRoute } from 'vue-router';
+import { carried } from '../projects/api';
 import type { SearchHit } from './api';
 
 // One search hit (handoff §3.3, §4 ResultCard): the whole card is one link to
@@ -12,7 +14,12 @@ const props = defineProps<{ hit: SearchHit }>();
 // /items/<kind>/<id>, each segment percent-encoded: an article id such as
 // platform/deploy travels as one segment (platform%2Fdeploy) and the route
 // /items/:kind/:name decodes it back.
-const to = computed(() => `/items/${encodeURIComponent(props.hit.kind)}/${encodeURIComponent(props.hit.id)}`);
+// The link carries the search it comes from (q, kind) and the Project, for the Item's back link.
+const route = useRoute();
+const to = computed(() => ({
+  path: `/items/${encodeURIComponent(props.hit.kind)}/${encodeURIComponent(props.hit.id)}`,
+  query: carried(route.query, ['q', 'kind', 'project']),
+}));
 </script>
 
 <template>

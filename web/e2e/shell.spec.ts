@@ -2,7 +2,7 @@
 // renders into. Per width and theme: the shot, axe (with best-practice), the
 // landmarks, the empty state and the top bar. Plus the nav, the routes and
 // the 1024 px change of the shell.
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 import { eachViewport, evidence, expectNavCollapsed, menuButton, missingBrandFonts, problems, themeToggle, withNav } from './ux';
 
 const emptyCopy = /Nothing to show yet\. Content appears here as goldie[’']s pages come online\./;
@@ -266,5 +266,226 @@ test.describe('page hygiene', () => {
       [...document.querySelectorAll('*')].flatMap((el) => el.getAttributeNames().filter((a) => /^on/i.test(a)).map((a) => `${el.tagName}.${a}`)),
     );
     expect(inline).toEqual([]);
+  });
+});
+
+// The selected Project follows the user (#729, handoff §2.2, §3.1): the query
+// string carries `project`, so every link and every page keeps it. The API is
+// stubbed per test; the throwaway ux token is a reader, so the nav specs stub
+// GET /api/v1/session as an operator to see every link.
+test.describe('the selected Project follows the user across pages', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const shop = 'github.com/acme/shop';
+  const billing = 'github.com/acme/billing';
+  const origin = 'http://goldie.test';
+
+  const json = (route: Route, status: number, body: unknown) =>
+    route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+
+  const asOperator = (page: Page) =>
+    page.route('**/api/v1/session', (route) =>
+      route.request().method() === 'GET' ? json(route, 200, { name: 'ops', role: 'operator' }) : route.continue(),
+    );
+
+  const stubProjects = (page: Page) =>
+    page.route(/\/api\/v1\/projects$/, (route) => json(route, 200, { projects: [shop, billing] }));
+
+  const selector = (page: Page) => page.locator('header').getByRole('combobox', { name: /project/i });
+  const chooseProject = async (page: Page, id: string) => {
+    await selector(page).click();
+    await page.getByRole('option').filter({ hasText: id }).click();
+  };
+
+  // navHrefs reads every link of the side nav and the brand link as [name, href].
+  async function navHrefs(page: Page): Promise<[string, string][]> {
+    const nav = await withNav(page);
+    const read = (els: Element[], name: string) =>
+      els.map((el) => [name || (el.textContent ?? '').trim(), el.getAttribute('href') ?? ''] as [string, string]);
+    const links = [
+      ...(await nav.getByRole('link').evaluateAll(read, '')),
+      ...(await page.locator('header').getByRole('link', { name: /goldie/i }).evaluateAll(read, 'brand')),
+    ];
+    return links.map(([name, href]) => [name.replace(/\s*\d+ failing$/, ''), href]);
+  }
+
+  const parsed = (href: string) => new URL(href, origin);
+
+  const paths: Record<string, string> = {
+    Home: '/',
+    Decisions: '/decisions',
+    Skills: '/assets/skills',
+    Agents: '/assets/agents',
+    Loops: '/assets/loops',
+    Instructions: '/assets/instructions',
+    Activity: '/ops/activity',
+    Sources: '/ops/sources',
+    brand: '/',
+  };
+
+  test('with a Project selected every side-nav link and the brand link keep ?project=<id>', async ({ page }) => {
+    await asOperator(page);
+    await stubProjects(page);
+    await page.goto(`/decisions?project=${encodeURIComponent(shop)}`);
+    const links = await navHrefs(page);
+    expect(links.map(([n]) => n).sort(), 'every nav entry and the brand link').toEqual(Object.keys(paths).sort());
+    for (const [name, href] of links) {
+      const u = parsed(href);
+      expect(u.pathname, `${name} still goes to its page`).toBe(paths[name]);
+      expect(u.searchParams.get('project'), `${name} keeps the Project`).toBe(shop);
+    }
+  });
+
+  test('a nav link click lands on its page with the Project in the URL and in the selector', async ({ page }) => {
+    await asOperator(page);
+    await stubProjects(page);
+    await page.goto(`/?project=${encodeURIComponent(shop)}`);
+    const nav = await withNav(page);
+    await nav.getByRole('link', { name: 'Decisions', exact: true }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions' && u.searchParams.get('project') === shop);
+    await expect(selector(page)).toContainText(shop);
+    await page.locator('header').getByRole('link', { name: /goldie/i }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/' && u.searchParams.get('project') === shop);
+    await expect(selector(page)).toContainText(shop);
+  });
+
+  test('with no Project selected the links carry no project', async ({ page }) => {
+    await asOperator(page);
+    await stubProjects(page);
+    await page.goto('/decisions');
+    const links = await navHrefs(page);
+    expect(links.length).toBe(Object.keys(paths).length);
+    for (const [name, href] of links) {
+      expect(parsed(href).searchParams.has('project'), `${name} (${href}) carries no project`).toBe(false);
+      expect(href, `${name} has no empty project`).not.toContain('project');
+    }
+  });
+
+  for (const path of ['/decisions', '/assets/skills', '/assets/skills?tab=x']) {
+    test(`choosing a Project at ${path} keeps the user on the page and sets its project query`, async ({ page }) => {
+      await stubProjects(page);
+      await page.goto(path);
+      const before = parsed(page.url());
+      await chooseProject(page, billing);
+      await expect(page).toHaveURL((u) => u.pathname === before.pathname && u.searchParams.get('project') === billing);
+      for (const [k, v] of before.searchParams) expect(parsed(page.url()).searchParams.get(k), `${k} is kept`).toBe(v);
+      await expect(selector(page)).toContainText(billing);
+      await chooseProject(page, shop);
+      await expect(page).toHaveURL((u) => u.pathname === before.pathname && u.searchParams.get('project') === shop);
+      expect(parsed(page.url()).searchParams.getAll('project'), 'one project value').toEqual([shop]);
+    });
+  }
+
+  test('choosing a Project on an Item page stays on that Item', async ({ page }) => {
+    await stubProjects(page);
+    await page.route(/\/api\/v1\/articles\//, (route) =>
+      json(route, 200, { id: 'platform/deploy', name: 'Deploying to Kubernetes', keywords: [], content: 'Body.' }),
+    );
+    await page.goto('/items/article/platform%2Fdeploy');
+    await chooseProject(page, shop);
+    await expect(page).toHaveURL((u) => u.pathname === '/items/article/platform%2Fdeploy' && u.searchParams.get('project') === shop);
+  });
+
+  for (const path of ['/ops/activity', '/assets/skills', '/assets/agents', '/decisions', '/']) {
+    test(`opening ${path}?project=x shows x in the selector`, async ({ page }) => {
+      await asOperator(page);
+      await stubProjects(page);
+      await page.goto(`${path}?project=${encodeURIComponent(shop)}`);
+      await expect(selector(page)).toContainText(shop);
+    });
+  }
+
+  for (const hostile of ['../x', 'github.com/acme/..%2Fx', '..%2F..%2Fetc', 'a/b?c=d#e', 'x&kind=skill']) {
+    test(`the Project id ${hostile} is encoded in every link and never becomes a path`, async ({ page }) => {
+      await asOperator(page);
+      await stubProjects(page);
+      await page.goto(`/decisions?project=${encodeURIComponent(hostile)}`);
+      const links = await navHrefs(page);
+      expect(links.length).toBe(Object.keys(paths).length);
+      for (const [name, href] of links) {
+        const u = parsed(href);
+        expect(u.pathname, `${name} keeps its own path`).toBe(paths[name]);
+        expect(u.hash, `${name} has no fragment`).toBe('');
+        expect(u.searchParams.get('project'), `${name} round-trips the id`).toBe(hostile);
+        expect([...u.searchParams.keys()], `${name} gains no other parameter`).toEqual(['project']);
+      }
+      // Following a link ends on the page the link names, not on the id's path.
+      const nav = await withNav(page);
+      await nav.getByRole('link', { name: 'Skills', exact: true }).click();
+      await expect(page).toHaveURL((u) => u.pathname === '/assets/skills' && u.searchParams.get('project') === hostile);
+      await expect(page.getByRole('banner')).toBeVisible();
+    });
+  }
+
+  // The Item's back link (criterion 4).
+  const hit = { id: 'platform/deploy', name: 'Deploying to Kubernetes', kind: 'article', scope: 'global', keywords: [], score: 4, matched: ['deploy'], enforced: false, overrides: [] };
+  const stubItemApis = async (page: Page) => {
+    await stubProjects(page);
+    await page.route(/\/api\/v1\/search(\?|$)/, (route) => json(route, 200, { query: 'deploy', results: [hit] }));
+    await page.route(/\/api\/v1\/articles\//, (route) =>
+      json(route, 200, { id: 'platform/deploy', name: 'Deploying to Kubernetes', keywords: [], content: 'Body.' }),
+    );
+  };
+  const back = (page: Page) => page.getByRole('main').getByRole('link', { name: /Back to search/ });
+  const openHit = async (page: Page) => {
+    await page.goto('/?q=deploy&kind=article');
+    await page.getByRole('main').getByRole('listitem').getByRole('link').first().click();
+    await expect(page).toHaveURL((u) => u.pathname === '/items/article/platform%2Fdeploy');
+  };
+
+  test("an Item's back link returns to the search it came from with q and kind", async ({ page }) => {
+    await stubItemApis(page);
+    await openHit(page);
+    await expect(back(page)).toHaveCount(1);
+    const u = parsed((await back(page).getAttribute('href'))!);
+    expect(u.pathname).toBe('/');
+    expect(u.searchParams.get('q')).toBe('deploy');
+    expect(u.searchParams.get('kind')).toBe('article');
+    expect(u.searchParams.has('project')).toBe(false);
+    await back(page).click();
+    await expect(page).toHaveURL((l) => l.pathname === '/' && l.searchParams.get('q') === 'deploy' && l.searchParams.get('kind') === 'article');
+  });
+
+  test("an Item's back link keeps the Project chosen on the way", async ({ page }) => {
+    await stubItemApis(page);
+    await openHit(page);
+    await chooseProject(page, shop);
+    await expect(page).toHaveURL((u) => u.pathname === '/items/article/platform%2Fdeploy' && u.searchParams.get('project') === shop);
+    const u = parsed((await back(page).getAttribute('href'))!);
+    expect(u.pathname).toBe('/');
+    expect(u.searchParams.get('q')).toBe('deploy');
+    expect(u.searchParams.get('kind')).toBe('article');
+    expect(u.searchParams.get('project')).toBe(shop);
+  });
+
+  test("an Item's back link without a previous search goes to Home with the Project", async ({ page }) => {
+    await stubItemApis(page);
+    await page.goto(`/items/article/platform%2Fdeploy?project=${encodeURIComponent(shop)}`);
+    await expect(back(page)).toHaveCount(1);
+    const u = parsed((await back(page).getAttribute('href'))!);
+    expect(u.pathname).toBe('/');
+    expect(u.searchParams.get('project')).toBe(shop);
+    expect(u.searchParams.has('q')).toBe(false);
+    expect(u.searchParams.has('kind')).toBe(false);
+    await back(page).click();
+    await expect(page).toHaveURL((l) => l.pathname === '/' && l.searchParams.get('project') === shop);
+  });
+
+  test("an Item's back link without a search or a Project goes to plain Home", async ({ page }) => {
+    await stubItemApis(page);
+    await page.goto('/items/article/platform%2Fdeploy');
+    await expect(back(page)).toHaveCount(1);
+    const u = parsed((await back(page).getAttribute('href'))!);
+    expect(u.pathname).toBe('/');
+    expect([...u.searchParams.keys()]).toEqual([]);
+  });
+
+  test("an Item's back link encodes a hostile Project id and never becomes a path", async ({ page }) => {
+    await stubItemApis(page);
+    await page.goto(`/items/article/platform%2Fdeploy?project=${encodeURIComponent('../x')}`);
+    await expect(back(page)).toHaveCount(1);
+    const u = parsed((await back(page).getAttribute('href'))!);
+    expect(u.pathname).toBe('/');
+    expect(u.searchParams.get('project')).toBe('../x');
   });
 });

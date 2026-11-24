@@ -2,7 +2,9 @@
 // The side nav (handoff §2.1): every entry links to its §2.2 route, and the
 // router marks the current one with aria-current="page". Operator-only entries
 // are absent for readers, who get the Reader nav note (§8) instead.
-import { watch } from 'vue';
+import { computed, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { projectQuery } from '../projects/api';
 import { assetTabs } from '../assets/tabs';
 import { failing, loadFailing } from '../sources/api';
 
@@ -12,25 +14,30 @@ const props = defineProps<{ role: 'reader' | 'operator' }>();
 watch(() => props.role, (r) => r === 'operator' && void loadFailing(), { immediate: true });
 
 const assets = assetTabs.map((t) => [t.name, `/assets/${t.slug}`]);
+
+// Every link keeps the selected Project (#729); with none selected the query is empty.
+const route = useRoute();
+const query = computed(() => projectQuery(route.query));
+const to = (path: string) => ({ path, query: query.value });
 </script>
 
 <template>
   <nav aria-label="Main" class="nav">
     <slot />
     <ul>
-      <li><RouterLink to="/">Home</RouterLink></li>
-      <li><RouterLink to="/decisions">Decisions</RouterLink></li>
+      <li><RouterLink :to="to('/')">Home</RouterLink></li>
+      <li><RouterLink :to="to('/decisions')">Decisions</RouterLink></li>
     </ul>
     <p id="nav-assets" class="group">Agent assets</p>
     <ul aria-labelledby="nav-assets">
-      <li v-for="[name, path] in assets" :key="path"><RouterLink :to="path">{{ name }}</RouterLink></li>
+      <li v-for="[name, path] in assets" :key="path"><RouterLink :to="to(path)">{{ name }}</RouterLink></li>
     </ul>
     <template v-if="role === 'operator'">
       <p id="nav-operate" class="group">Operate</p>
       <ul aria-labelledby="nav-operate">
-        <li><RouterLink to="/ops/activity">Activity</RouterLink></li>
+        <li><RouterLink :to="to('/ops/activity')">Activity</RouterLink></li>
         <li>
-          <RouterLink to="/ops/sources">Sources<strong v-if="failing" class="count">{{ ` ${failing} failing` }}</strong></RouterLink>
+          <RouterLink :to="to('/ops/sources')">Sources<strong v-if="failing" class="count">{{ ` ${failing} failing` }}</strong></RouterLink>
         </li>
       </ul>
     </template>

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import RoleMenu from '../auth/RoleMenu.vue';
+import { projectQuery } from '../projects/api';
 import ProjectSelector from '../projects/ProjectSelector.vue';
 import GoldieMark from './GoldieMark.vue';
 import SideNav from './SideNav.vue';
@@ -25,6 +26,7 @@ const drawer = ref<HTMLElement>();
 const main = ref<HTMLElement>();
 let wide: MediaQueryList | undefined;
 const router = useRouter();
+const route = useRoute();
 let linkClicked = false;
 // Whether the click now being handled asked for a route change. linkClicked is
 // consumed by afterEach, which can run between the router's click handler and
@@ -173,7 +175,7 @@ onBeforeUnmount(() => {
   <div class="shell" @click.capture="onShellClick">
     <header class="topbar" :inert="open">
       <a class="skip-link" href="#main" @click.prevent="skipToMain">Skip to content</a>
-      <RouterLink to="/" class="brand"><GoldieMark /><span class="sr-only sr-only-phone">goldie</span></RouterLink>
+      <RouterLink :to="{ path: '/', query: projectQuery(route.query) }" class="brand"><GoldieMark /><span class="sr-only sr-only-phone">goldie</span></RouterLink>
       <ProjectSelector />
       <div class="actions">
         <ThemeToggle />

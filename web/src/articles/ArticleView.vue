@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { carried } from '../projects/api';
 import { getArticle, type Article, ArticleError } from './api';
 import MarkdownBody from './MarkdownBody.vue';
 
@@ -11,6 +12,8 @@ import MarkdownBody from './MarkdownBody.vue';
 // another article is a new instance.
 const route = useRoute();
 
+// The way back (#729): the search this Item came from, with its Project, else Home with the Project.
+const back = computed(() => ({ path: '/', query: carried(route.query, ['q', 'kind', 'project']) }));
 const article = ref<Article | null>(null);
 const error = ref<{ message: string; hint: string } | null>(null);
 
@@ -38,6 +41,8 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- The way back sits above everything, so a long article never hides it (#729). -->
+  <RouterLink :to="back" class="back">← Back to search</RouterLink>
   <!-- Copy: handoff §8, lifecycle banners. -->
   <div v-if="article?.status === 'draft'" role="status" class="banner draft">
     <strong>Draft preview.</strong> Agents and API consumers can't see this yet. Merge with <code>status: published</code> to release it.
@@ -71,7 +76,6 @@ onMounted(async () => {
     <div role="alert" class="alert">
       {{ error.message }} <span v-if="error.hint">{{ error.hint }}</span>
     </div>
-    <RouterLink to="/" class="back">← Back to search</RouterLink>
   </template>
 </template>
 
@@ -148,6 +152,7 @@ onMounted(async () => {
   color: var(--danger-ink);
 }
 .back {
+  margin-bottom: var(--space-2);
   display: inline-flex;
   align-items: center;
   min-height: var(--target-min);

@@ -25,6 +25,11 @@ import { eachViewport, evidence, problems } from './ux';
 
 const apiArticle = /\/api\/v1\/articles\//;
 
+// The shell's own "← Back to search" link (#729) is on a loaded article too; the
+// link specs below are about links made from the article's Markdown, and match
+// only that exact link, so any other extra anchor still fails them.
+const shellBack = /^\s*←\s*Back to search\s*$/;
+
 type Article = {
   id?: string;
   name?: string;
@@ -327,7 +332,7 @@ test.describe('hostile Markdown', () => {
     await expect(h1(page)).toBeVisible();
     await expect(main(page).getByRole('link', { name: 'secure link' })).toBeVisible();
 
-    const hrefs = await main(page).locator('a').evaluateAll((as) => as.map((a) => a.getAttribute('href') ?? ''));
+    const hrefs = await main(page).locator('a').filter({ hasNotText: shellBack }).evaluateAll((as) => as.map((a) => a.getAttribute('href') ?? ''));
     expect(hrefs.sort()).toEqual(['http://example.org/plain', 'https://example.org/safe']);
 
     for (const name of ['secure link', 'plain link']) {
@@ -345,7 +350,7 @@ test.describe('hostile Markdown', () => {
     const text = await mainText(page);
     expect(text).toContain('click here');
     expect(text).toContain('read');
-    await expect(main(page).locator('a')).toHaveCount(0);
+    await expect(main(page).locator('a').filter({ hasNotText: shellBack })).toHaveCount(0);
   });
 
   test('an h1 in the source never makes a second page h1', async ({ page }) => {
