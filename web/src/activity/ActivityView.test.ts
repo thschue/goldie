@@ -154,3 +154,23 @@ describe('ActivityView Pause', () => {
     app.unmount();
   });
 });
+
+describe('ActivityView Pause clock (#874)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the tiles as they were however long the pause, and brings them up to date on Resume', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ...Array.from({ length: 10 }, (_, i) => ev(i + 1))]);
+    expect(page.tiles()).toContain('Requests 2 per minute');
+
+    await page.press('Pause');
+    vi.advanceTimersByTime(6 * 60_000);
+    await page.send([{ type: 'status', replica: 'goldie-1', up: true, lastSeen: '' }, ...Array.from({ length: 5 }, (_, i) => ev(20 + i))]);
+    expect(page.tiles()).toContain('Requests 2 per minute');
+
+    await page.press('Resume');
+    expect(page.tiles()).toContain('Requests 1 per minute');
+    app.unmount();
+  });
+});

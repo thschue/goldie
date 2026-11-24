@@ -121,18 +121,18 @@ function apply(frames: Frame[]) {
       else if (seen) seen.heard = Math.max(seen.heard, t);
     } else if (f.type === 'status') {
       fleet.value.set(f.replica, { up: f.up, lastSeen: f.lastSeen, heard: f.up ? Date.now() : 0 });
-      now.value = Date.now();
+      if (!paused.value) now.value = Date.now();
     } else if (f.type === 'dropped') dropped.value = true;
     else if (phase.value === 'connecting') phase.value = 'live';
   }
   if (!events.length) return;
-  now.value = Date.now();
   // Paused (WCAG 2.2.2): the stage, the tiles and the rows all stand still; Resume applies what was held.
   if (paused.value) {
     held = add(held, events);
     pending = [...pending, ...events].slice(-maxPending);
     return;
   }
+  now.value = Date.now();
   if (fresh.length) {
     stage.add(fresh, now.value);
     if (!frame) drawStage();
@@ -189,7 +189,8 @@ const announced = ref(0);
 let announcedAt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 // "stopped answering 2 minutes ago" ages while the page is open.
-const tick = setInterval(() => (now.value = Date.now()), 30_000);
+// Paused, the clock stands still too: the tiles' five-minute window would slide otherwise.
+const tick = setInterval(() => !paused.value && (now.value = Date.now()), 30_000);
 // The stage's summary changes at most every 30 s, whether or not a particle is moving.
 const stageTick = setInterval(() => !frame && drawStage(), 5_000);
 function announce() {
