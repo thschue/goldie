@@ -43,15 +43,21 @@ const overrides = computed(() => article.value?.overrides ?? []);
 
 // Fetch on mount and again when the Project changes (#844), as HomeView does. The previous
 // copy and error are cleared first, and a response that lands after a newer fetch began is dropped.
+// The name is read once: the shell keys the view by path, and a watcher firing while the route
+// leaves must not ask for another name.
+const name = String(route.params.name);
 let latest = 0;
 watch(
   () => route.query.project,
   async (project) => {
+    if (String(route.params.name) !== name) return; // the route is leaving this article
     const mine = ++latest;
     article.value = null;
     error.value = null;
+    // The router's title for this page, so a copy that does not resolve keeps no previous name.
+    document.title = `${String(route.meta.title)} · goldie`;
     try {
-      const got = await getArticle(String(route.params.name), String(project ?? ''));
+      const got = await getArticle(name, String(project ?? ''));
       if (mine !== latest) return;
       article.value = got;
       document.title = `${got.name} · goldie`;

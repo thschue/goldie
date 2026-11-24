@@ -817,4 +817,15 @@ test.describe('an article when the Project changes', () => {
     await expect(main(page)).not.toContainText('Shop deploy copy');
     await expect(h1(page)).toHaveText('Article not available');
   });
+
+  test('does not keep the previous copy name in the tab title where the article does not resolve', async ({ page }) => {
+    await stub(page, { [shop]: article({ name: 'Shop deploy copy' }), [billing]: null });
+    await open(page, `platform%2Fdeploy?project=${encodeURIComponent(shop)}`);
+    await expect(page).toHaveTitle('Shop deploy copy · goldie');
+
+    await choose(page, billing);
+
+    await expect(alert(page)).toBeVisible();
+    await expect(page).toHaveTitle('Article · goldie');
+  });
 });
