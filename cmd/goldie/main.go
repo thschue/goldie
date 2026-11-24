@@ -19,6 +19,7 @@ import (
 	"github.com/thschue/goldie/examples"
 	"github.com/thschue/goldie/internal/app"
 	"github.com/thschue/goldie/internal/cli"
+	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/platform"
 )
 
@@ -170,7 +171,26 @@ func runDev(args []string, out io.Writer) error {
 		_ = wait() // the print failure is what the caller needs to know
 		return errors.New("cannot print the export line")
 	}
+	go offerSetup(ctx, logger, addr, token)
 	return wait()
+}
+
+// offerSetup offers to set up the repository for the dev server (#801), only
+// when stdin and stderr are both terminals. It runs beside wait(): the first
+// signal cancels ctx and ends the wait for an answer. Its flow writes to
+// stderr, so stdout stays the export line (PC-07). A failure is logged without
+// the token, which init never words.
+func offerSetup(ctx context.Context, logger *slog.Logger, addr, token string) {
+	env := cli.DefaultEnv(os.Stderr)
+	if env.In == nil {
+		return
+	}
+	if fi, err := os.Stderr.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return
+	}
+	if err := cli.OfferInit(ctx, env, addr, token); err != nil && ctx.Err() == nil {
+		logger.Warn("goldie setup stopped", "reason", contract.CleanLine(err.Error()))
+	}
 }
 
 // isSet reports whether lookup has name or name_FILE, even empty.

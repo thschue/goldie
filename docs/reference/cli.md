@@ -226,6 +226,14 @@ goldie server --dev examples/knowledge
 Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there. That
 `export GOLDIE_ADDR=…` line is also what the MCP config in the next section reads.
 
+When stdin and stderr are both terminals, the working directory is in a repository that is not a
+Source repository, and `.goldie/config.yaml` does not exist, the server then asks on stderr `Set up
+this repository for this dev server now? [Y/n]`. Yes runs the guided `goldie init` against this dev
+server (its address and token, which are never printed or put in the environment), with all of its
+output on stderr: stdout stays the export line alone, so `eval "$(goldie server --dev)"` is safe. No or
+Ctrl-D writes nothing, and the server keeps serving. Ctrl-C at the question stops the server as usual.
+Elsewhere (a pipe, CI, no repository) nothing is asked.
+
 A directory with no content serves the example content built into the binary, and says so on
 stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo
 platform: four articles, a skill, an agent and a loop. Try `goldie search database`, then

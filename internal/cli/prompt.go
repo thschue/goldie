@@ -45,7 +45,11 @@ type prompter struct {
 }
 
 func newPrompter(in io.Reader, out io.Writer) *prompter {
-	_, tty := in.(*os.File)
+	src := in
+	if cr, ok := in.(*ctxReader); ok {
+		src = cr.src
+	}
+	_, tty := src.(*os.File)
 	return &prompter{in: bufio.NewReaderSize(in, maxAnswer), out: out, echoNL: !tty}
 }
 
