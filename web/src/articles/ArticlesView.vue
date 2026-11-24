@@ -2,7 +2,7 @@
 import { errorSentence } from '../api/errorSentence';
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useLoad } from '../api/useLoad';
+import { useAssetLoad } from '../assets/useAssetLoad';
 import { plain } from '../assets/api';
 import ScopeBadge from '../components/ScopeBadge.vue';
 import { projectOf, projectQuery } from '../projects/api';
@@ -13,7 +13,7 @@ import { listArticles } from './api';
 // no Project the global view is requested.
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
-const { state, data, failure, wait, skeleton, limited, retry } = useLoad(project, (p, signal) => listArticles(p, signal));
+const { state, data, failure, wait, skeleton, limited, retry } = useAssetLoad(project, listArticles);
 const articles = computed(() => data.value?.articles ?? []);
 const query = computed(() => projectQuery(route.query));
 // /items/article/<id>: the id is one encoded segment (ADR 0016).
