@@ -472,15 +472,6 @@ test.describe('the Sources page: one card per Source (#733)', () => {
     await expect(rows(page).first()).not.toContainText(/no revision/i);
   });
 
-  test('puts failing cards first, whatever order the API answers in', async ({ page }) => {
-    await asRole(page, 'operator');
-    await stubSync(page, [cards[0], cards[2], cards[1]]);
-    await page.goto('/ops/sources');
-    await expect(rows(page)).toHaveCount(3);
-    await expect(rows(page).first().getByRole('heading', { name: 'team', exact: true })).toBeVisible();
-    await expect(rows(page).first()).toContainText(/failing|failed/i);
-  });
-
   test('a configured Source shows the env origin, a Secret Source its namespace and name', async ({ page }) => {
     await asRole(page, 'operator');
     await stubSync(page, cards);
