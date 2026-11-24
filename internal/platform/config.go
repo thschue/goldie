@@ -345,7 +345,7 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 	upstream := cfg.Mode == ModeUI || cfg.Mode == ModeMCP
 	switch {
 	case !upstream && addr != "":
-		return append(errs, fmt.Errorf("%s: only %s=%s and %s=%s use an upstream", EnvUpstreamAddr, EnvMode, ModeUI, EnvMode, ModeMCP))
+		return append(errs, fmt.Errorf("%s: only %s=%s and %s=%s use an upstream: unset it, or set %s=%s or %s", EnvUpstreamAddr, EnvMode, ModeUI, EnvMode, ModeMCP, EnvMode, ModeUI, ModeMCP))
 	case !upstream:
 		return nil
 	case addr == "":
