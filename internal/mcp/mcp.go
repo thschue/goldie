@@ -92,7 +92,7 @@ func CountToolCalls(c *platform.ToolCallCounter) Option {
 
 // New returns an MCP server with the tools search_knowledge, get_article,
 // list_projects, current_context, find_skills, get_skill, list_skills,
-// list_agents, list_loops and get_loop.
+// list_agents, list_loops, get_loop and find_decisions.
 // It reaches the API only through client, which also carries the caller's
 // credential: the static API token today. Every call sends it.
 //
@@ -100,7 +100,7 @@ func CountToolCalls(c *platform.ToolCallCounter) Option {
 // a client cannot park a request waiting for tool-list changes that never
 // come, and hold up a drain with it. The same goes for prompts and resources:
 // the prompt list is fixed once a session has asked for it, and the resources
-// (goldie://instructions and the two templates) never change, so no
+// (goldie://instructions and the three templates) never change, so no
 // list_changed notification is ever sent.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
@@ -131,6 +131,7 @@ func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	}
 	addSkillTools(s, t)
 	addLoopTools(s, t)
+	addDecisionTools(s, t)
 	addPrompts(s, t)
 	addInstructionsResource(s, t)
 	addResources(s, t)

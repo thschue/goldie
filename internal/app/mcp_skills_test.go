@@ -57,7 +57,7 @@ func TestMCPSkillToolsAreAdvertised(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	want := []string{"current_context", "find_skills", "get_article", "get_loop", "get_skill", "list_agents", "list_loops", "list_projects", "list_skills", "search_knowledge"}
+	want := []string{"current_context", "find_decisions", "find_skills", "get_article", "get_loop", "get_skill", "list_agents", "list_loops", "list_projects", "list_skills", "search_knowledge"}
 	if !slices.Equal(names, want) {
 		t.Errorf("tools = %v, want %v", names, want)
 	}
