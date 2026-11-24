@@ -131,13 +131,10 @@ func (s *Server) ListArticles(ctx context.Context, req contract.ListArticlesRequ
 	res := contract.ListArticles200JSONResponse{Articles: []contract.ArticleSummary{}, Hint: hint}
 	for _, a := range snap.ArticlesIn(proj, opts) {
 		sum := contract.ArticleSummary{
-			Id: a.ID, Name: a.Name, Keywords: append([]string{}, a.Keywords...), Scope: a.Scope,
-			Overrides: append([]string{}, a.Overrides...), Enforced: a.Enforced,
+			Id: a.ID, Name: a.Name, Keywords: list(a.Keywords), Scope: a.Scope,
+			Overrides: list(a.Overrides), Enforced: a.Enforced,
 		}
-		if a.Status == engine.StatusDraft || a.Status == engine.StatusDeprecated {
-			st := contract.ItemStatus(a.Status)
-			sum.Status = &st
-		}
+		sum.Status, _ = lifecycle(a.Status, "")
 		res.Articles = append(res.Articles, sum)
 	}
 	return res, nil
