@@ -1428,3 +1428,22 @@ test.describe('the Grafana and trace links', () => {
     expect(await page.evaluate(() => (window as unknown as Win).__pwned), 'the markup ran').toBeUndefined();
   });
 });
+
+// The links out of the activity view, captured at every width and theme (#808): the live header
+// with "Trends in Grafana ↗", and an event detail with "Open trace ↗".
+eachViewport((width, theme) => {
+  const links = { grafana_url: 'https://grafana.example.com/d/goldie', trace_url_template: 'https://traces.example.com/trace/{trace_id}' };
+
+  test('the live header with the Grafana link is captured and axe-clean', async ({ page }) => {
+    await open(page, sample, '/ops/activity', links);
+    await expect(main(page).getByRole('link', { name: /trends in grafana/i })).toBeVisible();
+    await evidence(page, width, theme, '-grafana', 'activity');
+  });
+
+  test('the event detail with the trace link is captured and axe-clean', async ({ page }) => {
+    await open(page, [ev(1, { query: 'traced', trace_id: '4bf92f3577b34da6a3ce929d0e0e4736' })], '/ops/activity', links);
+    await rowButton(page, 'traced').click();
+    await expect(detail(page).getByRole('link', { name: /open trace/i })).toBeVisible();
+    await evidence(page, width, theme, '-trace', 'activity');
+  });
+});
