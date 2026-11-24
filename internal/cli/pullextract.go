@@ -22,6 +22,10 @@ const (
 	maxPullBytes = 64 << 20
 )
 
+// errBundleTooLarge is the answer to a bundle over what the client reads. It
+// names the limit and a next step, in the wording of the server's 422.
+var errBundleTooLarge = fmt.Errorf("the bundle is larger than %d MiB, so it was not read and nothing was written: shrink or remove a skill with large files (binary assets) in the content", contract.MaxResponseBytes>>20)
+
 // goldiePrefix starts every name in the Goldie namespace: the skill
 // directories .claude/skills/goldie-* and the agent files
 // .claude/agents/goldie-*.md. A pull replaces these and touches nothing else.

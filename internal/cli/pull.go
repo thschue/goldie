@@ -87,6 +87,9 @@ func (c *commander) pull(ctx context.Context) error {
 		}
 		return &bundleAnswer{archive: r.Body, digest: etagDigest(r.HTTPResponse.Header.Get("ETag"))}
 	})
+	if errors.Is(err, contract.ErrTooLarge) {
+		return errBundleTooLarge
+	}
 	if err != nil {
 		return wordError(err, c.local)
 	}

@@ -16,11 +16,22 @@ import (
 var badBundleTarget = envelope("bad_request", "invalid target",
 	"Pass target as claude.")
 
+// maxBundleBytes is the most a bundle archive may weigh: what the hardened
+// client reads, so the server never sends an archive its own client would
+// refuse.
+const maxBundleBytes = contract.MaxResponseBytes
+
+// bundleTooLarge is the 422 envelope for an archive over maxBundleBytes. The
+// client words the same limit for an archive a server sent anyway.
+var bundleTooLarge = envelope("bundle_too_large", "the bundle is larger than 16 MiB",
+	"Shrink or remove a skill with large files (binary assets) so the bundle fits in 16 MiB.")
+
 // GetBundle answers GET /api/v1/bundle: the resolved set of the Project's view
 // as a gzip-compressed tar laid out for the target, with the set digest as its
 // ETag. The same set always gives the same ETag; gzip bytes can differ between Go
 // toolchains, so clients compare ETags, not bytes. An If-None-Match that names
-// the ETag is a 304 with no body, before the archive is built.
+// the ETag is a 304 with no body, before the archive is built. An archive over
+// maxBundleBytes is refused whole (422), never cut.
 func (s *Server) GetBundle(_ context.Context, req contract.GetBundleRequestObject) (contract.GetBundleResponseObject, error) {
 	if !engine.ValidBundleTarget(req.Params.Target) {
 		return contract.GetBundle400JSONResponse(badBundleTarget), nil
@@ -42,6 +53,9 @@ func (s *Server) GetBundle(_ context.Context, req contract.GetBundleRequestObjec
 	archive, err := tarGz(files)
 	if err != nil {
 		return nil, err
+	}
+	if len(archive) > maxBundleBytes {
+		return contract.GetBundle422JSONResponse(bundleTooLarge), nil
 	}
 	return contract.GetBundle200ApplicationgzipResponse{
 		Body:          bytes.NewReader(archive),
