@@ -88,7 +88,7 @@ func (c *commander) pull(ctx context.Context) error {
 	raw, err := cl.GetBundle(ctx, params)
 	if err == nil && raw.StatusCode == http.StatusNotModified {
 		_ = raw.Body.Close()
-		return c.say("The Goldie namespace is already up to date.")
+		return c.upToDate(root)
 	}
 	res, err := contract.Answer(raw, err, contract.ParseGetBundleResponse, func(r *contract.GetBundleResponse) *bundleAnswer {
 		if !strings.HasPrefix(r.HTTPResponse.Header.Get("Content-Type"), "application/gzip") {
@@ -106,7 +106,7 @@ func (c *commander) pull(ctx context.Context) error {
 		return errors.New("the server's bundle has no usable ETag; nothing was written")
 	}
 	if intact && res.digest == stamp {
-		return c.say("The Goldie namespace is already up to date.")
+		return c.upToDate(root)
 	}
 	if c.s.check {
 		if res.digest == stamp {
@@ -127,7 +127,30 @@ func (c *commander) pull(ctx context.Context) error {
 	if err := c.say(fmt.Sprintf("Pulled %d files into the Goldie namespace (.claude/skills/goldie-*, .claude/agents/goldie-*).", len(files))); err != nil {
 		return err
 	}
-	for _, l := range loopInvocations(files) {
+	return c.sayLoops(loopInvocations(files))
+}
+
+// upToDate says the namespace is current, then prints the /loop lines of the
+// loops already in it (not under --check or --dry-run), so a user who missed them can see them again.
+func (c *commander) upToDate(root *os.Root) error {
+	if err := c.say("The Goldie namespace is already up to date."); err != nil {
+		return err
+	}
+	if c.s.check || c.s.dryRun {
+		return nil
+	}
+	return c.sayLoops(loopInvocations(localLoopEntries(root)))
+}
+
+// sayLoops prints the lead-in and the /loop lines; no lines, no lead-in.
+func (c *commander) sayLoops(lines []string) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	if err := c.say("Start a loop in Claude Code:"); err != nil {
+		return err
+	}
+	for _, l := range lines {
 		if err := c.say(l); err != nil {
 			return err
 		}
