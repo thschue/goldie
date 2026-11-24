@@ -165,6 +165,15 @@ func TestValidateNamesTheFileAndTheRule(t *testing.T) {
 }
 
 func TestValidateRejectsArticleIDsThatDifferOnlyInCase(t *testing.T) {
+	// On a case-insensitive filesystem (the macOS default) the second write
+	// replaces the first, so the two ids cannot coexist: probe, then skip.
+	probe := t.TempDir()
+	if err := os.WriteFile(filepath.Join(probe, "a"), []byte("probe\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(probe, "A")); err == nil {
+		t.Skip("case-insensitive filesystem: the two ids cannot coexist")
+	}
 	dir := t.TempDir()
 	writeArticle(t, dir, "global/articles/Alpha.md", goodArticle)
 	writeArticle(t, dir, "global/articles/alpha.md", goodArticle)
