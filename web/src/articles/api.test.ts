@@ -36,6 +36,27 @@ describe('getArticle', () => {
     expect(url.hash).toBe('');
   });
 
+  it('sends the Project as an encoded project parameter, and none without a Project', async () => {
+    reply(200, JSON.stringify(ok));
+    await getArticle('platform/deploy', 'github.com/harbor/checkout');
+    const url = new URL(target(), 'file:///');
+    expect(url.pathname).toBe('/api/v1/articles/platform%2Fdeploy');
+    expect(url.search).toBe('?project=github.com%2Fharbor%2Fcheckout');
+
+    for (const none of [undefined, '']) {
+      vi.unstubAllGlobals();
+      reply(200, JSON.stringify(ok));
+      await getArticle('platform/deploy', none);
+      expect(new URL(target(), 'file:///').search, `Project ${JSON.stringify(none)}`).toBe('');
+    }
+  });
+
+  it('keeps the API hint of an unregistered Project on the article', async () => {
+    reply(200, JSON.stringify({ ...ok, hint: 'No such Project is registered.' }));
+    const a = await getArticle('platform/deploy', 'github.com/nobody/nothing');
+    expect(a.hint).toBe('No such Project is registered.');
+  });
+
   it('keeps an absent enforced and an absent overrides absent, never false or empty', async () => {
     reply(200, JSON.stringify(ok));
     const old = await getArticle('platform/deploy');
