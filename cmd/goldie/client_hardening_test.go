@@ -313,16 +313,16 @@ func TestMCPUsageRecommendsTokenVariables(t *testing.T) {
 	})
 }
 
-// readmeSection returns the README section under the level-2 heading.
-func readmeSection(t *testing.T, heading string) string {
+// readmeSection returns the section under the level-2 heading of a page in docs/reference.
+func readmeSection(t *testing.T, file, heading string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "reference", file))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, rest, ok := strings.Cut(string(b), "\n## "+heading+"\n")
 	if !ok {
-		t.Fatalf("README.md has no section %q", heading)
+		t.Fatalf("docs/reference/%s has no section %q", file, heading)
 	}
 	section, _, _ := strings.Cut(rest, "\n## ")
 	return section
@@ -331,9 +331,9 @@ func readmeSection(t *testing.T, heading string) string {
 // The docs of the CLI and of goldie mcp recommend the variables over --token
 // and say why.
 func TestDocsRecommendTokenVariables(t *testing.T) {
-	cli := readmeSection(t, "CLI")
+	cli := readmeSection(t, "cli.md", "CLI")
 	tokenRecommendation(t, "README section CLI", cli)
-	mcp := readmeSection(t, "MCP over stdio")
+	mcp := readmeSection(t, "mcp.md", "MCP over stdio")
 	tokenRecommendation(t, "README section MCP over stdio", mcp)
 	if !strings.Contains(strings.ToLower(mcp), "config") {
 		t.Errorf("README section MCP over stdio does not say a --token value is saved in the MCP client's config:\n%s", mcp)

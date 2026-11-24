@@ -576,13 +576,13 @@ func readDoc(t *testing.T, path string) string {
 
 // Criterion 2: the README and doc.go say the same as the error.
 func TestMCPDocsDoNotTellToListPromptsAgain(t *testing.T) {
-	for _, path := range []string{"../../README.md", "../mcp/doc.go"} {
+	for _, path := range []string{"../../docs/reference/mcp.md", "../mcp/doc.go"} {
 		text := strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(readDoc(t, path), "\n//", "\n")), " "))
 		if strings.Contains(text, "list prompts again") {
 			t.Errorf("%s still says to list prompts again", path)
 		}
 	}
-	readme := readDoc(t, "../../README.md")
+	readme := readDoc(t, "../../docs/reference/mcp.md")
 	var para string
 	for _, p := range strings.Split(readme, "\n\n") {
 		if strings.Contains(p, "The server also offers prompts") {
@@ -605,7 +605,7 @@ func TestMCPDocsDoNotTellToListPromptsAgain(t *testing.T) {
 // quoting rule for tool output. The README is tested for content like this
 // elsewhere (the logging and init paragraphs), so this asserts it too.
 func TestMCPReadmeStatesTheTrustModelOfPromptTextBesideTheQuotingRule(t *testing.T) {
-	paras := strings.Split(readDoc(t, "../../README.md"), "\n\n")
+	paras := strings.Split(readDoc(t, "../../docs/reference/mcp.md"), "\n\n")
 	for i, p := range paras {
 		flat := strings.Join(strings.Fields(p), " ")
 		if !strings.Contains(flat, "cleaned but not quoted") {
