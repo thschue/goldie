@@ -1094,10 +1094,11 @@ test.describe('the Project filter chip', () => {
 });
 
 test.describe('the Live stream stage (#811)', () => {
-  test.use({ viewport: { width: 1280, height: 800 } });
+  // The config turns motion off for every spec; the stage draws a particle only when it is on.
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'no-preference' });
   const shop = 'github.com/acme/shop';
   const particles = (page: Page) => main(page).locator('svg[role="img"] circle.particle');
-  const lane = (page: Page) => main(page).getByRole('button', { name: new RegExp(shop.replace(/\./g, '\\.')) });
+  const lane = (page: Page) => main(page).getByRole('button', { name: new RegExp(`^${shop.replace(/\./g, '\\.')}`) });
   const live = (id: number, o: Partial<Ev> & { via?: string } = {}) => frame({ ...ev(id, { project: shop }), via: 'mcp', ...o } as Ev);
 
   test('draws no particle for the history replayed on connect, and one for a live request, named by its surface', async ({ page }) => {
