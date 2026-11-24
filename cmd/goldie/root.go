@@ -296,6 +296,11 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"List the loops, or show one loop: its interval, stop condition, prompt and the\nagents and skills it names, with the Scope that answered for each.",
 		"  goldie loops list\n  goldie loops show nightly",
 	},
+	"decisions": {
+		"decisions list|show <name> [flags]", "List the accepted decisions or show one with its body",
+		"List the accepted decisions with their title and Scope, or show one decision: its\nstatus, date and body. Show finds a decision of any status by name.",
+		"  goldie decisions list\n  goldie decisions show use-postgres",
+	},
 	"status": {
 		"status [flags]", "Check that a server answers and accepts the token",
 		"Report whether the server answers, whether it accepts the token and which\nProject the repository maps to.",

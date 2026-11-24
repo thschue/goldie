@@ -46,6 +46,12 @@ bytes and nothing else. Redirect it to a file for anything binary. An unknown pa
 `goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
 refused before any request.
 
+`goldie decisions list|show <name>` reads the decisions that answer for the Project. `list` prints
+the accepted ones, one per line, with name, title and Scope; `show` prints the name, title, Scope,
+status, date and the body, and finds a decision of any status. It takes `--project`, `--json` and the
+same address and token settings, and prints the server's hint for an unregistered Project. A miss
+exits 1 and names `goldie decisions list`; wrong use exits 2 before any request, as for `goldie loops`.
+
 `goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
 running server through the generated client, or an embedded one over local content (below). Each
 takes `--addr` (or `GOLDIE_ADDR`), `--token` (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it
