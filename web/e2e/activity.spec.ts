@@ -139,7 +139,8 @@ const missesOnly = (page: Page) =>
     .or(main(page).getByRole('button', { name: /misses only/i }));
 const pause = (page: Page) => main(page).getByRole('button', { name: 'Pause', exact: true });
 const resume = (page: Page) => main(page).getByRole('button', { name: 'Resume', exact: true });
-const missStatus = (page: Page) => main(page).getByRole('status').filter({ hasText: /\bmiss(es)?\b/i });
+// The feed's own miss count; the Live stream stage summary is also a role=status that mentions misses.
+const missStatus = (page: Page) => main(page).locator('p.misses[role="status"]');
 const text = async (l: Locator) => ((await l.innerText()) ?? '').replace(/\s+/g, ' ').trim();
 
 // mainTextOutsideTable is what a person reads in main besides the table.
@@ -1097,6 +1098,61 @@ test.describe('the Project filter chip', () => {
     await expect(rows(page)).toHaveCount(sample.length);
     await expect(chip).toHaveCount(0);
     expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('the Live stream stage (#811)', () => {
+  // The config turns motion off for every spec; the stage draws a particle only when it is on.
+  test.use({ viewport: { width: 1280, height: 800 }, reducedMotion: 'no-preference' });
+  const shop = 'github.com/acme/shop';
+  const particles = (page: Page) => main(page).locator('svg[role="img"] circle.particle');
+  const lane = (page: Page) => main(page).getByRole('button', { name: new RegExp(`^${shop.replace(/\./g, '\\.')}`) });
+  const live = (id: number, o: Partial<Ev> & { via?: string } = {}) => frame({ ...ev(id, { project: shop }), via: 'mcp', ...o } as Ev);
+
+  test('draws no particle for the history replayed on connect, and one for a live request, named by its surface', async ({ page }) => {
+    await open(page, sample);
+    await expect(rows(page)).toHaveCount(8);
+    await expect(particles(page)).toHaveCount(0);
+    await send(page, live(20));
+    await expect(particles(page)).toHaveCount(1);
+    await expect(particles(page).first().locator('title')).toHaveText(/^mcp · /);
+    await expect(main(page).getByText('Showing every request')).toBeVisible();
+  });
+
+  test('a lane filters the feed to its Project, and pressing it again clears the filter', async ({ page }) => {
+    await open(page);
+    await send(page, live(1, { query: 'one' }) + live(2, { query: 'two', project: 'github.com/acme/api' }));
+    await expect(lane(page)).toBeVisible();
+    await lane(page).click();
+    await expect(lane(page)).toHaveAttribute('aria-pressed', 'true');
+    expect(new URL(page.url()).searchParams.get('project')).toBe(shop);
+    await expect(rows(page)).toHaveCount(1);
+    await lane(page).click();
+    await expect(page).not.toHaveURL(/[?&]project=/);
+    await expect(rows(page)).toHaveCount(2);
+  });
+
+  test('draws nothing while the tab is hidden, and still shows the request in the feed', async ({ page }) => {
+    await open(page);
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await send(page, live(30));
+    await expect(rows(page)).toHaveCount(1);
+    await expect(particles(page)).toHaveCount(0);
+  });
+
+  test('has no horizontal scroll at 375, 768 and 1280, and the SVG is not a sliver when narrow', async ({ page }) => {
+    await open(page);
+    await send(page, live(40));
+    for (const width of [375, 768, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await page.setViewportSize({ width: 375, height: 800 });
+    const box = await main(page).locator('svg[role="img"]').boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThan(250);
   });
 });
 
