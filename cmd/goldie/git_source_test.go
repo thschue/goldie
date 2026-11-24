@@ -466,6 +466,22 @@ func subdirFiles(dir string, ids ...string) map[string]string {
 	return out
 }
 
+// warnErrorsNameNoRepo fails when the error field of a warn record names the
+// repository URL or its path. The record's url field carries the redacted URL
+// (#96), so only the error is checked.
+func warnErrorsNameNoRepo(t *testing.T, p *proc, repo *bareRepo) {
+	t.Helper()
+	for _, l := range logLevels(t, p, 0)["warn"] {
+		var m map[string]any
+		if json.Unmarshal([]byte(l), &m) != nil {
+			continue
+		}
+		if e, _ := m["error"].(string); strings.Contains(e, repo.dir) {
+			t.Errorf("a warn's error names the repository URL: %s", l)
+		}
+	}
+}
+
 // warnNames reports whether a warn line names GOLDIE_GIT_PATH.
 func warnNames(t *testing.T, p *proc) bool {
 	t.Helper()
@@ -544,11 +560,7 @@ func TestBinaryRejectsABadGitPathOnTheFirstLoad(t *testing.T) {
 			if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/demo-article"); code != 503 {
 				t.Errorf("GET article = %d %s, want 503 not_ready", code, body)
 			}
-			for _, l := range logLevels(t, p, 0)["warn"] {
-				if strings.Contains(l, repo.dir) {
-					t.Errorf("a warn names the repository URL: %s", l)
-				}
-			}
+			warnErrorsNameNoRepo(t, p, repo)
 		})
 	}
 }
@@ -569,9 +581,5 @@ func TestBinaryKeepsTheLastGoodContentWhenTheGitPathGoesAway(t *testing.T) {
 	if !sourceGitOk(t, p.admin) {
 		t.Error("/readyz is not ready while stale, want source:git ok (PC-02)")
 	}
-	for _, l := range logLevels(t, p, 0)["warn"] {
-		if strings.Contains(l, repo.dir) {
-			t.Errorf("a warn names the repository URL: %s", l)
-		}
-	}
+	warnErrorsNameNoRepo(t, p, repo)
 }
