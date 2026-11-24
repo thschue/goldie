@@ -677,9 +677,9 @@ paths:
       description: |
         Returns the decisions that answer in the Project's view, sorted by name, one
         per name: the nearest Scope wins. Only accepted decisions are listed unless
-        `status` asks for another status. A reader may use `status`; it is not the
-        operator-only `drafts` parameter. The valid `status` values are `accepted`,
-        `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+        `status` asks for another status; a reader may use it. The valid `status`
+        values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+        `all`.
       parameters:
         - name: status
           in: query
@@ -707,7 +707,6 @@ paths:
             is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
-        - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
           description: The decisions.
@@ -723,12 +722,6 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: 'For the decision list, no bearer token was sent, or it is wrong.'
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "403":
-          description: 'For the decision list, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:
@@ -771,7 +764,6 @@ paths:
             is a 400.
           schema:
             $ref: "#/components/schemas/ProjectId"
-        - $ref: "#/components/parameters/Drafts"
       responses:
         "200":
           description: The decision.
@@ -787,12 +779,6 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: 'For the decision read, no bearer token was sent, or it is wrong.'
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-        "403":
-          description: 'For the decision read, drafts were asked for with a token whose role is not operator.'
           content:
             application/json:
               schema:

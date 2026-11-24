@@ -1139,14 +1139,6 @@ type ListDecisionsParams struct {
 	// answers the global view with a `hint`; a value that is not a `ProjectId`
 	// is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
-
-	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
-	// tokens only, and a reader token asking for drafts is a 403. Without
-	// it a draft is left out for every token and never shadows, so the
-	// published Item answers. Even with drafts, a draft Project article
-	// never shadows an enforced global Item (ADR 0021). MCP never asks
-	// for drafts.
-	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // ListDecisionsParamsStatus defines parameters for ListDecisions.
@@ -1159,14 +1151,6 @@ type GetDecisionParams struct {
 	// answers the global view with a `hint`; a value that is not a `ProjectId`
 	// is a 400.
 	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
-
-	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
-	// tokens only, and a reader token asking for drafts is a 403. Without
-	// it a draft is left out for every token and never shadows, so the
-	// published Item answers. Even with drafts, a draft Project article
-	// never shadows an enforced global Item (ADR 0021). MCP never asks
-	// for drafts.
-	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
 // GetInstructionsParams defines parameters for GetInstructions.
@@ -1479,9 +1463,9 @@ type ClientInterface interface {
 	//
 	// Returns the decisions that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins. Only accepted decisions are listed unless
-	// `status` asks for another status. A reader may use `status`; it is not the
-	// operator-only `drafts` parameter. The valid `status` values are `accepted`,
-	// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+	// `status` asks for another status; a reader may use it. The valid `status`
+	// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+	// `all`.
 	//
 	// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
 	ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1910,9 +1894,9 @@ func (c *Client) GetBundle(ctx context.Context, params *GetBundleParams, reqEdit
 //
 // Returns the decisions that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins. Only accepted decisions are listed unless
-// `status` asks for another status. A reader may use `status`; it is not the
-// operator-only `drafts` parameter. The valid `status` values are `accepted`,
-// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+// `status` asks for another status; a reader may use it. The valid `status`
+// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+// `all`.
 //
 // Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
 func (c *Client) ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2777,18 +2761,6 @@ func NewListDecisionsRequest(server string, params *ListDecisionsParams) (*http.
 
 		}
 
-		if params.Drafts != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -2841,18 +2813,6 @@ func NewGetDecisionRequest(server string, name string, params *GetDecisionParams
 		if params.Project != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Drafts != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3841,9 +3801,9 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns the decisions that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins. Only accepted decisions are listed unless
-	// `status` asks for another status. A reader may use `status`; it is not the
-	// operator-only `drafts` parameter. The valid `status` values are `accepted`,
-	// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+	// `status` asks for another status; a reader may use it. The valid `status`
+	// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+	// `all`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4663,8 +4623,6 @@ type ListDecisionsResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -4690,11 +4648,6 @@ func (r ListDecisionsResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r ListDecisionsResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r ListDecisionsResponse) GetJSON403() *ErrorEnvelope {
-	return r.JSON403
 }
 
 // GetJSON426 returns the response for an HTTP 426 `application/json` response
@@ -4760,8 +4713,6 @@ type GetDecisionResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *ErrorEnvelope
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
@@ -4789,11 +4740,6 @@ func (r GetDecisionResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r GetDecisionResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r GetDecisionResponse) GetJSON403() *ErrorEnvelope {
-	return r.JSON403
 }
 
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
@@ -6444,9 +6390,9 @@ func (c *ClientWithResponses) GetBundleWithResponse(ctx context.Context, params 
 //
 // Returns the decisions that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins. Only accepted decisions are listed unless
-// `status` asks for another status. A reader may use `status`; it is not the
-// operator-only `drafts` parameter. The valid `status` values are `accepted`,
-// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+// `status` asks for another status; a reader may use it. The valid `status`
+// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+// `all`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -7370,13 +7316,6 @@ func ParseListDecisionsResponse(rsp *http.Response) (*ListDecisionsResponse, err
 		}
 		response.JSON401 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest ErrorEnvelope
-		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
 		var dest UpgradeRequired
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -7457,13 +7396,6 @@ func ParseGetDecisionResponse(rsp *http.Response) (*GetDecisionResponse, error) 
 			return nil, err
 		}
 		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest ErrorEnvelope
-		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorEnvelope
@@ -9172,19 +9104,6 @@ func (siw *ServerInterfaceWrapper) ListDecisions(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// ------------- Optional query parameter "drafts" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDecisions(w, r, params)
 	}))
@@ -9223,19 +9142,6 @@ func (siw *ServerInterfaceWrapper) GetDecision(w http.ResponseWriter, r *http.Re
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "drafts" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
 		}
 		return
 	}
@@ -10769,20 +10675,6 @@ func (response ListDecisions401JSONResponse) VisitListDecisionsResponse(w http.R
 	return err
 }
 
-type ListDecisions403JSONResponse ErrorEnvelope
-
-func (response ListDecisions403JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type ListDecisions426JSONResponse struct{ UpgradeRequiredJSONResponse }
 
 func (response ListDecisions426JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
@@ -10898,20 +10790,6 @@ func (response GetDecision401JSONResponse) VisitGetDecisionResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetDecision403JSONResponse ErrorEnvelope
-
-func (response GetDecision403JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
 	_, err := buf.WriteTo(w)
 	return err
 }

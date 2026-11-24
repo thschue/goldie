@@ -187,9 +187,9 @@ List the decisions
 
 Returns the decisions that answer in the Project's view, sorted by name, one
 per name: the nearest Scope wins. Only accepted decisions are listed unless
-`status` asks for another status. A reader may use `status`; it is not the
-operator-only `drafts` parameter. The valid `status` values are `accepted`,
-`proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+`status` asks for another status; a reader may use it. The valid `status`
+values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+`all`.
 
 Operation ID: `listDecisions`
 
@@ -198,7 +198,6 @@ Operation ID: `listDecisions`
 | `200` | The decisions. | `application/json` (`DecisionList`) |
 | `400` | For the decision list, 'project' is not a 'ProjectId' or 'status' is not a status. | `application/json` (`ErrorEnvelope`) |
 | `401` | For the decision list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
-| `403` | For the decision list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -220,7 +219,6 @@ Operation ID: `getDecision`
 | `200` | The decision. | `application/json` (`Decision`) |
 | `400` | For the decision read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | For the decision read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
-| `403` | For the decision read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No decision has this name in the view; the hint points to the decision list. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |

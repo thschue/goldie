@@ -227,9 +227,9 @@ export interface paths {
          * List the decisions
          * @description Returns the decisions that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins. Only accepted decisions are listed unless
-         *     `status` asks for another status. A reader may use `status`; it is not the
-         *     operator-only `drafts` parameter. The valid `status` values are `accepted`,
-         *     `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
+         *     `status` asks for another status; a reader may use it. The valid `status`
+         *     values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+         *     `all`.
          */
         get: operations["listDecisions"];
         put?: never;
@@ -2370,15 +2370,6 @@ export interface operations {
                  *     is a 400.
                  */
                 project?: components["schemas"]["ProjectId"];
-                /**
-                 * @description `true` includes draft Items too, marked `status: draft`; for operator
-                 *     tokens only, and a reader token asking for drafts is a 403. Without
-                 *     it a draft is left out for every token and never shadows, so the
-                 *     published Item answers. Even with drafts, a draft Project article
-                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
-                 *     for drafts.
-                 */
-                drafts?: components["parameters"]["Drafts"];
             };
             header?: never;
             path?: never;
@@ -2413,15 +2404,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description For the decision list, drafts were asked for with a token whose role is not operator. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["NotReady"];
@@ -2438,15 +2420,6 @@ export interface operations {
                  *     is a 400.
                  */
                 project?: components["schemas"]["ProjectId"];
-                /**
-                 * @description `true` includes draft Items too, marked `status: draft`; for operator
-                 *     tokens only, and a reader token asking for drafts is a 403. Without
-                 *     it a draft is left out for every token and never shadows, so the
-                 *     published Item answers. Even with drafts, a draft Project article
-                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
-                 *     for drafts.
-                 */
-                drafts?: components["parameters"]["Drafts"];
             };
             header?: never;
             path: {
@@ -2480,15 +2453,6 @@ export interface operations {
             };
             /** @description For the decision read, no bearer token was sent, or it is wrong. */
             401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description For the decision read, drafts were asked for with a token whose role is not operator. */
-            403: {
                 headers: {
                     [name: string]: unknown;
                 };

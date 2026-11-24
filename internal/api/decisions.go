@@ -44,12 +44,8 @@ func decisionAnswer(d engine.Decision) contract.Decision {
 }
 
 // ListDecisions answers GET /api/v1/decisions, as ListLoops answers the loops.
-// The status filter is open to readers; drafts stays operator-only and does
-// not widen the list.
-func (s *Server) ListDecisions(ctx context.Context, req contract.ListDecisionsRequestObject) (contract.ListDecisionsResponseObject, error) {
-	if _, allowed := readOptions(ctx, req.Params.Drafts); !allowed {
-		return contract.ListDecisions403JSONResponse(forbiddenDrafts), nil
-	}
+// The status filter is open to readers.
+func (s *Server) ListDecisions(_ context.Context, req contract.ListDecisionsRequestObject) (contract.ListDecisionsResponseObject, error) {
 	project, ok := validProject(req.Params.Project)
 	if !ok {
 		return contract.ListDecisions400JSONResponse(badProject), nil
@@ -77,10 +73,7 @@ func (s *Server) ListDecisions(ctx context.Context, req contract.ListDecisionsRe
 
 // GetDecision answers GET /api/v1/decisions/{name}, as GetLoop answers a loop.
 // A decision of any status is served: a superseded one has a history to show.
-func (s *Server) GetDecision(ctx context.Context, req contract.GetDecisionRequestObject) (contract.GetDecisionResponseObject, error) {
-	if _, allowed := readOptions(ctx, req.Params.Drafts); !allowed {
-		return contract.GetDecision403JSONResponse(forbiddenDrafts), nil
-	}
+func (s *Server) GetDecision(_ context.Context, req contract.GetDecisionRequestObject) (contract.GetDecisionResponseObject, error) {
 	project, ok := validProject(req.Params.Project)
 	if !ok {
 		return contract.GetDecision400JSONResponse(badProject), nil
