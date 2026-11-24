@@ -321,11 +321,18 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 
   <p v-if="status === 403" class="box" role="alert">This page is for operators.</p>
   <p v-else-if="status === 401" class="box" role="alert">Sign in to see what is being asked of goldie.</p>
-  <div v-else-if="phase === 'error'" class="box danger" role="alert">
-    <p v-if="status === 429">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</p>
-    <p v-else-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
-    <p v-else>Couldn't read the activity feed. {{ hint || 'Check your connection, then try again.' }}</p>
+  <div v-else-if="phase === 'error' && status === 429" class="box danger">
+    <!-- Announced once; the ticking number is hidden from the screen reader (as in HomeView). -->
+    <p role="status">
+      <span class="sr-only">Too many requests. Try again shortly.</span>
+      <span aria-hidden="true">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</span>
+    </p>
     <button type="button" class="control" :disabled="wait > 0" @click="connect">Retry</button>
+  </div>
+  <div v-else-if="phase === 'error'" class="box danger" role="alert">
+    <p v-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
+    <p v-else>Couldn't read the activity feed. {{ hint || 'Check your connection, then try again.' }}</p>
+    <button type="button" class="control" @click="connect">Retry</button>
   </div>
 
   <template v-if="phase !== 'error' || kept">

@@ -304,4 +304,28 @@ describe('ActivityView states (#877)', () => {
     expect(String(up[0].props.class).split(' ')).not.toContain('down');
     app.unmount();
   });
+
+  it('announces a 429 once: no alert region changes text while the countdown ticks', async () => {
+    timers();
+    refuse = new ApiError(429, 'Too many requests.', '', 3);
+    const { app, page } = await mount();
+    await vi.advanceTimersByTimeAsync(0);
+    // The page has no root handle: climb to it from the Retry button.
+    let root = page.button('Retry');
+    while (root.parent) root = root.parent;
+    const alerts = () =>
+      all(root, (n) => n.props.role === 'alert')
+        .map((n) => textOf(n))
+        .join('|');
+    const live = () =>
+      all(root, (n) => n.props.role === 'status' && textOf(n).includes('Too many requests'))
+        .map((n) => all(n, (k) => k.props['aria-hidden'] !== 'true' && k.tag === 'span').map((k) => textOf(k)).join(''))
+        .join('|');
+    const before = [alerts(), live()];
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect([alerts(), live()]).toEqual(before);
+    expect(alerts()).toBe('');
+    expect(live()).toContain('Too many requests. Try again shortly.');
+    app.unmount();
+  });
 });
