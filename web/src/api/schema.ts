@@ -919,7 +919,22 @@ export interface components {
         };
         /** @description The articles that win in a view, without their content. */
         ArticleList: {
-            /** @description The articles, sorted by id. */
+            /**
+             * @description The articles, sorted by id.
+             * @example [
+             *       {
+             *         "id": "platform/deploy",
+             *         "name": "Deploying to Kubernetes",
+             *         "keywords": [
+             *           "kubernetes",
+             *           "deploy"
+             *         ],
+             *         "scope": "global",
+             *         "overrides": [],
+             *         "enforced": false
+             *       }
+             *     ]
+             */
             articles: components["schemas"]["ArticleSummary"][];
             /**
              * @description Present when the request named a Project that is not registered: the
@@ -1841,6 +1856,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "articles": [
+                     *         {
+                     *           "id": "platform/deploy",
+                     *           "name": "Deploying to Kubernetes",
+                     *           "keywords": [
+                     *             "kubernetes",
+                     *             "deploy"
+                     *           ],
+                     *           "scope": "global",
+                     *           "overrides": [],
+                     *           "enforced": false
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["ArticleList"];
                 };
             };

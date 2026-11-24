@@ -427,6 +427,8 @@ type Article struct {
 // ArticleList The articles that win in a view, without their content.
 type ArticleList struct {
 	// Articles The articles, sorted by id.
+	//
+	// Examples: [{"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"name":"Deploying to Kubernetes","overrides":[],"scope":"global"}]
 	Articles []ArticleSummary `json:"articles"`
 
 	// Hint Present when the request named a Project that is not registered: the

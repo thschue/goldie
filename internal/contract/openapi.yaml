@@ -161,6 +161,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ArticleList"
+              example:
+                articles:
+                  - id: platform/deploy
+                    name: Deploying to Kubernetes
+                    keywords:
+                      - kubernetes
+                      - deploy
+                    scope: global
+                    overrides: []
+                    enforced: false
         "400":
           description: 'For the article list, `project` is not a `ProjectId`.'
           content:
@@ -1951,6 +1961,15 @@ components:
           description: The articles, sorted by id.
           items:
             $ref: "#/components/schemas/ArticleSummary"
+          examples:
+            - - id: platform/deploy
+                name: Deploying to Kubernetes
+                keywords:
+                  - kubernetes
+                  - deploy
+                scope: global
+                overrides: []
+                enforced: false
         hint:
           type: string
           minLength: 1
