@@ -439,8 +439,10 @@ cmd_size() {
 			awk '$1 != "-" { a += $1; d += $2 } END { print a + 0, d + 0 }'
 	}
 	tests='*_test.go testdata **/testdata/** web/e2e *.spec.ts *.test.ts'
-	# shellcheck disable=SC2086 # the test globs are split on purpose
+	# shellcheck disable=SC2086 # the test globs are split on purpose; -f keeps them literal
+	set -f
 	code=$(size_stat $(for t in $tests; do printf ' :(exclude)%s' "$t"; done))
+	set +f
 	all=$(size_stat)
 	n=$(( ${code% *} + ${code#* } ))
 	t=$(( ${all% *} - ${code% *} + ${all#* } - ${code#* } ))
