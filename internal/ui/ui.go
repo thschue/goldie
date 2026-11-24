@@ -165,7 +165,11 @@ func cleanName(u *url.URL) (string, bool) {
 	if len(p) > maxPathLen || p == "" || p[0] != '/' {
 		return "", false
 	}
-	if u.RawPath != "" && u.RawPath != (&url.URL{Path: p}).EscapedPath() {
+	// Item routes (/items/<kind>/<name>) carry a nested id as one segment with
+	// its slash escaped as %2F (ADR 0016), so an escape is allowed there. No file
+	// lives under items/ and the decoded path still has to pass fs.ValidPath
+	// below, so this reads nothing and a dot segment is still rejected.
+	if u.RawPath != "" && u.RawPath != (&url.URL{Path: p}).EscapedPath() && !strings.HasPrefix(p, "/items/") {
 		return "", false
 	}
 	for i := 0; i < len(p); i++ {
