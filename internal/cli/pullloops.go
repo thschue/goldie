@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -54,6 +56,41 @@ func loopInvocations(files []pulledFile) []string {
 	var out []string
 	for _, n := range names {
 		out = append(out, lines[n])
+	}
+	return out
+}
+
+// maxLoopEntry caps how much of a local entry skill is read: the frontmatter
+// is all loopInvocations needs.
+const maxLoopEntry = 64 << 10
+
+// localLoopEntries reads the loop entry skills of the local namespace through
+// root, as loopInvocations expects them. The working tree is untrusted: a
+// directory that is not plain, an entry that is not a regular file or cannot
+// be read is skipped, never an error.
+func localLoopEntries(root *os.Root) []pulledFile {
+	entries, err := checkedNamespaceEntries(root)
+	if err != nil {
+		return nil
+	}
+	var out []pulledFile
+	for _, e := range entries {
+		if !strings.HasPrefix(e, loopEntryDir) {
+			continue
+		}
+		p := e + "/SKILL.md"
+		if info, err := root.Lstat(p); err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		f, err := root.Open(p)
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(f, maxLoopEntry))
+		_ = f.Close()
+		if err == nil {
+			out = append(out, pulledFile{path: p, data: data})
+		}
 	}
 	return out
 }

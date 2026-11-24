@@ -313,7 +313,7 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 	},
 	"pull": {
 		"pull [--target claude] [--dry-run | --check] [flags]", "Write the Goldie skills and agents into .claude",
-		"Fetch the skills and agents that apply to this Project and write them to\n.claude/skills/goldie-<name>/ and .claude/agents/goldie-<name>.md at the\nrepository root. Those names are goldie's: a pull replaces them as a whole and\ntouches nothing else. An unchanged set writes nothing. The archive is checked\nbefore anything is written, so a failed pull leaves the project as it was.\n\n--dry-run lists the files and writes nothing. --check exits non-zero when the\nnamespace was never pulled or is stale, and writes nothing.",
+		"Fetch the skills and agents that apply to this Project and write them to\n.claude/skills/goldie-<name>/ and .claude/agents/goldie-<name>.md at the\nrepository root. Those names are goldie's: a pull replaces them as a whole and\ntouches nothing else. An unchanged set writes nothing. The archive is checked\nbefore anything is written, so a failed pull leaves the project as it was.\n\nA pull prints the /loop line of each loop it pulled, also when nothing\nchanged. --dry-run and --check print none.\n\n--dry-run lists the files and writes nothing. --check exits non-zero when the\nnamespace was never pulled or is stale, and writes nothing.",
 		"  goldie pull\n  goldie pull --dry-run\n  goldie pull --check",
 	},
 	"version": {

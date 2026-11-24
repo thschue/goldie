@@ -291,3 +291,145 @@ func TestPullCleansLoopTextBeforeWritingAndPrinting(t *testing.T) {
 		t.Errorf("the cleaned description is gone from the entry skill:\n%s", got)
 	}
 }
+
+// Acceptance tests for #656: the /loop lines carry a lead-in and an
+// up-to-date pull reprints them from the local namespace.
+
+const loopLeadIn = "Start a loop in Claude Code:"
+
+var shopLoopLines = []string{"/loop 30m /goldie-loop-nightly", "/loop 1h /goldie-loop-shop-release", "/loop /goldie-loop-watcher"}
+
+func outLines(out string) []string {
+	return strings.Split(strings.TrimRight(out, "\n"), "\n")
+}
+
+// wantLoopTail checks that lines ends with the lead-in and then exactly the
+// loop lines, in order.
+func wantLoopTail(t *testing.T, what string, lines, loops []string) {
+	t.Helper()
+	want := append([]string{loopLeadIn}, loops...)
+	if len(lines) < len(want) {
+		t.Errorf("%s: output %q is shorter than %q", what, lines, want)
+		return
+	}
+	if got := lines[len(lines)-len(want):]; strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("%s: output ends with %q, want %q", what, got, want)
+	}
+}
+
+// Criterion 1: one lead-in line precedes the /loop lines after "Pulled N files".
+func TestPullPrintsTheLeadInBeforeTheLoopLines(t *testing.T) {
+	_, out := pulledLoopsRepo(t, loopContent(t, nil), loopsShop)
+	lines := outLines(out)
+	if len(lines) != 5 || !strings.HasPrefix(lines[0], "Pulled ") {
+		t.Fatalf("pull output = %q, want the Pulled line, the lead-in and three /loop lines", lines)
+	}
+	wantLoopTail(t, "first pull", lines, shopLoopLines)
+	if n := strings.Count(out, loopLeadIn); n != 1 {
+		t.Errorf("the lead-in is printed %d times, want once:\n%s", n, out)
+	}
+}
+
+// Criterion 1, negative: no loops, no lead-in.
+func TestPullPrintsNoLeadInWithoutLoops(t *testing.T) {
+	none := loopContent(t, map[string]string{
+		loopNightly: "", "global/loops/watcher.md": "",
+		"projects/" + loopsShop + "/loops/shop-release.md": "",
+	})
+	repo, out := pulledLoopsRepo(t, none, loopsShop)
+	if strings.Contains(out, loopLeadIn) || strings.Contains(out, "/loop") {
+		t.Errorf("a pull without loops prints a lead-in or /loop line:\n%s", out)
+	}
+	// Criterion 2, negative: up to date with no local loops adds nothing.
+	out2, err := pullCLI(t, loopServer(t, none).URL, repo, "--project", loopsShop)
+	if err != nil {
+		t.Fatalf("second pull: %v\n%s", err, out2)
+	}
+	if lines := outLines(out2); len(lines) != 1 || !strings.Contains(lines[0], "already up to date") {
+		t.Errorf("up to date without loops printed %q, want only the already up to date line", lines)
+	}
+}
+
+// Criterion 2: an up-to-date pull says so, then reprints the lead-in and the
+// /loop lines of the local namespace.
+func TestPullReprintsTheLoopLinesWhenUpToDate(t *testing.T) {
+	content := loopContent(t, nil)
+	repo, _ := pulledLoopsRepo(t, content, loopsShop)
+	before := snapshot(t, repo)
+	out, err := pullCLI(t, loopServer(t, content).URL, repo, "--project", loopsShop)
+	if err != nil {
+		t.Fatalf("second pull: %v\n%s", err, out)
+	}
+	lines := outLines(out)
+	if len(lines) != 5 || !strings.Contains(lines[0], "already up to date") {
+		t.Fatalf("up-to-date output = %q, want the already up to date line, the lead-in and three /loop lines", lines)
+	}
+	wantLoopTail(t, "up to date", lines, shopLoopLines)
+	if after := snapshot(t, repo); !mapsEqual(before, after) {
+		t.Errorf("an up-to-date pull changed the project")
+	}
+}
+
+// Criterion 3: --check and --dry-run output is unchanged: no lead-in, no
+// /loop line.
+func TestPullCheckAndDryRunPrintNoLoopLines(t *testing.T) {
+	content := loopContent(t, nil)
+	repo, _ := pulledLoopsRepo(t, content, loopsShop)
+	srv := loopServer(t, content)
+	for _, flag := range []string{"--check", "--dry-run"} {
+		out, err := pullCLI(t, srv.URL, repo, "--project", loopsShop, flag)
+		if err != nil {
+			t.Fatalf("pull %s: %v\n%s", flag, err, out)
+		}
+		if strings.Contains(out, loopLeadIn) || strings.Contains(out, "/loop") {
+			t.Errorf("pull %s prints a lead-in or /loop line:\n%s", flag, out)
+		}
+	}
+	// A dry run before any pull lists writes only.
+	fresh := gitCheckout(t, nil)
+	out, err := pullCLI(t, srv.URL, fresh, "--project", loopsShop, "--dry-run")
+	if err != nil {
+		t.Fatalf("dry run: %v\n%s", err, out)
+	}
+	if strings.Contains(out, loopLeadIn) || strings.Contains(out, "/loop") {
+		t.Errorf("dry run prints a lead-in or /loop line:\n%s", out)
+	}
+}
+
+// A symlinked SKILL.md or a symlinked .claude/skills never feeds the lines of
+// an up-to-date pull: the pull does not read through the link.
+func TestUpToDatePullIgnoresSymlinkedLoopEntries(t *testing.T) {
+	content := loopContent(t, nil)
+	for name, link := range map[string]func(t *testing.T, repo string){
+		"SKILL.md": func(t *testing.T, repo string) {
+			for _, rel := range []string{pNightlyEntry, pWatcherEntry, pShopEntry} {
+				entry := filepath.Join(repo, filepath.FromSlash(rel))
+				if err := os.Rename(entry, entry+".real"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(entry+".real", entry); err != nil {
+					t.Fatal(err)
+				}
+			}
+		},
+		".claude/skills": func(t *testing.T, repo string) {
+			skills := filepath.Join(repo, ".claude", "skills")
+			if err := os.Rename(skills, filepath.Join(repo, "real-skills")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(repo, "real-skills"), skills); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, _ := pulledLoopsRepo(t, content, loopsShop)
+			link(t, repo)
+			out, err := pullCLI(t, loopServer(t, content).URL, repo, "--project", loopsShop)
+			t.Logf("pull: err=%v out=%q", err, out)
+			if strings.Contains(out, loopLeadIn) && strings.Contains(out, "up to date") {
+				t.Errorf("an up-to-date pull printed loop lines through a symlink:\n%s", out)
+			}
+		})
+	}
+}
