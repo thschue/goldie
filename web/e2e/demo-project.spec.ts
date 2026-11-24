@@ -59,3 +59,17 @@ test('choosing the demo Project shows its Items on the asset tabs', async ({ pag
   await expect(panel.getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'service-health' }) })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+test('a Project article opened from Home renders, and Details shows the Project as Scope (#826)', async ({ page }) => {
+  await page.goto(`/?project=${encodeURIComponent(demoProject)}`);
+  const card = main(page)
+    .locator('section, div, article')
+    .filter({ has: page.getByRole('heading', { name: `Specific to ${demoProject}` }) })
+    .last();
+  await card.getByRole('link', { name: /Checkout payment flow/ }).click();
+  await expect(page).toHaveURL((u) => u.pathname === '/items/article/payment-flow' && u.searchParams.get('project') === demoProject);
+  await expect(main(page).getByRole('heading', { level: 1 })).toHaveText(/Checkout payment flow/);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  const details = main(page).locator('section').filter({ has: page.getByRole('heading', { name: 'Details' }) });
+  await expect(details.locator('dt', { hasText: 'Scope' }).locator('xpath=following-sibling::dd[1]')).toHaveText(demoProject);
+});
