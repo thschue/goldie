@@ -1462,3 +1462,158 @@ eachViewport((width, theme) => {
     await evidence(page, width, theme, '-trace', 'activity');
   });
 });
+
+// A dropped stream (#873, handoff §5.1 "Offline / SSE dropped"): the page stays, says "Reconnecting…"
+// in a polite status, reconnects with a growing, capped backoff and replaces the view with the
+// replayed history. A reconnect counts as successful once the live marker has arrived.
+test.describe('a dropped stream', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const requests = (page: Page) => page.evaluate(() => (window as unknown as Win).__activity.urls.length);
+  // drop ends the newest stream the way a closed connection does, or fails it the way a reset does.
+  const drop = (page: Page, how: 'end' | 'error' = 'end') =>
+    page.evaluate((h) => {
+      const hook = (window as unknown as Win).__activity;
+      const c = hook.controllers[hook.controllers.length - 1];
+      if (h === 'end') c.close();
+      else c.error(new TypeError('network error'));
+    }, how);
+  const reconnecting = (page: Page) => main(page).getByRole('status').filter({ hasText: 'Reconnecting…' });
+  // answerNext makes the page's activity requests come back with a plain HTTP answer.
+  const answerNext = (page: Page, status: number, body: unknown) =>
+    page.evaluate(
+      ([s, b]) => {
+        const real = window.fetch;
+        window.fetch = (input, init) => {
+          const raw = input instanceof Request ? input.url : String(input);
+          if (new URL(raw, location.href).pathname !== '/api/v1/activity') return real(input, init);
+          (window as unknown as Win).__activity.urls.push('refused');
+          return Promise.resolve(
+            new Response(JSON.stringify(b), { status: s as number, headers: { 'Content-Type': 'application/json' } }),
+          );
+        };
+      },
+      [status, body] as const,
+    );
+
+  for (const how of ['end', 'error'] as const) {
+    test(`keeps the feed, tiles, Miss board and selection when the stream ${how === 'end' ? 'ends' : 'errors'}`, async ({ page }) => {
+      await page.clock.install();
+      await open(page, [ev(1, { query: 'database' }), ev(2, { query: 'quantum', miss: true })]);
+      await rowOf(page, 'database').getByRole('button').click();
+      await expect(rows(page)).toHaveCount(2);
+      await drop(page, how);
+      await expect(reconnecting(page)).toBeVisible();
+      await expect(rows(page)).toHaveCount(2);
+      await expect(main(page).getByRole('region', { name: 'Last five minutes' })).toBeVisible();
+      await expect(main(page).getByRole('heading', { name: "What people looked for and didn't find" })).toBeVisible();
+      await expect(main(page).getByRole('region', { name: 'Event detail' })).toBeVisible();
+      await expect(rowOf(page, 'database').getByRole('button')).toHaveAttribute('aria-pressed', 'true');
+      await expect(main(page).getByRole('alert')).toHaveCount(0);
+      await expect(main(page).getByRole('button', { name: 'Retry' })).toHaveCount(0);
+    });
+  }
+
+  test('says "Reconnecting…" in a polite status instead of Live, until the stream is live again', async ({ page }) => {
+    await page.clock.install();
+    await open(page, [ev(1, { query: 'database' })]);
+    await expect(main(page).getByText(/^Live\b/)).toHaveCount(1);
+    await drop(page);
+    const status = reconnecting(page);
+    await expect(status).toHaveCount(1);
+    expect(await status.getAttribute('aria-live'), 'polite, never assertive').not.toBe('assertive');
+    await expect(main(page).getByText(/^Live\b/)).toHaveCount(0);
+    await page.clock.fastForward(2_000);
+    await page.waitForFunction(() => (window as unknown as Win).__activity.controllers.length > 1);
+    await send(page, frame(ev(1, { query: 'database' })) + liveMarker);
+    await expect(reconnecting(page)).toHaveCount(0);
+    await expect(main(page).getByText(/^Live\b/)).toHaveCount(1);
+  });
+
+  test('reconnects after a pause, not at once and not in a tight loop', async ({ page }) => {
+    await page.clock.install();
+    await open(page, [ev(1)]);
+    expect(await requests(page)).toBe(1);
+    await drop(page);
+    await expect(reconnecting(page)).toBeVisible();
+    expect(await requests(page), 'no request before the backoff has passed').toBe(1);
+    await page.clock.fastForward(2_000);
+    await expect.poll(() => requests(page)).toBe(2);
+  });
+
+  test('doubles the pause on each failed attempt and caps it at 30 seconds with jitter', async ({ page }) => {
+    await page.clock.install();
+    await open(page, [ev(1)]);
+    // Attempts that end before the live marker: the pauses grow 1 s, 2 s, 4 s, 8 s, ...
+    for (let n = 1; n <= 3; n++) {
+      await drop(page);
+      await page.clock.fastForward(45_000);
+      await expect.poll(() => requests(page), { message: `attempt ${n + 1}` }).toBe(n + 1);
+    }
+    await drop(page);
+    await page.clock.fastForward(3_000);
+    expect(await requests(page), 'the fourth pause (about 8 s) has not passed after 3 s').toBe(4);
+    await page.clock.fastForward(45_000);
+    await expect.poll(() => requests(page)).toBe(5);
+    // Many failures later the pause stays within the cap, with room for jitter.
+    for (let n = 5; n < 12; n++) {
+      await drop(page);
+      await page.clock.fastForward(45_000);
+      await expect.poll(() => requests(page), { message: `attempt ${n + 1}` }).toBe(n + 1);
+    }
+    await drop(page);
+    await page.clock.fastForward(5_000);
+    expect(await requests(page), 'the capped pause (about 30 s) has not passed after 5 s').toBe(12);
+  });
+
+  test('a successful reconnect resets the backoff', async ({ page }) => {
+    await page.clock.install();
+    await open(page, [ev(1)]);
+    for (let n = 1; n <= 3; n++) {
+      await drop(page);
+      await page.clock.fastForward(45_000);
+      await expect.poll(() => requests(page)).toBe(n + 1);
+    }
+    await send(page, frame(ev(1)) + liveMarker);
+    await expect(reconnecting(page)).toHaveCount(0);
+    await drop(page);
+    await expect(reconnecting(page)).toBeVisible();
+    await page.clock.fastForward(2_000);
+    await expect.poll(() => requests(page), { message: 'first pause again after a success' }).toBe(5);
+  });
+
+  test('replaces the view with the replayed history, without duplicate rows', async ({ page }) => {
+    await page.clock.install();
+    const history = [ev(1, { query: 'database' }), ev(2, { query: 'quantum', miss: true })];
+    await open(page, history);
+    await drop(page);
+    await expect(reconnecting(page)).toBeVisible();
+    await page.clock.fastForward(2_000);
+    await page.waitForFunction(() => (window as unknown as Win).__activity.controllers.length > 1);
+    await send(page, [...history, ev(3, { query: 'newcomer' })].map(frame).join('') + liveMarker);
+    await expect(rowOf(page, 'newcomer')).toHaveCount(1);
+    await expect(rows(page)).toHaveCount(3);
+    await expect(rowOf(page, 'database')).toHaveCount(1);
+    await expect(rowOf(page, 'quantum')).toHaveCount(1);
+  });
+
+  const refusals = [
+    { status: 401, code: 'unauthorized', shows: 'Your session ended.' },
+    { status: 403, code: 'forbidden', shows: 'This page is for operators.' },
+    { status: 503, code: 'too_many_streams', shows: 'Close another stream, or retry in a minute.' },
+  ];
+  for (const r of refusals) {
+    test(`a ${r.status} on reconnect shows its state and does not loop`, async ({ page }) => {
+      await page.clock.install();
+      await open(page, [ev(1, { query: 'database' })]);
+      await answerNext(page, r.status, envelope(r.code, 'refused', 'Close another stream, or retry in a minute.'));
+      await drop(page);
+      await page.clock.fastForward(2_000);
+      await expect(page.getByText(r.shows)).toBeVisible();
+      const seen = await requests(page);
+      await page.clock.fastForward(120_000);
+      expect(await requests(page), 'no further attempts').toBe(seen);
+      await expect(reconnecting(page)).toHaveCount(0);
+    });
+  }
+});
