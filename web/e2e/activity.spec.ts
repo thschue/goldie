@@ -1128,7 +1128,7 @@ test.describe('the Live stream stage (#811)', () => {
     expect(new URL(page.url()).searchParams.get('project')).toBe(shop);
     await expect(rows(page)).toHaveCount(1);
     await lane(page).click();
-    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+    await expect(page).not.toHaveURL(/[?&]project=/);
     await expect(rows(page)).toHaveCount(2);
   });
 
@@ -1153,6 +1153,8 @@ test.describe('the Live stream stage (#811)', () => {
     await page.setViewportSize({ width: 375, height: 800 });
     const box = await main(page).locator('svg[role="img"]').boundingBox();
     expect(box?.width ?? 0).toBeGreaterThan(250);
+  });
+});
 
 // The surface pills, the Via and Result columns, Query → Item and the Latency tile (#810, handoff
 // §3.6). Contract these specs pin down:
