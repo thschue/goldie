@@ -171,15 +171,15 @@ const unauthorized = (route: Route) =>
   route.fulfill({ status: 401, contentType: 'application/json', body: envelope('unauthorized', 'no valid session') });
 const shop = 'github.com/acme/shop';
 const apiProjects = /\/api\/v1\/projects$/;
-const apiItems = /\/api\/v1\/projects\/[^/]+\/items$/;
+const apiArticles = /\/api\/v1\/articles(\?|$)/;
 const apiSearch = /\/api\/v1\/search(\?|$)/;
 
 test.describe('a 401 on a read ends the session (#685)', () => {
-  test('a Project page read that answers 401 shows the session-ended banner and its sign-in link', async ({ page }) => {
+  test('a Home read for a Project that answers 401 shows the session-ended banner and its sign-in link', async ({ page }) => {
     await page.route(apiProjects, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: [shop] }) }),
     );
-    await page.route(apiItems, unauthorized);
+    await page.route(apiArticles, unauthorized);
     await page.goto(`/?project=${encodeURIComponent(shop)}`);
 
     const banner = page.getByRole('status').filter({ hasText: 'Your session ended' });
@@ -199,8 +199,8 @@ test.describe('a 401 on a read ends the session (#685)', () => {
   test.describe('signed out', () => {
     test.use({ storageState: { cookies: [], origins: [] } });
 
-    test('a 401 on a Project page read or a search does not show the banner', async ({ page }) => {
-      await page.route(apiItems, unauthorized);
+    test('a 401 on a Home read for a Project or a search does not show the banner', async ({ page }) => {
+      await page.route(apiArticles, unauthorized);
       await page.route(apiSearch, unauthorized);
       for (const path of [`/?project=${encodeURIComponent(shop)}`, '/?q=database']) {
         await page.goto(path);

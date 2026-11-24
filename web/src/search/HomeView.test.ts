@@ -4,10 +4,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
-import { createMemoryHistory, createRouter } from 'vue-router';
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router';
+import { routes } from '../router';
 import HomeView from './HomeView.vue';
 
-const lists = (url: string) => (url.includes('/skills') ? { skills: [] } : url.includes('/agents') ? { agents: [] } : { loops: [] });
+const lists = (url: string) =>
+  url.includes('/skills') ? { skills: [] } : url.includes('/agents') ? { agents: [] } : url.includes('/articles') ? { articles: [] } : { loops: [] };
 
 function stubApi(answer: (url: string) => Response | Promise<Response> = (url) => new Response(JSON.stringify(lists(url)))) {
   const fetchMock = vi.fn(async (input: unknown) => answer(String(input)));
@@ -28,6 +30,12 @@ async function render(path = '/') {
   await new Promise((r) => setTimeout(r, 0));
   return html;
 }
+
+// The links of a rendered page whose path is `pathname`, as URLs.
+const links = (html: string, pathname: string) =>
+  [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => new URL(m[1].replace(/&amp;/g, '&'), 'file:///')).filter((u) => u.pathname === pathname);
+
+const shop = 'github.com/acme/shop';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#39;/g, "'").replace(/\s+/g, ' ');
 
@@ -54,7 +62,7 @@ describe('Home without a query', () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
   });
 
-  it('shows Browse the golden path with a tile per Kind, linking to /assets/<tab>, and no Articles tile', async () => {
+  it('shows Browse the golden path with a tile per Kind, linking to /assets/<tab>, and the Articles tile apart', async () => {
     stubApi();
     const html = await render();
     expect(text(html)).toContain('Browse the golden path');
@@ -69,10 +77,77 @@ describe('Home without a query', () => {
     expect(html).not.toContain('href="/assets/articles"');
   });
 
-  it('asks GET /api/v1/skills, /agents and /loops once each, and no search', async () => {
+  it('asks GET /api/v1/articles, /skills, /agents and /loops once each, and no search', async () => {
     const fetchMock = stubApi();
     await render();
-    expect(requested(fetchMock).sort()).toEqual(['/api/v1/agents', '/api/v1/loops', '/api/v1/skills']);
+    expect(requested(fetchMock).sort()).toEqual(['/api/v1/agents', '/api/v1/articles', '/api/v1/loops', '/api/v1/skills']);
+  });
+
+  it('shows an Articles tile with a name, a one-line purpose, linking to /articles', async () => {
+    stubApi();
+    const html = await render();
+    const tile = /<a [^>]*href="\/articles"[^>]*>([\s\S]*?)<\/a>/.exec(html);
+    expect(tile, 'a tile linking to /articles').not.toBeNull();
+    const words = text(tile![1]).trim();
+    expect(words).toContain('Articles');
+    expect(words.length, `purpose in "${words}"`).toBeGreaterThan('Articles'.length + 10);
+  });
+
+  it('keeps the selected Project: the Articles, Skills, Agents and Loops tiles link with ?project= and count from it', async () => {
+    const fetchMock = stubApi();
+    const html = await render(`/?project=${encodeURIComponent(shop)}`);
+    for (const path of ['/articles', '/assets/skills', '/assets/agents', '/assets/loops']) {
+      const found = links(html, path);
+      expect(found, `a link to ${path}`).toHaveLength(1);
+      expect(found[0].searchParams.get('project'), `project on ${path}`).toBe(shop);
+    }
+    const asked = fetchMock.mock.calls.map(([u]) => new URL(String(u), 'file:///'));
+    expect(asked).toHaveLength(4);
+    for (const u of asked) expect(u.searchParams.get('project'), `project on ${u.pathname}`).toBe(shop);
+  });
+
+  it('without a Project the tiles link bare and the lists are asked without a project', async () => {
+    const fetchMock = stubApi();
+    const html = await render();
+    for (const path of ['/articles', '/assets/skills', '/assets/agents', '/assets/loops']) {
+      const found = links(html, path);
+      expect(found, `a link to ${path}`).toHaveLength(1);
+      expect(found[0].search, `no query on ${path}`).toBe('');
+    }
+    expect(fetchMock.mock.calls.every(([u]) => !String(u).includes('project'))).toBe(true);
+  });
+
+  it('carries only the Project to the tiles, never other query parts', async () => {
+    stubApi();
+    const html = await render(`/?project=${encodeURIComponent(shop)}&evil=1`);
+    for (const path of ['/articles', '/assets/skills']) expect(links(html, path)[0].searchParams.has('evil')).toBe(false);
+  });
+
+  it('asks the article list once for the tile and the Specific-to card together', async () => {
+    const fetchMock = stubApi();
+    await render(`/?project=${encodeURIComponent(shop)}`);
+    expect(requested(fetchMock).filter((p) => p === '/api/v1/articles')).toHaveLength(1);
+  });
+
+  it('has the "Specific to <project>" card: it asks for a Project when none is selected', async () => {
+    stubApi();
+    const t = text(await render());
+    expect(t).toContain('Pick a project');
+    expect(t).not.toContain('Nothing specific to');
+  });
+
+  it('names the selected Project in the "Specific to" card and does not ask for one', async () => {
+    stubApi();
+    const t = text(await render(`/?project=${encodeURIComponent(shop)}`));
+    expect(t).toContain(`Specific to ${shop}`);
+    expect(t).not.toContain('Pick a project');
+  });
+
+  it('has no "What\'s new" card and no placeholder for it', async () => {
+    stubApi();
+    const t = text(await render());
+    expect(t).not.toMatch(/what.s new/i);
+    expect(t).not.toMatch(/coming soon|waits for/i);
   });
 
   it('still renders every tile, the checklist and the field when every list fails', async () => {
@@ -83,6 +158,7 @@ describe('Home without a query', () => {
       stubApi(answer);
       const html = await render();
       for (const tab of ['skills', 'agents', 'loops']) expect(html).toContain(`href="/assets/${tab}"`);
+      expect(html).toContain('href="/articles"');
       expect(html).toContain('goldie init');
       expect(html).toContain('type="search"');
       expect(html).not.toContain('role="alert"');
@@ -155,5 +231,32 @@ describe('the search request', () => {
     await render('/?q=database&drafts=true&project=github.com%2Facme%2Fshop');
     const [call] = searches(fetchMock);
     expect(call.searchParams.has('drafts')).toBe(false);
+  });
+});
+
+// `/?project=<id>` is Home with that Project selected (#725, handoff §2.1, §2.2); the Project's
+// Items list of #496 is gone. Rendered through the app's own routes.
+describe('the Home route with a Project', () => {
+  async function renderRoute(path: string) {
+    const router = createRouter({ history: createMemoryHistory(), routes });
+    await router.push(path);
+    await router.isReady();
+    const app = createSSRApp({ render: () => h(RouterView) });
+    app.use(router);
+    const html = (await renderToString(app)).replace(/<!--[\s\S]*?-->/g, '');
+    await new Promise((r) => setTimeout(r, 0));
+    return html;
+  }
+
+  it('renders Home, not the Project\'s Items list, and never asks GET /api/v1/projects/{id}/items', async () => {
+    const fetchMock = stubApi();
+    const html = await renderRoute(`/?project=${encodeURIComponent(shop)}`);
+    expect(text(html)).toContain('What are you deciding today?');
+    expect(text(html)).toContain('Browse the golden path');
+    expect(requested(fetchMock).filter((p) => p.startsWith('/api/v1/projects/'))).toEqual([]);
+  });
+
+  it('has no ProjectHome component left', () => {
+    expect(Object.keys(import.meta.glob('../projects/ProjectHome.vue'))).toEqual([]);
   });
 });

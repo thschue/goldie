@@ -1,4 +1,4 @@
-// One load with its states (#587, from ProjectHome.vue of #496): loading, ready, error and the
+// One load with its states (#587): loading, ready, error and the
 // 429 countdown. The skeleton shows only after `delay` ms, so a fast load never flashes one.
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue';
 import { ApiError } from './client';
