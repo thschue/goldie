@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -38,6 +39,9 @@ type localSettings struct {
 	Project  yaml.Node `yaml:"project"`
 	Addr     yaml.Node `yaml:"addr"`
 	Dir      yaml.Node `yaml:"dir"`
+	// Decisions maps a folder of the repository, outside .goldie/, whose
+	// decision files load into the local Scope: decisions: {path: docs/adr}.
+	Decisions yaml.Node `yaml:"decisions"`
 }
 
 // enforces reports whether the Project's own Item key is published and
@@ -140,12 +144,12 @@ func splitGoldieDir(dir string) (parent, name string, err error) {
 // within fsys. It is called only while loading. The copy shares s's Projects
 // and global Items, which a Snapshot never changes.
 func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
-	items, refs, err := readLocal(fsys, dir)
+	items, refs, warnings, err := readLocal(fsys, dir)
 	if err != nil {
 		return nil, err
 	}
 	snap := *s
-	snap.warnings = slices.Clone(s.warnings)
+	snap.warnings = append(slices.Clone(s.warnings), warnings...)
 	snap.local = &localScope{scopeItems: items, configFile: dir + "/" + localConfigName}
 	hidden, _, err := snap.resolveSuppressions("", snap.local.configFile, "the local Scope's", "the local Scope", refs)
 	if err != nil {
@@ -170,18 +174,43 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	return &snap, nil
 }
 
-// readLocal reads every Kind under dir and the suppress references of
-// dir/config.yaml. A missing dir, Kind directory or config.yaml is empty. Like
-// a Project's, a symlink is refused even when it stays inside the root.
-func readLocal(fsys fs.FS, dir string) (items scopeItems, refs []string, err error) {
+// readLocal reads every Kind under dir, the decisions folder that
+// dir/config.yaml maps, and the suppress references of dir/config.yaml. A
+// missing dir, Kind directory or config.yaml is empty. Like a Project's, a
+// symlink is refused even when it stays inside the root. The decisions folder
+// is a path within fsys, the repository root; a decision in it that is
+// malformed is a warning, not an error.
+func readLocal(fsys fs.FS, dir string) (items scopeItems, refs, warnings []string, err error) {
 	if exists, err := requireDir(fsys, dir, "the Goldie directory"); err != nil || !exists {
-		return items, nil, err
+		return items, nil, nil, err
 	}
 	if items, err = loadScope(fsys, dir, ScopeLocal, "local"); err != nil {
-		return items, nil, err
+		return items, nil, nil, err
 	}
-	refs, err = readSuppressFile(fsys, dir+"/"+localConfigName, func(s *localSettings) yaml.Node { return s.Suppress })
-	return items, refs, err
+	var decisions yaml.Node
+	file := dir + "/" + localConfigName
+	if refs, err = readSuppressFile(fsys, file, func(s *localSettings) yaml.Node {
+		decisions = s.Decisions
+		return s.Suppress
+	}); err != nil {
+		return items, nil, nil, err
+	}
+	folder, err := decisionsFolder(decisions, file)
+	if err != nil || folder == "" {
+		return items, refs, nil, err
+	}
+	taken := map[string]bool{}
+	for _, d := range items.decisions {
+		taken[strings.ToLower(d.ID)] = true
+	}
+	more, warnings, err := readDecisionsFolder(fsys, folder, file, taken)
+	if err != nil {
+		return items, nil, nil, err
+	}
+	items.decisions = append(items.decisions, more...)
+	sortArticles(items.decisions)
+	items.index.add(items.decisions)
+	return items, refs, warnings, nil
 }
 
 // requireDir reports whether p exists, and fails when it is a symlink or not

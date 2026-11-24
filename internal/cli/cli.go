@@ -305,11 +305,11 @@ func (f *ClientFlags) open(ctx context.Context, env Env, tm tokenMode) (*command
 
 // localScope finds the repository's local Scope from the working directory:
 // goldieDir is its .goldie directory, set when .goldie/articles exists at the
-// repository root. dir is the content directory given by --dir or GOLDIE_DIR,
+// repository root, or config.yaml sets decisions.path. dir is the content directory given by --dir or GOLDIE_DIR,
 // or else the one config.yaml names, which comes back already open as handle
 // (project.OpenConfigContentDir), or "" for empty content. A .goldie without
-// articles, such as the one goldie init writes, is not a local Scope: dir
-// comes back as it was given. An address
+// articles and without decisions.path, such as the one goldie init writes, is
+// not a local Scope: dir comes back as it was given. An address
 // together with a local Scope is an error naming both, like one with a
 // directory, because the address would hide the repository's own content.
 func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, handle *os.Root, err error) {
