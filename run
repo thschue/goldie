@@ -617,8 +617,11 @@ cmd_ux() {
 	go build -o "$ux_tmp/goldie" ./cmd/goldie || die "go build failed"
 	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/token") ||
 		die "cannot create the throwaway token"
-	# The token is a reader named ux, so the specs see the reader nav and chip.
-	(umask 077 && printf 'ux:reader:%s\n' "$(cat "$ux_tmp/token")" >"$ux_tmp/tokens") ||
+	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/operator-token") ||
+		die "cannot create the throwaway operator token"
+	# The token is a reader named ux, so the specs see the reader nav and chip. The
+	# journeys (web/e2e/journeys) sign in as the operator named ops where they need it.
+	(umask 077 && printf 'ux:reader:%s\nops:operator:%s\n' "$(cat "$ux_tmp/token")" "$(cat "$ux_tmp/operator-token")" >"$ux_tmp/tokens") ||
 		die "cannot create the throwaway token file"
 	say "ux: goldie server on examples/knowledge"
 	(ux_goldie 127.0.0.1:0 server) >"$UX_DIR/server.log" 2>&1 &
@@ -655,7 +658,7 @@ cmd_ux() {
 	say "ux: playwright test against http://$app and the demo at $demo_url"
 	status=0
 	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" GOLDIE_UX_TOKEN="$(cat "$ux_tmp/token")" \
-		GOLDIE_UX_DEMO_URL="$demo_url" GOLDIE_UX_DEMO_TOKEN="$demo_token" \
+		GOLDIE_UX_OPERATOR_TOKEN="$(cat "$ux_tmp/operator-token")" GOLDIE_UX_DEMO_URL="$demo_url" GOLDIE_UX_DEMO_TOKEN="$demo_token" \
 		GOLDIE_UX_STATE="$ux_tmp/state.json" npx --no playwright test) || status=$?
 	[ "$status" = 0 ] || die "ux: the Playwright specs failed; the report is in $UX_DIR/"
 	say "ux: screenshots and report in $UX_DIR/"
