@@ -123,9 +123,11 @@ git add .goldie/config.yaml && git commit -m "Add goldie config"
 When the server answered and accepted the token, `init` also asks `Add goldie's instruction block to
 CLAUDE.md? [Y/n]` (stderr). Yes (or Enter) runs `goldie instructions apply --target claude` and prints
 its message on stdout (`Wrote the goldie block to CLAUDE.md (was missing).`, or `CLAUDE.md is already up to
-date.`), and `Next` drops the `goldie instructions apply` line. No, or input that ends at the question,
-changes nothing and `Next` keeps the line. A block edited by hand is never forced: the command's message
-goes to stderr, `init` still exits 0 and `Next` keeps the line. Any other failure (the server cannot render
+date.`), `Next` drops the `goldie instructions apply` line, and its commit command becomes
+`git add .goldie/config.yaml CLAUDE.md && git commit -m "Add goldie config"`. No, or input that
+ends at the question, changes nothing and `Next` keeps the line. A block edited by hand is never
+forced: the command's message goes to stderr, `init` still exits 0 and `Next` keeps the line. Any
+other failure (the server cannot render
 the block, the file is a symlink) is reported, `.goldie/config.yaml` stays, `Next` is still printed and
 `init` exits 1.
 

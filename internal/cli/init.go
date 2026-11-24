@@ -328,11 +328,14 @@ func (c *commander) nextBlock(addr string, rejected, applied bool) string {
 		say(&b, "export %s=\"<your new token>\"\n", EnvToken)
 	}
 	say(&b, "claude mcp add --transport http goldie %s/mcp --header \"Authorization: Bearer $%s\"\n", addr, EnvToken)
-	if !applied {
+	files := ".goldie/config.yaml"
+	if applied {
+		files += " CLAUDE.md" // the file init just wrote is committed with the config
+	} else {
 		b.WriteString("goldie instructions apply\n")
 	}
 	b.WriteString("goldie status\n")
-	b.WriteString("git add .goldie/config.yaml && git commit -m \"Add goldie config\"\n")
+	say(&b, "git add %s && git commit -m \"Add goldie config\"\n", files)
 	return b.String()
 }
 
