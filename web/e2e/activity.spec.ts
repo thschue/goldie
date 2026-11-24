@@ -109,17 +109,19 @@ async function stubStream(page: Page) {
   });
 }
 
-const operator = (page: Page) =>
+// links is the operator-only part of the Session (#807): grafana_url and trace_url_template.
+type Links = { grafana_url?: string; trace_url_template?: string };
+const operator = (page: Page, links: Links = {}) =>
   page.route('**/api/v1/session', (route) =>
-    route.request().method() === 'GET' ? json(route, 200, { name: 'ops', role: 'operator' }) : route.continue(),
+    route.request().method() === 'GET' ? json(route, 200, { name: 'ops', role: 'operator', ...links }) : route.continue(),
   );
 
 const send = (page: Page, text: string) => page.evaluate((t) => (window as unknown as Win).__send(t), text);
 
 // open starts the page as an operator, waits for the stream request, and sends the
 // history and the live marker.
-async function open(page: Page, history: Ev[] = [], path = '/ops/activity') {
-  await operator(page);
+async function open(page: Page, history: Ev[] = [], path = '/ops/activity', links: Links = {}) {
+  await operator(page, links);
   await stubStream(page);
   await page.goto(path);
   await page.waitForFunction(() => (window as unknown as Win).__activity.controllers.length > 0);
@@ -1345,5 +1347,103 @@ test.describe('the Busiest surface and Latency tiles', () => {
     expect(l.indexOf('96.0'), 'p95 is 96.0 ms').toBeGreaterThan(l.indexOf('51.0'));
     expect(l).toMatch(/\bms\b/);
     expect(l, 'the replayed 9,000 ms is outside the window').not.toMatch(/9000|9,000/);
+  });
+});
+
+// The links out of the activity view (#808, handoff §3.6). The Session (#807) carries grafana_url and
+// trace_url_template for an operator. Contract these specs pin down:
+// - "Trends in Grafana ↗" is a link in the live header (the bar above the feed) whose href is
+//   grafana_url; with no grafana_url there is no such link;
+// - "Open trace ↗" is a link in the event detail, only with a trace_url_template and an event that
+//   has a trace_id; its href is the template with the trace_id percent-encoded into {trace_id};
+// - both open in a new tab with rel "noopener noreferrer", and neither URL is ever markup.
+test.describe('the Grafana and trace links', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const grafana = 'https://grafana.example.com/d/goldie';
+  const template = 'https://traces.example.com/trace/{trace_id}?from=goldie';
+  const trendsLink = (page: Page) => main(page).getByRole('link', { name: /trends in grafana/i });
+  const traceLink = (page: Page) => detail(page).getByRole('link', { name: /open trace/i });
+  const rels = async (l: Locator) => ((await l.getAttribute('rel')) ?? '').split(/\s+/).sort();
+
+  test('shows "Trends in Grafana" in the live header with a grafana_url, in a new tab', async ({ page }) => {
+    await open(page, [ev(1)], '/ops/activity', { grafana_url: grafana });
+    await expect(trendsLink(page)).toHaveCount(1);
+    await expect(trendsLink(page)).toHaveText(/^\s*Trends in Grafana\s*↗\s*$/);
+    await expect(trendsLink(page)).toHaveAttribute('href', grafana);
+    await expect(trendsLink(page)).toHaveAttribute('target', '_blank');
+    expect(await rels(trendsLink(page))).toEqual(['noopener', 'noreferrer']);
+    await expect(main(page).locator('.bar').getByRole('link', { name: /trends in grafana/i })).toHaveCount(1);
+  });
+
+  test('has no Grafana link without a grafana_url', async ({ page }) => {
+    await open(page, [ev(1)]);
+    await expect(main(page).getByText('Live', { exact: true })).toBeVisible();
+    await expect(trendsLink(page)).toHaveCount(0);
+    await expect(main(page).getByText(/grafana/i)).toHaveCount(0);
+  });
+
+  test('shows "Open trace" in the detail with the template and a trace_id, percent-encoded, in a new tab', async ({ page }) => {
+    await open(page, [ev(1, { query: 'traced', trace_id: '4bf92f35/77b3?x=1&y#z é' })], '/ops/activity', {
+      trace_url_template: template,
+    });
+    await rowButton(page, 'traced').click();
+    await expect(traceLink(page)).toHaveCount(1);
+    await expect(traceLink(page)).toHaveText(/^\s*Open trace\s*↗\s*$/);
+    await expect(traceLink(page)).toHaveAttribute(
+      'href',
+      'https://traces.example.com/trace/4bf92f35%2F77b3%3Fx%3D1%26y%23z%20%C3%A9?from=goldie',
+    );
+    await expect(traceLink(page)).toHaveAttribute('target', '_blank');
+    expect(await rels(traceLink(page))).toEqual(['noopener', 'noreferrer']);
+  });
+
+  test('has no "Open trace" without a template', async ({ page }) => {
+    await open(page, [ev(1, { query: 'plain id', trace_id: '4bf92f3577b34da6a3ce929d0e0e4736' })]);
+    await rowButton(page, 'plain id').click();
+    await expect(detail(page)).toContainText('plain id');
+    await expect(traceLink(page)).toHaveCount(0);
+  });
+
+  test('has no "Open trace" for an event without a trace_id, even with a template', async ({ page }) => {
+    await open(page, [ev(1, { query: 'untraced', trace_id: '' })], '/ops/activity', { trace_url_template: template });
+    await rowButton(page, 'untraced').click();
+    await expect(detail(page)).toContainText('untraced');
+    await expect(traceLink(page)).toHaveCount(0);
+  });
+
+  test('binds a hostile URL and trace_id as an href only, never as markup', async ({ page }) => {
+    const hostile = 'https://g.example.com/d?x="><img src=x onerror="window.__pwned=1"><b>bold</b>';
+    await open(page, [ev(1, { query: 'hostile', trace_id: '"><img src=x onerror="window.__pwned=2">' })], '/ops/activity', {
+      grafana_url: hostile,
+      trace_url_template: 'https://t.example.com/{trace_id}',
+    });
+    await rowButton(page, 'hostile').click();
+    await expect(trendsLink(page)).toHaveAttribute('href', hostile);
+    await expect(traceLink(page)).toHaveCount(1);
+    const href = (await traceLink(page).getAttribute('href')) ?? '';
+    expect(href.startsWith('https://t.example.com/')).toBe(true);
+    expect(href).not.toMatch(/[<>"]/);
+    await expect(main(page).locator('img, b')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as Win).__pwned), 'the markup ran').toBeUndefined();
+  });
+});
+
+// The links out of the activity view, captured at every width and theme (#808): the live header
+// with "Trends in Grafana ↗", and an event detail with "Open trace ↗".
+eachViewport((width, theme) => {
+  const links = { grafana_url: 'https://grafana.example.com/d/goldie', trace_url_template: 'https://traces.example.com/trace/{trace_id}' };
+
+  test('the live header with the Grafana link is captured and axe-clean', async ({ page }) => {
+    await open(page, sample, '/ops/activity', links);
+    await expect(main(page).getByRole('link', { name: /trends in grafana/i })).toBeVisible();
+    await evidence(page, width, theme, '-grafana', 'activity');
+  });
+
+  test('the event detail with the trace link is captured and axe-clean', async ({ page }) => {
+    await open(page, [ev(1, { query: 'traced', trace_id: '4bf92f3577b34da6a3ce929d0e0e4736' })], '/ops/activity', links);
+    await rowButton(page, 'traced').click();
+    await expect(detail(page).getByRole('link', { name: /open trace/i })).toBeVisible();
+    await evidence(page, width, theme, '-trace', 'activity');
   });
 });

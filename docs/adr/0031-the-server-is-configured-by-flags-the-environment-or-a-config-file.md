@@ -1,4 +1,4 @@
-# 30. The server is configured by flags, the environment or a config file
+# 31. The server is configured by flags, the environment or a config file
 
 Status: accepted
 

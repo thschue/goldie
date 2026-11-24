@@ -177,7 +177,13 @@ func (s *Snapshot) resolveSuppressions(view, file, owner, viewer string, refs []
 		case target == nil:
 			if !warned[key] {
 				warned[key] = true
-				s.warnings = append(s.warnings, suppressWarning(file, ref, viewer))
+				w := suppressWarning(file, ref, viewer)
+				s.warnings = append(s.warnings, w)
+				where := view
+				if view == "" {
+					where = ScopeLocal
+				}
+				s.dangling = append(s.dangling, danglingRef{scope: where, key: key, warning: w})
 			}
 		case target.Scope != ScopeGlobal:
 			return nil, nil, fmt.Errorf("%s: suppress %s names %s own Item %s", file, quoteRef(ref), owner, articleFile(target))

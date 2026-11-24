@@ -533,3 +533,16 @@ func TestADRRecordsTheGitSourceSSRFStance(t *testing.T) {
 		t.Errorf("docs/adr/README.md does not list %s", file)
 	}
 }
+
+// #848: GOLDIE_GIT_PATH is a registry row, so the committed configuration
+// reference lists it (./run regen).
+func TestGitPathSettingIsRegisteredAndDocumented(t *testing.T) {
+	const name = "GOLDIE_GIT_PATH"
+	s := settingRow(t, name)
+	if s.Default != "" {
+		t.Errorf("%s default = %q, want none", name, s.Default)
+	}
+	if !strings.Contains(committedReference(t), "\n| `"+name+"` | ") {
+		t.Errorf("committed docs/reference/configuration.md has no row for %s (run: ./run regen)", name)
+	}
+}

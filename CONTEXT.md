@@ -66,6 +66,9 @@ team repository cannot publish global guidance or claim another team's project.
 
 **Snapshot**: the validated, immutable view of one Source at one revision. Swapped atomically on
 sync; the last good Snapshot keeps serving when a Source breaks.
+The engine's `SourceSet` merges several Sources' Snapshots by preference and records each Item a
+Source lost as shadowed. A Snapshot that conflicts with another Source over an enforced Item is
+rejected as it loads (ADR 0030).
 
 **Miss**: a search or lookup that found nothing. Misses are the platform team's signal for missing
 guidance; they are visible in the activity feed and in telemetry.

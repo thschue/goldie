@@ -150,6 +150,7 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		EnvTelemetryClientInfo: "true",
 		envGitURL:              gitSampleURL,
 		envGitRef:              "release/v2",
+		EnvGitPath:             "docs/goldie",
 		envGitCABundle:         gitSampleCABundle,
 		envGitAllowFileURL:     "true",
 		envPollInterval:        "90s",

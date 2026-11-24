@@ -290,15 +290,46 @@ func (s *Snapshot) checkReplacements(all []*Article) error {
 // does not, and a draft Project copy is left out of Resolution (#353), so it
 // shadows nothing. Identity ignores case (ADR 0015).
 func (s *Snapshot) checkEnforced() error {
-	for _, a := range s.allItems() {
-		if a.Scope == ScopeGlobal || !a.served() {
-			continue
-		}
-		if key := a.key(); s.enforces(key) {
-			return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(s.index[key]))
-		}
+	if a, enforced := s.shadowedEnforced(s.projectItems(), false); a != nil {
+		return fmt.Errorf("%s shadows the enforced Item %s", articleFile(a), articleFile(enforced))
 	}
 	return nil
+}
+
+// projectItems lists pointers to every Project Item, in Project order.
+func (s *Snapshot) projectItems() []*Article {
+	var out []*Article
+	for _, id := range s.Projects() {
+		p, _ := s.lookupProject(id)
+		out = append(out, p.items()...)
+	}
+	return out
+}
+
+// shadowedEnforced returns the first served Item of items that shadows a
+// published enforced Item of s at a wider Scope, with that Item, or nil: the
+// global one, and with anyProject any Project's. It is the one ADR 0021 scan:
+// the single-Source checks and SourceSet's cross-Source check all use it. A
+// draft does not enforce and shadows nothing (#353).
+func (s *Snapshot) shadowedEnforced(items []*Article, anyProject bool) (narrow, enforced *Article) {
+	for _, a := range items {
+		if !a.served() {
+			continue
+		}
+		key := a.key()
+		if s.enforces(key) {
+			return a, s.index[key]
+		}
+		if !anyProject {
+			continue
+		}
+		for _, id := range s.Projects() {
+			if p, _ := s.lookupProject(id); p.enforces(key) {
+				return a, p.index[key]
+			}
+		}
+	}
+	return nil, nil
 }
 
 // enforces reports whether the global Item key is published and enforced, so
@@ -313,12 +344,7 @@ func (s *Snapshot) enforces(key itemKey) bool {
 // allArticles lists pointers to every Article in the Snapshot, global first,
 // then each Project's in Project order, so errors are deterministic.
 func (s *Snapshot) allItems() []*Article {
-	out := s.items()
-	for _, id := range s.Projects() {
-		p, _ := s.lookupProject(id)
-		out = append(out, p.items()...)
-	}
-	return out
+	return append(s.items(), s.projectItems()...)
 }
 
 // pointers appends a pointer to every record in the lists to out.
