@@ -20,15 +20,21 @@ The files, the frontmatter and the rest of the layout are in [Writing content](c
 `GOLDIE_GIT_URL` is the repository, in place of `GOLDIE_CONTENT_DIR` (setting both stops the server).
 `GOLDIE_GIT_REF` is the branch, tag or full ref (`refs/...`) to serve; unset, the remote's HEAD.
 
+Pick one form of the URL (each line sets the same variable):
+
 ```sh
 # https
 export GOLDIE_GIT_URL=https://git.example.com/platform/golden-paths.git
-export GOLDIE_GIT_REF=main
-
-# ssh
+# or ssh
 export GOLDIE_GIT_URL=ssh://git@git.example.com/platform/golden-paths.git
-# or, scp-like (the user is required)
+# or scp-like (the user is required)
 export GOLDIE_GIT_URL=git@git.example.com:platform/golden-paths.git
+```
+
+Optionally pin the ref:
+
+```sh
+export GOLDIE_GIT_REF=main
 ```
 
 Besides the repository, the server needs an API token, as with any Source (`GOLDIE_API_TOKEN` or
@@ -39,12 +45,20 @@ export GOLDIE_API_TOKEN="$(openssl rand -hex 32)"
 goldie server
 ```
 
+To tell it worked, ask the admin listener (`GOLDIE_ADMIN_ADDR`, default `:8081`) from another
+terminal. `/readyz` answers OK once the first clone has loaded:
+
+```sh
+curl -s localhost:8081/readyz
+```
+
 Keep credentials out of the URL. The accepted URL forms are listed under `GOLDIE_GIT_URL` in the
 reference.
 
 ## A private repository
 
-Secrets are read from files (`NAME_FILE`), never from the command line or the repository.
+Set each secret with its `NAME_FILE` variable, which reads the value from a file; keep secrets out
+of the repository.
 
 For https, a token, sent as the basic-auth password:
 
@@ -72,7 +86,7 @@ export GOLDIE_POLL_INTERVAL=30s
 
 - **Before the first clone.** The server starts without waiting for it. `/readyz` on the admin
   listener (`GOLDIE_ADMIN_ADDR`) fails `source:git`, and `/api/v1` answers 503 `not_ready`, until
-  the first load succeeds.
+  the first load succeeds. Wait for `/readyz` to clear before you query the API.
 - **When a poll fails.** The server keeps the last good content and logs a warning. The next poll
   tries again.
 
