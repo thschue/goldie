@@ -1,5 +1,4 @@
-import { defineComponent, h } from 'vue';
-import { createRouter, createWebHistory, useRoute, type RouteRecordRaw } from 'vue-router';
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import ActivityView from './activity/ActivityView.vue';
 import ArticleView from './articles/ArticleView.vue';
 import ArticlesView from './articles/ArticlesView.vue';
@@ -9,9 +8,6 @@ import { assetTabs } from './assets/tabs';
 import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
 import DecisionsView from './decisions/DecisionsView.vue';
-import ProjectHome from './projects/ProjectHome.vue';
-import { projectOf } from './projects/api';
-import { queryOf } from './search/api';
 import HomeView from './search/HomeView.vue';
 import SourcesView from './sources/SourcesView.vue';
 import EmptyView from './views/EmptyView.vue';
@@ -24,15 +20,8 @@ const pages: [path: string, title: string][] = [
   ['/items/:kind/:name', 'Item'],
 ];
 
-// Home is one address: with a Project and no query (`/?project=`) it lists that Project's Items
-// under the search field, otherwise it is the search (`/`, `/?q=`, `/?q=&project=`).
-const Home = defineComponent(() => {
-  const route = useRoute();
-  return () => h(projectOf(route.query) && !queryOf(route.query) ? ProjectHome : HomeView);
-});
-
 export const routes: RouteRecordRaw[] = [
-  { path: '/', component: Home, meta: { title: 'Home' } },
+  { path: '/', component: HomeView, meta: { title: 'Home' } },
   // Agent assets (handoff §3.5): one route for the tabs. Matching is
   // case-sensitive and closed over the tab list, so any other tab (Loops
   // included) gets the not-found view under the same h1.
