@@ -22,7 +22,7 @@ place is an error (PC-05).
 
 Every variable in the table below also accepts a `NAME_FILE` form in the environment, which
 reads the value from a file. A git URL (`GOLDIE_GIT_URL` or a Source `url`) with https userinfo or a password
-is refused as a flag or in the config file, which show it: name the token with `git_token_file`.
+is refused as a flag or in the config file, which show it: name the token with `git_token_file`, or `token_env` on a Source.
 
 Every check applies whichever way a value arrives. A bad value stops the server, naming the
 variable and whether it came from a flag, the environment or the config file, never the value.

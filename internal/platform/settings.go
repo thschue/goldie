@@ -157,7 +157,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("place is an error (PC-05).\n\n")
 	b.WriteString("Every variable in the table below also accepts a `NAME_FILE` form in the environment, which\n")
 	b.WriteString("reads the value from a file. A git URL (`GOLDIE_GIT_URL` or a Source `url`) with https userinfo or a password\n")
-	b.WriteString("is refused as a flag or in the config file, which show it: name the token with `git_token_file`.\n\n")
+	b.WriteString("is refused as a flag or in the config file, which show it: name the token with `git_token_file`, or `token_env` on a Source.\n\n")
 	b.WriteString("Every check applies whichever way a value arrives. A bad value stops the server, naming the\n")
 	b.WriteString("variable and whether it came from a flag, the environment or the config file, never the value.\n")
 	b.WriteString("The startup report (PC-06) shows each value with its source: `flag`, `environment`, `file` or\n")
