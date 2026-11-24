@@ -33,9 +33,10 @@ paragraph (`<p>`), the inline exception of WCAG 2.5.5; every other control must 
 ways. The journey steps (`web/e2e/journeys/by-state.spec.ts`) are shot once per auth state on the
 same server, as `ux/<state>/<journey>-<step>-<width>-<theme>.png` for `anonymous`, `reader` and
 `operator`; a step a state can't reach asserts what it gets (the sign-in redirect, or "This page is for
-operators.") and `ux/index.md` lists every state, journey, step and file. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
-`ux/` as the `ux` artifact. The screenshots stay artifacts: never commit them to
-`docs/design/screenshots/`, which holds the design references.
+operators.") and `ux/index.md` lists every state, journey, step and file. The output lands in `ux/`.
+CI runs the same in the `ux` job and uploads `ux/` as the
+`ux` artifact. The screenshots stay artifacts: never commit them to `docs/design/screenshots/`, which
+holds the design references.
 
 Use the vocabulary in [CONTEXT.md](CONTEXT.md). Record a decision as an ADR in [docs/adr/](docs/adr/)
 only when it is hard to reverse, surprising and a real trade-off.

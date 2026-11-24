@@ -679,17 +679,20 @@ ux_index() {
 		printf '| State | Journey | Step | Width (px) | Theme | File |\n|---|---|---|---|---|---|\n'
 		for state in anonymous reader operator; do
 			[ -d "$UX_DIR/$state" ] || continue
-			for f in "$UX_DIR/$state"/*.png; do
+			# One group per journey step, its shots by width then theme.
+			for f in "$UX_DIR/$state"/*-375-light.png; do
 				[ -e "$f" ] || continue
-				name=$(basename "$f" .png)
-				theme=${name##*-}
-				rest=${name%-*}
-				width=${rest##*-}
-				rest=${rest%-*}
-				journey=${rest%%-*}
-				step=${rest#*-}
-				printf '| %s | %s | %s | %s | %s | [%s/%s.png](%s/%s.png) |\n' \
-					"$state" "$journey" "$step" "$width" "$theme" "$state" "$name" "$state" "$name"
+				name=$(basename "$f" -375-light.png)
+				journey=${name%%-*}
+				step=${name#*-}
+				for width in 375 768 1280; do
+					for theme in light dark; do
+						file=$name-$width-$theme
+						[ -e "$UX_DIR/$state/$file.png" ] || continue
+						printf '| %s | %s | %s | %s | %s | [%s/%s.png](%s/%s.png) |\n' \
+							"$state" "$journey" "$step" "$width" "$theme" "$state" "$file" "$state" "$file"
+					done
+				done
 			done
 		done
 	} >"$UX_DIR/index.md"

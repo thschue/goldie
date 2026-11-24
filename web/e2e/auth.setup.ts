@@ -3,8 +3,7 @@
 // every other spec starts signed in. Specs about signing in override it with
 // an empty state.
 import { expect, test as setup } from '@playwright/test';
-import { statePath } from '../playwright.config';
-import { operatorStatePath } from '../playwright.config';
+import { operatorStatePath, statePath } from '../playwright.config';
 
 setup('sign in with the throwaway token', async ({ request, baseURL }) => {
   const token = process.env.GOLDIE_UX_TOKEN ?? '';
