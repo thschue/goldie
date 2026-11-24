@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
 import { add, addText, agoText, announceEvery, canSearch, missBoard, queryText, resultText, rowKey, timeText } from './rows';
@@ -30,6 +30,15 @@ const shown = computed(() =>
 );
 const board = computed(() => missBoard(rows.value));
 const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
+// When narrow the panel sits under the feed: bring it into view on a selection, never moving focus
+// (handoff §9), and without animation under prefers-reduced-motion.
+const panel = ref<HTMLElement>();
+watch(selected, async (key) => {
+  if (key === undefined) return;
+  await nextTick();
+  const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  panel.value?.scrollIntoView?.({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' });
+});
 const missCount = computed(() => rows.value.filter((r) => r.miss).length);
 const replica = computed(() => plain(rows.value[0]?.replica));
 
@@ -237,7 +246,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </tbody>
       </table>
     </div>
-    <section v-if="chosen" class="detail" aria-label="Event detail">
+    <section v-if="chosen" ref="panel" class="detail"aria-label="Event detail">
       <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
       <dl>
         <dt>Query</dt>
@@ -286,7 +295,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
   border-color: var(--miss-border);
-  background: var(--miss-bg);
+  background: var(--miss-surface);
   color: var(--miss-ink);
   text-align: left;
 }

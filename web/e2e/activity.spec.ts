@@ -991,3 +991,32 @@ test.describe('the Miss board and the panel at 375 px', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+// The stopgap target of the Source repo link and the panel on a narrow screen (#632 fix round).
+test.describe('the Source repo link and the panel at 375 px', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('a miss links to /ops/sources and a served event has no such link', async ({ page }) => {
+    await open(page, [ev(1, { query: 'served' }), missing(2, 'skill:ghost', { kind: 'get' })]);
+    await rowButton(page, 'skill:ghost').click();
+    await expect(detail(page).getByRole('link', { name: /source repo/i })).toHaveAttribute('href', '/ops/sources');
+    await rowButton(page, 'served').click();
+    await expect(detail(page).getByRole('link', { name: /source repo/i })).toHaveCount(0);
+  });
+
+  test('a card tap brings the panel into the viewport without moving focus', async ({ page }) => {
+    const feed = Array.from({ length: 30 }, (_, i) => ev(i + 1, { query: `served ${i}` }));
+    await open(page, [...feed, missing(40, 'quantum')]);
+    await cardOf(page, 'quantum').click();
+    await expect(detail(page)).toBeVisible();
+    await expect
+      .poll(() =>
+        detail(page).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return r.top < window.innerHeight && r.bottom > 0;
+        }),
+      )
+      .toBe(true);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BUTTON');
+  });
+});
