@@ -12,9 +12,15 @@ import (
 	"github.com/thschue/goldie/internal/contract"
 )
 
-// errPromptEOF is the end of the input before an answer: Ctrl-D, or no input
-// at all.
-var errPromptEOF = errors.New("end of input")
+// errPromptEOF is the end of the input before the question was shown: no
+// input at all. Nothing was printed.
+//
+// errPromptCut is the end of the input after the question was shown, such as
+// Ctrl-D at the prompt, and before an answer.
+var (
+	errPromptEOF = errors.New("end of input")
+	errPromptCut = errors.New("end of input at a question")
+)
 
 const (
 	// maxAnswer bounds one line of input; the rest of a longer line is dropped.
@@ -44,8 +50,9 @@ func newPrompter(in io.Reader, out io.Writer) *prompter {
 }
 
 // ask prints question and returns the answer, trimmed and cleaned of control
-// characters. It returns errPromptEOF when the input ends before any byte of
-// an answer; on the first question that happens before anything is printed.
+// characters. When the input ends before any byte of an answer it returns
+// errPromptEOF if the question was never printed (only the first question can
+// end so), and errPromptCut if it was.
 func (p *prompter) ask(question string) (string, error) {
 	if !p.asked {
 		p.asked = true
@@ -59,13 +66,17 @@ func (p *prompter) ask(question string) (string, error) {
 		case <-time.After(firstGrace):
 			say(p.out, "%s", question)
 			if err := <-ready; err != nil {
-				return "", errPromptEOF
+				return "", errPromptCut
 			}
 			return p.answer()
 		}
 	}
 	say(p.out, "%s", question)
-	return p.answer()
+	a, err := p.answer()
+	if errors.Is(err, errPromptEOF) {
+		err = errPromptCut
+	}
+	return a, err
 }
 
 // answer reads the answer to a question just printed.

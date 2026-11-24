@@ -159,15 +159,17 @@ func registeredLines(id string, list []string, why string, loopback bool) string
 // writes the config, asks for the server address, probes the server and the
 // token once, and prints the commands to run next. Questions and the Server
 // and Token lines go to stderr, results to stdout. A run whose input ends at
-// the first question is initPlain. A later end of input stops it; what was
-// written stays.
+// the first question, before it was shown, is initPlain. An end of input
+// after a question was shown stops it; what was written stays.
 func (c *commander) initGuided(ctx context.Context, root string, proj project.Detected) error {
 	p := newPrompter(c.env.In, c.errOut)
 	say(c.out, "Project: %s\n", describeProject(proj, ""))
 	use, err := p.confirm("Use this Project?")
 	switch {
-	case errors.Is(err, errPromptEOF):
+	case errors.Is(err, errPromptEOF): // the question was never shown
 		return c.initPlain(ctx, root, proj, false)
+	case errors.Is(err, errPromptCut):
+		return errors.New(errInitStopped)
 	case err != nil:
 		return err
 	case !use:
@@ -185,7 +187,7 @@ func (c *commander) initGuided(ctx context.Context, root string, proj project.De
 	c.s.addr = addr
 	list, why := c.reportServer(ctx)
 	say(c.out, "%s", registeredLines(proj.ID, list, why, isLoopback(addr)))
-	say(c.out, "%s", c.nextBlock(addr))
+	say(c.out, "%s", c.nextBlock(addr, why == tokenRejectedWhy))
 	return nil
 }
 
@@ -281,16 +283,25 @@ func (c *commander) tokenSource() string {
 // nextBlock is the commands to run next, one per line. Please keep in step with
 // the checklist of docs/design/ui-handoff.md §3.2 item 4 (the same commands,
 // with this server's origin) and with the README quickstart.
-func (c *commander) nextBlock(addr string) string {
-	if addr == "" {
-		addr = "<server address>"
-	}
-	addr = contract.CleanLine(addr)
+//
+// Without an address there is nothing to paste but the commit: a placeholder
+// such as <server address> is a shell redirect. A rejected token gets the
+// export step too, with a quoted placeholder.
+func (c *commander) nextBlock(addr string, rejected bool) string {
 	var b strings.Builder
 	b.WriteString("\nNext:\n")
+	if addr == "" {
+		b.WriteString("Start a server first: goldie server --dev, then run goldie init again\n")
+		b.WriteString("git add .goldie/config.yaml && git commit -m \"Add goldie config\"\n")
+		return b.String()
+	}
+	addr = contract.CleanLine(addr)
 	say(&b, "export %s=%s\n", EnvAddr, addr)
-	if c.s.token == "" {
+	switch {
+	case c.s.token == "":
 		say(&b, "export %s=<your token>\n", EnvToken)
+	case rejected:
+		say(&b, "export %s=\"<your new token>\"\n", EnvToken)
 	}
 	say(&b, "claude mcp add --transport http goldie %s/mcp --header \"Authorization: Bearer $%s\"\n", addr, EnvToken)
 	b.WriteString("goldie instructions apply\n")

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode"
 
 	"github.com/thschue/goldie/internal/cli"
@@ -544,5 +545,64 @@ func TestInitPrintsNoControlCharactersFromTheServer(t *testing.T) {
 		if strings.Contains(s, "\nForged: line") {
 			t.Errorf("server text forged a line:\n%q", s)
 		}
+	}
+}
+
+// slowEOF is a terminal where the user thinks for longer than the first
+// prompt's grace, then presses Ctrl-D.
+type slowEOF struct{ *strings.Reader }
+
+func (s slowEOF) Read(p []byte) (int, error) {
+	time.Sleep(300 * time.Millisecond)
+	return s.Reader.Read(p)
+}
+
+// 8. Ctrl-D at a first question that was already shown stops init.
+func TestInitStopsAtEOFAtAShownFirstPrompt(t *testing.T) {
+	root := guidedRepo(t)
+	var out, errOut bytes.Buffer
+	e := cli.Env{
+		Lookup:   func(string) (string, bool) { return "", false },
+		ReadFile: os.ReadFile,
+		In:       slowEOF{strings.NewReader("")},
+		Out:      &out,
+		Err:      &errOut,
+	}
+	err := cli.Run(context.Background(), []string{"init"}, e)
+	if err == nil || !strings.Contains(err.Error(), "init stopped; nothing more was changed") {
+		t.Fatalf("error = %v, want %q", err, "init stopped; nothing more was changed")
+	}
+	if !strings.Contains(errOut.String(), "Use this Project? [Y/n]") {
+		t.Errorf("stderr lacks the question that was shown:\n%s", errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".goldie")); !os.IsNotExist(err) {
+		t.Errorf(".goldie exists after the stop: %v", err)
+	}
+}
+
+// 7. Next never holds a placeholder that is a shell redirect.
+func TestInitNextWithoutAnAddressHasNoPlaceholders(t *testing.T) {
+	guidedRepo(t)
+	stdout, _, err := runInit(strings.NewReader("\n\n"), nil)
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if !strings.Contains(stdout, "Start a server first: goldie server --dev, then run goldie init again") {
+		t.Errorf("stdout lacks the start-a-server line:\n%s", stdout)
+	}
+	if strings.ContainsAny(stdout, "<>") || strings.Contains(stdout, "claude mcp add") {
+		t.Errorf("stdout has a placeholder or a command that needs a server:\n%s", stdout)
+	}
+}
+
+func TestInitNextAfterARejectedTokenHasATokenStep(t *testing.T) {
+	srv := newGuidedServer(t, `"`+guidedID+`"`, false)
+	guidedRepo(t)
+	stdout, _, err := runInit(strings.NewReader("\n"+srv.URL+"\n"), map[string]string{"GOLDIE_TOKEN": "wrong-token"})
+	if err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	if !strings.Contains(stdout, "export GOLDIE_TOKEN=") || strings.Contains(stdout, "wrong-token") {
+		t.Errorf("Next lacks a token step, or prints the token:\n%s", stdout)
 	}
 }
