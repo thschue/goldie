@@ -199,7 +199,7 @@ func serverCmd(out io.Writer) *cobra.Command {
 			"order of precedence (docs/reference/configuration.md). A secret is never a flag: use --x-file.\n" +
 			"With --dev it serves dir (else " + platform.EnvContentDir + ", else the working directory)\n" +
 			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
-			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.\n" +
+			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables, and reads no config file.\n" +
 			"With --dev --git it serves a git Source instead: " + platform.EnvGitURL + " (with " + platform.EnvGitRef + " and " + platform.EnvGitPath + "),\n" +
 			"else the demo content of the goldie repository at the release tag of this binary.",
 		Example: "  goldie server\n" +
@@ -218,6 +218,11 @@ func serverCmd(out io.Writer) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dev {
+				if _, set := os.LookupEnv(platform.EnvConfig); set || cmd.Flags().Changed("config") {
+					return newUsageErr(cmd.CommandPath(), "--dev does not read a config file: drop --config and "+platform.EnvConfig+", or run without --dev")
+				}
+			}
 			layers, err := platform.NewLayers(cmd.Flags(), os.LookupEnv, os.ReadFile)
 			if err != nil {
 				return fmt.Errorf("invalid configuration:\n%w", err)
@@ -230,7 +235,7 @@ func serverCmd(out io.Writer) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&dev, "dev", false, "serve a directory on loopback with a random token")
 	platform.AddConfigFlags(cmd.Flags())
-	cmd.Flags().BoolVar(&git, "git", false, "with --dev, serve a git Source (GOLDIE_GIT_URL, else the goldie demo content)")
+	cmd.Flags().BoolVar(&git, "git", false, "with --dev, serve a git Source (--git-url, else the goldie demo content)")
 	return cmd
 }
 
@@ -272,14 +277,21 @@ func healthCmd() *cobra.Command {
 		Use:     "health [--ready]",
 		Short:   "Probe the local admin port",
 		GroupID: groupRun,
-		Long:    "Probe /livez, or /readyz with --ready, on this machine's admin port. It exits 0 on a 200.",
+		Long: "Probe /livez, or /readyz with --ready, on this machine's admin port. It exits 0 on a 200.\n" +
+			"The port is " + platform.EnvAdminAddr + " or admin_addr in the config file (--config, " + platform.EnvConfig + ").",
 		Example: "  goldie health\n" +
-			"  goldie health --ready",
+			"  goldie health --ready\n" +
+			"  goldie health --config /etc/goldie/goldie.yaml",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runHealth(ready)
+			layers, err := platform.NewLayers(cmd.Flags(), os.LookupEnv, os.ReadFile)
+			if err != nil {
+				return fmt.Errorf("invalid configuration:\n%w", err)
+			}
+			return runHealth(ready, layers)
 		},
 	}
+	platform.AddConfigFileFlag(cmd.Flags())
 	cmd.Flags().BoolVar(&ready, "ready", false, "check /readyz instead of /livez")
 	return cmd
 }
