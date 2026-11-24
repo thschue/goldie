@@ -167,6 +167,7 @@ test.describe('routes and the current page', () => {
       // The assets pages show the Agent assets frame (#584), not the empty state.
       if (path.startsWith('/assets/')) await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agent assets');
       else if (path === '/') await expect(page.getByRole('main')).not.toContainText(emptyCopy);
+      else if (path === '/decisions') await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
       else await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
       nav = await withNav(page);
       const current = nav.getByRole('link', { name, exact: true });
