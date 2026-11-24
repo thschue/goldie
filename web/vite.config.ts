@@ -12,5 +12,18 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   // Component tests render with Vue's server renderer: no DOM library.
-  test: { include: ['src/**/*.test.ts'], environment: 'node' },
+  // ActivityView's test mounts the page with Vue's own renderer, so its .vue files compile for the
+  // client; every other test stays on plain node.
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: { name: 'node', include: ['src/**/*.test.ts'], exclude: ['src/activity/ActivityView.test.ts'], environment: 'node' },
+      },
+      {
+        extends: true,
+        test: { name: 'client', include: ['src/activity/ActivityView.test.ts'], environment: './src/activity/testdata/client-env.ts' },
+      },
+    ],
+  },
 });
