@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { errorSentence } from '../api/errorSentence';
 import { computed, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useLoad } from '../api/useLoad';
@@ -56,7 +57,7 @@ const supersession = (d: (typeof decisions.value)[number]) => [
     <button type="button" class="retry" :disabled="wait > 0" @click="retry">Retry</button>
   </div>
   <div v-else-if="state === 'error'" class="box danger" role="alert">
-    <p>{{ failure?.message }} {{ failure?.hint }}</p>
+    <p>{{ errorSentence(failure?.message ?? '', failure?.hint) }} {{ failure?.hint }}</p>
     <button type="button" class="retry" @click="retry">Retry</button>
   </div>
 

@@ -8,8 +8,9 @@
 // Contract these specs pin down for the implementation:
 // - the Project selector is a role=combobox named "Project" in the header, whose choices are
 //   role=option, and it offers the demo Project;
-// - choosing it puts it in the ?project= query and the Home list (role=listitem inside main) shows
-//   its Items, among them the demo's retries article (override of the global one);
+// - choosing it puts it in the ?project= query and Home (handoff §3.2) shows the Articles tile and a
+//   "Specific to <project>" card that links the Project-only article (Checkout payment flow) and the
+//   demo's retries article (override of the global one);
 // - the Skills tab of /assets/skills?project=<id> shows the demo skill service-health as a card
 //   (role=listitem in the tabpanel) headed by its name.
 import { expect, test, type Page } from '@playwright/test';
@@ -43,9 +44,13 @@ test('choosing the demo Project shows its Items on Home', async ({ page }) => {
   await page.getByRole('option', { name: new RegExp(demoProject.replace(/\./g, '\\.')) }).click();
   await expect.poll(() => new URL(page.url()).searchParams.get('project')).toBe(demoProject);
   await expect(selector(page)).toContainText(demoProject);
-  const rows = main(page).getByRole('listitem');
-  await expect(rows.filter({ hasText: /retries/i }).first()).toBeVisible();
-  expect(await rows.count(), 'Home lists the global and the Project Items').toBeGreaterThan(4);
+  const card = main(page)
+    .locator('section, div, article')
+    .filter({ has: page.getByRole('heading', { name: `Specific to ${demoProject}` }) })
+    .last();
+  await expect(card.getByRole('link', { name: /Checkout payment flow/ })).toBeVisible();
+  await expect(card.getByRole('link', { name: /Retries and timeouts in checkout/ })).toHaveAttribute('href', /^\/items\/article\/[^?]*retries(\?|$)/);
+  await expect(main(page).getByRole('link', { name: /^\s*Articles\b/ })).toBeVisible();
 });
 
 test('choosing the demo Project shows its Items on the asset tabs', async ({ page }) => {

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"slices"
@@ -61,14 +62,21 @@ func loadDecisions(fsys fs.FS, root, scope, what string) ([]Article, error) {
 }
 
 // parseDecision parses one decision file. The identity is the file stem; title,
-// status and date are required. The errors name the key and never echo its value.
+// status and date are required. A file without frontmatter is read as Nygard
+// or MADR 2.x (decisions_format.go); a missing title falls back to the H1. The errors name the key and never echo its value.
 func parseDecision(name string, raw []byte) (Article, error) {
 	front, body, err := splitFrontmatter(raw)
-	if err != nil {
+	bare := errors.Is(err, errNoFrontmatter)
+	if bare {
+		body = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	} else if err != nil {
 		return Article{}, err
 	}
 	if err := checkBody(body); err != nil {
 		return Article{}, err
+	}
+	if bare {
+		front = bodyDecisionFrontmatter(body)
 	}
 	var meta struct {
 		Title         string    `yaml:"title"`
@@ -83,7 +91,10 @@ func parseDecision(name string, raw []byte) (Article, error) {
 	}
 	title := strings.TrimSpace(meta.Title)
 	if title == "" {
-		return Article{}, errors.New("frontmatter has no title")
+		title = firstH1(bodyLines(body))
+	}
+	if title == "" {
+		return Article{}, errors.New("decision has no title: add a title to the frontmatter or an H1 heading")
 	}
 	if err := checkBody([]byte(title)); err != nil {
 		return Article{}, errors.New("title holds a hidden or control character")

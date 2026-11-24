@@ -42,4 +42,34 @@ describe('HitCard', () => {
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
+
+  // #731, handoff §3.3 and §4: the card's parts and their order.
+  it('reads Kind, name, Scope, lifecycle, the matched text, then an aria-hidden score bar with the score as text', async () => {
+    const html = await render({ status: 'deprecated', score: 6 });
+    const at = (s: string) => html.indexOf(s);
+    expect(at('article')).toBeLessThan(at('Deploying'));
+    expect(at('Deploying')).toBeLessThan(at('global'));
+    expect(at('global')).toBeLessThan(at('deprecated'));
+    expect(at('deprecated')).toBeLessThan(at('Matched: kubernetes, name'));
+    const bar = html.search(/<[a-z]+[^>]*aria-hidden="true"(?![^>]*viewBox)[^>]*>/);
+    expect(bar, 'a score bar').toBeGreaterThan(at('Matched: kubernetes, name'));
+    // the score is text outside every aria-hidden element
+    const visible = html
+      .replace(/<[a-z]+[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/(span|div|i)>/g, '')
+      .replace(/<[^>]+>/g, ' ');
+    expect(visible).toMatch(/\b6\b/);
+  });
+
+  it('shows a draft and a deprecated badge, and none for a published hit', async () => {
+    expect(await render({ status: 'draft' })).toContain('draft');
+    expect(await render({ status: 'deprecated', replaced_by: 'article:platform/deploy-v2' })).toContain('deprecated');
+    expect(await render({})).not.toMatch(/draft|deprecated/);
+  });
+
+  it('shows a summary only when the hit carries one, as text', async () => {
+    expect(await render({})).not.toMatch(/summary/i);
+    const html = await render({ summary: 'Ship it <b>safely</b>' } as Partial<SearchHit>);
+    expect(html).toContain('Ship it &lt;b&gt;safely&lt;/b&gt;');
+    expect(html).not.toContain('<b>');
+  });
 });

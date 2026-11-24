@@ -31,6 +31,8 @@ type Hit = {
   matched?: string[];
   enforced?: boolean;
   overrides?: string[];
+  status?: string;
+  replaced_by?: string;
 };
 
 // A hit as the API sends it; an `enforced` or `overrides` the test leaves out
@@ -62,6 +64,7 @@ const rows = (page: Page) => list(page).getByRole('listitem');
 const links = (page: Page) => rows(page).getByRole('link');
 const pill = (page: Page, kind: RegExp) => main(page).getByRole('button', { name: kind });
 const missPanel = (page: Page) => main(page).getByRole('status').filter({ hasText: /No golden path/ });
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 const qParam = (page: Page) => new URL(page.url()).searchParams.get('q');
 
 const sample: Hit[] = [
@@ -837,5 +840,236 @@ test.describe('a Kind that matches nothing, and the pills while loading', () => 
     await page.keyboard.press('Enter');
     await expect(rows(page)).toHaveCount(1);
     await expect(pill(page, /skill/i)).toBeFocused();
+  });
+});
+
+// The hit card and the search states of #731 (handoff §1.3, §3.3, §4, §5.1).
+// Contract these specs pin down for the implementation:
+// - a hit card reads, in order: Kind badge, name, Scope badge, the lifecycle
+//   badges (the words "draft" and "deprecated" for a hit whose `status` says so),
+//   the "Matched: ..." line, then a score bar. The bar is an aria-hidden element
+//   of the card (not the shield icon) with a width, below the matched text; the
+//   score itself stays readable as text in the card. The API's `name` is the
+//   title, so it is the one display text; a summary shows only when a hit carries
+//   one, and `SearchHit` has none today (the component tests cover it);
+// - "Enforced" has one colour role on a hit card and on the article view, and
+//   it is not the Miss gold (--miss-*);
+// - the mono token (--font-mono) is the face of identifiers and code;
+// - a search still loading after 300 ms shows a skeleton with aria-busy="true"
+//   inside main (three or more card-shaped blocks), never a spinner, and none
+//   for a faster answer;
+// - a 429 shows "Too many requests — try again in <n> s." with Retry disabled
+//   for the Retry-After countdown.
+const lifecycle: Hit[] = [
+  { id: 'platform/old', name: 'Old deploy guide', matched: ['deploy'], status: 'deprecated', replaced_by: 'article:platform/deploy', enforced: false, overrides: [] },
+  { id: 'platform/wip', name: 'Work in progress', matched: ['wip'], status: 'draft', enforced: false, overrides: [] },
+  { id: 'platform/live', name: 'Published guide', matched: ['live'], enforced: true, overrides: [] },
+];
+
+// gated holds every search answer until release() is called.
+const gated = async (page: Page, hits: Hit[] = sample) => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route(apiSearch, async (route) => {
+    await gate;
+    const q = new URL(route.request().url()).searchParams.get('q') ?? '';
+    await json(route, 200, results(q, hits));
+  });
+  return release;
+};
+
+// limited answers the first search with a 429 and the next ones with the hits.
+const limited = (page: Page, seconds: string) => {
+  let calls = 0;
+  return page.route(apiSearch, (route) => {
+    calls++;
+    if (calls === 1) {
+      return route.fulfill({
+        status: 429,
+        contentType: 'application/json',
+        headers: { 'Retry-After': seconds },
+        body: JSON.stringify({ error: { code: 'rate_limited', message: 'Too many requests.', details: { hint: 'Wait, then retry.' } } }),
+      });
+    }
+    return json(route, 200, results('database', sample));
+  });
+};
+
+const tooMany = (page: Page) => main(page).getByText(/Too many requests — try again in \d+ s\./).first();
+const bar = (card: ReturnType<Page['locator']>) => card.locator('[aria-hidden="true"]:not(svg):not(svg *)').first();
+
+eachViewport((width, theme) => {
+  test('a hit card with lifecycle badges and a score bar is captured and axe-clean', async ({ page }) => {
+    await stubSearch(page, lifecycle);
+    await page.goto('/?q=deploy');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(bar(rows(page).first())).toBeVisible();
+    await evidence(page, width, theme, '-lifecycle', 'search');
+  });
+
+  test('a slow search shows card-shaped skeletons that are captured and axe-clean', async ({ page }) => {
+    const release = await gated(page);
+    await page.goto('/?q=database');
+    const busy = main(page).locator('[aria-busy="true"]');
+    await expect(busy).toBeVisible();
+    expect(await busy.locator(':scope > *:not([role="status"]):not(.sr-only)').count(), 'skeleton cards').toBeGreaterThanOrEqual(3);
+    await evidence(page, width, theme, '-skeleton', 'search');
+    release();
+    await expect(rows(page)).toHaveCount(5);
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  });
+
+  test('a 429 with Retry-After is captured and axe-clean', async ({ page }) => {
+    await limited(page, '30');
+    await page.goto('/?q=database');
+    await expect(tooMany(page)).toBeVisible();
+    await evidence(page, width, theme, '-too-many', 'search');
+  });
+});
+
+test.describe('a hit card (#731)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('reads Kind, name, Scope, lifecycle badges, the matched text, then the score as text', async ({ page }) => {
+    await stubSearch(page, lifecycle);
+    await page.goto('/?q=deploy');
+    await expect(rows(page)).toHaveCount(3);
+
+    const text = norm(await rows(page).first().getByRole('link').innerText());
+    const at = (s: string) => text.indexOf(s);
+    expect(at('article'), 'Kind').toBeGreaterThanOrEqual(0);
+    expect(at('article')).toBeLessThan(at('Old deploy guide'));
+    expect(at('Old deploy guide')).toBeLessThan(at('global'));
+    expect(at('global')).toBeLessThan(at('deprecated'));
+    expect(at('deprecated')).toBeLessThan(at('Matched: deploy'));
+    expect(text, 'the score stays readable').toMatch(/\b4\b/);
+    expect(at('Matched: deploy')).toBeLessThan(text.search(/\b4\b/));
+
+    await expect(rows(page).nth(1).getByRole('link')).toContainText('draft');
+    await expect(rows(page).nth(2).getByRole('link')).not.toContainText(/draft|deprecated/);
+  });
+
+  test('has an aria-hidden score bar below the matched text, in every card', async ({ page }) => {
+    await stubSearch(page, lifecycle);
+    await page.goto('/?q=deploy');
+    await expect(rows(page)).toHaveCount(3);
+    for (let i = 0; i < 3; i++) {
+      const card = rows(page).nth(i);
+      await expect(bar(card)).toBeVisible();
+      const box = await bar(card).boundingBox();
+      const matched = await card.getByText(/^Matched:/).boundingBox();
+      expect(box!.width, 'bar width').toBeGreaterThan(0);
+      expect(box!.y, 'bar below the matched text').toBeGreaterThanOrEqual(matched!.y + matched!.height - 1);
+    }
+  });
+
+  test('shows no summary, as the API sends none', async ({ page }) => {
+    await stubSearch(page, lifecycle);
+    await page.goto('/?q=deploy');
+    await expect(rows(page)).toHaveCount(3);
+    expect(norm(await rows(page).first().innerText())).not.toMatch(/summary/i);
+  });
+
+  test('uses the mono token for the Kind badge, and Enforced is one colour role, not gold, on the card and the article', async ({ page }) => {
+    await stubSearch(page, lifecycle);
+    await page.goto('/?q=live');
+    await expect(rows(page)).toHaveCount(3);
+    const probe = (css: string) =>
+      page.evaluate((c) => {
+        const el = document.createElement('i');
+        el.style.cssText = c;
+        document.body.append(el);
+        const s = getComputedStyle(el);
+        const out = { color: s.color, bg: s.backgroundColor, font: s.fontFamily };
+        el.remove();
+        return out;
+      }, css);
+    const mono = (await probe('font-family: var(--font-mono)')).font;
+    const gold = await probe('color: var(--miss-ink); background-color: var(--miss-bg)');
+
+    const kind = rows(page).nth(2).getByText('article', { exact: true });
+    expect(await kind.evaluate((el) => getComputedStyle(el).fontFamily), 'Kind badge face').toBe(mono);
+
+    const style = (el: Element) => ({ color: getComputedStyle(el).color, bg: getComputedStyle(el).backgroundColor });
+    const onCard = await rows(page).nth(2).getByText('enforced', { exact: true }).evaluate(style);
+
+    await page.route(/\/api\/v1\/articles\//, (route) =>
+      json(route, 200, { id: 'platform/live', name: 'Published guide', keywords: [], content: 'x', enforced: true, overrides: [] }),
+    );
+    await page.goto('/items/article/platform%2Flive');
+    const onArticle = await main(page).getByText('Enforced', { exact: true }).evaluate(style);
+
+    expect(onArticle, 'one colour role for Enforced').toEqual(onCard);
+    expect(onCard.color, 'Enforced is not the Miss gold').not.toBe(gold.color);
+    expect(onCard.bg, 'Enforced is not the Miss gold').not.toBe(gold.bg);
+  });
+});
+
+test.describe('the article view uses the mono token (#731)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the id and inline code use --font-mono', async ({ page }) => {
+    await page.route(/\/api\/v1\/articles\//, (route) =>
+      json(route, 200, { id: 'platform/deploy', name: 'Deploying', keywords: [], content: 'Run `make deploy`.', overrides: [] }),
+    );
+    await page.goto('/items/article/platform%2Fdeploy');
+    const mono = await page.evaluate(() => {
+      const el = document.createElement('i');
+      el.style.fontFamily = 'var(--font-mono)';
+      document.body.append(el);
+      const f = getComputedStyle(el).fontFamily;
+      el.remove();
+      return f;
+    });
+    const face = (loc: ReturnType<Page['locator']>) => loc.evaluate((el) => getComputedStyle(el).fontFamily);
+    expect(await face(main(page).getByText('platform/deploy', { exact: true }))).toBe(mono);
+    expect(await face(main(page).locator('code', { hasText: 'make deploy' }))).toBe(mono);
+  });
+});
+
+test.describe('search states (#731)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('a slow search shows a skeleton, never a spinner, and the hits replace it', async ({ page }) => {
+    const release = await gated(page);
+    await page.goto('/?q=database');
+    await expect(main(page).locator('[aria-busy="true"]')).toBeVisible();
+    await expect(rows(page)).toHaveCount(0);
+    expect(await page.locator('[role="progressbar"], [class*="spinner" i]').count(), 'no spinner').toBe(0);
+    release();
+    await expect(rows(page)).toHaveCount(5);
+    await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  });
+
+  test('an answer under 300 ms shows no skeleton at all', async ({ page }) => {
+    await stubSearch(page, sample);
+    await page.addInitScript(() => {
+      const w = window as unknown as { __busy: boolean };
+      w.__busy = false;
+      new MutationObserver(() => {
+        if (document.querySelector('main [aria-busy="true"]')) w.__busy = true;
+      }).observe(document, { subtree: true, childList: true, attributes: true });
+    });
+    await page.goto('/?q=database');
+    await expect(rows(page)).toHaveCount(5);
+    expect(await page.evaluate(() => (window as unknown as { __busy: boolean }).__busy), 'a skeleton flashed').toBe(false);
+  });
+
+  test('a 429 shows the countdown from Retry-After with Retry disabled, and no Miss', async ({ page }) => {
+    await limited(page, '30');
+    await page.goto('/?q=database');
+    await expect(tooMany(page)).toHaveText(/try again in (30|29) s\./);
+    await expect(main(page).getByRole('button', { name: 'Retry' })).toBeDisabled();
+    await expect(missPanel(page)).toHaveCount(0);
+  });
+
+  test('Retry is enabled when the countdown ends and searches again', async ({ page }) => {
+    await limited(page, '3');
+    await page.goto('/?q=database');
+    const retry = main(page).getByRole('button', { name: 'Retry' });
+    await expect(retry).toBeDisabled();
+    await expect(retry).toBeEnabled({ timeout: 6000 });
+    await retry.click();
+    await expect(rows(page)).toHaveCount(5);
   });
 });

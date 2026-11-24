@@ -284,3 +284,189 @@ func TestDecisionTitleWithAHiddenRuneFailsTheLoad(t *testing.T) {
 		}
 	}
 }
+
+// #720 (slice of #34): decision files without goldie frontmatter load as
+// Nygard (adr-tools) or MADR 2.x; frontmatter without a title falls back to
+// the first H1 (MADR 3.x). The seam is the engine API and the load error.
+
+// nygardDecision is an adr-tools file: H1, Date line, then the Status section.
+func nygardDecision(h1, status string) string {
+	return "# " + h1 + "\n\nDate: 2016-02-12\n\n## Status\n\n" + status +
+		"\n\n## Context\n\nWe need to record decisions.\n\n## Decision\n\nWe will.\n"
+}
+
+// madr2Decision is a MADR 2.x file: H1, then the bullets in the order given.
+func madr2Decision(h1 string, bullets ...string) string {
+	return "# " + h1 + "\n\n" + strings.Join(bullets, "\n") +
+		"\n\nTechnical Story: none\n\n## Context and Problem Statement\n\nWhy?\n"
+}
+
+func draftDecision(t *testing.T, files map[string]string, name string) engine.Decision {
+	t.Helper()
+	d, ok := load(t, files).DecisionIn("", name, engine.ReadOptions{Drafts: true})
+	if !ok {
+		t.Fatalf("DecisionIn(%s) found nothing", name)
+	}
+	return d
+}
+
+func TestNygardDecisionWithoutFrontmatterLoads(t *testing.T) {
+	d := draftDecision(t, map[string]string{
+		globalDecisionPath + "0001-record-architecture-decisions.md": nygardDecision("1. Record architecture decisions", "Accepted"),
+	}, "0001-record-architecture-decisions")
+	if d.Title != "Record architecture decisions" || d.Status != "accepted" || d.Date != "2016-02-12" ||
+		d.Name != "0001-record-architecture-decisions" || d.SupersededBy != "" {
+		t.Errorf("decision = %+v; want title without number, accepted, 2016-02-12, name = file stem", d)
+	}
+}
+
+func TestNygardStatusIsTheFirstWordLowercased(t *testing.T) {
+	for status, want := range map[string]string{
+		"Proposed":                  "proposed",
+		"REJECTED":                  "rejected",
+		"Deprecated in favour of X": "deprecated",
+	} {
+		d := draftDecision(t, map[string]string{
+			globalDecisionPath + "x.md": nygardDecision("1. X", status),
+		}, "x")
+		if d.Status != want {
+			t.Errorf("status %q loads as %q, want %q", status, d.Status, want)
+		}
+	}
+}
+
+func TestNygardSupersedesAndAmendedByLinesAreIgnored(t *testing.T) {
+	// The targets name no decision: ignoring the lines means no check on them.
+	status := "Accepted\n\nSupersedes [1. Old](0001-old.md)\n\nAmended by [3. Later](0003-later.md)"
+	d := draftDecision(t, map[string]string{
+		globalDecisionPath + "x.md": nygardDecision("2. X", status),
+	}, "x")
+	if d.Status != "accepted" || d.SupersededBy != "" || len(d.Supersedes) != 0 {
+		t.Errorf("decision = %+v; want accepted, no supersession", d)
+	}
+}
+
+func TestNygardDateMustComeBeforeTheFirstH2(t *testing.T) {
+	doc := "# 1. X\n\n## Status\n\nAccepted\n\n## Context\n\nDate: 2016-02-12\n"
+	loadErr(t, map[string]string{globalDecisionPath + "x.md": doc}, "global/decisions/x.md", "date")
+}
+
+func TestMADR2DecisionWithoutFrontmatterLoads(t *testing.T) {
+	d := draftDecision(t, map[string]string{
+		globalDecisionPath + "0005-use-plain-junit5.md": madr2Decision("Use Plain JUnit5",
+			"* Status: accepted", "* Deciders: alice, bob", "* Date: 2018-11-19"),
+	}, "0005-use-plain-junit5")
+	if d.Title != "Use Plain JUnit5" || d.Status != "accepted" || d.Date != "2018-11-19" || d.Name != "0005-use-plain-junit5" {
+		t.Errorf("decision = %+v; want Use Plain JUnit5, accepted, 2018-11-19", d)
+	}
+}
+
+func TestMADR2BulletsMayComeInAnyOrder(t *testing.T) {
+	d := draftDecision(t, map[string]string{
+		globalDecisionPath + "x.md": madr2Decision("X",
+			"* Date: 2020-01-02", "* Deciders: carol", "* Status: proposed"),
+	}, "x")
+	if d.Status != "proposed" || d.Date != "2020-01-02" {
+		t.Errorf("decision = %+v; want proposed, 2020-01-02", d)
+	}
+}
+
+func TestDecisionWithoutFrontmatterSupersededByABareStem(t *testing.T) {
+	newer := nygardDecision("2. Use Y", "Accepted")
+	for name, old := range map[string]string{
+		"nygard": nygardDecision("1. Use X", "Superseded by [2. Use Y](use-y.md)"),
+		"madr2": madr2Decision("Use X",
+			"* Status: superseded by [ADR-0002](use-y.md)", "* Date: 2018-11-19"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := draftDecision(t, map[string]string{
+				globalDecisionPath + "use-x.md": old,
+				globalDecisionPath + "use-y.md": newer,
+			}, "use-x")
+			if d.Status != "superseded" || d.SupersededBy != "decision:use-y" {
+				t.Errorf("decision = %+v; want superseded by decision:use-y", d)
+			}
+		})
+	}
+}
+
+func TestDecisionWithoutFrontmatterSupersessionTargetIsChecked(t *testing.T) {
+	docs := map[string]func(link string) string{
+		"nygard": func(link string) string { return nygardDecision("1. X", "Superseded by [Y]("+link+")") },
+		"madr2": func(link string) string {
+			return madr2Decision("X", "* Status: superseded by [Y]("+link+")", "* Date: 2018-11-19")
+		},
+	}
+	for format, doc := range docs {
+		for name, link := range map[string]string{
+			"dangling":  "nope.md",
+			"directory": "sub/y.md",
+			"parent":    "../y.md",
+			"URL":       "https://example.com/y.md",
+			"no .md":    "y",
+		} {
+			t.Run(format+" "+name, func(t *testing.T) {
+				loadErr(t, map[string]string{
+					globalDecisionPath + "x.md": doc(link),
+					globalDecisionPath + "y.md": nygardDecision("2. Y", "Accepted"),
+				}, "global/decisions/x.md")
+			})
+		}
+	}
+}
+
+func TestDecisionFrontmatterWithoutTitleFallsBackToTheFirstH1(t *testing.T) {
+	doc := "---\nstatus: accepted\ndate: 2023-05-02\n---\n# Use Postgres\n\n## Context\n\nWhy.\n"
+	d := draftDecision(t, map[string]string{globalDecisionPath + "0007-db.md": doc}, "0007-db")
+	if d.Title != "Use Postgres" || d.Status != "accepted" || d.Date != "2023-05-02" || d.Name != "0007-db" {
+		t.Errorf("decision = %+v; want title Use Postgres, accepted, 2023-05-02", d)
+	}
+}
+
+func TestDecisionFrontmatterIsNotMixedWithTheBody(t *testing.T) {
+	t.Run("a title in the frontmatter beats the H1", func(t *testing.T) {
+		d := draftDecision(t, map[string]string{
+			globalDecisionPath + "x.md": "---\ntitle: From frontmatter\nstatus: accepted\ndate: 2023-05-02\n---\n# From H1\n",
+		}, "x")
+		if d.Title != "From frontmatter" {
+			t.Errorf("title = %q, want From frontmatter", d.Title)
+		}
+	})
+	t.Run("status is not taken from the body", func(t *testing.T) {
+		doc := "---\ntitle: T\ndate: 2023-05-02\n---\n# T\n\n## Status\n\nAccepted\n"
+		loadErr(t, map[string]string{globalDecisionPath + "x.md": doc}, "global/decisions/x.md", "status")
+	})
+	t.Run("no title and no H1", func(t *testing.T) {
+		doc := "---\nstatus: accepted\ndate: 2023-05-02\n---\nJust text.\n"
+		loadErr(t, map[string]string{globalDecisionPath + "x.md": doc}, "global/decisions/x.md", "title")
+	})
+}
+
+func TestDecisionWithoutFrontmatterFailsTheLoadWhenIncomplete(t *testing.T) {
+	cases := map[string]string{
+		"nygard no H1":            "Date: 2016-02-12\n\n## Status\n\nAccepted\n",
+		"nygard no status":        "# 1. X\n\nDate: 2016-02-12\n\n## Context\n\nText.\n",
+		"nygard unknown status":   nygardDecision("1. X", "SECRETVALUE"),
+		"nygard amended status":   nygardDecision("1. X", "Amended"),
+		"nygard no date":          "# 1. X\n\n## Status\n\nAccepted\n",
+		"nygard bad date":         "# 1. X\n\nDate: 12 Feb 2016\n\n## Status\n\nAccepted\n",
+		"madr2 no H1":             "* Status: accepted\n* Date: 2018-11-19\n",
+		"madr2 no status":         madr2Decision("X", "* Date: 2018-11-19"),
+		"madr2 unknown status":    madr2Decision("X", "* Status: SECRETVALUE", "* Date: 2018-11-19"),
+		"madr2 no date":           madr2Decision("X", "* Status: accepted"),
+		"madr2 bad date":          madr2Decision("X", "* Status: accepted", "* Date: yesterday"),
+		"hidden rune in the H1":   nygardDecision("1. Use\u202ePostgres", "Accepted"),
+		"zero-width in madr2 H1":  madr2Decision("Use\u200bPostgres", "* Status: accepted", "* Date: 2018-11-19"),
+		"superseded without link": nygardDecision("1. X", "Superseded"),
+	}
+	for name, doc := range cases {
+		t.Run(name, func(t *testing.T) {
+			msg := loadErr(t, map[string]string{globalDecisionPath + "x.md": doc}, "global/decisions/x.md")
+			for _, leak := range []string{"SECRETVALUE", "\u202e", "\u200b", "yesterday"} {
+				if strings.Contains(msg, leak) {
+					t.Errorf("error echoes a value from the file: %q", msg)
+				}
+			}
+		})
+	}
+}
