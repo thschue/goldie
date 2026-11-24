@@ -129,7 +129,7 @@ commands does (see below).
   is. On an equal search score, local hits sort before project hits, then global ones.
 - `.goldie/config.yaml` takes `suppress` as `project.yaml` does, hiding global articles in every
   view. It may also hold `project`, `addr` and `dir`, which the client reads and the engine
-  ignores. Any other key fails the load.
+  ignores, and `decisions`, which maps a folder of ADRs (below). Any other key fails the load.
 - A published local article that shadows an `enforced: true` article at any wider Scope, the
   global one or any Project's, fails the load. The error names both as `article:<name>`. A local
   draft shadows nothing, and a local suppression of an enforced article fails the load.
@@ -142,11 +142,13 @@ commands does (see below).
 
 ### The client commands start the embedded server with it
 
-When `.goldie/articles/` is a directory at the repository root (found from the working directory,
-up to the nearest `.git`), `search`, `lookup`, `status` and `goldie mcp --transport stdio` start the
-embedded server with the local Scope, which answers every request. The base content is, first
-found wins: `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml`, or empty content. A `.goldie/`
-without `articles/`, such as the one `goldie init` writes, does not switch to local mode, so
+When `.goldie/articles/` is a directory at the repository root, or `.goldie/config.yaml` sets
+`decisions.path` (found from the working directory, up to the nearest `.git`), `search`, `lookup`,
+`status` and `goldie mcp --transport stdio` start the embedded server with the local Scope, which
+answers every request. The base content is, first found wins: `--dir`, `GOLDIE_DIR`, `dir:` in
+`.goldie/config.yaml`, or empty content. A `.goldie/`
+without `articles/` and without `decisions.path`, such as the one `goldie init` writes, does not
+switch to local mode, so
 `GOLDIE_ADDR` keeps working. `GOLDIE_ADDR` or `--addr` set next to `.goldie/articles/` is an error
 naming the setting: the address would hide the repository's own content.
 
@@ -157,9 +159,19 @@ itself, and a null `dir:` is none. Any other value is an error naming `.goldie/c
 a path or the value. `config.yaml` is read twice: the CLI reads it once to find the content
 directory, and the engine reads it again for the local Scope. Both refuse a symlinked
 `config.yaml`, so the command fails with an error naming `.goldie/config.yaml`.
-`--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only finds
-these paths; the engine reads the articles. The CLI opens the content directory once
-and the embedded server reads only through that handle, so
+`decisions: {path: docs/adr}` in `config.yaml` serves the ADRs in that folder as local decisions
+without moving them, so a repository with only a `config.yaml` has a local Scope. The value is
+untrusted like `dir:`: a non-empty string without control characters, a relative path inside the
+repository root, naming a folder, read through `os.Root`. An absolute path, `..`, a symlink out of
+the root and control characters are refused, and a path that names no folder is its own error. Every
+error names `.goldie/config.yaml`, never a path or the value. The folder's `.md` files load as
+decisions of Scope `local`, in Nygard, MADR 2.x or frontmatter form (symlinked files are never
+read). A file that reads as no decision, such as `README.md` or a template, is skipped without a
+word. A malformed ADR is not served and is a warning that names its file, which the client commands
+print to stderr as `Warning: <file>: <message>`; the other ADRs load. When no file in the folder
+reads as a decision, one warning says so. `--dir` and `GOLDIE_DIR` are not confined to the root, as
+before. The CLI only finds these paths; the engine reads the articles. The CLI opens the content
+directory once and the embedded server reads only through that handle, so
 replacing the path with a symlink while the command runs does not redirect the read. For `dir:` in
 `config.yaml` the handle is the one the check opened through the repository root, so there is no gap
 between check and use. `--dir` and `GOLDIE_DIR` are opened by path, once, right after their checks.

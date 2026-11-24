@@ -16,10 +16,14 @@ import (
 const maxDirValue = 4096
 
 // LocalRoot returns the repository root of dir when the repository has a local
-// Scope: .goldie is a directory and .goldie/articles is a directory in it, and
-// neither is a symlink. A .goldie with only config.yaml (what goldie init
+// Scope: .goldie is a directory, not a symlink, and either .goldie/articles is
+// a directory in it (not a symlink) or .goldie/config.yaml sets
+// decisions.path, the folder of ADRs to serve as local decisions. A .goldie
+// with only a config.yaml that sets no decisions.path (what goldie init
 // writes) has none. Outside a repository only dir itself counts, as in
-// Detect. It reads no article and no file: it finds paths.
+// Detect. It reads no article and no decision: it finds paths, and reads
+// config.yaml only to see whether decisions.path is set, not whether it is
+// valid; the engine refuses a bad one when it loads.
 func LocalRoot(dir string) (root string, ok bool) {
 	root, ok = RepositoryRoot(dir)
 	if !ok {
@@ -33,12 +37,45 @@ func LocalRoot(dir string) (root string, ok bool) {
 		return "", false
 	}
 	defer func() { _ = r.Close() }()
-	for _, name := range []string{".goldie", ".goldie/articles"} {
-		if fi, err := r.Lstat(name); err != nil || !fi.IsDir() {
-			return "", false
+	if fi, err := r.Lstat(".goldie"); err != nil || !fi.IsDir() {
+		return "", false
+	}
+	if fi, err := r.Lstat(".goldie/articles"); err == nil && fi.IsDir() {
+		return root, true
+	}
+	return root, decisionsPathSet(r)
+}
+
+// decisionsPathSet reports whether .goldie/config.yaml, read through r, sets
+// decisions: a key that is not null and, when it is a mapping, holds a key
+// other than path or a path that is not null. A mapping with a misspelt key
+// counts as set, so the engine reports it and the repository does not silently
+// lose its local Scope; any other shape counts as set too. A file that cannot
+// be read or parsed does not.
+func decisionsPathSet(r *os.Root) bool {
+	b, err := readConfig(r)
+	if err != nil {
+		return false
+	}
+	var cfg struct {
+		Decisions yaml.Node `yaml:"decisions"`
+	}
+	if yaml.Unmarshal(b, &cfg) != nil {
+		return false
+	}
+	n := cfg.Decisions
+	switch {
+	case n.Kind == 0, n.Tag == "!!null":
+		return false
+	case n.Kind != yaml.MappingNode:
+		return true
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value != "path" || n.Content[i+1].Tag != "!!null" {
+			return true
 		}
 	}
-	return root, true
+	return false
 }
 
 // GoldieDir is the absolute path of the .goldie directory of a repository root.
