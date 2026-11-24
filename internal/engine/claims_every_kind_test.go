@@ -30,6 +30,9 @@ var claimKinds = []struct {
 	{"loop", "global/loops/nightly.md", "projects/github.com/other/x/loops/nightly.md",
 		"global/loops/nightly.md", "projects/github.com/other/x/loops/nightly.md",
 		"---\nname: nightly\ndescription: d\ninterval: 30m\nstop: done\n---\nPrompt\n"},
+	{"decision", "global/decisions/pick.md", "projects/github.com/other/x/decisions/pick.md",
+		"global/decisions/pick.md", "projects/github.com/other/x/decisions/pick.md",
+		"---\ntitle: Pick\nstatus: accepted\ndate: 2023-05-02\n---\nWe decided.\n"},
 }
 
 // A Kind added to the per-Scope holder must get a row in claimKinds: the

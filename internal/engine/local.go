@@ -44,7 +44,7 @@ type localSettings struct {
 // enforced, so a local Item cannot shadow it in this Project's view.
 func (p project) enforces(key itemKey) bool {
 	a := p.index[key]
-	return a != nil && a.Enforced && a.published()
+	return a != nil && a.Enforced && a.served()
 }
 
 // LocalSource is a Source that adds the repository's own .goldie/ to another
@@ -209,7 +209,7 @@ func requireDir(fsys fs.FS, p, what string) (exists bool, err error) {
 // The error names both as article:<name>, never their content.
 func (s *Snapshot) checkLocalEnforced() error {
 	for _, a := range s.local.items() {
-		if !a.published() {
+		if !a.served() {
 			continue
 		}
 		key := a.key()
