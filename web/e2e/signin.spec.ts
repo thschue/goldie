@@ -6,7 +6,7 @@
 // anonymous browser says so. ./run ux passes the throwaway token as
 // GOLDIE_UX_TOKEN.
 import { expect, test, type Page } from '@playwright/test';
-import { eachViewport, evidence, problems } from './ux';
+import { eachViewport, evidence, menuButton, problems } from './ux';
 
 const anonymous = { cookies: [], origins: [] };
 const token = process.env.GOLDIE_UX_TOKEN ?? '';
@@ -488,6 +488,148 @@ test.describe('the first load', () => {
     await expect(page).toHaveURL((u) => u.pathname === '/signin');
     await expect(loadingState(page)).toHaveCount(0);
     await context.close();
+  });
+});
+
+// #728 (handoff §2.3 SignIn): the sign-in page is a bare page, not a screen in
+// the app shell. Before sign-in the nav is of no use, since every link in it
+// redirects back to /signin. Every other route keeps the shell.
+eachViewport((width) => {
+  test.describe('the sign-in page has no app shell', () => {
+    test.use({ storageState: anonymous });
+
+    test('there is no top bar, no navigation landmark and no menu button', async ({ page }) => {
+      await page.goto('/signin');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+      await expect(page.getByRole('banner'), 'no top bar').toHaveCount(0);
+      await expect(page.locator('header'), 'no top bar element').toHaveCount(0);
+      await expect(page.getByRole('navigation'), 'no side nav').toHaveCount(0);
+      await expect(page.getByRole('button', { name: /menu/i }), 'no menu button').toHaveCount(0);
+      await expect(menuButton(page)).toHaveCount(0);
+      await expect(page.getByRole('link'), 'no link leads away from the page').toHaveCount(0);
+    });
+
+    test('the logo with the wordmark is centred above the centred card', async ({ page }) => {
+      await page.goto('/signin');
+      const heading = page.getByRole('heading', { level: 1 });
+      const wordmark = page.getByText(/^goldie$/i);
+      await expect(wordmark, 'the wordmark is visible, not screen-reader-only').toBeVisible();
+      const logo = page.locator('svg').first();
+      await expect(logo, 'the mark is drawn').toBeVisible();
+      const vw = page.viewportSize()!.width;
+      const mark = (await logo.boundingBox())!;
+      const word = (await wordmark.boundingBox())!;
+      const title = (await heading.boundingBox())!;
+      const field = (await tokenField(page).boundingBox())!;
+      expect(word.width, 'the wordmark has a real box').toBeGreaterThan(0);
+      expect(mark.y + mark.height, 'the mark is above the card heading').toBeLessThanOrEqual(title.y);
+      expect(word.y + word.height, 'the wordmark is above the card heading').toBeLessThanOrEqual(title.y);
+      expect(title.y, 'the form is below the heading').toBeLessThan(field.y);
+      // The logo group (mark and wordmark) and the card are each centred on the page.
+      const left = Math.min(mark.x, word.x);
+      const right = Math.max(mark.x + mark.width, word.x + word.width);
+      expect(Math.abs((left + right) / 2 - vw / 2), 'the logo is centred').toBeLessThanOrEqual(8);
+      const card = (await page.getByRole('main').locator('form').evaluate((f) => {
+        const box = (f.closest('.card') ?? f.parentElement)!.getBoundingClientRect();
+        return { x: box.x, width: box.width };
+      }))!;
+      expect(Math.abs(card.x + card.width / 2 - vw / 2), 'the card is centred').toBeLessThanOrEqual(8);
+      expect(card.width, 'the card fits the width').toBeLessThanOrEqual(vw);
+      if (width >= 768) expect(card.width, 'the card is a card, not full width').toBeLessThan(vw);
+    });
+
+    test('the page keeps one main landmark, one h1, and a skip link that targets main or is gone', async ({ page }) => {
+      await page.goto('/signin');
+      await expect(page.getByRole('main')).toHaveCount(1);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+      await expect(page.getByRole('main').getByRole('heading', { level: 1 }), 'the h1 is inside main').toHaveCount(1);
+      const skips = page.getByRole('link', { name: /skip to/i });
+      if ((await skips.count()) > 0) {
+        await expect(skips).toHaveAttribute('href', '#main');
+        await expect(page.locator('main#main')).toHaveCount(1);
+      }
+    });
+
+    test('the card keeps the existing content and focus order starts at the token field', async ({ page }) => {
+      await page.goto('/signin');
+      const main = page.getByRole('main');
+      await expect(main.getByLabel(/token/i)).toBeVisible();
+      await expect(main.getByRole('button', { name: /sign in/i })).toBeVisible();
+      await expect(main).toContainText('Exchanged once for a secure session. The token is never stored in your browser.');
+      // Nothing of a shell sits in the focus order: at most the skip link (which targets main) comes first.
+      await page.keyboard.press('Tab');
+      if (!(await tokenField(page).evaluate((el) => el === document.activeElement))) {
+        await expect(page.getByRole('link', { name: /skip to/i }), 'the only thing before the field is the skip link').toBeFocused();
+        await page.keyboard.press('Tab');
+      }
+      await expect(tokenField(page), 'the token field is next in focus order').toBeFocused();
+    });
+
+    test('a wrong token keeps the page shell-less and shows the alert in the card', async ({ page }) => {
+      await page.goto('/signin');
+      await signIn(page, wrongToken);
+      await expect(page.getByRole('main').getByRole('alert')).toContainText(wrongCopy);
+      await expect(page.getByRole('navigation')).toHaveCount(0);
+      await expect(page.getByRole('banner')).toHaveCount(0);
+    });
+
+    test('signing in lands on next inside the shell', async ({ page }) => {
+      await page.goto('/decisions');
+      await expect(page).toHaveURL((u) => u.pathname === '/signin');
+      await expect(page.getByRole('navigation')).toHaveCount(0);
+      await signIn(page);
+      await expect(page).toHaveURL((u) => u.pathname === '/decisions');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
+      await expect(page.getByRole('banner'), 'the top bar is back').toBeVisible();
+      await expect(page.getByRole('banner').getByRole('button', { name: /reader|operator/i })).toBeVisible();
+      if (width >= 1024) {
+        await expect(page.getByRole('navigation')).toBeVisible();
+        await expect(menuButton(page)).toBeHidden();
+      } else {
+        await expect(menuButton(page)).toBeVisible();
+      }
+      await expect(page.getByRole('main')).toHaveCount(1);
+    });
+
+    test('signing in from the bare page lands on / in the shell with a navigation landmark and the menu at drawer widths', async ({ page }) => {
+      await page.goto('/signin');
+      await expect(page.getByRole('navigation')).toHaveCount(0);
+      await expect(menuButton(page)).toHaveCount(0);
+      await signIn(page);
+      await expect(page).toHaveURL((u) => u.pathname === '/');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+      await expect(page.getByRole('navigation').or(menuButton(page)).first()).toBeVisible();
+      if (width >= 1024) await expect(page.getByRole('navigation')).toBeVisible();
+      else await expect(menuButton(page)).toBeVisible();
+    });
+  });
+
+  test.describe('signed in, the shell stays on every other route', () => {
+    for (const route of ['/', '/decisions', '/assets/skills', '/ops/activity', '/no/such/route']) {
+      test(`${route} renders the top bar and, by width, the nav or the menu button`, async ({ page }) => {
+        await page.goto(route);
+        await expect(page.getByRole('banner')).toBeVisible();
+        if (width >= 1024) {
+          await expect(page.getByRole('navigation')).toBeVisible();
+          await expect(menuButton(page)).toBeHidden();
+        } else {
+          await expect(menuButton(page)).toBeVisible();
+        }
+      });
+    }
+
+    test('signing out returns to the shell-less sign-in page', async ({ page }) => {
+      await page.goto('/');
+      await expect(page.getByRole('banner')).toBeVisible();
+      await page.getByRole('banner').getByRole('button', { name: /reader|operator/i }).click();
+      await page.getByRole('menuitem', { name: 'Sign out' }).click();
+      await expect(page).toHaveURL((u) => u.pathname === '/signin');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sign in');
+      await expect(page.getByRole('banner')).toHaveCount(0);
+      await expect(page.getByRole('navigation')).toHaveCount(0);
+      await expect(menuButton(page)).toHaveCount(0);
+    });
   });
 });
 
