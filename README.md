@@ -14,9 +14,10 @@ Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUD
 The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
 `/openapi.json`, behind the same Bearer token as the API (at least the `reader` Role). The source
 is `internal/contract/openapi.yaml`; `./run lint-spec` lints it. Swagger UI at `/swagger-ui`
-(`GOLDIE_SWAGGER_UI_ENABLED=false` turns it off) takes the same token. A browser does not send it by
-itself: put a reverse proxy or a browser extension in front that adds `Authorization: Bearer <token>`
-to every request, the page's fetch of `/openapi.json` included.
+(`GOLDIE_SWAGGER_UI_ENABLED=false` turns it off) takes the same token. A signed-in browser session
+opens Swagger UI and `/openapi.json` without further setup, and the web UI links to it. A client
+without a session sends `Authorization: Bearer <token>`. "Try it out" for writes needs the Authorize
+button, because a session cookie alone cannot write to the API.
 
 ## CLI
 

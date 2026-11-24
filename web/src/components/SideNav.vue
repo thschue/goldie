@@ -6,6 +6,7 @@ import { computed, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { projectQuery } from '../projects/api';
 import { assetTabs } from '../assets/tabs';
+import { session } from '../auth/session';
 import { failing, loadFailing } from '../sources/api';
 
 const props = defineProps<{ role: 'reader' | 'operator' }>();
@@ -47,6 +48,12 @@ const onArticles = computed(() => route.path === '/articles' || route.path.start
       </ul>
     </template>
     <p v-else class="note">Reader view: Activity and Sources are for operators and aren't shown.</p>
+    <!-- A plain link, not a RouterLink: Swagger UI is a server page, opened in a tab (#802). -->
+    <ul v-if="session?.swagger_ui" class="footer">
+      <li>
+        <a href="/swagger-ui" target="_blank" rel="noopener" aria-label="API reference (opens in a new tab)">API reference <span aria-hidden="true">↗</span></a>
+      </li>
+    </ul>
   </nav>
 </template>
 
@@ -90,6 +97,9 @@ a[aria-current='page'] {
   color: var(--fg-muted);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+.footer {
+  margin-top: var(--space-6);
 }
 .note {
   margin: var(--space-6) var(--space-3) 0;

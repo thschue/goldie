@@ -989,6 +989,7 @@ Who a session signs in.
 |---|---|---|---|
 | `name` | `string` | yes | The name of the token behind the session. |
 | `role` | `string` | yes | The token's role, read from the configuration now. Clients ignore values they do not know. |
+| `swagger_ui` | `boolean` | yes | True when the server serves Swagger UI at /swagger-ui, so a client may link to it. |
 
 ### `SessionRequest`
 
