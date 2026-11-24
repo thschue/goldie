@@ -750,6 +750,60 @@ func TestSourceGitStaysReadyWhileStaleAndAFailedPollLogsOneWarn(t *testing.T) {
 	}
 }
 
+// A poll that fails before anything has loaded does not claim that content is
+// served: its warn says no content has loaded yet and the server is not
+// ready, and still carries the error.
+func TestFailedPollBeforeTheFirstLoadSaysNoContentHasLoaded(t *testing.T) {
+	repo := newBareRepo(t)
+	repo.commit(gitArticle("git-first"))
+	cfg := gitConfig(t, repo.url, time.Hour)
+	cfg.GitAllowFileURL = true
+	cfg.GitRef = "no-such-branch"
+	g := startGit(t, cfg)
+	eventually(t, 5*time.Second, "a failed first load logged no warn", func() bool { return g.count(t, "warn") > 0 })
+	var warn string
+	for _, l := range g.logs.lines()[g.from:] {
+		if strings.Contains(l, `"level":"warn"`) {
+			warn = l
+			break
+		}
+	}
+	lower := strings.ToLower(warn)
+	if !strings.Contains(lower, "no content") || !strings.Contains(lower, "not ready") {
+		t.Errorf("first failed poll warn = %s, want it to say no content has loaded yet and the server is not ready", warn)
+	}
+	if strings.Contains(lower, "last good") || strings.Contains(lower, "still served") {
+		t.Errorf("first failed poll warn = %s, want no claim that content is still served", warn)
+	}
+	if strings.Contains(warn, `"error":""`) || !strings.Contains(warn, `"error":"`) {
+		t.Errorf("first failed poll warn = %s, want the redacted error attached", warn)
+	}
+}
+
+// A poll that fails after a successful load keeps the wording that the last
+// good content is still served.
+func TestFailedPollAfterALoadKeepsTheLastGoodContentWording(t *testing.T) {
+	repo := newBareRepo(t)
+	repo.commit(gitArticle("git-first"))
+	cfg := gitConfig(t, repo.url, time.Hour)
+	cfg.GitAllowFileURL = true
+	g := startGit(t, cfg)
+	g.readyOnGit(t)
+	if err := os.RemoveAll(repo.dir); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, 5*time.Second, "a poll was not started", func() bool {
+		started, ready := g.pub.sync.Trigger()
+		return started && ready
+	})
+	eventually(t, 5*time.Second, "a failed poll logged no warn", func() bool {
+		return g.count(t, "warn", "source poll failed; the last good content is still served") > 0
+	})
+	if n := g.count(t, "warn", "not ready"); n != 0 {
+		t.Errorf("warn records saying not ready after a successful load = %d, want 0", n)
+	}
+}
+
 // A failed poll's warn is redacted: no token, no basic-auth header, no key
 // material, no known hosts and no URL userinfo, whatever the transport
 // failure says.
