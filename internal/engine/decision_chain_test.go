@@ -105,3 +105,40 @@ func TestDecisionChainOfAnUnknownDecisionFindsNothing(t *testing.T) {
 		}
 	}
 }
+
+// #757 criterion 3: superseded_by matches a decision name ignoring case, as
+// names match everywhere (itemKey), in the chain too.
+func TestDecisionChainMatchesSupersededByIgnoringCase(t *testing.T) {
+	snap := load(t, map[string]string{
+		globalDecisionPath + "adr-0002.md": datedDecision("Two", "superseded", "2023-01-01", "superseded_by: decision:ADR-0003"),
+		globalDecisionPath + "adr-0003.md": datedDecision("Three", "accepted", "2023-02-01"),
+	})
+	for _, name := range []string{"adr-0002", "adr-0003"} {
+		if got := chainNames(t, snap, "", name); got != "adr-0002,adr-0003" {
+			t.Errorf("chain of %s = %s, want adr-0002,adr-0003 (superseded_by: ADR-0003 names adr-0003)", name, got)
+		}
+	}
+}
+
+// #757 criterion 2: a search hit that resolves to a decision successor
+// reports the successor own matched and score, not the superseded record.
+func TestSearchSuccessorHitReportsItsOwnMatchedAndScore(t *testing.T) {
+	succ := datedDecision("Wombat store", "accepted", "2022-01-01", "keywords: [quokkas]")
+	alone := load(t, map[string]string{globalDecisionPath + "new.md": succ})
+	want := alone.SearchKindIn("", engine.KindDecision, "quokka")
+	if len(want) != 1 || want[0].Score == 0 {
+		t.Fatalf("fixture: the successor alone hits %+v, want one scored hit", want)
+	}
+	snap := load(t, map[string]string{
+		globalDecisionPath + "old.md": datedDecision("Quokka store", "superseded", "2021-01-01", "keywords: [quokka]", "superseded_by: decision:new"),
+		globalDecisionPath + "new.md": succ,
+	})
+	got := snap.SearchKindIn("", engine.KindDecision, "quokka")
+	if len(got) != 1 || got[0].ID != "new" {
+		t.Fatalf("hits %+v, want one hit for new", got)
+	}
+	if got[0].Score != want[0].Score || strings.Join(got[0].Matched, ",") != strings.Join(want[0].Matched, ",") {
+		t.Errorf("hit for new has score %d matched %v, want its own score %d matched %v",
+			got[0].Score, got[0].Matched, want[0].Score, want[0].Matched)
+	}
+}

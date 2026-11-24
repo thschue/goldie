@@ -157,13 +157,25 @@ func toDecision(a Article) Decision {
 
 // DecisionIn resolves a decision for a Project ("host/org/repo", matched
 // case-insensitively), local then Project then global, by winner's rule. An
-// empty or unregistered Project resolves globally. Only an accepted decision is
-// served unless opts asks for drafts, which serves every status.
+// empty or unregistered Project resolves globally. The accepted copy in the view
+// wins; with drafts, a name with no accepted copy falls back to its nearest
+// copy of any status (decisionWinner).
 func (s *Snapshot) DecisionIn(proj, name string, opts ...ReadOptions) (Decision, bool) {
-	if a := s.winner(proj, keyOf(KindDecision, name), readOpts(opts)); a != nil {
+	if a := s.decisionWinner(proj, keyOf(KindDecision, name), readOpts(opts)); a != nil {
 		return toDecision(*a), true
 	}
 	return Decision{}, false
+}
+
+// decisionWinner is the one resolution of a decision: the served (accepted)
+// copy in the default view wins, so a non-accepted Project copy does not hide
+// it. Only when no copy is served does a read with drafts fall back to the
+// nearest copy of any status. The list, the get and the chain all resolve here.
+func (s *Snapshot) decisionWinner(proj string, key itemKey, o ReadOptions) *Article {
+	if a := s.winner(proj, key, ReadOptions{}); a != nil || !o.Drafts {
+		return a
+	}
+	return s.winner(proj, key, o)
 }
 
 // Decisions returns the decisions that answer in proj's view, sorted by name:
@@ -179,7 +191,7 @@ func (s *Snapshot) Decisions(proj string, opts ...ReadOptions) []Decision {
 				continue
 			}
 			seen[key] = true
-			if a := s.winner(proj, key, o); a != nil {
+			if a := s.decisionWinner(proj, key, o); a != nil {
 				out = append(out, toDecision(*a))
 			}
 		}
@@ -198,17 +210,31 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 	all := s.Decisions(proj, ReadOptions{Drafts: true})
 	byName := make(map[string]Decision, len(all))
 	for _, d := range all {
-		byName[d.Name] = d
+		byName[nameKey(d.Name)] = d
 	}
-	start, ok := byName[name]
-	if !ok {
+	// The start is the stored name, as the API and the chain entries show it;
+	// only the links between decisions match ignoring case.
+	start, ok := byName[nameKey(name)]
+	if !ok || start.Name != name {
 		return nil, false
 	}
-	const prefix = "decision:"
+	// supersededBy is the key of the decision d names in superseded_by, or "".
+	supersededBy := func(d Decision) string {
+		if ref, err := parseRef(d.SupersededBy); err == nil && ref.kind == KindDecision {
+			return ref.name
+		}
+		return ""
+	}
+	supersedes := func(d Decision, o Decision) bool {
+		return slices.ContainsFunc(d.Supersedes, func(r string) bool {
+			ref, err := parseRef(r)
+			return err == nil && ref.kind == KindDecision && ref.name == nameKey(o.Name)
+		})
+	}
 	predecessors := func(d Decision) []Decision {
 		var out []Decision
 		for _, o := range all {
-			if o.SupersededBy == prefix+d.Name || slices.Contains(d.Supersedes, prefix+o.Name) {
+			if supersededBy(o) == nameKey(d.Name) || supersedes(d, o) {
 				out = append(out, o)
 			}
 		}
@@ -225,10 +251,10 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 	// visit appends d after its predecessors; seen also stops a cycle.
 	var visit func(d Decision)
 	visit = func(d Decision) {
-		if seen[d.Name] {
+		if seen[nameKey(d.Name)] {
 			return
 		}
-		seen[d.Name] = true
+		seen[nameKey(d.Name)] = true
 		for _, p := range predecessors(d) {
 			visit(p)
 		}
@@ -236,8 +262,8 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 	}
 	visit(start)
 	for cur := start; ; {
-		next, ok := byName[strings.TrimPrefix(cur.SupersededBy, prefix)]
-		if !ok || seen[next.Name] {
+		next, ok := byName[supersededBy(cur)]
+		if !ok || seen[nameKey(next.Name)] {
 			break
 		}
 		visit(next)
@@ -245,6 +271,9 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 	}
 	return chain, true
 }
+
+// nameKey is the key a decision name matches by, as itemKey matches it.
+func nameKey(name string) string { return keyOf(KindDecision, name).name }
 
 // DecisionStatuses returns the valid statuses of a decision.
 func DecisionStatuses() []string {

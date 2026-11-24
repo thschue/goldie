@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -350,5 +352,49 @@ func TestDecisionPayloadIsSnakeCase(t *testing.T) {
 	_, body := itemsGet(t, srv, readerToken, decisionsAPI+"/old-b")
 	if !strings.Contains(string(body), `"superseded_by"`) || strings.Contains(string(body), "supersededBy") {
 		t.Errorf("the payload does not use superseded_by: %s", body)
+	}
+}
+
+// #757 criterion 1: for a Project whose view holds a non-accepted copy of a
+// decision, the list and the get answer the same record.
+func TestDecisionListAndGetAgreeOnAProjectNonAcceptedCopy(t *testing.T) {
+	srv, dir := decisionServer(t, map[string]string{
+		"projects/" + decisionsShop + "/decisions/alpha.md": decisionFile("Shop Alpha", "proposed", "2023-07-02"),
+	})
+	// The fixture holds both copies: the Project's proposed alpha on disk and
+	// the global accepted alpha in the global view.
+	raw, err := os.ReadFile(filepath.Join(dir, "projects", decisionsShop, "decisions", "alpha.md"))
+	if err != nil || !strings.Contains(string(raw), "proposed") {
+		t.Fatalf("the Project's alpha is not the proposed copy (%v): %s", err, raw)
+	}
+	global, _ := listDecisions(t, srv, readerToken, decisionsAPI)
+	if i := slices.IndexFunc(global, func(e decisionEntry) bool { return e.Name == "alpha" }); i < 0 ||
+		global[i].Status != "accepted" || global[i].Scope != "global" {
+		t.Fatalf("the global view lacks the accepted global alpha: %+v", global)
+	}
+
+	q := "?project=" + decisionsShop
+	list, _ := listDecisions(t, srv, readerToken, decisionsAPI+q)
+	i := slices.IndexFunc(list, func(e decisionEntry) bool { return e.Name == "alpha" })
+	if i < 0 {
+		t.Fatalf("the Project list omits alpha: %v", decisionNameList(list))
+	}
+	listed := list[i]
+	got := getDecision(t, srv, readerToken, decisionsAPI+"/alpha"+q)
+	if got.Title != listed.Title || got.Status != listed.Status || got.Scope != listed.Scope || got.Date != listed.Date {
+		t.Errorf("GET alpha = %q/%s/%s/%s, the list holds %q/%s/%s/%s; want the same record",
+			got.Title, got.Status, got.Scope, got.Date, listed.Title, listed.Status, listed.Scope, listed.Date)
+	}
+}
+
+// #757 review: GET matches the stored name exactly, as it did before; a
+// differently-cased name is a 404 envelope, never a panic.
+func TestGetDecisionWithADifferentlyCasedNameIsNotFound(t *testing.T) {
+	srv, _ := decisionServer(t, nil)
+	for _, name := range []string{"ALPHA", "Zeta"} {
+		status, body := itemsGet(t, srv, readerToken, decisionsAPI+"/"+name)
+		if status != http.StatusNotFound {
+			t.Errorf("GET %s answers %d, want 404: %s", name, status, body)
+		}
 	}
 }

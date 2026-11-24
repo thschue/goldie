@@ -172,7 +172,13 @@ func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) [
 			if !ok || !served || succ.Status != StatusAccepted {
 				continue
 			}
-			if h := scoredDecision(d, succ, words); h.Score > 0 {
+			// The hit reports the successor's own match; the superseded
+			// record's only stands in when the successor does not match.
+			h := scoredDecision(succ, succ, words)
+			if h.Score == 0 {
+				h = scoredDecision(d, succ, words)
+			}
+			if h.Score > 0 {
 				add(h)
 			}
 		}
