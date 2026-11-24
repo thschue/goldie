@@ -157,6 +157,14 @@ test.describe('the article index', () => {
     await expect(cards(page)).toHaveCount(0);
   });
 
+  test('with no Project in the URL the global list is requested and shown (#748)', async ({ page }) => {
+    await stubProjects(page);
+    const urls = await stubArticles(page, [{ id: 'platform/deploy', name: 'Deploying to Kubernetes' }]);
+    await page.goto('/articles');
+    await expect(cards(page)).toHaveCount(1);
+    expect(urls.map((u) => u.search)).toEqual(['']);
+  });
+
   test('a failing list shows the standard error with its hint, and no list', async ({ page }) => {
     await stubProjects(page);
     await page.route(apiArticles, (route) =>

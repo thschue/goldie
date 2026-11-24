@@ -1020,3 +1020,12 @@ test.describe('the Source repo link and the panel at 375 px', () => {
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BUTTON');
   });
 });
+
+test.describe('the live header', () => {
+  test.use({ viewport: { width: 375, height: 800 } });
+
+  test('keeps a space between the word replica and the replica name', async ({ page }) => {
+    await open(page, [ev(1, { replica: 'goldie-0' })]);
+    await expect(main(page).locator('p.label')).toHaveText('Live · replica goldie-0');
+  });
+});
