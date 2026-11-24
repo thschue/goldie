@@ -89,11 +89,13 @@ const MaxActivityReorderWindow = time.Minute
 
 // The values of GOLDIE_MODE: what the server mounts. ModeAll serves /api, the
 // docs, /mcp and the UI; ModeAPI serves /api and the docs only; ModeUI serves
-// the UI and proxies /api and the docs to GOLDIE_UPSTREAM_ADDR.
+// the UI and proxies /api and the docs to GOLDIE_UPSTREAM_ADDR; ModeMCP
+// serves /mcp only, calling the API of GOLDIE_UPSTREAM_ADDR.
 const (
 	ModeAll = "all"
 	ModeAPI = "api"
 	ModeUI  = "ui"
+	ModeMCP = "mcp"
 )
 
 // ParseMode validates a GOLDIE_MODE value; empty is ModeAll. The error names
@@ -106,8 +108,10 @@ func ParseMode(v string) (string, error) {
 		return ModeAPI, nil
 	case ModeUI:
 		return ModeUI, nil
+	case ModeMCP:
+		return ModeMCP, nil
 	}
-	return ModeAll, fmt.Errorf("%s: must be %s, %s or %s", EnvMode, ModeAll, ModeAPI, ModeUI)
+	return ModeAll, fmt.Errorf("%s: must be %s, %s, %s or %s", EnvMode, ModeAll, ModeAPI, ModeUI, ModeMCP)
 }
 
 // modeOrAll is mode, or ModeAll when it is empty.
@@ -128,11 +132,11 @@ type Config struct {
 
 	SwaggerUIEnabled bool // serve Swagger UI on the public listener
 
-	// Mode is what the public handler mounts: ModeAll, ModeAPI or ModeUI. Empty
+	// Mode is what the public handler mounts: ModeAll, ModeAPI, ModeUI or ModeMCP. Empty
 	// (a Config built by hand) means ModeAll.
 	Mode string
 
-	// UpstreamAddr is the base URL of the server ModeUI proxies to; empty in
+	// UpstreamAddr is the base URL of the server ModeUI proxies to and ModeMCP calls; empty in
 	// every other mode. LoadConfig has checked it is an http(s) URL with a
 	// host and no credentials.
 	UpstreamAddr string
@@ -322,7 +326,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	return cfg, errors.Join(errs...)
 }
 
-// sourceSettings are the variables of the Source: a ModeUI process serves no
+// sourceSettings are the variables of the Source: a ModeUI or ModeMCP process serves no
 // content, so it refuses them rather than ignoring them.
 var sourceSettings = []string{EnvContentDir, EnvGitURL, EnvGitRef, EnvGitToken, EnvGitSSHKey,
 	EnvGitSSHKnownHosts, EnvGitCABundle, EnvGitAllowFileURL, EnvSources, EnvPollInterval}
@@ -338,13 +342,14 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 		return ok && v != "" || file
 	}
 	addr := str(EnvUpstreamAddr, def(EnvUpstreamAddr))
+	upstream := cfg.Mode == ModeUI || cfg.Mode == ModeMCP
 	switch {
-	case cfg.Mode != ModeUI && addr != "":
-		return append(errs, fmt.Errorf("%s: only %s=%s uses an upstream", EnvUpstreamAddr, EnvMode, ModeUI))
-	case cfg.Mode != ModeUI:
+	case !upstream && addr != "":
+		return append(errs, fmt.Errorf("%s: only %s=%s and %s=%s use an upstream: unset it, or set %s=%s or %s", EnvUpstreamAddr, EnvMode, ModeUI, EnvMode, ModeMCP, EnvMode, ModeUI, ModeMCP))
+	case !upstream:
 		return nil
 	case addr == "":
-		errs = append(errs, fmt.Errorf("%s: %s=%s needs it: set it to the base URL of a goldie server, for example http://127.0.0.1:8080", EnvUpstreamAddr, EnvMode, ModeUI))
+		errs = append(errs, fmt.Errorf("%s: %s=%s needs it: set it to the base URL of a goldie server, for example http://127.0.0.1:8080", EnvUpstreamAddr, EnvMode, cfg.Mode))
 	default:
 		if err := CheckServerURL(EnvUpstreamAddr, addr); err != nil {
 			errs = append(errs, err)
@@ -354,7 +359,7 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 	}
 	for _, name := range sourceSettings {
 		if isSet(name) {
-			errs = append(errs, fmt.Errorf("%s: %s=%s serves no content, so it takes no Source setting", name, EnvMode, ModeUI))
+			errs = append(errs, fmt.Errorf("%s: %s=%s serves no content, so it takes no Source setting", name, EnvMode, cfg.Mode))
 		}
 	}
 	return errs

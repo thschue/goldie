@@ -27,7 +27,8 @@ const inProcessBase = "http://goldie.in-process"
 // mcpIOTimeout bounds one /mcp request, from reading its body to writing its
 // answer, as adminIOTimeout bounds the admin listener: a caller who drips the
 // body or never reads the answer cannot keep a request open through the drain
-// (PC-08). The tools answer from the API in process, well inside it.
+// (PC-08). The tools answer from the API in process (mode all) or from the
+// upstream's API (mode mcp, whose calls the same deadline bounds), well inside it.
 const mcpIOTimeout = 10 * time.Second
 
 // addMCP registers POST /mcp on m: the MCP server of internal/mcp over
