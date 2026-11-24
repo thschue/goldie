@@ -10,7 +10,7 @@ export const isFailing = (s: SourceStatus) => !!s.last_error;
 
 // The §3.7 badge: no last error is healthy; a last error with a last success still serves that
 // Snapshot; a last error and no success has nothing to serve.
-export const state = (s: SourceStatus) =>
+export const sourceState = (s: SourceStatus) =>
   !s.last_error ? 'healthy' : s.last_success ? 'failing · serving last good' : 'errored';
 
 // Failing Sources first, the API's order otherwise (Array.sort is stable).
