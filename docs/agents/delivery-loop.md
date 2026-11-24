@@ -49,7 +49,7 @@ orchestrator only relays between subagents; it writes no code itself. Shared rul
    tick started, by PID.
 
 **Report:** streams advanced (step and outcome), claims, merges, PRs held or parked (with
-reason), consults, test change requests, and harness feedback filed.
+reason), consults, test change requests, and harness issues filed.
 
 ## Stream
 
