@@ -1,331 +1,131 @@
 # goldie
 
-Goldie is a single binary that serves golden-path knowledge (approved technologies, patterns and
-conventions) just in time to humans and agents. Items are authored as Markdown in git Sources and
-reach people through a server (API, UI, MCP), a CLI and managed instruction blocks.
+Goldie puts your team's golden path in front of developers and AI agents at the moment they decide:
+which database to use, how to deploy, which library is approved.
 
-Goldie is under construction; the spec is issue #1. Start with [CLAUDE.md](CLAUDE.md),
-[CONTEXT.md](CONTEXT.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+It is for platform teams, who write the golden path as Markdown in git, and for the developers and
+agents who receive it, in the browser, in a terminal or inside their coding agent.
 
-```sh
-./run check     # format, build, lint, import-rule fixture, OpenAPI lint and tests
-```
+The problem: the golden path is written down, but nobody finds it when it matters. Agents and people
+pick a technology from habit or from training data, and the approved answer sits unread in a wiki.
+Goldie answers the question when it is asked, and tells an agent where to look before it guesses.
 
-The server publishes its OpenAPI 3.1 contract on the public listener at `/openapi.yaml` and
-`/openapi.json`, behind the same Bearer token as the API (at least the `reader` Role). The source
-is `internal/contract/openapi.yaml`; `./run lint-spec` lints it. Swagger UI at `/swagger-ui`
-(`GOLDIE_SWAGGER_UI_ENABLED=false` turns it off) takes the same token. A browser does not send it by
-itself: put a reverse proxy or a browser extension in front that adds `Authorization: Bearer <token>`
-to every request, the page's fetch of `/openapi.json` included.
+## How it works
 
-## CLI
+You keep knowledge in a **Source**, a git repository (or a directory) of Markdown files. Each file is
+an **Item**: an article, a skill, an agent, a loop or a decision. An Item applies in a **Scope**:
+`global` for everyone, or one **Project** (a repository, named `host/org/repo`) for the teams that own
+it. Goldie answers for the Project you work in, with its own Items first.
 
-`goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
-`validate`, `health`) and Ask a server (`search`, `lookup`, `skills`, `agents`, `status`, `init`,
-`mcp`, `version`).
-`goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
-are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
-command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
-help you ask for goes to stdout and exits 0.
-`goldie --version` prints the same as `goldie version`; on a subcommand `--version` stays an unknown flag.
-`goldie health` with no admin port answering exits 1 and says to check that the server runs and
-`GOLDIE_ADMIN_ADDR` matches its admin address.
+A goldie server reads the Sources and serves them three ways:
 
-`goldie skills list|show <name>`, `goldie agents list|show <name>` and `goldie loops list|show <name>`
-read the skill bundles (name and file list), agent definitions (name and description) and loops
-(`show` prints the interval or dynamic pacing, the stop condition, the prompt and the agents and
-skills it names, with the Scope that answered for each) that answer for the Project. They take
-`--project`, `--json` and the same address and token settings, and print the server's hint for an
-unregistered Project. A name must be one path segment, and an empty or dot-only one is refused
-before any request. Skill, agent and loop names match case-insensitively, and the answer shows the
-name as written. Two skills, two agents or two loops in one Scope whose names differ only in case fail the
-load; the error names both. File paths inside a skill stay exact, and two files of one skill
-whose paths differ only in case fail the load the same way. `goldie skills show <name>
---file <path>` writes one file of the skill, as listed by `show <name>`, to stdout as its raw
-bytes and nothing else. Redirect it to a file for anything binary. An unknown path exits 1 and names
-`goldie skills show <name>`. `--file` belongs to `skills show` only. An empty or dot-only path is
-refused before any request.
+- **UI:** search and read in the browser.
+- **CLI:** `goldie search`, `goldie lookup` and more, in a terminal or a script.
+- **MCP:** the same answers inside Claude Code and other agents.
 
-`goldie decisions list|show <name>` reads the decisions that answer for the Project. `list` prints
-the accepted ones, one per line, with name, title and Scope; `show` prints the name, title, Scope,
-status, date and the body, and finds a decision of any status. It takes `--project`, `--json` and the
-same address and token settings, and prints the server's hint for an unregistered Project. A miss
-exits 1 and names `goldie decisions list`; wrong use exits 2 before any request, as for `goldie loops`.
+Instruction blocks add a short, managed section to a repository's `CLAUDE.md` or `AGENTS.md` that
+tells its agents to ask goldie first. The vocabulary is in [CONTEXT.md](CONTEXT.md).
 
-`goldie search <words>`, `goldie lookup <id>`, `goldie status` and `goldie version` talk to a
-running server through the generated client, or an embedded one over local content (below). Each
-takes `--addr` (or `GOLDIE_ADDR`), `--token` (or `GOLDIE_TOKEN`, or `GOLDIE_TOKEN_FILE` to read it
-from a file) and `--json`. Prefer `GOLDIE_TOKEN` or `GOLDIE_TOKEN_FILE` to `--token`: a `--token`
-value shows in the process list (`ps`) of the machine. The CLI follows no redirects, so a server
-cannot send the token elsewhere, and every request carries `X-Goldie-Client: goldie/<version>`
-(`goldie mcp` adds `X-Goldie-Via: mcp`).
-`status` reports whether the server answers and accepts the token (`--json` adds `tokenGiven`) and
-which Project the CLI works for; without an accepted token it cannot read the API document, so it
-reports the API as unknown, and `version` leaves out the server's API version. `search`, `lookup`
-and `status` take `--project`, and `search` and `lookup` send the resolved Project to the server as
-`project=`. If the server does not have that Project registered, it answers with the global results
-plus a hint, which the CLI prints (and carries in `--json`, for `status` too). An unusable Project
-(a broken `GOLDIE_PROJECT`, `--project` or `.goldie/config.yaml`) is an error before any request is
-made for `search` and `lookup`; `status` instead reports it on its `Project:` line and exits 0
-(`--json` adds `projectError`). If a git remote `upstream` or `origin` exists but is not in
-`host/org/repo` form and nothing else gives a Project, `status` names that remote (never its URL) on
-the `Project:` line, and `--json` adds `projectHint`. The Project is `--project`, else
-`GOLDIE_PROJECT`, else `project:` in the repository's own `.goldie/config.yaml`, else the `upstream`
-(or `origin`) git remote, normalised to `host/org/repo`. The remote is read from `.git/config`; git
-need not be installed, and credentials in a remote URL are never printed. When the server holds the
-Project and suppresses global articles for it, `status` lists them on a `Suppressions:` line after
-the `Project:` line (`--json` adds a `suppressions` array); a lookup of one fails with a hint naming
-the Suppression and the `project.yaml`. The sync state arrives
-with the sync work (#6). `goldie lookup` of a deprecated article prints
-`Warning: this article is deprecated. Use <replacement> instead.` on stderr, naming the replacement
-when there is one; stdout, `--json` included, carries only the article.
+## Try it in 5 minutes
 
-`goldie search`, `lookup`, `skills`, `agents`, `status` and `mcp` also work without a server:
-`--dir PATH` (or `GOLDIE_DIR`) starts an embedded server over a directory of content
-(`global/articles`, `global/skills` and `global/agents` under it) on loopback, with its own random
-token, and stops it when the command ends. Output is the same as against a remote server over the
-same content. `--dir` overrides `GOLDIE_DIR`. It also overrides a `GOLDIE_ADDR` from the
-environment. A repository with `.goldie/articles/`, or with `decisions: {path: docs/adr}` in
-`.goldie/config.yaml`, starts the same embedded server with its local
-Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or empty content (see
-[the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr` or `GOLDIE_ADDR` is
-an error; `GOLDIE_TOKEN` is ignored. `decisions.path` is a folder of the repository, relative and
-inside it, whose Nygard, MADR or frontmatter ADRs are served as local decisions without moving them;
-`README.md` and templates are skipped, a malformed ADR is a warning on stderr that names its file,
-and a path that is absolute, uses `..`, leaves the repository by a symlink or holds control
-characters is an error naming `.goldie/config.yaml`. `--dir` or `GOLDIE_DIR` together with `--addr`,
-or `GOLDIE_DIR`
-and `GOLDIE_ADDR` both set in the environment, is an error naming both. Content that does not load
-stops the command with `content does not load: <reason>`. When `search`, `lookup`, `status` or an
-`mcp` tool cannot reach the embedded server, the error says so and does not mention `--addr` or
-`GOLDIE_ADDR`. `version` and `init` ignore `--dir`: `init` checks registration only against a
-running server.
+You need Go and, for the web UI, Node. Goldie ships with example content, so no Source is needed.
 
-A `200 OK` that is not a goldie API answer, such as a proxy's login page, is reported as "the
-server's answer isn't a goldie API answer; check the address", by the CLI and by `mcp` alike, and
-nothing of the page is shown.
-
-`goldie init [--project ID]` sets a repository up: it finds the Project as `status` does and writes
-`project: <id>` to `.goldie/config.yaml` at the repository root (the nearest directory with a
-`.git`), then prints the Project and how it was found, the file it wrote, and whether the server
-has the Project registered (`yes`, `no` with a hint on how to register it, or `not checked` with the
-reason: no address, no token, a rejected token, or a server that is unreachable, redirects, answers
-with an error status, or whose answer couldn't be read). The check is one `GET /api/v1/projects` and
-ignores case; without a token it sends no request. `init` takes no `--json`. It never overwrites an
-existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.yaml`, and refuses to
-run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
-root); a refusal writes nothing.
-
-`goldie instructions apply [--target claude|agents] [--force]` writes goldie's instruction block
-between `<!-- goldie:begin digest=sha256:… -->` and `<!-- goldie:end -->` in `CLAUDE.md` (the default)
-or `AGENTS.md` at the repository root, creating the file if needed. The block comes from
-`GET /api/v1/instructions` for the detected Project (`--project` overrides it). Text outside the
-markers is never touched, and a block that is already current is not rewritten. `apply` refuses a
-block edited by hand unless you pass `--force`, which discards those edits, and refuses a damaged file (a
-begin marker without an end, or two blocks) even with `--force`. It also refuses a block whose text could
-change how the rest of your file renders (an unclosed code fence, raw HTML, a link reference definition),
-a `CLAUDE.md` or `AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes
-nothing. `goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated
-or edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
-between `apply` reading the file and renaming over it, an edit by another process is lost; there is no
-lock, and the window is one local write.
-
-If your `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` line), apply only the agents target:
-`goldie instructions apply --target agents`. Applying both would show the block twice.
-
-Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_TOKEN` as secrets):
+**1. Build it.** From a clone of this repository:
 
 ```sh
-goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
+./run ui && go build ./cmd/goldie && export PATH="$PWD:$PATH"
 ```
 
-`goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
-detected Project (`--project` overrides it) into the repository root of the working directory, from any
-subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
-`.claude/agents/goldie-<name>.md`, and each loop's entry skill to `.claude/skills/goldie-loop-<name>/SKILL.md`
-(its description, iteration prompt and stop condition; the loop's agents and skills come with the rest). A
-pull then prints `Start a loop in Claude Code:` and `/loop <interval> /goldie-loop-<name>` for each loop,
-sorted by name, and `/loop /goldie-loop-<name>` for a dynamic one. A pull that finds the namespace up to
-date says so and prints the same lines for the loops already in it. `--check` and `--dry-run` print
-none. Those `goldie-` names are goldie's namespace. A pull replaces
-the namespace as a whole, so a skill or agent removed from the platform disappears, and touches nothing
-else: your own skills and agents stay. The bundle comes from `GET /api/v1/bundle`, a tar.gz whose ETag is
-the digest of the set; `pull` keeps that digest in `.claude/goldie-pull.digest` and
-sends it back, with a hash of the namespace as it wrote it, so an unchanged set costs no download and
-no write. If a pulled file was edited or deleted since, `pull` asks without the digest and restores
-the namespace. A skill file keeps its executable bit. The CLI checks
-the whole archive before it writes: it refuses an absolute path, `..`, a symlink, hardlink, device or
-fifo, and any entry outside the namespace, and it never writes through a symlinked `.claude`,
-`.claude/skills` or `.claude/agents`. The new files are staged and moved in, and a failure puts the old
-ones back, so a failed pull leaves the project as it was. `--dry-run` lists what would be written or
-removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
-`goldie pull`, when the namespace was never pulled, the set changed or a pulled file was edited or
-deleted. `--dry-run` and `--check` cannot be
-combined. `pull` takes no `--json`.
+This leaves `goldie` in the clone and on your PATH for this shell. `go install
+github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH too, but without the web UI;
+the CLI and MCP work either way.
+
+**2. Start a server** in an empty directory. It serves the built-in examples and says so:
 
 ```sh
-goldie pull --check   # in CI or a hook: exits non-zero if never pulled or stale
+mkdir /tmp/goldie-try && cd /tmp/goldie-try && goldie server --dev
 ```
 
-```sh
-export GOLDIE_ADDR=http://localhost:8080 GOLDIE_TOKEN_FILE=/run/secrets/goldie-token
-goldie search kubernetes
-goldie lookup platform/deploy
-```
-
-## Try it on your own content
-
-First get the binary. `go install github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your
-PATH. A binary from `go install`, or from a build without `./run ui`, serves a "goldie (UI not
-built)" placeholder at `/`; the CLI and MCP work either way ([ADR
-0019](docs/adr/0019-ui-build-output-not-committed.md)). To get the web UI, clone the repository,
-run `./run ui` (needs Node), then `go build ./cmd/goldie`, which leaves `./goldie` in the clone
-(run it as `./goldie`, or move it onto your PATH).
-
-Then run `goldie server --dev` (`./goldie server --dev` for the clone build), open the address it
-prints (the `GOLDIE_ADDR` in the export line), and sign in by pasting the token from that same
-line (`GOLDIE_TOKEN=…`).
-
-`goldie server --dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
-the working directory) with a random token made for this run, and prints the line that points the
-client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
-API token variables, so the same shell can run it again. The token is printed only in that line,
-never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
-[configuration reference](docs/reference/configuration.md#goldie-server---dev).
-
-New to writing content? [Writing content](docs/content.md) shows the smallest article that loads.
+It prints an `export GOLDIE_ADDR=… GOLDIE_TOKEN=…` line with a token made for this run. To serve a
+directory of content instead, pass it. In the clone, `examples/knowledge` holds goldie's own agents
+and loops:
 
 ```sh
 goldie server --dev examples/knowledge
 # export GOLDIE_ADDR=http://127.0.0.1:41234 GOLDIE_TOKEN=<64 hex characters>
 ```
 
-Paste the printed line into another shell, then use `goldie search` and `goldie lookup` there. That
-`export GOLDIE_ADDR=…` line is also what the MCP config in the next section reads.
+Paste the printed `export GOLDIE_ADDR=…` line into another shell. It is also what the MCP config in
+step 5 reads. A plain
+`goldie server` with nothing set suggests this command: `To try goldie on this machine: goldie server --dev`.
+More in the [CLI reference](docs/reference/cli.md#run-a-server-over-your-own-content).
 
-A directory with no content serves the example content built into the binary, and says so on
-stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo
-platform: four articles, a skill, an agent and a loop. Try `goldie search database`, then
-`goldie skills list`, `goldie agents list` and `goldie loops list`. goldie's own agents and loops
-are `examples/knowledge`, which is not built in.
+**3. Open the UI.** Go to the address in that line and sign in with the token.
 
-A plain `goldie server` with no Source and no API token set stops with two configuration errors and
-ends with `To try goldie on this machine: goldie server --dev`, the command above with the working
-directory as `dir`. With only one of the two missing, or a value that is invalid, it shows the
-errors alone.
+**4. Search** from the shell where you pasted the line:
 
-`goldie validate [dir]` runs the same content load without starting a server, for a pipeline: it
-exits 0 and prints nothing when the content loads, and exits 1 with one `goldie: content does not
-load: <reason>` line on stderr when it does not. It needs no token or address. See
-[Checking content in CI](docs/content-ci.md).
-
-## MCP over stdio
-
-`goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
-`search_knowledge`, `get_article`, `list_projects`, `current_context`, `find_skills`, `get_skill`,
-`list_skills`, `list_agents`, `list_loops`, `get_loop` and `find_decisions`. `search_knowledge` and `get_article` take an optional `project`
-(`host/org/repo`, as `list_projects` names it; case is ignored) that puts that Project's articles
-first; a value that isn't a Project id, or has any non-ASCII character, is refused before any
-request. For a Project that isn't registered, the answer is global and carries the server's hint. At
-startup, and only then, it finds the default Project of the directory it runs in the way the CLI
-does: `GOLDIE_PROJECT`, then `.goldie/config.yaml`, then the git remotes `upstream` and `origin`. A
-call that leaves `project` out, or empty, answers for that default; an explicit `project` beats it,
-and one made only of white space is refused. `current_context` reports the default and where it came
-from, in the words of `goldie status`, or that there is none (outside a repository, for example,
-where the answers are global), naming a remote whose URL isn't `host/org/repo` by name only. A
-broken or unreadable `.goldie/config.yaml` doesn't stop the session: `current_context` reports the
-problem as `status` does, calls that rely on the default fail with it before any request, and calls
-with an explicit `project` still answer. Fix the file and restart the MCP server to pick it up.
-
-The skill and agent tools take the same optional `project`. `find_skills` searches skills only, by
-keyword or name. `get_skill` answers a skill's file paths and the text of its `SKILL.md`, each line
-quoted with `| `; its optional `file` (a path from that list, such as `scripts/run.sh`) reads that
-file of the bundle instead, quoted the same way. A name that is empty, dots only or holds a
-separator, and a `file` that leaves the bundle, is refused before any request. A skill without a
-`SKILL.md` is reported as that, not as unknown. `get_article` quotes the article text with `| `
-too; the server's own hint stays a plain line after it. Every tool parameter's description carries
-an example value. `list_skills` and `list_agents` list every name for the Project, sorted, an agent
-with its description.
-
-`list_loops` lists every loop of the Project's view, sorted, with its description, its interval (or
-that it is dynamic) and its stop sentence; no loop is an answer, not an error. `get_loop` answers one
-loop: its fields, the agents and skills it needs with the Scope that answered, the digest the API
-serves (to compare with a pulled copy), and the iteration prompt quoted with `| `. A miss is a tool
-error that points to `list_loops`.
-
-`find_decisions` takes a query and the same optional `project` and answers the accepted decisions
-that match, each with its name, title, Scope, keywords and what matched; no match is an answer, not an error. The resource
-`goldie://decisions/{name}` reads one accepted decision: title, status, Scope, date and the body quoted
-with `| `. A decision that is unknown, or not accepted, is resource-not-found naming `find_decisions`.
-
-The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
-instruction block the API renders for the default Project, or the global block without one, with
-`{{mcp_name}}` set from `GOLDIE_MCP_NAME`. It renders for the target `claude`, the default of
-`goldie instructions`; the target changes only the file the block is written into. The text is cleaned
-of hidden characters like any Source content and a failed read is an
-error without the address or token. `current_context` ends with the same clauses, or says they could
-not be read.
-
-The server also offers prompts and two more resources. Each loop is a prompt named
-`goldie-loop-<loop name>`: it returns the `/loop <interval> <prompt>` command (`/loop <prompt>`
-for a dynamic loop) and, when the loop needs agents or skills, a note to run `goldie pull` first. If a
-skill's prompt has the same name, the skill keeps it. Each skill is a prompt named `goldie-<skill name>`
-(for the session's default Project), and using it inserts the cleaned text of its `SKILL.md` into
-the conversation. Unlike `get_skill` and the resources, the prompt text is cleaned but not quoted
-with `| `. Prompt text is untrusted: a Source wrote it, and the server inserts it as a user message,
-cleaned but not quoted, so any instruction in it reaches the model. Choosing a prompt means you
-vouch for that skill's Source. For the quoted form, use `get_skill` or the resources. The prompt
-list is read once, the first time your client asks for it, and kept until the MCP server restarts.
-A skill added later appears after you restart your agent or its MCP server; an unknown prompt is
-answered with a message that points to `list_skills` or to that restart. The server sends no
-`list_changed` notification. The two other resources are URI templates:
-`goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
-as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
-reads an agent's name and description. The session's default Project picks the bundle, never the
-URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
-is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
-step. A failed prompt or resource read says it was a prompt or resource, not a tool.
-When the default Project has a problem, a prompt or resource error names the problem and tells the
-agent to ask the user to fix it and restart the MCP server: those surfaces take no `project`
-argument, so it does not point at `list_projects`.
-
-An agent's MCP client starts it as a subprocess. It talks to a running server with the same client
-settings as the CLI: `--addr` (or `GOLDIE_ADDR`) and `--token` (or `GOLDIE_TOKEN`, or
-`GOLDIE_TOKEN_FILE`), a flag overriding its variable, or over local content with `--dir` (or
-`GOLDIE_DIR`, see [CLI](#cli)). Prefer the variables to `--token`: a `--token` value shows in the
-process list (`ps`) and is saved in the MCP client's config, while the variables can name a file. A
-missing or invalid setting stops it at startup with a message on stderr that names the setting. Like
-the CLI, it follows no redirects and reads at most 16 MiB of an answer; a tool call that meets
-either says so, without the address. Stdout carries only MCP messages; errors go to stderr. It exits
-when the client closes stdin. Only the `.goldie/` local Scope (#269, #272) is still pending in local
-mode.
-
-```json
-{"mcpServers": {"goldie": {"command": "goldie", "args": ["mcp", "--transport", "stdio"],
-  "env": {"GOLDIE_ADDR": "http://localhost:8080", "GOLDIE_TOKEN_FILE": "/run/secrets/goldie-token"}}}}
+```sh
+goldie search database
 ```
 
-## MCP over HTTP
+`goldie lookup <id>` reads an article, and `goldie skills list` lists the skills.
 
-`goldie server` also serves the same MCP server on its public listener at `/mcp`, over streamable
-HTTP, for agents that connect remotely. Every request needs an API token (`GOLDIE_API_TOKEN` or one
-of `GOLDIE_API_TOKENS`) as `Authorization: Bearer <token>`; without it the answer is the 401
-envelope. The tools call the API inside the process with the caller's token, so the API checks that
-token and no other. The endpoint is stateless and answers with JSON: there are no sessions, no
-standing event stream and no tool-list change notifications (the tool set is fixed), and each
-request must finish within 10 seconds, so connected agents never hold up shutdown. The server never
-detects a Project from its own working directory or environment: over HTTP there is no default
-Project, `current_context` says so, and an agent passes `project` to scope an answer.
+**5. Connect an agent.** For Claude Code:
 
-The server advertises its capabilities explicitly: tools, and not the SDK's default `logging`
-capability, which nothing in goldie uses, so there are no MCP log notifications. If an API handler
-fails unexpectedly behind a tool call, the tool answers with the 500 envelope and the server logs one
-line with the API request's method and path, never the failure's details.
-
-```json
-{"mcpServers": {"goldie": {"type": "http", "url": "http://localhost:8080/mcp",
-  "headers": {"Authorization": "Bearer ${GOLDIE_TOKEN}"}}}}
+```sh
+claude mcp add goldie -e GOLDIE_ADDR="$GOLDIE_ADDR" -e GOLDIE_TOKEN="$GOLDIE_TOKEN" -- goldie mcp --transport stdio
 ```
+
+Ask the agent about databases and it calls goldie. For other agents and for MCP over HTTP, see the
+[MCP reference](docs/reference/mcp.md).
+
+## Use it on your own content
+
+A Source holds `global/articles/`, `global/skills/`, `global/agents/`, `global/loops/` and
+`global/decisions/`, and `projects/<host>/<org>/<repo>/` for one Project's own. Start with
+[Writing content](docs/content.md): the smallest article that loads. Then
+[add a skill](docs/skills.md), and check a Source in CI with `goldie validate`
+([Checking content in CI](docs/content-ci.md)).
+
+## What's in the MVP
+
+- Search and read articles: [CLI](docs/reference/cli.md), [MCP](docs/reference/mcp.md), the UI.
+- Skills, agents and loops, pulled into a repository: [adding a skill](docs/skills.md).
+- Decisions: `goldie decisions list` ([CLI](docs/reference/cli.md)).
+- Instruction blocks: `goldie instructions apply` ([CLI](docs/reference/cli.md)).
+- Activity: who asked what, live in the UI ([API](docs/reference/api.md)).
+- MCP over stdio and HTTP: [MCP reference](docs/reference/mcp.md).
+
+What comes next is in the [milestones](https://github.com/thschue/goldie/milestones).
+
+## Documentation
+
+Write the golden path:
+
+- [Writing content](docs/content.md): articles, Scopes and Projects.
+- [Skills](docs/skills.md): skills, agents and loops.
+- [Checking content in CI](docs/content-ci.md): validate a Source in a pipeline.
+
+Run goldie:
+
+- [Configuration](docs/reference/configuration.md): every setting.
+- [Operating goldie](docs/platform-contract.md): health, readiness and telemetry, for operators.
+
+Use it:
+
+- [CLI reference](docs/reference/cli.md) and [MCP reference](docs/reference/mcp.md).
+- [API reference](docs/reference/api.md): every endpoint.
+
+Contribute:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): the workflow, `./run check` and the agent loops.
+- [CONTEXT.md](CONTEXT.md): the vocabulary.
+- [docs/adr/](docs/adr/): decisions that are hard to reverse.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md). `./run check` runs format, build, lint and tests, and must
+pass before a pull request leaves draft. The agent loops are described there too.
 
 ## Origins & credits
 
