@@ -26,11 +26,13 @@ const generic = "Couldn't load this article. Try again in a moment.";
 
 // getArticle reads one article (GET /api/v1/articles/{id}). The id is one path
 // segment, so a `/` inside it travels as %2F (ADR 0016). Fields the server did
-// not send stay absent: an absent `enforced` or `overrides` means unknown (#529).
-export async function getArticle(id: string): Promise<Article> {
+// not send stay absent: an absent `enforced` or `overrides` means unknown (#529). A Project is
+// the optional `project` parameter; empty sends none, as listArticles does (a blank value is a 400).
+export async function getArticle(id: string, project = ''): Promise<Article> {
   let res: Response;
   try {
-    res = await api(`/api/v1/articles/${encodeURIComponent(id)}`);
+    const q = project ? `?${new URLSearchParams({ project })}` : '';
+    res = await api(`/api/v1/articles/${encodeURIComponent(id)}${q}`);
   } catch {
     throw new ArticleError(generic);
   }

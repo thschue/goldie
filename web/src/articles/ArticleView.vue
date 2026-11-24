@@ -6,6 +6,7 @@ import { getArticle, type Article, ArticleError } from './api';
 import MarkdownBody from './MarkdownBody.vue';
 import CommandSnippet from '../assets/CommandSnippet.vue';
 import { errorSentence } from '../api/errorSentence';
+import { plain } from '../assets/api';
 
 // The article view (#498, handoff §3.4, §5.2, §8): `/items/article/:name`, the
 // name being the article id with any `/` as %2F (ADR 0016). The title is the one
@@ -36,7 +37,7 @@ const overrides = computed(() => article.value?.overrides ?? []);
 
 onMounted(async () => {
   try {
-    article.value = await getArticle(String(route.params.name));
+    article.value = await getArticle(String(route.params.name), String(route.query.project ?? ''));
     document.title = `${article.value.name} · goldie`;
   } catch (e) {
     error.value =
@@ -75,6 +76,7 @@ onMounted(async () => {
           <code class="id">{{ article.id }}</code>
           <span v-if="article.enforced === true" class="chip enforced">Enforced</span>
         </div>
+        <p v-if="article.hint" class="note">{{ plain(article.hint) }}</p>
         <MarkdownBody :source="article.content" />
       </template>
       <template v-else>
@@ -122,6 +124,13 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.note {
+  margin: 0 0 var(--space-3);
+  max-width: 760px;
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
 .banner {
   max-width: 760px;
   margin-bottom: var(--space-4);
