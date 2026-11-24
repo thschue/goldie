@@ -109,7 +109,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 ### 3.3 Search results (`/?q=`)
 
 - The hero stays, with the query in the field and a clear button.
-- Kind filter pills with counts, plus "← Back to home".
+- Kind filter pills (All, article, skill, agent, decision), plus "← Back to home". A pill sets `kind` on the API call and in the URL; there are no counts, since a count per Kind would need another call.
 - A result card shows Kind badge · name · Scope badge · lifecycle badges · match explanation, then a score bar, title, summary, and "Overrides `x` from global" when it shadows another Item.
 - Order: score, descending (exact keyword +4, name word +2, keyword substring +1). The `matched` text from the API is shown verbatim.
 
@@ -261,7 +261,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 | State | Where | Treatment | |
 |---|---|---|---|
 | Empty search (Miss) | Results | Gold dashed panel, no-match copy (§8), suggestion chips. | C |
-| Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet." | D |
+| Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet."; without a Project: "No `<kind>`s yet." | D |
 | Unregistered Project | Project selector + Home | `unregistered` chip; Home shows a hint: "Global and local guidance only. **How to register this project**". | D |
 | Draft | Card, detail | Dashed outline + "draft · hidden from agents"; detail banner (dashed). Operators only; readers never see drafts. | C |
 | Deprecated | Card, detail | Gold badge "deprecated → `replaced_by`"; detail banner with a link to the replacement. | C |
