@@ -377,3 +377,35 @@ test.describe('the Sources page', () => {
     await expectFocusRing(resync(page));
   });
 });
+
+// #783: the Resync error closes a message lacking . ? or ! before its hint (handoff §8), as the
+// article page does (#759).
+test.describe('the Resync error: message then hint (#783)', () => {
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const refuse = async (page: Page, message: string, hint: string) => {
+    await asOperatorWithCsrf(page);
+    const sync = stubResync(page, [failing], [failing], (route) => json(route, 429, envelope('sync_running', message, hint)));
+    await page.goto('/ops/sources');
+    sync.release();
+    await resync(page).click();
+    return main(page).getByRole('alert');
+  };
+
+  test('a message without a closing period gets one before the hint', async ({ page }) => {
+    const alert = await refuse(page, 'A sync is already running', 'Wait for the running sync to end.');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.innerText())).toBe('A sync is already running. Wait for the running sync to end.');
+  });
+
+  test('a message already ending in a question mark gets nothing extra before the hint', async ({ page }) => {
+    const alert = await refuse(page, 'Is a sync already running?', 'Wait for the running sync to end.');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.innerText())).toBe('Is a sync already running? Wait for the running sync to end.');
+  });
+
+  test('a message without a period and without a hint is rendered unchanged', async ({ page }) => {
+    const alert = await refuse(page, 'A sync is already running', '');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.innerText())).toBe('A sync is already running');
+  });
+});
