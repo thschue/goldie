@@ -568,6 +568,13 @@ eachViewport((width) => {
 
     test('a wrong token keeps the page shell-less and shows the alert in the card', async ({ page }) => {
       await page.goto('/signin');
+      // Stubbed, as the other per-viewport specs do: a real failure per width and theme would trip the
+      // sign-in limiter (10 per address per minute) and give a later sign-in a 429.
+      await page.route('**/api/v1/session', (route) =>
+        route.request().method() === 'POST'
+          ? route.fulfill({ status: 401, contentType: 'application/json', body: envelope('unauthorized', 'missing or invalid API token', 'Send a configured API token.') })
+          : route.continue(),
+      );
       await signIn(page, wrongToken);
       await expect(page.getByRole('main').getByRole('alert')).toContainText(wrongCopy);
       await expect(page.getByRole('navigation')).toHaveCount(0);
