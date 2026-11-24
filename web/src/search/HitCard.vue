@@ -34,7 +34,7 @@ const summary = computed(() => {
 
 <template>
   <li class="hit">
-    <RouterLink :to="to" class="link">
+    <RouterLink :to="to" class="link" :class="{ dashed: hit.status === 'draft' }">
       <!-- The name is a bare text node of the head, not an element of its own:
            the enforced chip stays the only element in the card whose text is
            "enforced", even for an Item whose name holds the word. -->
@@ -48,7 +48,7 @@ const summary = computed(() => {
           </svg>
           enforced
         </span>
-        <span v-if="hit.status === 'draft'" class="badge draft">draft</span>
+        <span v-if="hit.status === 'draft'" class="badge draft">draft · hidden from agents</span>
         <span v-else-if="hit.status === 'deprecated'" class="badge deprecated">
           deprecated<template v-if="hit.replaced_by"> → {{ hit.replaced_by }}</template>
         </span>
@@ -83,6 +83,9 @@ const summary = computed(() => {
   background: var(--surface-1);
   color: var(--fg-default);
   text-decoration: none;
+}
+.link.dashed {
+  border-style: dashed;
 }
 .link:hover {
   background: var(--surface-2);

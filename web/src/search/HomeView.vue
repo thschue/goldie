@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import HitCard from './HitCard.vue';
 import HomeGuide from './HomeGuide.vue';
 import { ApiError } from '../api/client';
+import { useLoad } from '../api/useLoad';
 import { ended } from '../auth/session';
 import SearchField from './SearchField.vue';
-import { queryOf, searchItems, searchKinds, type SearchHit } from './api';
+import { queryOf, searchItems, searchKinds } from './api';
 import { projectOf } from '../projects/api';
 
 // Home (handoff §3.2, §3.3): the question and the search field at `/`, the
@@ -28,65 +29,24 @@ const project = computed(() => projectOf(route.query));
 const draft = ref(query.value);
 const field = ref<InstanceType<typeof SearchField>>();
 
-type State =
-  | { kind: 'idle' }
-  | { kind: 'loading' }
-  | { kind: 'done'; hits: SearchHit[]; hint?: string }
-  | { kind: 'error'; message: string; hint?: string; limited?: boolean };
-const state = ref<State>({ kind: 'idle' });
+// One load through useLoad (#587): each search aborts the one before it, only the newest sets the
+// state, a search still loading after 300 ms shows the skeleton, and a 429 counts its Retry-After down.
+// The key is the search; no query is no search.
+const key = computed(() => (query.value ? JSON.stringify([query.value, kind.value, project.value]) : ''));
+const { state, data, failure, wait, skeleton, limited, retry } = useLoad(key, async (k, signal) => {
+  const [q, kd, p] = JSON.parse(k) as [string, string, string];
+  try {
+    return await searchItems(q, { kind: kd, project: p }, signal);
+  } catch (e) {
+    throw e instanceof ApiError ? e : new ApiError(0, "Couldn't load search results.");
+  }
+});
 // The Kind pills stay mounted while the next search loads, so a pressed pill keeps focus.
 const pillsUp = ref(false);
-const retries = ref(0);
-// A search still loading after 300 ms shows a skeleton (handoff §5.1: no flash for a fast answer).
-// A 429 counts its Retry-After down, and Retry stays disabled meanwhile (#731).
-const slow = ref(false);
-const wait = ref(0);
-let slowTimer: ReturnType<typeof setTimeout> | undefined;
-let ticker: ReturnType<typeof setInterval> | undefined;
-function settle() {
-  clearTimeout(slowTimer);
-  slow.value = false;
-}
-
-// Each search aborts the one before it, and only the newest may set the state:
-// a slow older answer never overwrites a newer one, nor the Home that followed.
-let current: AbortController | undefined;
-async function search(q: string, k: string, p: string) {
-  current?.abort();
-  current = undefined;
-  settle();
-  clearInterval(ticker);
-  wait.value = 0;
-  if (!q) {
-    state.value = { kind: 'idle' };
-    pillsUp.value = false;
-    return;
-  }
-  const mine = (current = new AbortController());
-  state.value = { kind: 'loading' };
-  slowTimer = setTimeout(() => (slow.value = true), 300);
-  try {
-    const { results, hint } = await searchItems(q, { kind: k, project: p }, mine.signal);
-    if (current !== mine) return;
-    settle();
-    state.value = { kind: 'done', hits: results, hint };
-    pillsUp.value = results.length > 0 || !!k;
-  } catch (e) {
-    if (current !== mine) return;
-    settle();
-    pillsUp.value = false;
-    if (e instanceof ApiError && e.status === 429) {
-      wait.value = e.retryAfter;
-      ticker = setInterval(() => {
-        if (--wait.value <= 0) clearInterval(ticker);
-      }, 1000);
-    }
-    state.value =
-      e instanceof ApiError
-        ? { kind: 'error', message: e.message, hint: e.status === 401 && ended.value ? undefined : e.hint, limited: e.status === 429 }
-        : { kind: 'error', message: "Couldn't load search results." };
-  }
-}
+watch(state, (s) => {
+  if (s === 'ready') pillsUp.value = (data.value?.results.length ?? 0) > 0 || !!kind.value;
+  else if (s === 'error' || s === 'idle') pillsUp.value = false;
+});
 
 // The query of this view's own navigation in flight. The auth guard asks the
 // session first, so it can land after the user has typed on: then the field
@@ -95,16 +55,17 @@ async function search(q: string, k: string, p: string) {
 let pending: string | undefined;
 
 watch(
-  [query, kind, project, retries],
-  ([q, k, p], old) => {
+  query,
+  (q, old) => {
     if (q === pending) pending = undefined;
-    else if (!old || q !== old[0]) draft.value = q;
-    void search(q, k, p);
+    else if (old === undefined || q !== old) draft.value = q;
   },
   { immediate: true },
 );
 
-const hits = computed(() => (state.value.kind === 'done' ? state.value.hits : []));
+// A 401 that ended a signed-in session says so elsewhere; its hint is not repeated here.
+const hint = computed(() => (failure.value?.status === 401 && ended.value ? undefined : failure.value?.hint));
+const hits = computed(() => data.value?.results ?? []);
 // Submit in JavaScript, through the router: the UI runs under form-action 'none'.
 // The Project stays in the address; a new query starts from All Kinds.
 // One navigation at a time: a newer one would cancel an older one still in the
@@ -137,24 +98,18 @@ async function clear() {
   field.value?.focus();
 }
 
-onBeforeUnmount(() => {
-  current?.abort();
-  current = undefined;
-  settle();
-  clearInterval(ticker);
-});
 </script>
 
 <template>
   <h1>What are you deciding today?</h1>
   <SearchField ref="field" v-model="draft" @submit="submit" @clear="clear" />
 
-  <div v-if="pillsUp && (state.kind === 'loading' || state.kind === 'done')" class="pills" role="group" aria-label="Filter by Kind">
+  <div v-if="pillsUp && (state === 'loading' || state === 'ready')" class="pills" role="group" aria-label="Filter by Kind">
     <button type="button" class="pill" :aria-pressed="!kind" @click="go(query)">All</button>
     <button v-for="k in searchKinds" :key="k" type="button" class="pill" :aria-pressed="kind === k" @click="go(query, k)">{{ k }}</button>
   </div>
 
-  <template v-if="state.kind === 'idle'">
+  <template v-if="state === 'idle'">
     <p class="chips">
       <span>Try:</span>
       <button v-for="w in suggestions" :key="w" type="button" class="chip" @click="pick(w)">{{ w }}</button>
@@ -163,27 +118,30 @@ onBeforeUnmount(() => {
   </template>
 
   <!-- Handoff §5.1: skeleton cards after 300 ms, never a spinner; nothing before. -->
-  <div v-else-if="state.kind === 'loading'" :class="{ hits: slow }" :aria-busy="slow ? 'true' : undefined">
-    <template v-if="slow">
-      <span role="status" class="sr-only">Searching…</span>
-      <div v-for="n in 3" :key="n" class="skeleton"></div>
-    </template>
+  <div v-else-if="skeleton" class="hits" aria-busy="true">
+    <span role="status" class="sr-only">Searching…</span>
+    <div v-for="n in 3" :key="n" class="skeleton"></div>
+  </div>
+  <template v-else-if="state === 'loading'" />
+
+  <div v-else-if="state === 'error' && limited" class="alert warning">
+    <!-- The sentence is announced once; the live number is hidden from the screen reader. -->
+    <p role="status">
+      <span class="sr-only">Too many requests. Try again shortly.</span>
+      <span aria-hidden="true">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</span>
+    </p>
+    <button type="button" class="retry" :disabled="wait > 0" @click="retry">Retry</button>
   </div>
 
-  <div v-else-if="state.kind === 'error' && state.limited" class="alert warning">
-    <p role="status">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</p>
-    <button type="button" class="retry" :disabled="wait > 0" @click="retries++">Retry</button>
+  <div v-else-if="state === 'error'" role="alert" class="alert">
+    <p class="alert-message">{{ failure?.message }}</p>
+    <p v-if="hint" class="alert-hint">{{ hint }}</p>
+    <button type="button" class="retry" @click="retry">Retry</button>
   </div>
 
-  <div v-else-if="state.kind === 'error'" role="alert" class="alert">
-    <p class="alert-message">{{ state.message }}</p>
-    <p v-if="state.hint" class="alert-hint">{{ state.hint }}</p>
-    <button type="button" class="retry" @click="retries++">Retry</button>
-  </div>
-
-  <template v-else-if="state.kind === 'done'">
+  <template v-else-if="state === 'ready'">
     <!-- The API's hint for an unregistered Project, as served and as text. -->
-    <p v-if="state.hint" class="hint-line">{{ state.hint }}</p>
+    <p v-if="data?.hint" class="hint-line">{{ data.hint }}</p>
     <!-- Handoff §5, "Empty Kind": a Kind that matches nothing is a neutral panel, not a Miss. -->
     <div v-if="!hits.length && kind" role="status" class="empty-kind">
       {{ project ? `No ${kind}s for ${project} yet.` : `No ${kind}s yet.` }}
