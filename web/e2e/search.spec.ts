@@ -456,14 +456,12 @@ test.describe('the Kind pills', () => {
 test.describe('search with a selected Project', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('sends q and project, never drafts, and shows the Project copy overriding the global one', async ({ page }) => {
+  // The request's parameters (q, project, kind, never drafts) are pinned in HomeView.test.ts.
+  test('shows the Project copy overriding the global one, from one search', async ({ page }) => {
     const calls = await stubScoped(page);
     await page.goto(`/?q=kubernetes&project=${encodeURIComponent(shop)}`);
     await expect(rows(page)).toHaveCount(5);
-    expect(calls).toHaveLength(1);
-    expect(calls[0].get('q')).toBe('kubernetes');
-    expect(calls[0].getAll('project')).toEqual([shop]);
-    expect(calls[0].has('drafts'), 'drafts is never sent by default').toBe(false);
+    expect(calls, 'one search per query').toHaveLength(1);
     const first = (await links(page).first().innerText()).replace(/\s+/g, ' ');
     expect(first).toContain('Deploying to Kubernetes (shop)');
     expect(first).toContain(shop);
@@ -471,31 +469,12 @@ test.describe('search with a selected Project', () => {
     await expect(main(page)).not.toContainText(/Deploying to Kubernetes(?! \(shop\))/);
   });
 
-  test('without a Project sends no project parameter at all, and no drafts', async ({ page }) => {
-    const calls = await stubScoped(page);
+  test('without a Project shows the global copy', async ({ page }) => {
+    await stubScoped(page);
     await page.goto('/?q=kubernetes');
     await expect(rows(page)).toHaveCount(5);
-    expect(calls[0].has('project'), 'a blank project is a 400').toBe(false);
-    expect(calls[0].has('drafts')).toBe(false);
-    expect(calls[0].has('kind')).toBe(false);
     await expect(links(page).first()).toContainText('Deploying to Kubernetes');
     expect((await links(page).first().innerText()).replace(/\s+/g, ' ')).not.toContain('(shop)');
-  });
-
-  test('a drafts parameter in the address is not passed on to the API', async ({ page }) => {
-    const calls = await stubScoped(page);
-    await page.goto('/?q=x&drafts=true');
-    await expect(rows(page)).toHaveCount(5);
-    expect(calls[0].has('drafts')).toBe(false);
-  });
-
-  test('a Project id with URL syntax in it travels as one encoded value', async ({ page }) => {
-    const calls = await stubScoped(page);
-    const odd = 'github.com/acme/re&po#x?kind=skill';
-    await page.goto(`/?q=x&project=${encodeURIComponent(odd)}`);
-    await expect(rows(page)).toHaveCount(5);
-    expect(calls[0].getAll('project')).toEqual([odd]);
-    expect(calls[0].has('kind'), 'the id did not smuggle a kind').toBe(false);
   });
 
   test('choosing a Project on the results searches again with it', async ({ page }) => {
