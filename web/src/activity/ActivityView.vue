@@ -31,6 +31,13 @@ const phase = ref<'connecting' | 'live' | 'reconnecting' | 'error'>('connecting'
 const kept = ref(false);
 const failed = ref<ApiError | Error>();
 const dropped = ref(false);
+// Handoff §5.1 (#877): a connect slower than 300 ms shows skeletons, never a spinner; a 429 counts
+// its Retry-After down with Retry disabled (the pattern of useLoad's `skeleton` and `wait`).
+const slow = ref(false);
+const wait = ref(0);
+let slowTimer: ReturnType<typeof setTimeout> | undefined;
+let ticker: ReturnType<typeof setInterval> | undefined;
+const skeleton = computed(() => phase.value === 'connecting' && slow.value);
 const paused = ref(false);
 const missesOnly = ref(false);
 const selected = ref<string>();
@@ -183,6 +190,11 @@ function apply(frames: Frame[]) {
 // marker has arrived.
 async function connect() {
   clearTimeout(retry);
+  clearTimeout(slowTimer);
+  clearInterval(ticker);
+  wait.value = 0;
+  slow.value = false;
+  slowTimer = setTimeout(() => (slow.value = true), 300);
   kept.value = false;
   attempts = 0;
   rows.value = [];
@@ -227,7 +239,16 @@ async function run() {
     kept.value = rows.value.length > 0 || fleet.value.size > 0;
     failed.value = e instanceof ApiError ? e : new Error("goldie isn't answering right now.");
     phase.value = 'error';
+    if (status.value === 429) countdown(e instanceof ApiError ? e.retryAfter : 0);
   }
+}
+
+function countdown(seconds: number) {
+  wait.value = seconds;
+  clearInterval(ticker);
+  ticker = setInterval(() => {
+    if (--wait.value <= 0) clearInterval(ticker);
+  }, 1000);
 }
 
 function togglePause() {
@@ -264,7 +285,10 @@ function announce() {
   announced.value = missCount.value;
   announcedAt = Date.now();
 }
-watch(phase, (p) => p === 'live' && announce());
+watch(phase, (p) => {
+  if (p !== 'connecting') clearTimeout(slowTimer);
+  if (p === 'live') announce();
+});
 watch(missCount, () => {
   if (phase.value !== 'live' || timer || missCount.value === announced.value) return;
   const wait = announcedAt + announceEvery - Date.now();
@@ -279,6 +303,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   controller?.abort();
   clearTimeout(retry);
+  clearTimeout(slowTimer);
+  clearInterval(ticker);
   clearTimeout(timer);
   clearInterval(tick);
   clearInterval(stageTick);
@@ -296,16 +322,17 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   <p v-if="status === 403" class="box" role="alert">This page is for operators.</p>
   <p v-else-if="status === 401" class="box" role="alert">Sign in to see what is being asked of goldie.</p>
   <div v-else-if="phase === 'error'" class="box danger" role="alert">
-    <p v-if="status === 429">Too many requests. Try again in a moment.</p>
+    <p v-if="status === 429">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</p>
     <p v-else-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
     <p v-else>Couldn't read the activity feed. {{ hint || 'Check your connection, then try again.' }}</p>
-    <button type="button" class="control" @click="connect">Retry</button>
+    <button type="button" class="control" :disabled="wait > 0" @click="connect">Retry</button>
   </div>
 
   <template v-if="phase !== 'error' || kept">
     <div class="bar">
       <p class="label">
-        <span v-if="phase === 'reconnecting'" class="dot idle" aria-hidden="true"></span>
+        <!-- Decorative: the words carry the state. Grey unless live (§3.6 item 1). -->
+        <span class="dot" :class="phase === 'live' && !paused ? 'live' : 'idle'" aria-hidden="true"></span>
         <!-- Always present, so the words reach a screen reader when they appear. -->
         <span role="status">{{ phase === 'reconnecting' ? 'Reconnecting…' : '' }}</span>
         <template v-if="phase === 'connecting'">Connecting to the replicas…</template>
@@ -321,7 +348,10 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 
     <section class="tiles" aria-label="Last five minutes">
       <h2>Last five minutes</h2>
-      <ul>
+      <div v-if="skeleton" class="skeletons" aria-busy="true">
+        <div v-for="n in 5" :key="n" class="skeleton tile"></div>
+      </div>
+      <ul v-else>
         <li>
           <span class="k">Requests</span>{{ ' ' }}
           <span class="v">{{ Math.round(last5.perMinute) }}<small> per minute</small></span>
@@ -405,7 +435,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           :aria-pressed="only === r.name"
           @click="choose(r.name)"
         >
-          <span class="dot" :class="{ off: !r.up }" aria-hidden="true"></span>{{ plain(r.name) }}
+          <span class="dot" :class="{ off: !r.up, down: !r.up }" aria-hidden="true"></span>{{ plain(r.name) }}
           <span class="state">{{ r.up ? 'up' : 'down' }}</span> <span class="count">{{ r.count }}</span>
         </button>
       </div>
@@ -426,6 +456,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
     <p v-else-if="phase === 'live' && !shown.length" class="box">
       Nothing matches these filters in the last five minutes.
     </p>
+    <div v-if="skeleton" class="skeletons rows" aria-busy="true">
+      <div v-for="n in 5" :key="n" class="skeleton row-sk"></div>
+    </div>
     <div v-if="shown.length || chosen" class="feed">
       <div v-if="shown.length" class="scroll" role="region" aria-label="Activity feed" tabindex="0">
         <table>
@@ -648,9 +681,36 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 .dot.idle {
   color: var(--fg-secondary);
 }
+.dot.live {
+  color: var(--ok-ink);
+}
+/* Not answering (§5.2): red, and still a ring so it is not colour alone. */
+.dot.down {
+  color: var(--danger-ink);
+}
 .dot.off {
   background: transparent;
   box-shadow: inset 0 0 0 2px currentColor;
+}
+.skeletons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+.skeleton {
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+}
+.skeleton.tile {
+  flex: 0 1 10rem;
+  min-height: 4.5rem;
+}
+.skeletons.rows {
+  flex-direction: column;
+}
+.skeleton.row-sk {
+  min-height: var(--target-min);
 }
 .late {
   display: block;
