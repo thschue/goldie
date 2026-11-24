@@ -118,7 +118,7 @@ onMounted(async () => {
   margin: 0 0 var(--space-4);
 }
 .id {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-md);
   color: var(--fg-secondary);
   overflow-wrap: anywhere;
@@ -132,9 +132,9 @@ onMounted(async () => {
   font-size: var(--text-sm);
 }
 .enforced {
-  border-color: var(--miss-border);
-  background: var(--miss-bg);
-  color: var(--miss-ink);
+  border-color: transparent;
+  background: var(--ok-bg);
+  color: var(--ok-ink);
   font-weight: 600;
 }
 .overrides {

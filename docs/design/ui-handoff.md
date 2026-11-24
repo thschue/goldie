@@ -115,6 +115,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 - The hero stays, with the query in the field and a clear button.
 - Kind filter pills (All, article, skill, agent, decision), plus "← Back to home". A pill sets `kind` on the API call and in the URL; there are no counts, since a count per Kind would need another call.
 - A result card shows Kind badge · name · Scope badge · lifecycle badges · match explanation, then a score bar, title, summary, and "Overrides `x` from global" when it shadows another Item.
+- **Built so far (#731):** Kind badge (mono), name, Scope badge, enforced, draft (dashed card, "draft · hidden from agents") and deprecated badges, the matched line, any "Overrides" lines, a summary only if a hit carries one (the API sends none yet), then an `aria-hidden` score bar with the score as text. "Enforced" is the `--ok-*` role on the card and the article; gold stays for a Miss and a deprecation. A search still loading after 300 ms shows three card skeletons (`aria-busy`); a 429 shows the countdown with Retry disabled.
 - Order: score, descending (exact keyword +4, name word +2, keyword substring +1). The `matched` text from the API is shown verbatim.
 
 ### 3.4 Item detail (`/items/article/:name`)
@@ -497,6 +498,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 |---|---|
 | Home question | What are you deciding today? |
 | Home sub-line | Same golden path your agents follow — `<n>` Items for `<project>`. |
+| Rate limited, countdown over | Too many requests — you can retry now. |
 | Search placeholder | database, logging, retries, feature flags… |
 | No results | **No golden path for “`<q>`” yet.** Try other words — Items are found by their keywords. This search was recorded as a **Miss**, so the platform team knows guidance is wanted here. |
 | Draft banner | **Draft preview.** Agents and API consumers can't see this yet. Merge with `status: published` to release it. |
