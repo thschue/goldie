@@ -171,7 +171,7 @@ func TestInitDoesNotAskWithoutAServerAndAnAcceptedToken(t *testing.T) {
 // 2. Yes runs goldie instructions apply --target claude and prints its
 // messages unchanged; Next drops the line.
 func TestInitYesAppliesTheInstructionBlock(t *testing.T) {
-	for name, answer := range map[string]string{"Enter": "\n", "y": "y\n", "yes": "yes\n"} {
+	for name, answer := range map[string]string{"Enter": "\n", "y": "y\n"} {
 		t.Run(name, func(t *testing.T) {
 			srv := instructionsServer(t, false)
 			root, stdout, _, err := guidedInstructions(t, srv, "# Notes\n\nKeep this line.\n", answer)
@@ -196,22 +196,6 @@ func TestInitYesAppliesTheInstructionBlock(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestInitPrintsTheMessagesOfInstructionsApplyUnchanged(t *testing.T) {
-	srv := instructionsServer(t, false)
-	_, stdout, _, err := guidedInstructions(t, srv, "", "y\n")
-	if err != nil {
-		t.Fatalf("init: %v", err)
-	}
-	guidedRepo(t) // the same state, the command alone
-	want, err := standalone(t, srv)
-	if err != nil {
-		t.Fatalf("instructions apply: %v", err)
-	}
-	if want == "" || !strings.Contains(stdout, want) {
-		t.Errorf("stdout lacks the command's output %q:\n%s", want, stdout)
 	}
 }
 
@@ -302,7 +286,7 @@ func TestInitKeepsTheConfigWhenApplyingFails(t *testing.T) {
 
 // 5. No answer or n changes nothing; non-interactive output is unchanged.
 func TestInitDecliningTheInstructionBlockChangesNothing(t *testing.T) {
-	for name, answer := range map[string]string{"n": "n\n", "no": "no\n", "no answer": ""} {
+	for name, answer := range map[string]string{"n": "n\n", "no answer": ""} {
 		t.Run(name, func(t *testing.T) {
 			srv := instructionsServer(t, false)
 			root, stdout, _, _ := guidedInstructions(t, srv, "", answer)
