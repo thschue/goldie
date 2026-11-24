@@ -8,7 +8,7 @@ import (
 // #306: the --dir / GOLDIE_DIR paragraph belongs to the CLI section of the
 // README, wrapped like its neighbours; the MCP section only points at it.
 func TestReadmeDirParagraphSitsUnderTheCLISection(t *testing.T) {
-	cli := readmeSection(t, "CLI")
+	cli := readmeSection(t, "cli.md", "CLI")
 	for _, want := range []string{"--dir", "GOLDIE_DIR", "embedded server"} {
 		if !strings.Contains(cli, want) {
 			t.Errorf("README section CLI does not document %q", want)
@@ -19,7 +19,7 @@ func TestReadmeDirParagraphSitsUnderTheCLISection(t *testing.T) {
 			t.Errorf("README section CLI line %d is %d characters, not wrapped like its neighbours: %.60s...", i+1, len(line), line)
 		}
 	}
-	mcp := readmeSection(t, "MCP over stdio")
+	mcp := readmeSection(t, "mcp.md", "MCP over stdio")
 	if !strings.Contains(mcp, "--dir") {
 		t.Error("README section MCP over stdio no longer points at --dir")
 	}

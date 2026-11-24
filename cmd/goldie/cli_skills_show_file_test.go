@@ -307,7 +307,7 @@ func TestCLISkillsShowFileMissDropsFormatCharactersAndEscapesFromServerText(t *t
 // mode, which directories, and mentions --file; the --dir sentence is split so
 // each sentence makes one point.
 func TestREADMEDocumentsSkillsShowFileAndWhatDirModeReads(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "reference", "cli.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
