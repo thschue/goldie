@@ -151,7 +151,7 @@ func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) [
 	} else {
 		published := map[string]Decision{}
 		for _, d := range s.Decisions(proj) {
-			published[strings.ToLower(d.Name)] = d
+			published[keyOf(KindDecision, d.Name).name] = d
 			if d.Status != StatusAccepted {
 				continue
 			}
@@ -161,14 +161,14 @@ func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) [
 		}
 		byName := make(map[string]Decision, len(all))
 		for _, d := range all {
-			byName[strings.ToLower(d.Name)] = d
+			byName[keyOf(KindDecision, d.Name).name] = d
 		}
 		for _, d := range all {
 			if d.Status != StatusSuperseded {
 				continue
 			}
 			end, ok := chainEnd(d, byName)
-			succ, served := published[strings.ToLower(end.Name)]
+			succ, served := published[keyOf(KindDecision, end.Name).name]
 			if !ok || !served || succ.Status != StatusAccepted {
 				continue
 			}
@@ -199,7 +199,7 @@ func scoredDecision(matched, shown Decision, words []string) Hit {
 func chainEnd(d Decision, byName map[string]Decision) (Decision, bool) {
 	seen := map[string]bool{}
 	for d.Status == StatusSuperseded {
-		key := strings.ToLower(d.Name)
+		key := keyOf(KindDecision, d.Name).name
 		if seen[key] {
 			return Decision{}, false
 		}
