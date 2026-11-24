@@ -26,6 +26,40 @@ export function resultText(e: ActivityEvent): string {
   return m ? `Miss · No ${m[1]} named ${m[2]}` : `Miss · No skill or agent named ${q}`;
 }
 
+// The surface an event came through (#810): the pills' vocabulary. An event without `via` (a replica
+// older than the field) belongs to none; a value this page does not know is Other.
+export const surfaces = ['mcp', 'cli', 'ui', 'other'] as const;
+export type Surface = (typeof surfaces)[number];
+export const surfaceLabel: Record<Surface, string> = { mcp: 'MCP', cli: 'CLI', ui: 'UI', other: 'Other' };
+
+export function surfaceOf(e: ActivityEvent): Surface | undefined {
+  if (!e.via) return undefined;
+  return (surfaces as readonly string[]).includes(e.via) ? (e.via as Surface) : 'other';
+}
+
+// A latency in microseconds as milliseconds with one decimal: "0.9 ms". Rounded on integers, so
+// 850 is 0.9, not the 0.8 that floating point gives.
+export const msText = (us: number) => `${(Math.round(us / 100) / 10).toFixed(1)} ms`;
+
+// clip cuts text to at most max code points, never inside a character, and marks the cut. Event
+// text is whatever a client sent, so no cell or detail field shows it unbounded.
+export const maxText = 200;
+export function clip(s: string, max = maxText): string {
+  let i = 0;
+  for (let n = 0; i < s.length && n < max; n++) i += s.codePointAt(i)! > 0xffff ? 2 : 1;
+  return i < s.length ? `${s.slice(0, i)}…` : s;
+}
+
+// Event text as shown: without invisible or bidirectional controls, and cut.
+export const shownText = (s: string | undefined) => clip(plain(s));
+
+// The Result cell (#810): the served Item as sent, "Served" from a replica that does not say which,
+// and for a miss the words that name the lack, besides Miss.
+export function itemText(e: ActivityEvent): string {
+  if (e.miss) return 'Miss · No Item matched';
+  return e.served ? shownText(e.served) : 'Served';
+}
+
 // add puts new events (oldest first, as the stream sends them) on top, newest first, and keeps
 // the newest maxRows. A reconnect starts from an empty list: the stream replays its history.
 export function add(rows: ActivityEvent[], fresh: ActivityEvent[]): ActivityEvent[] {
