@@ -301,8 +301,10 @@ test.describe('the header snippet', () => {
     test(`/assets/${slug} shows goldie pull --dry-run with a Copy command button`, async ({ page }) => {
       await page.goto(`/assets/${slug}`);
       const main = page.getByRole('main');
-      await expect(main.getByText('goldie pull --dry-run', { exact: true })).toBeVisible();
-      const copy = main.getByRole('button', { name: 'Copy command', exact: true });
+      const command = main.getByText('goldie pull --dry-run', { exact: true });
+      await expect(command).toBeVisible();
+      // The button beside the header command; the global cards and blocks below carry their own.
+      const copy = command.locator('xpath=following-sibling::button[@aria-label="Copy command"]');
       await expect(copy).toHaveCount(1);
       await expect(copy).toHaveAttribute('aria-label', 'Copy command');
       await expect(copy).toBeVisible();
@@ -471,7 +473,8 @@ test.describe('Projects registered, none selected', () => {
         return json(route, bodies[noun]);
       });
       await page.goto(`/assets/${noun}`);
-      await expect(page.getByRole('tabpanel').getByText(shows[noun])).toBeVisible();
+      const shown = noun === 'instructions' ? page.getByRole('tabpanel').getByText(shows[noun]) : page.getByRole('tabpanel').getByRole('heading', { level: 2, name: shows[noun], exact: true });
+      await expect(shown).toBeVisible();
       await expect(
         page.getByRole('main').getByText(`Pick a Project from the selector to see its ${noun}.`, { exact: true }),
       ).toHaveCount(1);
