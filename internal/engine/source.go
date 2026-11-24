@@ -74,6 +74,8 @@ type Article struct {
 	targets []string
 	// loop is a loop record's own fields (loops.go), nil for any other Kind.
 	loop *loopSpec
+	// decision is a decision record's own fields (decisions.go), nil for any other Kind.
+	decision *decisionSpec
 }
 
 // Source produces a Snapshot. DirSource is one; a git Source is another. A
@@ -457,6 +459,7 @@ type scopeItems struct {
 	articles     []Article // sorted by ID
 	agents       []Article // agent records, sorted by ID
 	loops        []Article // loop records, sorted by ID
+	decisions    []Article // decision records, sorted by ID
 	instructions []Article // instruction clauses, sorted by ID
 	skills       map[string]skillBundle
 	index        keyIndex // articles, agents, loops and instructions by itemKey
@@ -464,13 +467,15 @@ type scopeItems struct {
 
 // items lists pointers to the articles and agents, the Items that carry
 // lookups and can shadow or replace another.
-func (h scopeItems) items() []*Article { return pointers(nil, h.articles, h.agents, h.loops) }
+func (h scopeItems) items() []*Article {
+	return pointers(nil, h.articles, h.agents, h.loops, h.decisions)
+}
 
 // first returns the first Item of any Kind (article, agent, instruction) and
 // the directory name of the first skill, as written; each is nil or "" for
 // none. Claims use it, so every Kind is checked.
 func (h scopeItems) first() (*Article, string) {
-	return firstItem(h.articles, h.agents, h.loops, h.instructions), firstSkill(h.skills)
+	return firstItem(h.articles, h.agents, h.loops, h.decisions, h.instructions), firstSkill(h.skills)
 }
 
 // loadScope reads every Kind under root, a Scope's directory in fsys. what
@@ -494,6 +499,9 @@ func loadScope(fsys fs.FS, root, scope, what string) (scopeItems, error) {
 	if h.loops, err = loadLoops(fsys, root, scope, what); err != nil {
 		return h, err
 	}
+	if h.decisions, err = loadDecisions(fsys, root, scope, what); err != nil {
+		return h, err
+	}
 	if h.instructions, err = loadScopeKind(fsys, root+"/instructions", scope, what+" instructions", "instruction", parseClause); err != nil {
 		return h, err
 	}
@@ -501,7 +509,7 @@ func loadScope(fsys fs.FS, root, scope, what string) (scopeItems, error) {
 		return h, err
 	}
 	h.index = keyIndex{}
-	for _, l := range [][]Article{h.articles, h.agents, h.loops, h.instructions} {
+	for _, l := range [][]Article{h.articles, h.agents, h.loops, h.decisions, h.instructions} {
 		sortArticles(l)
 		h.index.add(l)
 	}
@@ -697,12 +705,14 @@ func (s *Snapshot) overridden(proj string, key itemKey, w *Article) []string {
 // local, then Project, then global. winner decides which copy of each itemKey
 // answers.
 func (s *Snapshot) resolutionOrder(proj, kind string) [][]Article {
-	pick := func(articles, agents, loops, instructions []Article) []Article {
+	pick := func(articles, agents, loops, decisions, instructions []Article) []Article {
 		switch kind {
 		case KindAgent:
 			return agents
 		case KindLoop:
 			return loops
+		case KindDecision:
+			return decisions
 		case KindInstruction:
 			return instructions
 		}
@@ -710,12 +720,12 @@ func (s *Snapshot) resolutionOrder(proj, kind string) [][]Article {
 	}
 	var lists [][]Article
 	if s.local != nil {
-		lists = append(lists, pick(s.local.articles, s.local.agents, s.local.loops, s.local.instructions))
+		lists = append(lists, pick(s.local.articles, s.local.agents, s.local.loops, s.local.decisions, s.local.instructions))
 	}
 	if p, ok := s.lookupProject(proj); ok {
-		lists = append(lists, pick(p.articles, p.agents, p.loops, p.instructions))
+		lists = append(lists, pick(p.articles, p.agents, p.loops, p.decisions, p.instructions))
 	}
-	return append(lists, pick(s.articles, s.agents, s.loops, s.instructions))
+	return append(lists, pick(s.articles, s.agents, s.loops, s.decisions, s.instructions))
 }
 
 func cloneArticle(a Article) Article {
