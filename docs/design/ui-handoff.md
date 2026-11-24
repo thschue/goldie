@@ -93,7 +93,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 - Top bar 64 px. Side nav 240–260 px. Content is fluid, with page padding of 32–40 px (desktop).
 - Content max widths: reading column 760 px (article), result list 940 px, ops pages full width.
-- **External links (↗)** are built only from `https:` or `http:` URLs. Links derived from a Source URL ("View source in git", "Start this article in the Source repo") never carry its credentials: userinfo is stripped, and a link that can't be built that way is hidden. Values inserted into a URL template (the `trace_id` in `GOLDIE_TRACE_URL_TEMPLATE`) are percent-encoded.
+- **External links (↗)** are built only from `https:` or `http:` URLs. Links derived from a Source URL ("View source in git", "Start this article in the Source repo", and the skill, agent and bare-name "Add this … to the Source repo") never carry its credentials: userinfo is stripped, and a link that can't be built that way is hidden. Values inserted into a URL template (the `trace_id` in `GOLDIE_TRACE_URL_TEMPLATE`) are percent-encoded.
 
 ### 3.2 Home (`/`, no query)
 
@@ -515,6 +515,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Agent miss, detail | Add this agent to the Source repo ↗ |
 | Bare-name get miss, detail | Add this skill or agent to the Source repo ↗ |
 | Article miss, detail (lookup) | Start this article in the Source repo ↗ |
+| Target of the four "Source repo ↗" lines above | One link, the same for skill, agent, bare-name and article misses: the web address of the Source the Scope maps to (#706), hidden when no Source applies. Today the API carries no Source URL, so it goes to `/ops/sources`. |
 | Source failing | Validation failed at `<rev>` — `<n>` error(s). Fix in the Source and merge — or run `goldie validate` locally before pushing. |
 | Sources intro | Failing Sources first. The number is preference order: on a collision within a Scope, the lower number wins. A failing Source keeps serving its last good Snapshot. |
 | Grafana links | Trends in Grafana ↗ · Usage over time in Grafana ↗ (hidden without `GOLDIE_GRAFANA_URL`) |
