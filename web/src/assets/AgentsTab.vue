@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useLoad } from '../api/useLoad';
+import { useAssetLoad } from './useAssetLoad';
 import ScopeBadge from '../components/ScopeBadge.vue';
 import { projectOf } from '../projects/api';
 import { agentPath, listAgents, plain } from './api';
@@ -12,7 +12,7 @@ import AssetList from './AssetList.vue';
 // Descriptions are Source text and render as text only.
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
-const { state, data, failure, wait, skeleton, limited, retry } = useLoad(project, listAgents);
+const { state, data, failure, wait, skeleton, limited, retry } = useAssetLoad(project, listAgents);
 const agents = computed(() => data.value?.agents ?? []);
 </script>
 
