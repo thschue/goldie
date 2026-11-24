@@ -1266,6 +1266,11 @@ export interface components {
              * @enum {string}
              */
             role: "reader" | "operator";
+            /**
+             * @description True when the server serves Swagger UI at /swagger-ui, so a client may link to it.
+             * @example true
+             */
+            swagger_ui: boolean;
         };
         /** @description How the last content load went, for operators. */
         SyncStatus: {
@@ -3021,7 +3026,8 @@ export interface operations {
                     /**
                      * @example {
                      *       "name": "ci-reader",
-                     *       "role": "reader"
+                     *       "role": "reader",
+                     *       "swagger_ui": true
                      *     }
                      */
                     "application/json": components["schemas"]["Session"];
@@ -3070,7 +3076,8 @@ export interface operations {
                     /**
                      * @example {
                      *       "name": "ci-reader",
-                     *       "role": "reader"
+                     *       "role": "reader",
+                     *       "swagger_ui": true
                      *     }
                      */
                     "application/json": components["schemas"]["Session"];

@@ -3,7 +3,7 @@
 // landmarks, the empty state and the top bar. Plus the nav, the routes and
 // the 1024 px change of the shell.
 import { expect, test, type Page, type Route } from '@playwright/test';
-import { eachViewport, evidence, expectNavCollapsed, menuButton, missingBrandFonts, problems, themeToggle, withNav } from './ux';
+import { eachViewport, evidence, expectFocusRing, expectNavCollapsed, menuButton, missingBrandFonts, openDrawer, problems, themeToggle, withNav } from './ux';
 
 const emptyCopy = /Nothing to show yet\. Content appears here as goldie[’']s pages come online\./;
 
@@ -97,7 +97,7 @@ eachViewport((width, theme) => {
     const nav = await withNav(page);
     await expect(nav).toHaveAttribute('aria-label', /.+/);
     const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Articles', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Articles', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions', 'API reference ↗']);
     const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
     const at = ['Home', 'Articles', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
       (s) => text.indexOf(s),
@@ -509,5 +509,59 @@ test.describe('the selected Project follows the user across pages', () => {
     await page.goto('/items/article/platform%2Fdeploy?q=%20');
     await expect(back(page)).toHaveCount(1);
     expect(parsed((await back(page).getAttribute('href'))!).searchParams.get('q')).toBe(' ');
+  });
+});
+
+// The API reference link (#802): the nav footer links to Swagger UI in a new
+// tab when the session says the server serves it. The session is stubbed so
+// both answers and both roles are seen.
+test.describe('the API reference link in the nav footer', () => {
+  const reference = (page: Page) => page.getByRole('navigation').getByRole('link', { name: 'API reference (opens in a new tab)', exact: true });
+
+  const stubSession = (page: Page, role: 'reader' | 'operator', swagger_ui: boolean) =>
+    page.route('**/api/v1/session', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: 'ci', role, swagger_ui }) })
+        : route.continue(),
+    );
+
+  for (const role of ['reader', 'operator'] as const) {
+    test(`a ${role} sees a plain new-tab link to /swagger-ui, after the other nav links`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await stubSession(page, role, true);
+      await page.goto('/');
+      const link = reference(page);
+      await expect(link).toHaveCount(1);
+      await expect(link).toHaveAttribute('href', '/swagger-ui');
+      await expect(link).toHaveAttribute('target', '_blank');
+      expect(((await link.getAttribute('rel')) ?? '').split(/\s+/)).toContain('noopener');
+      await expect(link, 'not a RouterLink: never marked current').not.toHaveAttribute('aria-current', /.*/);
+      await expect(link).toContainText('API reference');
+      await expect(link.locator('[aria-hidden="true"]')).toHaveText('↗');
+      const names = (await page.getByRole('navigation').getByRole('link').allTextContents()).map((n) => n.trim());
+      expect(names.at(-1), 'the footer link comes last').toContain('API reference');
+    });
+  }
+
+  test('the link is absent, not disabled, when the server does not serve Swagger UI', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await stubSession(page, 'operator', false);
+    await page.goto('/');
+    await withNav(page);
+    await expect(page.getByRole('navigation').getByRole('link', { name: /API reference/ })).toHaveCount(0);
+    await expect(page.getByRole('navigation')).not.toContainText('API reference');
+  });
+
+  test('at 375 px the link is in the drawer, reachable by keyboard with a focus ring, 44 px tall and axe-clean', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 700 });
+    await stubSession(page, 'reader', true);
+    await page.goto('/');
+    const drawer = await openDrawer(page);
+    const link = reference(page);
+    await expect(drawer.getByRole('link', { name: 'API reference (opens in a new tab)', exact: true })).toBeVisible();
+    for (let i = 0; i < 20 && !(await link.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+    await expectFocusRing(link);
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await evidence(page, 375, 'light', '-api-reference', 'shell');
   });
 });

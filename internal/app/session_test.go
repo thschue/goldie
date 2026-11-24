@@ -174,8 +174,8 @@ func readSession(t *testing.T, body []byte) sessionBody {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		t.Fatalf("body is not JSON: %v: %s", err, body)
 	}
-	if len(raw) != 2 {
-		t.Errorf("session body has keys %v, want exactly name and role", raw)
+	if _, ok := raw["swagger_ui"].(bool); !ok || len(raw) != 3 {
+		t.Errorf("session body has keys %v, want exactly name, role and a boolean swagger_ui", raw)
 	}
 	var s sessionBody
 	if err := json.Unmarshal(body, &s); err != nil {
@@ -661,4 +661,50 @@ func TestSessionLifetimeSlidesWithUseAndEndsAtTheAbsoluteCap(t *testing.T) {
 			}
 		})
 	})
+}
+
+// The session says whether the server serves Swagger UI (#802), so the web UI
+// links to it only when it is there. POST and GET agree, and
+// GOLDIE_SWAGGER_UI_ENABLED=false turns it off.
+func TestSessionReportsWhetherSwaggerUIIsServed(t *testing.T) {
+	for name, c := range map[string]struct {
+		extra map[string]string
+		want  bool
+	}{
+		"on by default": {nil, true},
+		"switched off":  {map[string]string{platform.EnvSwaggerUIEnabled: "false"}, false},
+	} {
+		extra := map[string]string{"GOLDIE_SESSION_KEY": sessionKey}
+		for k, v := range c.extra {
+			extra[k] = v
+		}
+		h, err := PublicHandler(sessionConfig(t, namedTokenLines(), extra), nil)
+		if err != nil {
+			t.Fatalf("PublicHandler: %v", err)
+		}
+		resp, body := signIn(t, h, secureBase, readerToken)
+		assertStatus(t, name+": sign-in", resp, body, http.StatusOK)
+		if got := swaggerUIOf(t, body); got != c.want {
+			t.Errorf("%s: POST session swagger_ui = %v, want %v: %s", name, got, c.want, body)
+		}
+		resp, body = send(t, h, http.MethodGet, secureBase+sessionPath, withCookie(theCookie(t, resp)))
+		assertStatus(t, name+": GET session", resp, body, http.StatusOK)
+		if got := swaggerUIOf(t, body); got != c.want {
+			t.Errorf("%s: GET session swagger_ui = %v, want %v: %s", name, got, c.want, body)
+		}
+	}
+}
+
+// swaggerUIOf is the required boolean swagger_ui of a session body.
+func swaggerUIOf(t *testing.T, body []byte) bool {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("body is not JSON: %v: %s", err, body)
+	}
+	v, ok := raw["swagger_ui"].(bool)
+	if !ok {
+		t.Fatalf("session body has no boolean swagger_ui: %s", body)
+	}
+	return v
 }

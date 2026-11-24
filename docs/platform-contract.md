@@ -75,10 +75,10 @@ and running `./run regen`.
 - Swagger UI is served at `/swagger-ui` on the public listener, from assets embedded in the binary
   (no CDN), and renders only the spec this server serves. `GOLDIE_SWAGGER_UI_ENABLED=false` turns it
   off (404). It is registered on the same mux as the API and takes the same Bearer token (see
-  below). A browser does not add that header by itself, so opening the page needs a reverse proxy
-  or a browser extension that adds `Authorization: Bearer <token>` to every request, the page's
-  fetch of `/openapi.json` included. The page never embeds or stores the token. "Authorize" sets the
-  token for "Try it out".
+  below). A signed-in session cookie opens `/swagger-ui` and `/openapi.json`; only a client
+  without a session sends `Authorization: Bearer <token>`. The page never embeds or stores the token.
+  "Authorize" sets the token for "Try it out", which writes need, since a cookie alone lacks the CSRF
+  header.
 - `goldie server` needs `GOLDIE_CONTENT_DIR` (the `dir` Source, loaded at startup) and exactly one
   of `GOLDIE_API_TOKENS` and `GOLDIE_API_TOKEN`, best set through their `_FILE` forms.
   `GOLDIE_API_TOKENS` holds ADR 0008's named tokens with Roles, one per line: `name:role:token`, or

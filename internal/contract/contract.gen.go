@@ -986,6 +986,11 @@ type Session struct {
 	//
 	// Examples: reader
 	Role SessionRole `json:"role"`
+
+	// SwaggerUi True when the server serves Swagger UI at /swagger-ui, so a client may link to it.
+	//
+	// Examples: true
+	SwaggerUi bool `json:"swagger_ui"`
 }
 
 // SessionRole The token's role, read from the configuration now. Clients ignore values they do not know.

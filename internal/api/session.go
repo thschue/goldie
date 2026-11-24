@@ -244,6 +244,10 @@ func SessionEntry(next http.Handler) http.Handler {
 // which must have been through Tokens.WithSessions.
 func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.tokens = tokens } }
 
+// WithSwaggerUI sets the swagger_ui field of the session: whether the server
+// serves Swagger UI, so the web UI links to it only when it is there.
+func WithSwaggerUI(on bool) ServerOption { return func(s *Server) { s.swaggerUI = on } }
+
 // Sign-in and sign-out take no token, so neither reaches the per-token rate
 // limiter or the version gate (ADR 0027); failed sign-ins are capped per
 // remote address by SignInLimiter.
@@ -265,7 +269,7 @@ func (s *Server) PostSession(ctx context.Context, req contract.PostSessionReques
 		return contract.PostSession401JSONResponse(unauthorizedSignIn), nil
 	}
 	e := s.tokens.entries[match]
-	return contract.PostSession200JSONResponse{Name: e.name, Role: contract.SessionRole(e.role.String())}, nil
+	return contract.PostSession200JSONResponse{Name: e.name, Role: contract.SessionRole(e.role.String()), SwaggerUi: s.swaggerUI}, nil
 }
 
 func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObject) (contract.GetSessionResponseObject, error) {
@@ -277,7 +281,7 @@ func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObj
 	if !ok || !ok2 {
 		return contract.GetSession401JSONResponse(unauthorizedSession), nil
 	}
-	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String())}, nil
+	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String()), SwaggerUi: s.swaggerUI}, nil
 }
 
 func (s *Server) DeleteSession(context.Context, contract.DeleteSessionRequestObject) (contract.DeleteSessionResponseObject, error) {

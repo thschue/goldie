@@ -68,6 +68,14 @@ More in the [CLI reference](docs/reference/cli.md#run-a-server-over-your-own-con
 **3. Open the UI.** Go to the address in that line and sign in with the token. A binary built without
 `./run ui` shows only the "goldie (UI not built)" placeholder; the CLI and MCP still work.
 
+The server publishes its OpenAPI 3.1 contract at `/openapi.yaml` and `/openapi.json`, behind the same
+Bearer token as the API (at least the `reader` Role). The source is `internal/contract/openapi.yaml`;
+`./run lint-spec` lints it. Swagger UI at `/swagger-ui` (`GOLDIE_SWAGGER_UI_ENABLED=false` turns it
+off) takes the same token. A signed-in browser session opens Swagger UI and `/openapi.json` without
+further setup, and the web UI links to it. A client without a session sends
+`Authorization: Bearer <token>`. "Try it out" for writes needs the Authorize button, because a
+session cookie alone cannot write to the API.
+
 **4. Search** from the shell where you pasted the line:
 
 ```sh

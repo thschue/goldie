@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +152,31 @@ func TestModeUISigningInThroughTheProxyGivesAWorkingSession(t *testing.T) {
 	resp, body = uiDo(t, http.MethodGet, srv.URL+sessionSearch, withCookie(cookie))
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("GET search with the session cookie through the proxy: status %d, want 200: %s", resp.StatusCode, body)
+	}
+}
+
+// In mode ui the session call is proxied, so swagger_ui is the upstream's
+// (#802): a UI server in front of an upstream with Swagger UI off reports false.
+func TestModeUISessionReportsTheUpstreamsSwaggerUI(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		cfg := sessionConfig(t, "ci:operator:"+operatorToken, map[string]string{
+			"GOLDIE_SESSION_KEY":         sessionKey,
+			platform.EnvSwaggerUIEnabled: strconv.FormatBool(on),
+		})
+		h, err := PublicHandler(cfg, nil)
+		if err != nil {
+			t.Fatalf("upstream PublicHandler: %v", err)
+		}
+		upstream := httptest.NewServer(h)
+		t.Cleanup(upstream.Close)
+		srv := uiModeServer(t, upstream.URL)
+		resp, body := uiDo(t, http.MethodGet, srv.URL+sessionPath, bearer(operatorToken))
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET session through the proxy: status %d: %s", resp.StatusCode, body)
+		}
+		if got := swaggerUIOf(t, body); got != on {
+			t.Errorf("upstream swagger UI %v: session through the proxy says %v: %s", on, got, body)
+		}
 	}
 }
 

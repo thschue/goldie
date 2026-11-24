@@ -140,6 +140,7 @@ type Server struct {
 	fedDown   downSet                   // peers already logged as down
 	sync      SyncControl               // see WithSync, nil lists no Source
 	tokens    *Tokens                   // see WithSessions, nil: no sign-in
+	swaggerUI bool                      // see WithSwaggerUI
 
 	instructionVars engine.InstructionVars // see WithInstructionVars
 

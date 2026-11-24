@@ -42,6 +42,7 @@ Side nav: Home
 - The **Project selector** is global. It is detected from the repo when the UI is opened from the CLI (`goldie open`) and is otherwise chosen by the user. It sets the Project for every page and shows `registered` / `unregistered`. The listbox starts with 'All projects (global guidance)', which clears the Project.
 - **Operator-only items are absent for readers, not disabled.** Readers see the *Reader nav note* (§8) in the nav instead.
 - The footer of the nav shows the serving replica and the version.
+- The nav footer also holds **API reference ↗**, a reader link to `/swagger-ui` in a new tab, shown only when the server serves Swagger UI.
 
 ### 2.2 Routes (proposal)
 
@@ -94,6 +95,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 - Top bar 64 px. Side nav 240–260 px. Content is fluid, with page padding of 32–40 px (desktop).
 - Content max widths: reading column 760 px (article), result list 940 px, ops pages full width.
+- **Built so far (#802):** the nav footer holds **API reference ↗**, a plain `<a href="/swagger-ui" target="_blank" rel="noopener">` (not a RouterLink) after the other nav links, for readers and operators. It shows only when the session's `swagger_ui` is true (`GET` and `POST /api/v1/session`); with `GOLDIE_SWAGGER_UI_ENABLED=false`, or an upstream that has it off in UI mode, it is absent. The replica and version line is not built yet, so the link is last. A session cookie opens `/swagger-ui` and `/openapi.json`; writes from "Try it out" need the Authorize button.
 - **External links (↗)** are built only from `https:` or `http:` URLs. Links derived from a Source URL ("View source in git", "Start this article in the Source repo", and the skill, agent and bare-name "Add this … to the Source repo" (from #706; until then the link is `/ops/sources` and carries no Source URL)) never carry its credentials: userinfo is stripped, and a link that can't be built that way is hidden. Values inserted into a URL template (the `trace_id` in `GOLDIE_TRACE_URL_TEMPLATE`) are percent-encoded.
 
 ### 3.2 Home (`/`, no query)
@@ -511,6 +513,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | requires_sync | Contains scripts, so agents won't run it from text. Run `goldie pull` to install it. |
 | Back to articles | ← Back to articles (an article opened from the index, `from=articles`; back to `/articles` with the Project. From a search it stays "← Back to search", otherwise "← Back to home".) |
 | Articles global note | Global guidance. Choose a Project to include its articles. (A note after the `/articles` `h1` when no Project is selected; absent with one.) |
+| API reference link | API reference ↗ (accessible name: API reference (opens in a new tab); the ↗ is `aria-hidden`; absent, not disabled, when the server does not serve Swagger UI) |
 | Reader nav note | Reader view: Activity and Sources are for operators and aren't shown. |
 | Empty state | Nothing to show yet. Content appears here as goldie's pages come online. (A neutral `role="status"` panel under the page's `h1`, on every §2.2 route whose screen isn't built yet; Home's `h1` is the *Home question*.) |
 | Not found | **Page not found** — There's no page at this address. Check the link, or start again from Home. — link: Go to Home (to `/`). The `h1` is the first line; no other chrome changes. |

@@ -1,11 +1,14 @@
 // AppShell's role variants (#166, handoff §2.1, §5.3): readers never see the
 // Operate group, operators do. Rendered with Vue's server renderer, so the
 // test needs no DOM emulation; the browser behaviour is in web/e2e.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { session, type Session } from '../auth/session';
 import { routes } from '../router';
+import handoff from '../../../docs/design/ui-handoff.md?raw';
+import readme from '../../../README.md?raw';
 import AppShell from './AppShell.vue';
 
 const readerNote = "Reader view: Activity and Sources are for operators and aren't shown.";
@@ -101,5 +104,51 @@ describe('AppShell', () => {
     const { nav } = await render({}, '/items/article/platform%2Fdeploy');
     expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
     expect(current(nav, '/articles')).toBe(true);
+  });
+});
+
+// The API reference link (#802): a plain link to Swagger UI in the nav footer,
+// shown only when the session says the server serves it (swagger_ui).
+describe('AppShell API reference link', () => {
+  const asSession = (role: 'reader' | 'operator', swagger_ui: boolean) => {
+    session.value = { name: 'ci', role, swagger_ui } as Session;
+  };
+  afterEach(() => {
+    session.value = null;
+  });
+  const anchor = (nav: string) => /<a [^>]*href="\/swagger-ui"[^>]*>[\s\S]*?<\/a>/.exec(nav)?.[0] ?? '';
+
+  for (const role of ['reader', 'operator'] as const) {
+    it(`is a plain new-tab link to /swagger-ui for a ${role}, after the other nav links`, async () => {
+      asSession(role, true);
+      const { nav } = await render({ role });
+      const a = anchor(nav);
+      expect(a, 'the link is in the nav').not.toBe('');
+      expect(a).toContain('target="_blank"');
+      expect(a).toMatch(/rel="[^"]*\bnoopener\b[^"]*"/);
+      expect(a, 'a plain anchor, not a RouterLink').not.toContain('aria-current');
+      expect(a).toContain('API reference');
+      expect(a).toMatch(/<[a-z]+ [^>]*aria-hidden="true"[^>]*>\s*↗\s*<\/[a-z]+>/);
+      expect(nav.indexOf('/swagger-ui'), 'in the footer, after the Instructions link').toBeGreaterThan(nav.indexOf('/assets/instructions'));
+    });
+  }
+
+  it('is in the design record and the README says a signed-in browser opens Swagger UI', () => {
+    expect(handoff).toContain(
+      'The nav footer also holds **API reference ↗**, a reader link to `/swagger-ui` in a new tab, shown only when the server serves Swagger UI.',
+    );
+    expect(handoff, 'the Built so far line').toContain('**Built so far (#802):**');
+    expect(handoff, 'the §8 copy entry').toContain('API reference (opens in a new tab)');
+    expect(readme).not.toContain('A browser does not send it by');
+    expect(readme).not.toContain('reverse proxy or a browser extension');
+    expect(readme).toMatch(/signed-in browser session/i);
+    expect(readme).toContain('Authorize');
+  });
+
+  it('is absent, not disabled, when the server does not serve Swagger UI', async () => {
+    asSession('operator', false);
+    const { nav } = await render({ role: 'operator' });
+    expect(nav).not.toContain('/swagger-ui');
+    expect(nav).not.toContain('API reference');
   });
 });

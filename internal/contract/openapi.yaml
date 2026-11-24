@@ -1260,6 +1260,7 @@ paths:
               example:
                 name: ci-reader
                 role: reader
+                swagger_ui: true
         "401":
           description: The body holds no configured token.
           content:
@@ -1306,6 +1307,7 @@ paths:
               example:
                 name: ci-reader
                 role: reader
+                swagger_ui: true
         "401":
           description: No valid session cookie or bearer token was sent.
           content:
@@ -2409,6 +2411,7 @@ components:
       required:
         - name
         - role
+        - swagger_ui
       additionalProperties: false
       properties:
         name:
@@ -2424,6 +2427,11 @@ components:
           enum:
             - reader
             - operator
+        swagger_ui:
+          type: boolean
+          description: True when the server serves Swagger UI at /swagger-ui, so a client may link to it.
+          examples:
+            - true
     SyncStatus:
       type: object
       description: How the last content load went, for operators.
