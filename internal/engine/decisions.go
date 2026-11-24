@@ -89,7 +89,7 @@ func parseDecision(name string, raw []byte) (Article, error) {
 		return Article{}, errors.New("title holds a hidden or control character")
 	}
 	status, ok := scalar(meta.Status, "!!str")
-	if !ok || !slices.Contains([]string{StatusProposed, StatusAccepted, StatusRejected, StatusDeprecated, StatusSuperseded}, status) {
+	if !ok || !slices.Contains(DecisionStatuses(), status) {
 		return Article{}, errors.New("status must be proposed, accepted, rejected, deprecated or superseded")
 	}
 	date, ok := scalar(meta.Date, "!!timestamp")
@@ -244,4 +244,9 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 		cur = next
 	}
 	return chain, true
+}
+
+// DecisionStatuses returns the valid statuses of a decision.
+func DecisionStatuses() []string {
+	return []string{StatusProposed, StatusAccepted, StatusRejected, StatusDeprecated, StatusSuperseded}
 }

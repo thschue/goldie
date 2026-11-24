@@ -69,33 +69,6 @@ func (e DecisionStatus) Valid() bool {
 	}
 }
 
-// Defines values for DecisionChainEntryStatus.
-const (
-	DecisionChainEntryStatusAccepted   DecisionChainEntryStatus = "accepted"
-	DecisionChainEntryStatusDeprecated DecisionChainEntryStatus = "deprecated"
-	DecisionChainEntryStatusProposed   DecisionChainEntryStatus = "proposed"
-	DecisionChainEntryStatusRejected   DecisionChainEntryStatus = "rejected"
-	DecisionChainEntryStatusSuperseded DecisionChainEntryStatus = "superseded"
-)
-
-// Valid indicates whether the value is a known member of the DecisionChainEntryStatus enum.
-func (e DecisionChainEntryStatus) Valid() bool {
-	switch e {
-	case DecisionChainEntryStatusAccepted:
-		return true
-	case DecisionChainEntryStatusDeprecated:
-		return true
-	case DecisionChainEntryStatusProposed:
-		return true
-	case DecisionChainEntryStatusRejected:
-		return true
-	case DecisionChainEntryStatusSuperseded:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ItemStatus.
 const (
 	ItemStatusDeprecated ItemStatus = "deprecated"
@@ -152,13 +125,43 @@ func (e SessionRole) Valid() bool {
 
 // Defines values for GetActivityParamsReplicas.
 const (
-	All GetActivityParamsReplicas = "all"
+	GetActivityParamsReplicasAll GetActivityParamsReplicas = "all"
 )
 
 // Valid indicates whether the value is a known member of the GetActivityParamsReplicas enum.
 func (e GetActivityParamsReplicas) Valid() bool {
 	switch e {
-	case All:
+	case GetActivityParamsReplicasAll:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListDecisionsParamsStatus.
+const (
+	ListDecisionsParamsStatusAccepted   ListDecisionsParamsStatus = "accepted"
+	ListDecisionsParamsStatusAll        ListDecisionsParamsStatus = "all"
+	ListDecisionsParamsStatusDeprecated ListDecisionsParamsStatus = "deprecated"
+	ListDecisionsParamsStatusProposed   ListDecisionsParamsStatus = "proposed"
+	ListDecisionsParamsStatusRejected   ListDecisionsParamsStatus = "rejected"
+	ListDecisionsParamsStatusSuperseded ListDecisionsParamsStatus = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the ListDecisionsParamsStatus enum.
+func (e ListDecisionsParamsStatus) Valid() bool {
+	switch e {
+	case ListDecisionsParamsStatusAccepted:
+		return true
+	case ListDecisionsParamsStatusAll:
+		return true
+	case ListDecisionsParamsStatusDeprecated:
+		return true
+	case ListDecisionsParamsStatusProposed:
+		return true
+	case ListDecisionsParamsStatusRejected:
+		return true
+	case ListDecisionsParamsStatusSuperseded:
 		return true
 	default:
 		return false
@@ -461,7 +464,13 @@ type Decision struct {
 	Name string `json:"name"`
 
 	// Scope `global`, `local`, or the Project that holds the decision.
-	Scope  string         `json:"scope"`
+	Scope string `json:"scope"`
+
+	// Status A decision's status. Only `accepted` is listed by default. Clients ignore
+	// values they do not know.
+	//
+	//
+	// Examples: accepted
 	Status DecisionStatus `json:"status"`
 
 	// SupersededBy The decision that replaces this one, as `decision:<name>`; empty when none does.
@@ -474,23 +483,23 @@ type Decision struct {
 	Title string `json:"title"`
 }
 
-// DecisionStatus defines model for Decision.Status.
-type DecisionStatus string
-
 // DecisionChainEntry One decision in a supersession chain.
 type DecisionChainEntry struct {
 	Name string `json:"name"`
 
 	// Scope The Scope of this entry: `global`, `local`, or a Project.
-	Scope  string                   `json:"scope"`
-	Status DecisionChainEntryStatus `json:"status"`
+	Scope string `json:"scope"`
+
+	// Status A decision's status. Only `accepted` is listed by default. Clients ignore
+	// values they do not know.
+	//
+	//
+	// Examples: accepted
+	Status DecisionStatus `json:"status"`
 
 	// Title Examples: Use PostgreSQL for the shop database
 	Title string `json:"title"`
 }
-
-// DecisionChainEntryStatus defines model for DecisionChainEntry.Status.
-type DecisionChainEntryStatus string
 
 // DecisionList The decisions that answer in a view.
 //
@@ -503,6 +512,12 @@ type DecisionList struct {
 	// decision list answer is the global one, and this says what to do next.
 	Hint *string `json:"hint,omitempty"`
 }
+
+// DecisionStatus A decision's status. Only `accepted` is listed by default. Clients ignore
+// values they do not know.
+//
+// Examples: accepted
+type DecisionStatus string
 
 // Error One error. It never contains addresses, paths or stack traces.
 type Error struct {
@@ -1117,7 +1132,7 @@ type ListDecisionsParams struct {
 	// Status The status to list: `accepted` (the default), `proposed`, `rejected`,
 	// `deprecated`, `superseded`, or `all` for every status. Any other value is
 	// a 400 that does not repeat it.
-	Status *string `form:"status,omitempty" json:"status,omitempty"`
+	Status *ListDecisionsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 
 	// Project Resolve for this Project (ADR 0020): its own decision wins over the global
 	// one with the same name. Matched ignoring case. An unregistered Project
@@ -1133,6 +1148,9 @@ type ListDecisionsParams struct {
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
+
+// ListDecisionsParamsStatus defines parameters for ListDecisions.
+type ListDecisionsParamsStatus string
 
 // GetDecisionParams defines parameters for GetDecision.
 type GetDecisionParams struct {
@@ -1462,7 +1480,8 @@ type ClientInterface interface {
 	// Returns the decisions that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins. Only accepted decisions are listed unless
 	// `status` asks for another status. A reader may use `status`; it is not the
-	// operator-only `drafts` parameter.
+	// operator-only `drafts` parameter. The valid `status` values are `accepted`,
+	// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
 	//
 	// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
 	ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1892,7 +1911,8 @@ func (c *Client) GetBundle(ctx context.Context, params *GetBundleParams, reqEdit
 // Returns the decisions that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins. Only accepted decisions are listed unless
 // `status` asks for another status. A reader may use `status`; it is not the
-// operator-only `drafts` parameter.
+// operator-only `drafts` parameter. The valid `status` values are `accepted`,
+// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
 //
 // Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
 func (c *Client) ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3822,7 +3842,8 @@ type ClientWithResponsesInterface interface {
 	// Returns the decisions that answer in the Project's view, sorted by name, one
 	// per name: the nearest Scope wins. Only accepted decisions are listed unless
 	// `status` asks for another status. A reader may use `status`; it is not the
-	// operator-only `drafts` parameter.
+	// operator-only `drafts` parameter. The valid `status` values are `accepted`,
+	// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -6424,7 +6445,8 @@ func (c *ClientWithResponses) GetBundleWithResponse(ctx context.Context, params 
 // Returns the decisions that answer in the Project's view, sorted by name, one
 // per name: the nearest Scope wins. Only accepted decisions are listed unless
 // `status` asks for another status. A reader may use `status`; it is not the
-// operator-only `drafts` parameter.
+// operator-only `drafts` parameter. The valid `status` values are `accepted`,
+// `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
 //
 // Returns a wrapper object for the known response body format(s).
 //

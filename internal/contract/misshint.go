@@ -14,7 +14,7 @@ const (
 	SkillMissHint    = "List the skills, then use a name from the list."
 	AgentMissHint    = "List the agents, then use a name from the list."
 	LoopMissHint     = "List the loops, then use a name from the list."
-	DecisionMissHint = "List the decisions, then use a name from the list."
+	DecisionMissHint = "List the decisions (add status=all for the others), then use a name from the list."
 )
 
 // RewordMiss sets the hint of a not_found APIError in err to reworded when it

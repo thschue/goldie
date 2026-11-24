@@ -228,7 +228,8 @@ export interface paths {
          * @description Returns the decisions that answer in the Project's view, sorted by name, one
          *     per name: the nearest Scope wins. Only accepted decisions are listed unless
          *     `status` asks for another status. A reader may use `status`; it is not the
-         *     operator-only `drafts` parameter.
+         *     operator-only `drafts` parameter. The valid `status` values are `accepted`,
+         *     `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
          */
         get: operations["listDecisions"];
         put?: never;
@@ -968,13 +969,19 @@ export interface components {
              */
             hint?: string;
         };
+        /**
+         * @description A decision's status. Only `accepted` is listed by default. Clients ignore
+         *     values they do not know.
+         * @example accepted
+         * @enum {string}
+         */
+        DecisionStatus: "proposed" | "accepted" | "rejected" | "deprecated" | "superseded";
         /** @description One decision in a supersession chain. */
         DecisionChainEntry: {
             name: string;
             /** @example Use PostgreSQL for the shop database */
             title: string;
-            /** @enum {string} */
-            status: "proposed" | "accepted" | "rejected" | "deprecated" | "superseded";
+            status: components["schemas"]["DecisionStatus"];
             /** @description The Scope of this entry: `global`, `local`, or a Project. */
             scope: string;
         };
@@ -1000,8 +1007,7 @@ export interface components {
             name: string;
             /** @example Use PostgreSQL for the shop database */
             title: string;
-            /** @enum {string} */
-            status: "proposed" | "accepted" | "rejected" | "deprecated" | "superseded";
+            status: components["schemas"]["DecisionStatus"];
             /**
              * @description The decision date, YYYY-MM-DD.
              * @example 2023-05-02
@@ -2356,7 +2362,7 @@ export interface operations {
                  *     `deprecated`, `superseded`, or `all` for every status. Any other value is
                  *     a 400 that does not repeat it.
                  */
-                status?: string;
+                status?: "accepted" | "proposed" | "rejected" | "deprecated" | "superseded" | "all";
                 /**
                  * @description Resolve for this Project (ADR 0020): its own decision wins over the global
                  *     one with the same name. Matched ignoring case. An unregistered Project

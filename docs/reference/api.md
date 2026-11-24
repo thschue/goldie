@@ -188,7 +188,8 @@ List the decisions
 Returns the decisions that answer in the Project's view, sorted by name, one
 per name: the nearest Scope wins. Only accepted decisions are listed unless
 `status` asks for another status. A reader may use `status`; it is not the
-operator-only `drafts` parameter.
+operator-only `drafts` parameter. The valid `status` values are `accepted`,
+`proposed`, `rejected`, `deprecated`, `superseded` and `all`.
 
 Operation ID: `listDecisions`
 
@@ -734,7 +735,7 @@ One decision record. A get also carries `content` and `chain`.
 | `keywords` | `array` | yes |  |
 | `name` | `string` | yes |  |
 | `scope` | `string` | yes | 'global', 'local', or the Project that holds the decision. |
-| `status` | `string` | yes |  |
+| `status` | `DecisionStatus` | yes |  |
 | `superseded_by` | `string` | yes | The decision that replaces this one, as 'decision:&lt;name&gt;'; empty when none does. |
 | `supersedes` | `array` | yes | The decisions this one replaces, as 'decision:&lt;name&gt;'. |
 | `title` | `string` | yes |  |
@@ -747,7 +748,7 @@ One decision in a supersession chain.
 |---|---|---|---|
 | `name` | `string` | yes |  |
 | `scope` | `string` | yes | The Scope of this entry: 'global', 'local', or a Project. |
-| `status` | `string` | yes |  |
+| `status` | `DecisionStatus` | yes |  |
 | `title` | `string` | yes |  |
 
 ### `DecisionList`
@@ -758,6 +759,11 @@ The decisions that answer in a view.
 |---|---|---|---|
 | `decisions` | `array` | yes | The decisions, sorted by name. |
 | `hint` | `string` | no | Present when the request named a Project that is not registered: the decision list answer is the global one, and this says what to do next. |
+
+### `DecisionStatus`
+
+A decision's status. Only `accepted` is listed by default. Clients ignore
+values they do not know.
 
 ### `Error`
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"slices"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
@@ -19,15 +20,15 @@ var badDecisionStatus = envelope("bad_request", "invalid status",
 
 // statusFilter reads the status parameter: the status to keep, "" for all. An
 // unknown value is not ok.
-func statusFilter(status *string) (keep string, ok bool) {
+func statusFilter(status *contract.ListDecisionsParamsStatus) (keep string, ok bool) {
 	if status == nil {
 		return engine.StatusAccepted, true
 	}
-	switch *status {
-	case "all":
+	if *status == contract.ListDecisionsParamsStatusAll {
 		return "", true
-	case engine.StatusAccepted, engine.StatusProposed, engine.StatusRejected, engine.StatusDeprecated, engine.StatusSuperseded:
-		return *status, true
+	}
+	if slices.Contains(engine.DecisionStatuses(), string(*status)) {
+		return string(*status), true
 	}
 	return "", false
 }
@@ -89,16 +90,18 @@ func (s *Server) GetDecision(ctx context.Context, req contract.GetDecisionReques
 		return contract.GetDecision503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
 	}
 	proj, hint := scopeHint(snap, project)
-	d, found := snap.DecisionIn(proj, req.Name, engine.ReadOptions{Drafts: true})
-	chain, _ := snap.DecisionChain(proj, req.Name)
+	chain, found := snap.DecisionChain(proj, req.Name)
 	if !found {
 		return contract.GetDecision404JSONResponse(noSuchDecision), nil
 	}
+	// The chain holds the decision itself, resolved once.
+	i := slices.IndexFunc(chain, func(c engine.Decision) bool { return c.Name == req.Name })
+	d := chain[i]
 	res := decisionAnswer(d)
 	res.Content = &d.Content
 	entries := make([]contract.DecisionChainEntry, 0, len(chain))
 	for _, c := range chain {
-		entries = append(entries, contract.DecisionChainEntry{Name: c.Name, Title: c.Title, Status: contract.DecisionChainEntryStatus(c.Status), Scope: c.Scope})
+		entries = append(entries, contract.DecisionChainEntry{Name: c.Name, Title: c.Title, Status: contract.DecisionStatus(c.Status), Scope: c.Scope})
 	}
 	res.Chain = &entries
 	res.Hint = hint

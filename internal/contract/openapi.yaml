@@ -678,7 +678,8 @@ paths:
         Returns the decisions that answer in the Project's view, sorted by name, one
         per name: the nearest Scope wins. Only accepted decisions are listed unless
         `status` asks for another status. A reader may use `status`; it is not the
-        operator-only `drafts` parameter.
+        operator-only `drafts` parameter. The valid `status` values are `accepted`,
+        `proposed`, `rejected`, `deprecated`, `superseded` and `all`.
       parameters:
         - name: status
           in: query
@@ -689,6 +690,13 @@ paths:
             a 400 that does not repeat it.
           schema:
             type: string
+            enum:
+              - accepted
+              - proposed
+              - rejected
+              - deprecated
+              - superseded
+              - all
         - name: project
           in: query
           required: false
@@ -1980,6 +1988,25 @@ components:
             loop list answer is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    DecisionStatus:
+      type: string
+      description: |
+        A decision's status. Only `accepted` is listed by default. Clients ignore
+        values they do not know.
+      enum:
+        - proposed
+        - accepted
+        - rejected
+        - deprecated
+        - superseded
+      x-enum-varnames:
+        - DecisionStatusProposed
+        - DecisionStatusAccepted
+        - DecisionStatusRejected
+        - DecisionStatusDeprecated
+        - DecisionStatusSuperseded
+      examples:
+        - accepted
     DecisionChainEntry:
       type: object
       description: One decision in a supersession chain.
@@ -1996,8 +2023,7 @@ components:
           examples:
             - Use PostgreSQL for the shop database
         status:
-          type: string
-          enum: [proposed, accepted, rejected, deprecated, superseded]
+          $ref: "#/components/schemas/DecisionStatus"
         scope:
           type: string
           description: 'The Scope of this entry: `global`, `local`, or a Project.'
@@ -2034,8 +2060,7 @@ components:
           examples:
             - Use PostgreSQL for the shop database
         status:
-          type: string
-          enum: [proposed, accepted, rejected, deprecated, superseded]
+          $ref: "#/components/schemas/DecisionStatus"
         date:
           type: string
           description: The decision date, YYYY-MM-DD.
