@@ -741,3 +741,253 @@ test.describe('the switcher at 375 px', () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+// The Miss board and the event detail panel (#632, slice 4 of #22; handoff §3.6 items 5
+// and 6, §8). Both read the feed's events, so there is no new request.
+//
+// Contract these specs pin down (the issue leaves them open):
+// - the Miss board is a region named "What people looked for and didn't find" in main,
+//   outside the table; each card is a plain button (no aria-pressed: the replica switcher
+//   of #631 is the buttons with aria-pressed outside the table, and its specs count them)
+//   whose text holds the query and the count as "×<n>"; misses are grouped by query;
+// - selecting a card selects the latest event of its group, so the row of that event
+//   becomes the pressed row button;
+// - the detail panel is a region named "Event detail" in main, outside the table; absent
+//   until a row or card is selected; its fields are labelled in words (Project, Token,
+//   Replica) and a field the event does not have is left out, label and all;
+// - "Try this search" is a link or a button; it goes to the search at `/?q=<query>`;
+// - the Source repo copy is text in the panel (its target is not pinned).
+const board = (page: Page) => main(page).getByRole('region', { name: "What people looked for and didn't find" });
+const cards = (page: Page) => board(page).getByRole('button');
+const cardOf = (page: Page, q: string) => cards(page).filter({ hasText: q });
+const detail = (page: Page) => main(page).getByRole('region', { name: /event detail/i });
+const trySearch = (page: Page) =>
+  detail(page)
+    .getByRole('link', { name: /try this search/i })
+    .or(detail(page).getByRole('button', { name: /try this search/i }));
+const rowButton = (page: Page, text: string | RegExp) => rowOf(page, text).locator('button').first();
+
+const at = (id: number) => new Date(Date.now() - (100 - id) * 1000).toISOString();
+const missing = (id: number, q: string, o: Partial<Ev> = {}) => ev(id, { query: q, miss: true, time: at(id), ...o });
+
+// five misses with counts 5, 4, 3, 2, 1 and a query that was served ten times
+const crowd: Ev[] = (() => {
+  const out: Ev[] = [];
+  let id = 0;
+  for (const [q, n] of [['alpha', 5], ['bravo', 4], ['charlie', 3], ['delta', 2], ['echo', 1]] as const) {
+    for (let i = 0; i < n; i++) out.push(missing(++id, q));
+  }
+  for (let i = 0; i < 10; i++) out.push(ev(++id, { query: 'served-often', time: at(id) }));
+  return out;
+})();
+
+eachViewport((width, theme) => {
+  test('the Miss board and the open detail panel are captured and axe-clean', async ({ page }) => {
+    await open(page, [
+      ...sample,
+      missing(20, 'quantum', { project: 'github.com/acme/api', token: 'ci' }),
+      missing(21, '<b>bold</b> & more', { kind: 'lookup' }),
+    ]);
+    await expect(board(page)).toBeVisible();
+    await cardOf(page, 'quantum').click();
+    await expect(detail(page)).toBeVisible();
+    await evidence(page, width, theme, '-miss-board', 'activity');
+  });
+});
+
+test.describe('the Miss board', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows up to four cards for the most frequent misses, most frequent first, with their count', async ({ page }) => {
+    await open(page, crowd);
+    await expect(board(page).getByRole('heading', { name: "What people looked for and didn't find" })).toBeVisible();
+    await expect(cards(page)).toHaveCount(4);
+    const names = (await cards(page).allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+    expect(names[0]).toContain('alpha');
+    expect(names[0]).toMatch(/×\s*5/);
+    expect(names[1]).toContain('bravo');
+    expect(names[1]).toMatch(/×\s*4/);
+    expect(names[2]).toContain('charlie');
+    expect(names[3]).toContain('delta');
+    await expect(cardOf(page, 'echo'), 'the fifth miss does not fit').toHaveCount(0);
+    await expect(cardOf(page, 'served-often'), 'a served query is not a miss').toHaveCount(0);
+    await expect(cards(page).locator('xpath=self::*[@aria-pressed]'), 'cards are not switcher buttons').toHaveCount(0);
+    await expect(board(page).locator('table')).toHaveCount(0);
+  });
+
+  test('groups the misses of one query into one card and follows the feed as misses arrive', async ({ page }) => {
+    await open(page, [missing(1, 'quantum'), missing(2, 'quantum', { project: 'github.com/acme/b' })]);
+    await expect(cards(page)).toHaveCount(1);
+    await expect(cards(page).first()).toContainText(/×\s*2/);
+    await send(page, frame(missing(3, 'quantum')) + frame(missing(4, 'other')));
+    await expect(cards(page)).toHaveCount(2);
+    await expect(cardOf(page, 'quantum')).toContainText(/×\s*3/);
+  });
+
+  test('selecting a card selects the latest event of its group and opens the detail panel', async ({ page }) => {
+    await open(page, [
+      missing(1, 'quantum', { project: 'github.com/acme/first' }),
+      missing(2, 'quantum', { project: 'github.com/acme/second' }),
+      missing(3, 'quantum', { project: 'github.com/acme/third' }),
+      ev(4, { query: 'database', time: at(4) }),
+    ]);
+    await expect(detail(page), 'nothing is selected yet').toHaveCount(0);
+    await cardOf(page, 'quantum').click();
+    await expect(detail(page)).toContainText('github.com/acme/third');
+    await expect(detail(page)).not.toContainText('github.com/acme/first');
+    await expect(rowButton(page, 'github.com/acme/third')).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows(page).locator('button[aria-pressed="true"]')).toHaveCount(1);
+  });
+
+  test('renders a hostile query as text, never as HTML', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
+    const hostile = '<img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><b>bold</b>';
+    await open(page, [missing(1, hostile)]);
+    await expect(cards(page)).toHaveCount(1);
+    await expect(cards(page).first()).toContainText(hostile);
+    await cards(page).first().click();
+    await expect(detail(page)).toContainText(hostile);
+    await expect(main(page).locator('img, script, b, iframe')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as Win).__pwned), 'the markup ran').toBeUndefined();
+    expect(seen.errors, 'page errors and CSP violations').toEqual([]);
+    expect(seen.external).toEqual([]);
+  });
+});
+
+test.describe('the event detail panel', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('selecting a row opens it, shows the event and moves with the selection', async ({ page }) => {
+    await open(page, [
+      ev(1, { query: 'database', project: 'github.com/acme/shop', token: 'ci-token', replica: 'goldie-0', time: at(1) }),
+      missing(2, 'quantum', { project: 'github.com/acme/api', token: 'ops-token', replica: 'goldie-1' }),
+    ]);
+    await expect(detail(page)).toHaveCount(0);
+    await rowButton(page, 'database').click();
+    await expect(detail(page)).toBeVisible();
+    await expect(detail(page)).toContainText('database');
+    await expect(detail(page)).toContainText('github.com/acme/shop');
+    await expect(detail(page)).toContainText('ci-token');
+    await expect(detail(page)).toContainText('goldie-0');
+    expect(await text(detail(page)), 'a served event is not a miss').not.toMatch(/miss|source repo/i);
+    await expect(table(page).getByRole('region')).toHaveCount(0);
+    await rowButton(page, 'quantum').click();
+    await expect(detail(page)).toContainText('quantum');
+    await expect(detail(page)).toContainText('ops-token');
+    await expect(detail(page)).toContainText('goldie-1');
+    await expect(detail(page)).not.toContainText('ci-token');
+    await expect(detail(page)).toContainText(/miss/i);
+  });
+
+  test('shows only the fields the event has', async ({ page }) => {
+    await open(page, [
+      ev(1, { query: 'full', project: 'github.com/acme/shop', token: 'ci-token', time: at(1) }),
+      ev(2, { query: 'bare', project: '', token: '', trace_id: '', time: at(2) }),
+    ]);
+    await rowButton(page, 'full').click();
+    const full = await text(detail(page));
+    expect(full).toMatch(/\bProject\b/);
+    expect(full).toMatch(/\bToken\b/);
+    expect(full).toMatch(/\bReplica\b/);
+    await rowButton(page, 'bare').click();
+    await expect(detail(page)).toContainText('bare');
+    const bare = await text(detail(page));
+    expect(bare, 'no Project label for an event without a project').not.toMatch(/\bProject\b/);
+    expect(bare, 'no Token label for an event without a token').not.toMatch(/\bToken\b/);
+    expect(bare).toMatch(/\bReplica\b/);
+    expect(bare, 'no placeholder for what is missing').not.toMatch(/\b(undefined|null|none|n\/a)\b/i);
+  });
+
+  test('says per kind what to add: a skill, an agent or an article', async ({ page }) => {
+    await open(page, [
+      missing(1, 'skill:ghost', { kind: 'get' }),
+      missing(2, 'agent:ghost', { kind: 'get' }),
+      missing(3, 'platform/ghost', { kind: 'lookup' }),
+    ]);
+    await rowButton(page, 'skill:ghost').click();
+    await expect(detail(page)).toContainText('Add this skill to the Source repo ↗');
+    expect(await text(detail(page))).not.toMatch(/article|agent to the/i);
+    await rowButton(page, 'agent:ghost').click();
+    await expect(detail(page)).toContainText('Add this agent to the Source repo ↗');
+    expect(await text(detail(page))).not.toMatch(/article|skill to the/i);
+    await rowButton(page, 'platform/ghost').click();
+    await expect(detail(page)).toContainText('Start this article in the Source repo ↗');
+    expect(await text(detail(page))).not.toMatch(/Add this (skill|agent)/);
+  });
+
+  test('"Try this search" runs the query in search for a search or a lookup, and is hidden for get events', async ({ page }) => {
+    await open(page, [
+      missing(1, 'quantum computing', { time: at(1) }),
+      missing(2, 'platform/ghost', { kind: 'lookup', time: at(2) }),
+      missing(3, 'skill:ghost', { kind: 'get', time: at(3) }),
+      ev(4, { kind: 'get', query: 'agent:review', time: at(4) }),
+      ev(5, { kind: 'get', query: 'builder', time: at(5) }),
+    ]);
+    for (const q of ['skill:ghost', 'agent:review', 'builder']) {
+      await rowButton(page, q).click();
+      await expect(detail(page)).toContainText(q);
+      await expect(trySearch(page), `no search to run for a get of ${q}`).toHaveCount(0);
+    }
+    await rowButton(page, 'platform/ghost').click();
+    await expect(trySearch(page)).toHaveCount(1);
+    await rowButton(page, 'quantum computing').click();
+    await expect(trySearch(page)).toHaveCount(1);
+    await trySearch(page).click();
+    await page.waitForURL((u) => u.pathname === '/' && u.searchParams.get('q') === 'quantum computing');
+    await expect(h1(page)).not.toHaveText('Activity');
+  });
+
+  test('renders a hostile query as text in the panel, and the search keeps it as one value', async ({ page }) => {
+    const hostile = 'a&b=c <i>x</i> #frag';
+    await open(page, [ev(1, { query: hostile })]);
+    await rowButton(page, 'a&b=c').click();
+    await expect(detail(page)).toContainText(hostile);
+    await expect(detail(page).locator('i')).toHaveCount(0);
+    await trySearch(page).click();
+    await page.waitForURL((u) => u.pathname === '/' && u.searchParams.get('q') === hostile);
+  });
+});
+
+test.describe('the Miss board and the panel with the keyboard', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('a card and the panel actions show the focus ring and work with Enter', async ({ page }) => {
+    await open(page, [missing(1, 'quantum')]);
+    const reach = async (target: Locator) => {
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      let reached = false;
+      for (let i = 0; i < 60 && !reached; i++) {
+        await page.keyboard.press('Tab');
+        reached = await target.evaluate((el) => el === document.activeElement);
+      }
+      expect(reached, 'the control is in the tab order').toBe(true);
+      await expectFocusRing(target);
+    };
+    await reach(cards(page).first());
+    await page.keyboard.press('Enter');
+    await expect(detail(page)).toBeVisible();
+    await reach(trySearch(page));
+  });
+});
+
+test.describe('the Miss board and the panel at 375 px', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('cards and panel actions are at least 44 px and the page does not scroll sideways', async ({ page }) => {
+    await open(page, [...crowd, missing(40, 'platform/ghost', { kind: 'lookup' })]);
+    for (const l of [cards(page).first(), cards(page).nth(3)]) {
+      const box = await l.boundingBox();
+      expect(box, 'the card is on screen').not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    await rowButton(page, 'platform/ghost').click();
+    for (const l of [trySearch(page), detail(page).getByRole('link', { name: /source repo/i })]) {
+      const box = await l.boundingBox();
+      expect(box, 'the action is on screen').not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
