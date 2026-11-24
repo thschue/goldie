@@ -20,6 +20,8 @@ const (
 	applyLine     = "goldie instructions apply"
 	initBlock     = "Ask goldie first.\nSee goldie_lookup.\n"
 	blockRoute    = "GET /api/v1/instructions"
+	plainCommit   = `git add .goldie/config.yaml && git commit -m "Add goldie config"`
+	claudeCommit  = `git add .goldie/config.yaml CLAUDE.md && git commit -m "Add goldie config"`
 )
 
 // instructionsServer is a guidedServer that also answers GET
@@ -164,6 +166,9 @@ func TestInitDoesNotAskWithoutAServerAndAnAcceptedToken(t *testing.T) {
 			if c.server && !hasLine(nextSection(stdout), applyLine) {
 				t.Errorf("Next lacks %q:\n%s", applyLine, stdout)
 			}
+			if c.server && !hasLine(nextSection(stdout), plainCommit) {
+				t.Errorf("Next lacks the plain commit line:\n%s", stdout)
+			}
 		})
 	}
 }
@@ -187,10 +192,13 @@ func TestInitYesAppliesTheInstructionBlock(t *testing.T) {
 				t.Errorf("CLAUDE.md:\n%s", got)
 			}
 			next := nextSection(stdout)
+			if hasLine(next, plainCommit) {
+				t.Errorf("Next commits the config without the CLAUDE.md init wrote:\n%s", next)
+			}
 			if next == "" || strings.Contains(next, applyLine) {
 				t.Errorf("Next still has %q, or is missing:\n%s", applyLine, stdout)
 			}
-			for _, keep := range []string{"goldie status", `git add .goldie/config.yaml && git commit -m "Add goldie config"`} {
+			for _, keep := range []string{"goldie status", claudeCommit} {
 				if !hasLine(next, keep) {
 					t.Errorf("Next lost %q:\n%s", keep, next)
 				}
@@ -297,8 +305,8 @@ func TestInitDecliningTheInstructionBlockChangesNothing(t *testing.T) {
 			if fetchedBlock(srv) {
 				t.Errorf("the block was fetched: %v", srv.requests())
 			}
-			if !hasLine(nextSection(stdout), applyLine) {
-				t.Errorf("Next lacks %q:\n%s", applyLine, stdout)
+			if !hasLine(nextSection(stdout), applyLine) || !hasLine(nextSection(stdout), plainCommit) {
+				t.Errorf("Next lacks %q or the plain commit line:\n%s", applyLine, stdout)
 			}
 		})
 	}
