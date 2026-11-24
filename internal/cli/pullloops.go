@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"io"
-	"io/fs"
 	"os"
 	"slices"
 	"strings"
@@ -70,22 +69,16 @@ const maxLoopEntry = 64 << 10
 // directory that is not plain, an entry that is not a regular file or cannot
 // be read is skipped, never an error.
 func localLoopEntries(root *os.Root) []pulledFile {
-	const skills = ".claude/skills"
-	for _, d := range []string{".claude", skills} {
-		if ok, err := plainDir(root, d); err != nil || !ok {
-			return nil
-		}
-	}
-	entries, err := fs.ReadDir(root.FS(), skills)
+	entries, err := checkedNamespaceEntries(root)
 	if err != nil {
 		return nil
 	}
 	var out []pulledFile
 	for _, e := range entries {
-		if !strings.HasPrefix(skills+"/"+e.Name(), loopEntryDir) || !e.IsDir() {
+		if !strings.HasPrefix(e, loopEntryDir) {
 			continue
 		}
-		p := skills + "/" + e.Name() + "/SKILL.md"
+		p := e + "/SKILL.md"
 		if info, err := root.Lstat(p); err != nil || !info.Mode().IsRegular() {
 			continue
 		}

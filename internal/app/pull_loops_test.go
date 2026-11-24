@@ -395,3 +395,41 @@ func TestPullCheckAndDryRunPrintNoLoopLines(t *testing.T) {
 		t.Errorf("dry run prints a lead-in or /loop line:\n%s", out)
 	}
 }
+
+// A symlinked SKILL.md or a symlinked .claude/skills never feeds the lines of
+// an up-to-date pull: the pull does not read through the link.
+func TestUpToDatePullIgnoresSymlinkedLoopEntries(t *testing.T) {
+	content := loopContent(t, nil)
+	for name, link := range map[string]func(t *testing.T, repo string){
+		"SKILL.md": func(t *testing.T, repo string) {
+			for _, rel := range []string{pNightlyEntry, pWatcherEntry, pShopEntry} {
+				entry := filepath.Join(repo, filepath.FromSlash(rel))
+				if err := os.Rename(entry, entry+".real"); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(entry+".real", entry); err != nil {
+					t.Fatal(err)
+				}
+			}
+		},
+		".claude/skills": func(t *testing.T, repo string) {
+			skills := filepath.Join(repo, ".claude", "skills")
+			if err := os.Rename(skills, filepath.Join(repo, "real-skills")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(repo, "real-skills"), skills); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, _ := pulledLoopsRepo(t, content, loopsShop)
+			link(t, repo)
+			out, err := pullCLI(t, loopServer(t, content).URL, repo, "--project", loopsShop)
+			t.Logf("pull: err=%v out=%q", err, out)
+			if strings.Contains(out, loopLeadIn) && strings.Contains(out, "up to date") {
+				t.Errorf("an up-to-date pull printed loop lines through a symlink:\n%s", out)
+			}
+		})
+	}
+}
