@@ -1650,7 +1650,9 @@ async function pressEverything(page: Page) {
 
 eachViewport((width, theme) => {
   test('the pressed toggles are captured and axe-clean', async ({ page }) => {
-    await open(page, pressedMix);
+    await open(page);
+    // Lanes come from live events only, not the history replayed on connect (#811).
+    await send(page, pressedMix.map(frame).join(''));
     await expect(rows(page)).toHaveCount(3);
     await pressEverything(page);
     await expect(pill(page, 'MCP')).toBeChecked();
@@ -1664,7 +1666,9 @@ test.describe('the pressed toggles use the brand style, and gold is for Miss', (
   for (const t of ['light', 'dark'] as const) {
     test(`a pressed replica button, surface pill and Project lane are brand, not gold, in ${t}`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: t });
-      await open(page, pressedMix);
+      await open(page);
+      // Lanes come from live events only, not the history replayed on connect (#811).
+      await send(page, pressedMix.map(frame).join(''));
       await expect(rows(page)).toHaveCount(3);
       const gold = await tokenColour(page, '--miss-solid');
       const brand = [await tokenColour(page, '--brand'), await tokenColour(page, '--brand-tint')];
@@ -1685,7 +1689,9 @@ test.describe('the pressed toggles use the brand style, and gold is for Miss', (
   }
 
   test('"Misses only" keeps the gold when checked, and loses it when unchecked', async ({ page }) => {
-    await open(page, pressedMix);
+    await open(page);
+    // Lanes come from live events only, not the history replayed on connect (#811).
+    await send(page, pressedMix.map(frame).join(''));
     const gold = await tokenColour(page, '--miss-solid');
     await expect(missesOnly(page)).not.toHaveCSS('background-color', gold);
     await missesOnly(page).click();
