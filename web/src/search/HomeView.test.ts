@@ -115,3 +115,51 @@ describe('Home without a query', () => {
     expect(html).not.toContain('aria-pressed="true"');
   });
 });
+
+// The search call (#730): `q`, `project` when one is selected, `kind` when a Kind pill is pressed,
+// `drafts` never. The request is what the API sees; the hits and the hint are in web/e2e/search.spec.ts.
+describe('the search request', () => {
+  const searches = (fetchMock: ReturnType<typeof stubApi>) =>
+    fetchMock.mock.calls.map(([u]) => new URL(String(u), 'file:///')).filter((u) => u.pathname === '/api/v1/search');
+  const answer = (url: string) => new Response(JSON.stringify(url.includes('/search') ? { query: 'x', results: [] } : lists(url)));
+
+  it('sends q alone when no Project and no Kind is selected', async () => {
+    const fetchMock = stubApi(answer);
+    await render('/?q=database');
+    const [call, ...more] = searches(fetchMock);
+    expect(more).toEqual([]);
+    expect([...call.searchParams.keys()]).toEqual(['q']);
+    expect(call.searchParams.get('q')).toBe('database');
+  });
+
+  it('sends project as one encoded value when a Project is selected', async () => {
+    const fetchMock = stubApi(answer);
+    await render(`/?q=database&project=${encodeURIComponent('github.com/acme/re&po#x?kind=skill')}`);
+    const [call] = searches(fetchMock);
+    expect(call.searchParams.getAll('project')).toEqual(['github.com/acme/re&po#x?kind=skill']);
+    expect(call.searchParams.has('kind')).toBe(false);
+    expect(call.hash).toBe('');
+  });
+
+  it('sends kind when the address has one, and with it the Project', async () => {
+    const fetchMock = stubApi(answer);
+    await render('/?q=database&kind=skill&project=github.com%2Facme%2Fshop');
+    const [call] = searches(fetchMock);
+    expect(call.searchParams.getAll('kind')).toEqual(['skill']);
+    expect(call.searchParams.getAll('project')).toEqual(['github.com/acme/shop']);
+    expect(call.searchParams.get('q')).toBe('database');
+  });
+
+  it('never sends drafts, whatever the address says', async () => {
+    const fetchMock = stubApi(answer);
+    await render('/?q=database&drafts=true&project=github.com%2Facme%2Fshop');
+    const [call] = searches(fetchMock);
+    expect(call.searchParams.has('drafts')).toBe(false);
+  });
+
+  it('makes no search call for a Project without a query', async () => {
+    const fetchMock = stubApi(answer);
+    await render('/?project=github.com%2Facme%2Fshop');
+    expect(searches(fetchMock)).toEqual([]);
+  });
+});
