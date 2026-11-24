@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import { session } from '../auth/session';
 import { plain } from '../assets/api';
-import { add, addText, agoText, announceEvery, canSearch, missBoard, itemText, msText, queryText, resultText, rowKey, shownText, surfaceLabel, surfaceOf, surfaces, timeText, traceLink, webLink, type Surface } from './rows';
+import { add, addText, agoText, announceEvery, canSearch, missBoard, itemText, msText, queryText, rowKey, shownText, surfaceLabel, surfaceOf, surfaces, timeText, traceLink, webLink, type Surface } from './rows';
 import { projectOf } from '../projects/api';
 import ActivityStage from './ActivityStage.vue';
 import { createStage } from './stage';
@@ -406,7 +406,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
             <span class="q">{{ plain(g.query) }}</span>
             <span class="n">×{{ g.count }}</span>
             <span class="meta">
-              {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ timeText(g.latest.time) }}
+              {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ agoText(g.latest.time, now) }}
             </span>
           </button>
         </li>
@@ -501,7 +501,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           </tbody>
         </table>
       </div>
-      <section v-if="chosen" ref="panel" class="detail" aria-label="Event detail">
+      <section v-if="chosen" ref="panel" class="detail" :class="{ miss: chosen.miss }" aria-label="Event detail">
         <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
         <dl>
           <dt>Query</dt>
@@ -537,7 +537,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
             <dd class="wrap">{{ plain(chosen.replica) }}</dd>
           </template>
         </dl>
-        <p v-if="chosen.miss">{{ resultText(chosen) }}</p>
+        <p v-if="chosen.miss" class="nearest">
+          No Item matched<template v-for="k in chosen.nearest ?? []" :key="k">{{ ' · ' }}<RouterLink :to="{ path: '/', query: { q: k } }">{{ plain(k) }}</RouterLink></template>
+        </p>
         <p v-if="chosen.miss" class="actions">
           <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
           <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
@@ -739,6 +741,19 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 }
 .label {
   margin-right: auto;
+}
+.detail.miss {
+  border-color: var(--miss-border);
+  background: var(--miss-surface);
+  color: var(--miss-ink);
+}
+.detail.miss a {
+  color: var(--miss-ink);
+  text-decoration: underline;
+}
+.detail.miss a:focus-visible {
+  outline: 2px solid var(--miss-ink);
+  outline-offset: 2px;
 }
 .control {
   min-width: var(--target-min);

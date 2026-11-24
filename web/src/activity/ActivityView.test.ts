@@ -329,3 +329,71 @@ describe('ActivityView states (#877)', () => {
     app.unmount();
   });
 });
+
+describe('ActivityView Miss detail and Miss board (#878)', () => {
+  afterEach(() => vi.useRealTimers());
+  // nearest is in the contract (ActivityEvent) but not yet in the generated types.
+  const miss = (id: number, o: Record<string, unknown> = {}) =>
+    ev(id, { miss: true, served: undefined, query: 'helm chart', ...o } as Partial<ActivityEvent>);
+  const links = (root: Node) => all(root, (n) => n.tag === 'a' && typeof n.props.href === 'string');
+  const detail = (root: Node) => all(root, (n) => n.props['aria-label'] === 'Event detail')[0];
+  const rootOf = (n: Node) => {
+    while (n.parent) n = n.parent;
+    return n;
+  };
+  const click = async (b: Node) => {
+    const h = b.props.onClick;
+    for (const f of Array.isArray(h) ? h : [h]) (f as () => void)();
+    await nextTick();
+  };
+  const rowButtons = (root: Node) => all(root, (n) => n.tag === 'button' && n.props.class === 'row');
+
+  it('shows a selected miss in the Miss panel: "No Item matched", then each nearest keyword linking to the search', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, miss(1, { nearest: ['helm', 'chart'] })]);
+    const root = rootOf(page.button('Pause'));
+    await click(rowButtons(root)[0]);
+
+    const panel = detail(root);
+    expect(String(panel.props.class).split(' ')).toContain('miss');
+    expect(squash(textOf(panel))).toMatch(/No Item matched\s*·?\s*helm\s*·?\s*chart/);
+    const keywords = links(panel).filter((a) => ['helm', 'chart'].includes(squash(textOf(a))));
+    expect(keywords.map((a) => a.props.href)).toEqual(['/?q=helm', '/?q=chart']);
+    app.unmount();
+  });
+
+  it('leaves the nearest keywords out of the Miss panel when the event has none, and keeps a served event in the neutral panel', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, miss(1), ev(2)]);
+    const root = rootOf(page.button('Pause'));
+    const rows = rowButtons(root);
+
+    // The feed is newest first: the served event is row 0, the miss row 1.
+    await click(rows[1]);
+    const panel = detail(root);
+    expect(String(panel.props.class).split(' ')).toContain('miss');
+    expect(squash(textOf(panel))).toContain('No Item matched');
+    expect(squash(textOf(panel))).not.toMatch(/No Item matched\s*·\s*\S/);
+    expect(links(panel).filter((a) => String(a.props.href).startsWith('/?q=') && squash(textOf(a)) !== 'Try this search')).toHaveLength(0);
+
+    await click(rows[0]);
+    const served = detail(root);
+    expect(String(served.props.class ?? '').split(' ')).not.toContain('miss');
+    expect(squash(textOf(served))).not.toContain('No Item matched');
+    app.unmount();
+  });
+
+  it('words a Miss board card "last seen <relative time>" and ages it while the page is open', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    const { app, page } = await mount();
+    const at = new Date(Date.now() - 2 * 60_000).toISOString();
+    await page.send([{ type: 'live' }, miss(1, { time: at })]);
+    expect(page.text()).toContain('last seen 2 minutes ago');
+
+    vi.advanceTimersByTime(3 * 60_000);
+    await nextTick();
+    expect(page.text()).toContain('last seen 5 minutes ago');
+    expect(page.text()).not.toContain('last seen 2 minutes ago');
+    app.unmount();
+  });
+});
