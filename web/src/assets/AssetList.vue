@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T extends { name: string }">
-import { onMounted, ref } from 'vue';
+import { ref, watch } from 'vue';
 import { listProjects } from '../projects/api';
 import { plain } from './api';
 import { sourceDocsURL } from './links';
@@ -24,22 +24,38 @@ const props = defineProps<{
 }>();
 
 // With no Project selected the tab lists the global assets (#758). It adds the note to pick a
-// Project only when there are Projects to pick; a failed lookup says nothing.
-const hasProjects = ref(false);
-onMounted(async () => {
-  if (props.project) return;
-  try {
-    hasProjects.value = (await listProjects()).length > 0;
-  } catch {
-    hasProjects.value = false;
-  }
-});
+// Project only when there are Projects to pick. The tab stays mounted when only ?project= changes,
+// so the lookup follows the Project: it runs whenever none is selected and no answer is known yet
+// (a failed lookup is tried again). Until it has answered, nothing is drawn, so the note never
+// pushes the list down; a failed lookup says nothing.
+const hasProjects = ref<boolean>();
+const settled = ref(false);
+let looking = false;
+watch(
+  () => props.project,
+  async (project) => {
+    if (project) return;
+    settled.value = hasProjects.value !== undefined;
+    if (hasProjects.value !== undefined || looking) return;
+    looking = true;
+    try {
+      hasProjects.value = (await listProjects()).length > 0;
+    } catch {
+      hasProjects.value = undefined;
+    } finally {
+      looking = false;
+      settled.value = true;
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <p v-if="!project && hasProjects" class="note">Pick a Project from the selector to see its {{ noun }}.</p>
 
-  <div v-if="skeleton" class="grid" :class="layout" aria-busy="true">
+  <template v-if="!project && !settled" />
+  <div v-else-if="skeleton" class="grid" :class="layout" aria-busy="true">
     <span role="status" class="sr-only">Loading {{ noun }}</span>
     <div v-for="n in 3" :key="n" class="card bar"></div>
   </div>

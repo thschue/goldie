@@ -138,6 +138,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 ![Agent assets, Skills tab](screenshots/assets.png)
 
 - Header with a `goldie pull --dry-run` snippet, then tabs: Skills · Agents · Loops · Instructions.
+- With no Project selected every tab lists the global assets; the note to pick a Project shows only when Projects are registered (§5.2).
 - **Skills** (MVP cut, #587): a card grid sorted by name, ascending, with no sort control. Usage figures, the "not used in 30 days" badge and the sort by uses come with #32. Each card shows the name (an h2), Scope (no chip when the API sends none), description and the MCP prompt name `goldie-<name>` (pinned by #411; it replaces the earlier `/goldie:<name>`). Script skills add the `requires_sync` badge and the line "Contains scripts, so agents won't run it from text. Run `goldie pull` to install it."
 - **Agents** (MVP cut, #589): a card grid like Skills, sorted by name, ascending. Each card shows the name (an h2), Scope (no chip when the API sends none), description and the materialised path `.claude/agents/goldie-<name>.md` in mono. Usage figures (uses 30d) come with #32.
 - **Loops** (MVP cut, #647): a `LoopDetail` article per loop, sorted by name, from `GET /api/v1/loops?project=`; no featured loop and no usage figures. Each shows the name (an h2), Scope (no chip when the API sends none), description, the interval or "dynamic" (the flag wins over a stray interval), the stop condition, the dependency closure as agent and skill chips in a list named "Closure" (no list when the closure is empty), and two `CommandSnippet`s: `goldie pull` and `/loop <interval> /goldie-loop-<name>` (`/loop /goldie-loop-<name>` when dynamic, as `goldie pull` prints it). States are the Skills tab's; the empty copy is "No loops for `<project>` yet."
@@ -265,6 +266,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 |---|---|---|---|
 | Empty search (Miss) | Results | Gold dashed panel, no-match copy (§8), suggestion chips. | C |
 | Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet."; without a Project: "No `<kind>`s yet." | D |
+| Asset tab, no Project selected (#758) | Skills, Agents, Loops, Instructions | Lists the global assets (the request leaves `project` out); empty copy "No `<noun>` yet." With Projects registered it adds the note "Pick a Project from the selector to see its `<noun>`."; with none, no note. | D |
 | Unregistered Project | Project selector + Home | `unregistered` chip; Home shows a hint: "Global and local guidance only. **How to register this project**". | D |
 | Draft | Card, detail | Dashed outline + "draft · hidden from agents"; detail banner (dashed). Operators only; readers never see drafts. | C |
 | Deprecated | Card, detail | Gold badge "deprecated → `replaced_by`"; detail banner with a link to the replacement. | C |

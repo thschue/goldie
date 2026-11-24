@@ -483,3 +483,17 @@ test.describe('Projects registered, none selected', () => {
     });
   }
 });
+
+// The tab stays mounted when only ?project= changes: Back to the unselected view still shows the note.
+test('Back from a selected Project to none shows the note to pick a Project', async ({ page }) => {
+  await page.route(/\/api\/v1\/projects$/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: ['github.com/acme/shop'] }) }),
+  );
+  await page.goto('/assets/skills');
+  await page.getByRole('combobox', { name: /Project/ }).click();
+  await page.getByRole('option', { name: 'github.com/acme/shop' }).click();
+  await expect(page).toHaveURL(/project=/);
+  await expect(page.getByRole('main').getByText(/Pick a Project/)).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole('main').getByText('Pick a Project from the selector to see its skills.', { exact: true })).toHaveCount(1);
+});
