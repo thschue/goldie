@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import HitCard from './HitCard.vue';
+import HomeGuide from './HomeGuide.vue';
 import { ApiError } from '../api/client';
 import { ended } from '../auth/session';
 import { searchItems, type SearchHit } from './api';
@@ -90,6 +91,9 @@ function go(q: string) {
   return navigating;
 }
 
+// Handoff §3.2 item 1. A chip runs the search as if the user had typed it.
+const suggestions = ['database', 'logging', 'retries', 'feature flags'];
+
 function submit() {
   void go(draft.value.trim());
 }
@@ -138,9 +142,13 @@ onBeforeUnmount(() => {
     </div>
   </form>
 
-  <!-- Copy: handoff §8, "Empty state". Home's sections below the search (§3.2)
-       aren't built yet, so Home with no query shows the neutral panel, never gold. -->
-  <div v-if="state.kind === 'idle'" role="status" class="panel">Nothing to show yet. Content appears here as goldie's pages come online.</div>
+  <template v-if="state.kind === 'idle'">
+    <p class="chips">
+      <span>Try:</span>
+      <button v-for="w in suggestions" :key="w" type="button" class="chip" @click="go(w)">{{ w }}</button>
+    </p>
+    <HomeGuide />
+  </template>
 
   <p v-else-if="state.kind === 'loading'" class="loading" role="status">Searching…</p>
 
@@ -219,13 +227,24 @@ onBeforeUnmount(() => {
 .loading {
   color: var(--fg-secondary);
 }
-.panel {
-  max-width: 760px;
-  padding: var(--space-6);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 940px;
+  margin: 0 0 var(--space-6);
   color: var(--fg-secondary);
+}
+.chip {
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface-1);
+  color: var(--fg-default);
+  font: inherit;
+  cursor: pointer;
 }
 .miss,
 .alert {

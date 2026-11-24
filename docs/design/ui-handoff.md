@@ -104,6 +104,8 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 3. Two cards side by side: **Specific to `<project>`** (project-scoped Items, overrides first) and **What's new on the path** (new / updated / draft / deprecated, newest first).
 4. **Put your agent on the golden path**: a three-step checklist (`goldie init`, `claude mcp add --transport http goldie <url>`, `goldie instructions apply`). Each step has a copy button and can be ticked off. Ticks are stored per browser in `localStorage` and are a convenience only.
 
+**Built so far (#721):** items 1, 2 and 4. The chips are "database", "logging", "retries" and "feature flags" (no "migration" yet); a chip runs the search. The Browse tiles are Skills, Agents and Loops, each linking to `/assets/<tab>` with the count from its list endpoint; a list that fails leaves its tile without a count. The checklist's second command uses this server's origin plus `/mcp`. The placeholder of §8 "Empty state" no longer shows on Home.
+
 ### 3.3 Search results (`/?q=`)
 
 - The hero stays, with the query in the field and a clear button.
