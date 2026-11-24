@@ -158,12 +158,25 @@ goldie lookup platform/deploy
 
 ## Try it on your own content
 
+First get the binary. `go install github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your
+PATH. A binary from `go install`, or from a build without `./run ui`, serves a "goldie (UI not
+built)" placeholder at `/`; the CLI and MCP work either way ([ADR
+0019](docs/adr/0019-ui-build-output-not-committed.md)). To get the web UI, clone the repository,
+run `./run ui` (needs Node), then `go build ./cmd/goldie`, which leaves `./goldie` in the clone
+(run it as `./goldie`, or move it onto your PATH).
+
+Then run `goldie server --dev` (`./goldie server --dev` for the clone build), open the address it
+prints (the `GOLDIE_ADDR` in the export line), and sign in by pasting the token from that same
+line (`GOLDIE_TOKEN=…`).
+
 `goldie server --dev [dir]` runs the server on 127.0.0.1 over `dir` (else `GOLDIE_CONTENT_DIR`, else
 the working directory) with a random token made for this run, and prints the line that points the
 client commands at it. It needs no other setup: it ignores `GOLDIE_ADDR`, `GOLDIE_ADMIN_ADDR` and the
 API token variables, so the same shell can run it again. The token is printed only in that line,
 never logged. Ctrl-C stops it at once unless `GOLDIE_DRAIN_SECONDS` is set. Details are in the
 [configuration reference](docs/reference/configuration.md#goldie-server---dev).
+
+New to writing content? [Writing content](docs/content.md) shows the smallest article that loads.
 
 ```sh
 goldie server --dev examples/knowledge

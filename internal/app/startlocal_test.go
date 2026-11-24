@@ -386,7 +386,7 @@ func TestStartLocalUnloadableContentFailsWithoutAPath(t *testing.T) {
 	for _, tc := range []struct{ name, dir, want string }{
 		{"missing directory", missing, startLocalErrPrefix + "content directory is not readable"},
 		{"a file, not a directory", file, startLocalErrPrefix + "content directory is not readable"},
-		{"an article without frontmatter", bad, startLocalErrPrefix + "global/articles/broken.md: missing frontmatter (first line must be ---)"},
+		{"an article without frontmatter", bad, startLocalErrPrefix + "global/articles/broken.md: missing frontmatter (first line must be ---); an article starts with the lines: --- / name: <title> / keywords: [<word>] / ---"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			waitLoops(t, 0)

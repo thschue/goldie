@@ -343,13 +343,20 @@ func readErr(err error) error {
 	return errors.New("cannot read")
 }
 
+var errNoFrontmatter = errors.New("missing frontmatter (first line must be ---)")
+
+// errArticleNoFrontmatter is the load error for an article without frontmatter. It
+// names the next step and shows the minimal block, so a first article needs no
+// other document.
+var errArticleNoFrontmatter = errors.New("missing frontmatter (first line must be ---); an article starts with the lines: --- / name: <title> / keywords: [<word>] / ---")
+
 // splitFrontmatter cuts a Markdown file into its frontmatter and body, reading
 // CRLF as LF. raw itself is not changed.
 func splitFrontmatter(raw []byte) (front, body []byte, err error) {
 	raw = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 	rest, ok := bytes.CutPrefix(raw, []byte("---\n"))
 	if !ok {
-		return nil, nil, errors.New("missing frontmatter (first line must be ---)")
+		return nil, nil, errNoFrontmatter
 	}
 	if r, found := bytes.CutPrefix(rest, []byte("---\n")); found {
 		body = r
@@ -365,6 +372,9 @@ func splitFrontmatter(raw []byte) (front, body []byte, err error) {
 
 func parseArticle(id string, raw []byte) (Article, error) {
 	front, body, err := splitFrontmatter(raw)
+	if errors.Is(err, errNoFrontmatter) {
+		return Article{}, errArticleNoFrontmatter
+	}
 	if err != nil {
 		return Article{}, err
 	}
