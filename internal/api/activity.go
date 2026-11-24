@@ -1,12 +1,14 @@
 package api
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/thschue/goldie/internal/contract"
+	"github.com/thschue/goldie/internal/engine"
 )
 
 // EventKind says what a recorded Event was: a search or a lookup.
@@ -65,6 +67,9 @@ type Event struct {
 	// Served is the Reference of the Item served: the top result of a search,
 	// or the Item of a lookup or get. "" on a miss.
 	Served string
+	// Nearest is, on a search miss, at most engine.MaxNearest keywords near the
+	// query, nearest first (Snapshot.NearestKeywords). Empty otherwise.
+	Nearest []string
 	// LatencyUS is the handler time in microseconds, never negative.
 	LatencyUS int64
 	// Miss is a search with zero results, or a lookup answering 404.
@@ -205,7 +210,24 @@ func boundEvent(e Event) Event {
 	e.Via = truncateQuery(e.Via)
 	e.Served = truncateQuery(e.Served)
 	e.LatencyUS = max(e.LatencyUS, 0)
+	e.Nearest = boundNearest(e.Nearest)
 	return e
+}
+
+// boundNearest is at most engine.MaxNearest of the entries of n, each cut as
+// truncateQuery does and copied, so a cut entry does not keep a peer's whole
+// field alive. Empty entries are dropped; the result is nil when none is left.
+func boundNearest(n []string) []string {
+	var out []string
+	for _, k := range n {
+		if len(out) == engine.MaxNearest {
+			break
+		}
+		if k = strings.Clone(truncateQuery(k)); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }
 
 // truncateQuery cuts q to at most maxQueryBytes without splitting a rune:

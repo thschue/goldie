@@ -89,6 +89,11 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 				e.Via = viaUI // the SPA signs in with a cookie; it sends no client header
 			}
 			e.Project = s.projectSpelling(e.Project)
+			if e.Kind == KindSearch && e.Miss {
+				if snap := s.provider(); snap != nil {
+					e.Nearest = snap.NearestKeywords(e.Query) // the default view: a draft's keyword is never named
+				}
+			}
 			s.activity.Record(e)
 		}
 		return resp, err

@@ -670,8 +670,8 @@ know.
 ### `ActivityEvent`
 
 One search, lookup or get on the activity stream, the `data` of an SSE
-event without a type. Every field is always sent but `via`, `served` and
-`latency_us`, which are optional; text fields are `""` when empty.
+event without a type. Every field is always sent but `via`, `served`,
+`latency_us` and `nearest`, which are optional; text fields are `""` when empty.
 Clients ignore fields they do not know.
 
 | Property | Type | Required | Description |
@@ -682,6 +682,7 @@ Clients ignore fields they do not know.
 | `late` | `boolean` | yes | The event reached a merge of replicas' streams after its reorder window, so it is out of time order. Always 'false' on a replica's own stream. |
 | `latency_us` | `integer` | no | The time the handler took, in microseconds. A replica older than this field shows 0. In a federated stream a peer's negative value is shown as 0. |
 | `miss` | `boolean` | yes | A search with no results, or a lookup or get answering 404. |
+| `nearest` | `array` | no | On a search miss, at most 3 keywords near the query, nearest first. Absent on a hit, on a lookup or get, when no keyword is near and from a replica older than this field. In a federated stream a peer's list is cut to 3 entries and each entry to 1,024 bytes. |
 | `project` | `string` | yes | The registered spelling of the Project, an unregistered id lower-cased, or '""'. |
 | `query` | `string` | yes | The search words, the article id a lookup asked for (bare), or for a get the Reference '&lt;kind&gt;:&lt;name&gt;' (ADR 0021), such as 'skill:review' or 'agent:review'. A replica older than this form shows the bare name of a get in a federated stream. |
 | `replica` | `string` | yes | The name of the replica that recorded the event: the first label of its host name (a StatefulSet pod name), or 'goldie'. Never an address. |

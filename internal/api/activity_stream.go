@@ -187,6 +187,9 @@ func activityEventData(e Event) contract.ActivityEvent {
 	if e.Served != "" {
 		data.Served = &e.Served
 	}
+	if len(e.Nearest) > 0 {
+		data.Nearest = &e.Nearest
+	}
 	return data
 }
 

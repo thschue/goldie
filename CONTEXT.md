@@ -68,7 +68,8 @@ team repository cannot publish global guidance or claim another team's project.
 sync; the last good Snapshot keeps serving when a Source breaks.
 
 **Miss**: a search or lookup that found nothing. Misses are the platform team's signal for missing
-guidance; they are visible in the activity feed and in telemetry.
+guidance; they are visible in the activity feed and in telemetry. A search miss names the (at most 3)
+global keywords nearest to the query, when any is near.
 
 ## Access
 
