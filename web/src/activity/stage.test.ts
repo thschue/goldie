@@ -107,6 +107,21 @@ describe('stage render budget', () => {
   });
 });
 
+describe('stage sampling chip', () => {
+  it('changes at most once per second, so the polite status it is does not chatter (A11)', () => {
+    const s = createStage();
+    expect(s.read(t0).chip).toBe('Showing every request');
+    s.add(many(maxParticles + 50), t0 + 200);
+    expect(s.read(t0 + 200).chip).toBe('Showing every request');
+    expect(s.read(t0 + 999).chip).toBe('Showing every request');
+    expect(s.read(t0 + 1000).chip).toMatch(/^Showing 1 in \d+ requests/);
+    // Back to every request once the sampled burst has flown, again not within a second of the last change.
+    const sampled = s.read(t0 + 1000).chip;
+    expect(s.read(t0 + 1500).chip).toBe(sampled);
+    expect(s.read(t0 + 200 + travelMs + 1000).chip).toBe('Showing every request');
+  });
+});
+
 describe('stage visibility', () => {
   it('drops the queue while the tab is hidden, so returning causes no burst, yet still counts every event', () => {
     const s = createStage();

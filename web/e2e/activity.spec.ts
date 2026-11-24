@@ -1617,3 +1617,80 @@ test.describe('a dropped stream', () => {
     });
   }
 });
+
+// Pressed toggles (#875, handoff §6.2 to §6.4, finding A11): a pressed or checked replica button,
+// surface pill and Project lane use the brand pressed style (the Decisions status filter's, brand and
+// not gold); gold is for Miss, so only "Misses only" is gold when checked. Compared as computed
+// colours against the tokens, so it holds in both themes.
+const pressedMix: Ev[] = [
+  ev(1, { query: 'm one', via: 'mcp', project: 'github.com/acme/shop', replica: 'goldie-0' }),
+  ev(2, { query: 'c one', via: 'cli', project: 'github.com/acme/shop', replica: 'goldie-1' }),
+  ev(3, { query: 'u one', via: 'ui', project: 'github.com/acme/api', replica: 'goldie-1', miss: true }),
+];
+
+const tokenColour = (page: Page, token: string) =>
+  page.evaluate((t) => {
+    const probe = document.createElement('span');
+    probe.style.background = `var(${t})`;
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return c;
+  }, token);
+const backgroundOf = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+async function pressEverything(page: Page) {
+  await replicaButton(page, 'goldie-1').click();
+  await pill(page, 'MCP').click();
+  await main(page)
+    .getByRole('button', { name: /^github\.com\/acme\/shop/ })
+    .click();
+  await missesOnly(page).click();
+}
+
+eachViewport((width, theme) => {
+  test('the pressed toggles are captured and axe-clean', async ({ page }) => {
+    await open(page, pressedMix);
+    await expect(rows(page)).toHaveCount(3);
+    await pressEverything(page);
+    await expect(pill(page, 'MCP')).toBeChecked();
+    await evidence(page, width, theme, '-pressed', 'activity');
+  });
+});
+
+test.describe('the pressed toggles use the brand style, and gold is for Miss', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  for (const t of ['light', 'dark'] as const) {
+    test(`a pressed replica button, surface pill and Project lane are brand, not gold, in ${t}`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: t });
+      await open(page, pressedMix);
+      await expect(rows(page)).toHaveCount(3);
+      const gold = await tokenColour(page, '--miss-solid');
+      const brand = [await tokenColour(page, '--brand'), await tokenColour(page, '--brand-tint')];
+      const replica = replicaButton(page, 'goldie-1');
+      const mcp = pill(page, 'MCP');
+      const shop = main(page).getByRole('button', { name: /^github\.com\/acme\/shop/ });
+      const idle = [await backgroundOf(replica), await backgroundOf(mcp), await backgroundOf(shop)];
+      await pressEverything(page);
+      await expect(replica).toHaveAttribute('aria-pressed', 'true');
+      await expect(shop).toHaveAttribute('aria-pressed', 'true');
+      for (const [i, el] of [replica, mcp, shop].entries()) {
+        const bg = await backgroundOf(el);
+        expect(bg, 'not the Miss gold').not.toBe(gold);
+        expect(brand, 'a brand pressed colour').toContain(bg);
+        expect(bg, 'differs from unpressed').not.toBe(idle[i]);
+      }
+    });
+  }
+
+  test('"Misses only" keeps the gold when checked, and loses it when unchecked', async ({ page }) => {
+    await open(page, pressedMix);
+    const gold = await tokenColour(page, '--miss-solid');
+    await expect(missesOnly(page)).not.toHaveCSS('background-color', gold);
+    await missesOnly(page).click();
+    await expect(missesOnly(page)).toHaveCSS('background-color', gold);
+    await missesOnly(page).click();
+    await expect(missesOnly(page)).not.toHaveCSS('background-color', gold);
+  });
+});

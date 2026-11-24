@@ -69,6 +69,14 @@ describe('ActivityStage', () => {
     expect(await render([ev(1)])).toContain('Showing every request');
   });
 
+  it('makes the sampling chip a polite status of its own, beside the summary status', async () => {
+    const html = await render([ev(1)]);
+    expect(html).toMatch(/<p[^>]*role="status"[^>]*>Showing every request<\/p>/);
+    expect(html.match(/role="status"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/aria-live="assertive"|role="alert"/);
+    expect(imgOf(html)).not.toMatch(/role="status"/);
+  });
+
   it('renders a hostile Project and query as text only', async () => {
     const html = await render([ev(1, { project: '<img src=x onerror=alert(1)>', miss: true, served: undefined, query: '<script>x</script>' })]);
     expect(html).not.toMatch(/<img|<script/);
