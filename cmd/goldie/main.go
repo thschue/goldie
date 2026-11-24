@@ -247,7 +247,7 @@ func handlerError(err error) error {
 // invalid, or only one of the two missing, keeps the error as it is. A ui-mode
 // server serves no content by design, so it never gets the hint.
 func withDevHint(cfg platform.Config, err error) error {
-	if cfg.Mode == platform.ModeUI || cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
+	if cfg.Mode == platform.ModeUI || cfg.Mode == platform.ModeMCP || cfg.ContentDir != "" || cfg.GitURL != "" || cfg.APIToken != "" || cfg.APITokens != "" {
 		return err
 	}
 	return fmt.Errorf("%w\n%s", err, platform.FirstRunHint)

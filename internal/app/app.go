@@ -390,7 +390,7 @@ type Public struct {
 	pollLog *slog.Logger                // logs every poll, when the Source asks for it; nil logs none
 	polls   *platform.PollCounter       // counts and times every poll (goldie.syncs, goldie.sync.duration); nil counts none
 	poll    time.Duration               // GOLDIE_POLL_INTERVAL
-	probe   func(context.Context) error // the upstream check of GOLDIE_MODE=ui, which has no Source; nil otherwise
+	probe   func(context.Context) error // the upstream check of GOLDIE_MODE=ui and mcp, which have no Source; nil otherwise
 	mu      sync.Mutex
 	started bool
 	loops   sync.WaitGroup // the poll loop Start runs
@@ -485,6 +485,9 @@ func PublicHandler(cfg platform.Config, logger *slog.Logger) (*Public, error) {
 func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.Telemetry) (*Public, error) {
 	if cfg.Mode == platform.ModeUI {
 		return newPublicUI(cfg, logger)
+	}
+	if cfg.Mode == platform.ModeMCP {
+		return newPublicMCP(cfg)
 	}
 	var errs []error
 	tokens, err := apiTokens(cfg)
