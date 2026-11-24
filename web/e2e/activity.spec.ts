@@ -1517,17 +1517,17 @@ test.describe('a dropped stream', () => {
   test('says "Reconnecting…" in a polite status instead of Live, until the stream is live again', async ({ page }) => {
     await page.clock.install();
     await open(page, [ev(1, { query: 'database' })]);
-    await expect(main(page).getByText(/^Live\b/)).toHaveCount(1);
+    await expect(main(page).getByText(/^Live(?! stream)\b/)).toHaveCount(1);
     await drop(page);
     const status = reconnecting(page);
     await expect(status).toHaveCount(1);
     expect(await status.getAttribute('aria-live'), 'polite, never assertive').not.toBe('assertive');
-    await expect(main(page).getByText(/^Live\b/)).toHaveCount(0);
+    await expect(main(page).getByText(/^Live(?! stream)\b/)).toHaveCount(0);
     await page.clock.fastForward(2_000);
     await page.waitForFunction(() => (window as unknown as Win).__activity.controllers.length > 1);
     await send(page, frame(ev(1, { query: 'database' })) + liveMarker);
     await expect(reconnecting(page)).toHaveCount(0);
-    await expect(main(page).getByText(/^Live\b/)).toHaveCount(1);
+    await expect(main(page).getByText(/^Live(?! stream)\b/)).toHaveCount(1);
   });
 
   test('reconnects after a pause, not at once and not in a tight loop', async ({ page }) => {
