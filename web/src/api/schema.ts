@@ -32,6 +32,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the articles of a view
+         * @description Returns the articles that win in the Project's view, one per id, sorted
+         *     by id, without their content. Each carries its `scope`, the Scopes it
+         *     `overrides` and whether it is `enforced`; `status` is present only when
+         *     the article is not published. A draft is listed only with `drafts=true`
+         *     and the operator role. For the content, read one article with
+         *     `GET /api/v1/articles/{id}`.
+         */
+        get: operations["listArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/articles/{id}": {
         parameters: {
             query?: never;
@@ -835,6 +860,70 @@ export interface components {
             /**
              * @description Present when the request named a Project that is not registered: the
              *     agent list answer is the global one, and this says what to do next.
+             * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /**
+         * @description One article of a view, without its content.
+         * @example {
+         *       "id": "platform/deploy",
+         *       "name": "Deploying to Kubernetes",
+         *       "keywords": [
+         *         "kubernetes",
+         *         "deploy"
+         *       ],
+         *       "scope": "global",
+         *       "overrides": [],
+         *       "enforced": false
+         *     }
+         */
+        ArticleSummary: {
+            /**
+             * @description The article id.
+             * @example platform/deploy
+             */
+            id: string;
+            /**
+             * @description The display title from the frontmatter.
+             * @example Deploying to Kubernetes
+             */
+            name: string;
+            /**
+             * @description The article's keywords, lower case.
+             * @example [
+             *       "kubernetes",
+             *       "deploy"
+             *     ]
+             */
+            keywords: string[];
+            /**
+             * @description Where the article applies: `global`, `local`, or the Project (`host/org/repo`) whose copy won (ADR 0005).
+             * @example global
+             */
+            scope: string;
+            status?: components["schemas"]["ItemStatus"];
+            /**
+             * @description The Scopes this article shadows in the requested view, nearest
+             *     first; `[]` when it shadows nothing. Never null.
+             * @example [
+             *       "global"
+             *     ]
+             */
+            overrides: string[];
+            /**
+             * @description Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+             * @example false
+             */
+            enforced: boolean;
+        };
+        /** @description The articles that win in a view, without their content. */
+        ArticleList: {
+            /** @description The articles, sorted by id. */
+            articles: components["schemas"]["ArticleSummary"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     list is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
              */
             hint?: string;
@@ -1706,6 +1795,74 @@ export interface operations {
                 };
             };
             /** @description The search asked for drafts with a token whose role is not operator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listArticles: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the list for this Project (ADR 0020): its own article wins over the
+                 *     global one with the same id. Matched ignoring case. An
+                 *     unregistered Project answers the global view with a `hint`; a value
+                 *     that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+                /**
+                 * @description `true` includes draft Items too, marked `status: draft`; for operator
+                 *     tokens only, and a reader token asking for drafts is a 403. Without
+                 *     it a draft is left out for every token and never shadows, so the
+                 *     published Item answers. Even with drafts, a draft Project article
+                 *     never shadows an enforced global Item (ADR 0021). MCP never asks
+                 *     for drafts.
+                 */
+                drafts?: components["parameters"]["Drafts"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The articles. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleList"];
+                };
+            };
+            /** @description For the article list, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the article list, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the article list, drafts were asked for with a token whose role is not operator. */
             403: {
                 headers: {
                     [name: string]: unknown;

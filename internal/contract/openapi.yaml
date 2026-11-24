@@ -129,6 +129,64 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/articles:
+    get:
+      operationId: listArticles
+      tags:
+        - articles
+      summary: List the articles of a view
+      description: |
+        Returns the articles that win in the Project's view, one per id, sorted
+        by id, without their content. Each carries its `scope`, the Scopes it
+        `overrides` and whether it is `enforced`; `status` is present only when
+        the article is not published. A draft is listed only with `drafts=true`
+        and the operator role. For the content, read one article with
+        `GET /api/v1/articles/{id}`.
+      parameters:
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the list for this Project (ADR 0020): its own article wins over the
+            global one with the same id. Matched ignoring case. An
+            unregistered Project answers the global view with a `hint`; a value
+            that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+        - $ref: "#/components/parameters/Drafts"
+      responses:
+        "200":
+          description: The articles.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArticleList"
+        "400":
+          description: 'For the article list, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the article list, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 'For the article list, drafts were asked for with a token whose role is not operator.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/articles/{id}:
     get:
       operationId: getArticle
@@ -1821,6 +1879,84 @@ components:
           description: |
             Present when the request named a Project that is not registered: the
             agent list answer is the global one, and this says what to do next.
+          examples:
+            - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    ArticleSummary:
+      type: object
+      description: One article of a view, without its content.
+      examples:
+        - id: platform/deploy
+          name: Deploying to Kubernetes
+          keywords:
+            - kubernetes
+            - deploy
+          scope: global
+          overrides: []
+          enforced: false
+      required:
+        - id
+        - name
+        - keywords
+        - scope
+        - overrides
+        - enforced
+      properties:
+        id:
+          type: string
+          description: The article id.
+          examples:
+            - platform/deploy
+        name:
+          type: string
+          description: The display title from the frontmatter.
+          examples:
+            - Deploying to Kubernetes
+        keywords:
+          type: array
+          description: The article's keywords, lower case.
+          items:
+            type: string
+          examples:
+            - - kubernetes
+              - deploy
+        scope:
+          type: string
+          description: "Where the article applies: `global`, `local`, or the Project (`host/org/repo`) whose copy won (ADR 0005)."
+          examples:
+            - global
+        status:
+          $ref: "#/components/schemas/ItemStatus"
+        overrides:
+          type: array
+          description: |
+            The Scopes this article shadows in the requested view, nearest
+            first; `[]` when it shadows nothing. Never null.
+          items:
+            type: string
+          examples:
+            - - global
+        enforced:
+          type: boolean
+          description: "Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it."
+          examples:
+            - false
+    ArticleList:
+      type: object
+      description: The articles that win in a view, without their content.
+      required:
+        - articles
+      properties:
+        articles:
+          type: array
+          description: The articles, sorted by id.
+          items:
+            $ref: "#/components/schemas/ArticleSummary"
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            list is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
     LoopRef:
