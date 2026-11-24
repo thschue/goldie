@@ -121,6 +121,11 @@ func (s *SourceSet) Poll(ctx context.Context, name string) error {
 	}
 	e.pollMu.Lock()
 	defer e.pollMu.Unlock()
+	return s.pollLocked(ctx, e)
+}
+
+// pollLocked is Poll for a caller that holds e.pollMu.
+func (s *SourceSet) pollLocked(ctx context.Context, e *sourceEntry) error {
 	snap, rev, began, ended, err := timedLoad(ctx, e.src, s.now)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -131,20 +136,53 @@ func (s *SourceSet) Poll(ctx context.Context, name string) error {
 	return err
 }
 
+// Trigger starts one poll of the named Source in the background, with ctx and
+// then onPoll as Run has them. found is false for a name that is no Source.
+// started is false, with found true, when that Source's poll is already
+// running or ctx has ended. The poll runs to the end of ctx, not of the
+// caller's request, and nothing waits for it at stop: like Syncer.Trigger, a
+// triggered poll is deliberately not tracked.
+func (s *SourceSet) Trigger(ctx context.Context, name string, onPoll func(SyncStatus)) (started, found bool) {
+	e := s.entry(name)
+	if e == nil {
+		return false, false
+	}
+	if ctx.Err() != nil || !e.pollMu.TryLock() {
+		return false, true
+	}
+	go func() {
+		defer e.pollMu.Unlock()
+		s.pollReport(ctx, name, e, onPoll)
+	}()
+	return true, true
+}
+
 // Run polls the named Source once at once, then on every tick of interval,
 // and returns when ctx ends, as Syncer.Run does. onPoll, when not nil, gets
 // the Source's status after each poll. A name that is no Source returns at
 // once.
 func (s *SourceSet) Run(ctx context.Context, name string, interval time.Duration, onPoll func(SyncStatus)) {
-	if s.entry(name) == nil {
+	e := s.entry(name)
+	if e == nil {
 		return
 	}
 	runLoop(ctx, interval, realTicker, func() {
-		_ = s.Poll(ctx, name)
-		if onPoll != nil {
-			onPoll(s.Status(name))
-		}
+		// pollMu is held through onPoll, as Trigger holds it, so onPoll never
+		// runs concurrently with itself.
+		e.pollMu.Lock()
+		defer e.pollMu.Unlock()
+		s.pollReport(ctx, name, e, onPoll)
 	})
+}
+
+// pollReport polls the Source and hands its Status to onPoll, when not nil.
+// The caller holds e.pollMu, so onPoll never runs concurrently with itself,
+// whether the poll is Run's or a Trigger's.
+func (s *SourceSet) pollReport(ctx context.Context, name string, e *sourceEntry, onPoll func(SyncStatus)) {
+	_ = s.pollLocked(ctx, e)
+	if onPoll != nil {
+		onPoll(s.Status(name))
+	}
 }
 
 // loaded lists the Sources that hold a Snapshot, in preference order. The

@@ -1025,6 +1025,46 @@ type SessionRequest struct {
 	Token string `json:"token"`
 }
 
+// ShadowedBy The Source whose copy answers instead.
+type ShadowedBy struct {
+	// Project The Project whose copy answers, when its `scope` is one. Absent for `global` and `local`.
+	Project *string `json:"project,omitempty"`
+
+	// Scope Where its copy lives; the same Scope as the shadowed copy.
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+
+	// Source The name of that Source.
+	//
+	// Examples: team
+	Source string `json:"source"`
+}
+
+// ShadowedItem An Item of one Source that an earlier Source's copy hides.
+type ShadowedItem struct {
+	// Id The Item's ID.
+	//
+	// Examples: style
+	Id string `json:"id"`
+
+	// Kind The Item's kind, such as `article`.
+	//
+	// Examples: article
+	Kind string `json:"kind"`
+
+	// Project The Project, when `scope` is one. Absent for `global` and `local`.
+	Project *string `json:"project,omitempty"`
+
+	// Scope Where both copies live: `global`, `local`, or the Project (`host/org/repo`).
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+
+	// ShadowedBy The Source whose copy answers instead.
+	ShadowedBy ShadowedBy `json:"shadowed_by"`
+}
+
 // Skill One skill bundle.
 type Skill struct {
 	// Description The `description` in the frontmatter of SKILL.md. Sent by
@@ -1106,7 +1146,9 @@ type SkillList struct {
 	Skills []Skill `json:"skills"`
 }
 
-// SourceSyncStatus How polling one Source is going.
+// SourceSyncStatus How polling one Source is going. The server always sends `name`,
+// `preference` and `shadowed`; they are not required, so a client written
+// before they were added still accepts a status without them.
 type SourceSyncStatus struct {
 	// LastError Why the last poll failed, absent when it succeeded. It names a file
 	// relative to the Source root and never a host path, URL or
@@ -1122,19 +1164,38 @@ type SourceSyncStatus struct {
 	// LastSuccess When the last poll that loaded the content ended. Absent before the first one.
 	LastSuccess *time.Time `json:"last_success,omitempty"`
 
+	// Name The Source's name as configured in `GOLDIE_SOURCES`; `dir` or `git`
+	// for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`;
+	// `source` in local mode when the Source has no name, such as a local
+	// content directory or an upstream.
+	//
+	//
+	// Examples: team
+	Name *string `json:"name,omitempty"`
+
+	// Preference Where the Source stands in the list, 1 for the first listed. An earlier Source wins an Item both have in the same Scope.
+	//
+	// Examples: 1
+	Preference *int `json:"preference,omitempty"`
+
 	// Revision The commit the served content comes from. Absent for a Source
 	// without revisions, such as a directory.
 	//
 	//
 	// Examples: 3f786850e387550fdab836ed7e6dc881de23001b
 	Revision *string `json:"revision,omitempty"`
+
+	// Shadowed Items this Source has that an earlier Source's copy in the same
+	// Scope hides, at most the first 100 in load order. Empty for the
+	// first Source.
+	Shadowed *[]ShadowedItem `json:"shadowed,omitempty"`
 }
 
 // SyncStatus How the last content load went, for operators.
 type SyncStatus struct {
-	// Sources One entry per Source. This server has exactly one.
+	// Sources One entry per Source, most preferred first.
 	//
-	// Examples: [{"last_poll":"2026-11-23T10:00:00Z","last_success":"2026-11-23T10:00:00Z","revision":"3f786850e387550fdab836ed7e6dc881de23001b"}]
+	// Examples: [{"last_poll":"2026-11-23T10:00:00Z","last_success":"2026-11-23T10:00:00Z","name":"team","preference":1,"revision":"3f786850e387550fdab836ed7e6dc881de23001b","shadowed":[]}]
 	Sources []SourceSyncStatus `json:"sources"`
 
 	// Warnings Load findings that did not fail the load, in load order.
@@ -1411,6 +1472,12 @@ type GetSkillFileParams struct {
 	// never shadows an enforced global Item (ADR 0021). MCP never asks
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
+// PostSyncParams defines parameters for PostSync.
+type PostSyncParams struct {
+	// Source The name of one Source to poll, as `GET /api/v1/sync` lists it. Without it every Source is polled.
+	Source *string `form:"source,omitempty" json:"source,omitempty"`
 }
 
 // PostSessionJSONRequestBody defines body for PostSession for application/json ContentType.
@@ -1843,32 +1910,40 @@ type ClientInterface interface {
 
 	// GetSync Read the content sync status and warnings
 	//
-	// Returns, per Source, the revision served and when it was last polled,
-	// when that last succeeded and why it last failed, and the findings of the
-	// last content load that did not fail it, for
+	// Returns, per Source, its `name` and `preference`, the revision served
+	// and when it was last polled, when that last succeeded and why it last
+	// failed, the Items it lost to an earlier Source (`shadowed`), and the
+	// findings of the last content load that did not fail it, for
 	// operator tokens only, such as a `suppress` reference that names nothing
 	// in a Project's `project.yaml`. Each warning names a file relative to the
 	// Source root and shows what the Source wrote escaped to printable ASCII
 	// and cut, which is why only operators read them. `goldie validate` prints
 	// the same warnings for a content directory.
 	//
+	// With `GOLDIE_SOURCES` every member of the list is one entry, in the
+	// order listed, named as configured and with `preference` 1 for the first.
+	// A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+	// one entry, named `dir` or `git`.
+	//
 	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 	GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// PostSync Poll the Source now
+	// PostSync Poll the Sources now
 	//
-	// Starts one poll of the Source now instead of waiting for
+	// Starts one poll of each Source now, or of the one named by `source`,
+	// instead of waiting for
 	// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
 	// without waiting for it, for example after merging into the repository a
 	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 	// moves when the poll ends, `revision` when it found a new commit, and
 	// `last_error` when it failed. The request takes no body. At most one
-	// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-	// available yet: this answers 503 `not_ready`, and each Source polls at its
-	// `poll` or `GOLDIE_POLL_INTERVAL`.
+	// poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+	// the list is polled, or only the one named by `source`. A name that is no
+	// Source answers 404 `not_found` and polls nothing; read the names from
+	// `GET /api/v1/sync`.
 	//
 	// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
-	PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	PostSync(ctx context.Context, params *PostSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	//
@@ -2458,14 +2533,20 @@ func (c *Client) GetSkillFile(ctx context.Context, name string, path string, par
 
 // GetSync Read the content sync status and warnings
 //
-// Returns, per Source, the revision served and when it was last polled,
-// when that last succeeded and why it last failed, and the findings of the
-// last content load that did not fail it, for
+// Returns, per Source, its `name` and `preference`, the revision served
+// and when it was last polled, when that last succeeded and why it last
+// failed, the Items it lost to an earlier Source (`shadowed`), and the
+// findings of the last content load that did not fail it, for
 // operator tokens only, such as a `suppress` reference that names nothing
 // in a Project's `project.yaml`. Each warning names a file relative to the
 // Source root and shows what the Source wrote escaped to printable ASCII
 // and cut, which is why only operators read them. `goldie validate` prints
 // the same warnings for a content directory.
+//
+// With `GOLDIE_SOURCES` every member of the list is one entry, in the
+// order listed, named as configured and with `preference` 1 for the first.
+// A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+// one entry, named `dir` or `git`.
 //
 // Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 func (c *Client) GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2480,21 +2561,23 @@ func (c *Client) GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*h
 	return c.Client.Do(req)
 }
 
-// PostSync Poll the Source now
+// PostSync Poll the Sources now
 //
-// Starts one poll of the Source now instead of waiting for
+// Starts one poll of each Source now, or of the one named by `source`,
+// instead of waiting for
 // `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
 // without waiting for it, for example after merging into the repository a
 // git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 // moves when the poll ends, `revision` when it found a new commit, and
 // `last_error` when it failed. The request takes no body. At most one
-// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-// available yet: this answers 503 `not_ready`, and each Source polls at its
-// `poll` or `GOLDIE_POLL_INTERVAL`.
+// poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+// the list is polled, or only the one named by `source`. A name that is no
+// Source answers 404 `not_found` and polls nothing; read the names from
+// `GET /api/v1/sync`.
 //
 // Corresponds with POST /api/v1/sync (the `PostSync` operationId).
-func (c *Client) PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostSyncRequest(c.Server)
+func (c *Client) PostSync(ctx context.Context, params *PostSyncParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostSyncRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3798,7 +3881,7 @@ func NewGetSyncRequest(server string) (*http.Request, error) {
 }
 
 // NewPostSyncRequest constructs an http.Request for the PostSync method
-func NewPostSyncRequest(server string) (*http.Request, error) {
+func NewPostSyncRequest(server string, params *PostSyncParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -3814,6 +3897,33 @@ func NewPostSyncRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Source != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source", *params.Source, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
@@ -4315,36 +4425,44 @@ type ClientWithResponsesInterface interface {
 
 	// GetSyncWithResponse Read the content sync status and warnings
 	//
-	// Returns, per Source, the revision served and when it was last polled,
-	// when that last succeeded and why it last failed, and the findings of the
-	// last content load that did not fail it, for
+	// Returns, per Source, its `name` and `preference`, the revision served
+	// and when it was last polled, when that last succeeded and why it last
+	// failed, the Items it lost to an earlier Source (`shadowed`), and the
+	// findings of the last content load that did not fail it, for
 	// operator tokens only, such as a `suppress` reference that names nothing
 	// in a Project's `project.yaml`. Each warning names a file relative to the
 	// Source root and shows what the Source wrote escaped to printable ASCII
 	// and cut, which is why only operators read them. `goldie validate` prints
 	// the same warnings for a content directory.
 	//
+	// With `GOLDIE_SOURCES` every member of the list is one entry, in the
+	// order listed, named as configured and with `preference` 1 for the first.
+	// A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+	// one entry, named `dir` or `git`.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/sync (the `GetSync` operationId).
 	GetSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSyncResponse, error)
 
-	// PostSyncWithResponse Poll the Source now
+	// PostSyncWithResponse Poll the Sources now
 	//
-	// Starts one poll of the Source now instead of waiting for
+	// Starts one poll of each Source now, or of the one named by `source`,
+	// instead of waiting for
 	// `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
 	// without waiting for it, for example after merging into the repository a
 	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 	// moves when the poll ends, `revision` when it found a new commit, and
 	// `last_error` when it failed. The request takes no body. At most one
-	// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-	// available yet: this answers 503 `not_ready`, and each Source polls at its
-	// `poll` or `GOLDIE_POLL_INTERVAL`.
+	// poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+	// the list is polled, or only the one named by `source`. A name that is no
+	// Source answers 404 `not_found` and polls nothing; read the names from
+	// `GET /api/v1/sync`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
-	PostSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostSyncResponse, error)
+	PostSyncWithResponse(ctx context.Context, params *PostSyncParams, reqEditors ...RequestEditorFn) (*PostSyncResponse, error)
 
 	// GetOpenAPIJSONWithResponse Get the OpenAPI document as JSON
 	//
@@ -6422,6 +6540,8 @@ type PostSyncResponse struct {
 	JSON401 *ErrorEnvelope
 	// JSON403 the response for an HTTP 403 `application/json` response
 	JSON403 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -6447,6 +6567,11 @@ func (r PostSyncResponse) GetJSON401() *ErrorEnvelope {
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
 func (r PostSyncResponse) GetJSON403() *ErrorEnvelope {
 	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PostSyncResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
 }
 
 // GetJSON426 returns the response for an HTTP 426 `application/json` response
@@ -7119,14 +7244,20 @@ func (c *ClientWithResponses) GetSkillFileWithResponse(ctx context.Context, name
 
 // GetSyncWithResponse Read the content sync status and warnings
 //
-// Returns, per Source, the revision served and when it was last polled,
-// when that last succeeded and why it last failed, and the findings of the
-// last content load that did not fail it, for
+// Returns, per Source, its `name` and `preference`, the revision served
+// and when it was last polled, when that last succeeded and why it last
+// failed, the Items it lost to an earlier Source (`shadowed`), and the
+// findings of the last content load that did not fail it, for
 // operator tokens only, such as a `suppress` reference that names nothing
 // in a Project's `project.yaml`. Each warning names a file relative to the
 // Source root and shows what the Source wrote escaped to printable ASCII
 // and cut, which is why only operators read them. `goldie validate` prints
 // the same warnings for a content directory.
+//
+// With `GOLDIE_SOURCES` every member of the list is one entry, in the
+// order listed, named as configured and with `preference` 1 for the first.
+// A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+// one entry, named `dir` or `git`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -7139,23 +7270,25 @@ func (c *ClientWithResponses) GetSyncWithResponse(ctx context.Context, reqEditor
 	return ParseGetSyncResponse(rsp)
 }
 
-// PostSyncWithResponse Poll the Source now
+// PostSyncWithResponse Poll the Sources now
 //
-// Starts one poll of the Source now instead of waiting for
+// Starts one poll of each Source now, or of the one named by `source`,
+// instead of waiting for
 // `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
 // without waiting for it, for example after merging into the repository a
 // git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 // moves when the poll ends, `revision` when it found a new commit, and
 // `last_error` when it failed. The request takes no body. At most one
-// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-// available yet: this answers 503 `not_ready`, and each Source polls at its
-// `poll` or `GOLDIE_POLL_INTERVAL`.
+// poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+// the list is polled, or only the one named by `source`. A name that is no
+// Source answers 404 `not_found` and polls nothing; read the names from
+// `GET /api/v1/sync`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /api/v1/sync (the `PostSync` operationId).
-func (c *ClientWithResponses) PostSyncWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PostSyncResponse, error) {
-	rsp, err := c.PostSync(ctx, reqEditors...)
+func (c *ClientWithResponses) PostSyncWithResponse(ctx context.Context, params *PostSyncParams, reqEditors ...RequestEditorFn) (*PostSyncResponse, error) {
+	rsp, err := c.PostSync(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -9078,6 +9211,13 @@ func ParsePostSyncResponse(rsp *http.Response) (*PostSyncResponse, error) {
 		}
 		response.JSON403 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
 		var dest UpgradeRequired
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
@@ -9258,9 +9398,9 @@ type ServerInterface interface {
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(w http.ResponseWriter, r *http.Request)
-	// PostSync Poll the Source now
+	// PostSync Poll the Sources now
 	// (POST /api/v1/sync)
-	PostSync(w http.ResponseWriter, r *http.Request)
+	PostSync(w http.ResponseWriter, r *http.Request, params PostSyncParams)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
 	// (GET /openapi.json)
 	GetOpenAPIJSON(w http.ResponseWriter, r *http.Request)
@@ -10177,8 +10317,27 @@ func (siw *ServerInterfaceWrapper) GetSync(w http.ResponseWriter, r *http.Reques
 // PostSync operation middleware
 func (siw *ServerInterfaceWrapper) PostSync(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PostSyncParams
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "source", r.URL.Query(), &params.Source, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PostSync(w, r)
+		siw.Handler.PostSync(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13213,6 +13372,7 @@ func (response GetSyncdefaultJSONResponse) VisitGetSyncResponse(w http.ResponseW
 }
 
 type PostSyncRequestObject struct {
+	Params PostSyncParams
 }
 
 type PostSyncResponseObject interface {
@@ -13257,6 +13417,20 @@ func (response PostSync403JSONResponse) VisitPostSyncResponse(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PostSync404JSONResponse ErrorEnvelope
+
+func (response PostSync404JSONResponse) VisitPostSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -13486,7 +13660,7 @@ type StrictServerInterface interface {
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
-	// PostSync Poll the Source now
+	// PostSync Poll the Sources now
 	// (POST /api/v1/sync)
 	PostSync(ctx context.Context, request PostSyncRequestObject) (PostSyncResponseObject, error)
 	// GetOpenAPIJSON Get the OpenAPI document as JSON
@@ -14116,8 +14290,10 @@ func (sh *strictHandler) GetSync(w http.ResponseWriter, r *http.Request) {
 }
 
 // PostSync operation middleware
-func (sh *strictHandler) PostSync(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) PostSync(w http.ResponseWriter, r *http.Request, params PostSyncParams) {
 	var request PostSyncRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
 		return sh.ssi.PostSync(ctx, request.(PostSyncRequestObject))
