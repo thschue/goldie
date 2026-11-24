@@ -216,6 +216,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the decisions
+         * @description Returns the decisions that answer in the Project's view, sorted by name, one
+         *     per name: the nearest Scope wins. Only accepted decisions are listed unless
+         *     `status` asks for another status; a reader may use it. The valid `status`
+         *     values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+         *     `all`.
+         */
+        get: operations["listDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decisions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one decision
+         * @description Returns one decision by name, of any status, with its raw Markdown `content`
+         *     and its supersession `chain`, oldest to newest, including the decision itself.
+         *     Two predecessors of the same successor are ordered by date, then name. A miss
+         *     is a 404 whose hint points to the list.
+         */
+        get: operations["getDecision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instructions": {
         parameters: {
             query?: never;
@@ -919,6 +966,96 @@ export interface components {
              * @description Present when the request named a Project that is not registered: the
              *     loop list answer is the global one, and this says what to do next.
              * @example The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+             */
+            hint?: string;
+        };
+        /**
+         * @description A decision's status. Only `accepted` is listed by default. Clients ignore
+         *     values they do not know.
+         * @example accepted
+         * @enum {string}
+         */
+        DecisionStatus: "proposed" | "accepted" | "rejected" | "deprecated" | "superseded";
+        /** @description One decision in a supersession chain. */
+        DecisionChainEntry: {
+            name: string;
+            /** @example Use PostgreSQL for the shop database */
+            title: string;
+            status: components["schemas"]["DecisionStatus"];
+            /** @description The Scope of this entry: `global`, `local`, or a Project. */
+            scope: string;
+        };
+        /**
+         * @description One decision record. A get also carries `content` and `chain`.
+         * @example {
+         *       "name": "use-postgres",
+         *       "title": "Use PostgreSQL for the shop database",
+         *       "status": "accepted",
+         *       "date": "2023-05-02",
+         *       "scope": "global",
+         *       "supersedes": [
+         *         "decision:use-mysql"
+         *       ],
+         *       "superseded_by": "",
+         *       "keywords": [
+         *         "database"
+         *       ]
+         *     }
+         */
+        Decision: {
+            /** @example use-postgres */
+            name: string;
+            /** @example Use PostgreSQL for the shop database */
+            title: string;
+            status: components["schemas"]["DecisionStatus"];
+            /**
+             * @description The decision date, YYYY-MM-DD.
+             * @example 2023-05-02
+             */
+            date: string;
+            /** @description `global`, `local`, or the Project that holds the decision. */
+            scope: string;
+            /** @description The decisions this one replaces, as `decision:<name>`. */
+            supersedes: string[];
+            /** @description The decision that replaces this one, as `decision:<name>`; empty when none does. */
+            superseded_by: string;
+            keywords: string[];
+            /** @description The raw Markdown body. Only a get sends it. */
+            content?: string;
+            /**
+             * @description The supersession chain, oldest to newest, including this decision. Only a
+             *     get sends it.
+             */
+            chain?: components["schemas"]["DecisionChainEntry"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     decision answer is the global one, and this says what to do next.
+             */
+            hint?: string;
+        };
+        /**
+         * @description The decisions that answer in a view.
+         * @example {
+         *       "decisions": [
+         *         {
+         *           "name": "use-postgres",
+         *           "title": "Use PostgreSQL for the shop database",
+         *           "status": "accepted",
+         *           "date": "2023-05-02",
+         *           "scope": "global",
+         *           "supersedes": [],
+         *           "superseded_by": "",
+         *           "keywords": []
+         *         }
+         *       ]
+         *     }
+         */
+        DecisionList: {
+            /** @description The decisions, sorted by name. */
+            decisions: components["schemas"]["Decision"][];
+            /**
+             * @description Present when the request named a Project that is not registered: the
+             *     decision list answer is the global one, and this says what to do next.
              */
             hint?: string;
         };
@@ -2203,6 +2340,127 @@ export interface operations {
                 };
             };
             /** @description No loop has this name in the view; the hint points to the loop list. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listDecisions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The status to list: `accepted` (the default), `proposed`, `rejected`,
+                 *     `deprecated`, `superseded`, or `all` for every status. Any other value is
+                 *     a 400 that does not repeat it.
+                 */
+                status?: "accepted" | "proposed" | "rejected" | "deprecated" | "superseded" | "all";
+                /**
+                 * @description Resolve for this Project (ADR 0020): its own decision wins over the global
+                 *     one with the same name. Matched ignoring case. An unregistered Project
+                 *     answers the global view with a `hint`; a value that is not a `ProjectId`
+                 *     is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The decisions. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionList"];
+                };
+            };
+            /** @description For the decision list, `project` is not a `ProjectId` or `status` is not a status. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the decision list, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getDecision: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the decision named in the path for this Project (ADR 0020): its own decision wins over the global
+                 *     one with the same name. Matched ignoring case. An unregistered Project
+                 *     answers the global view with a `hint`; a value that is not a `ProjectId`
+                 *     is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The decision name, one path segment. A name that is not one is a miss.
+                 * @example use-postgres
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The decision. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Decision"];
+                };
+            };
+            /** @description For the decision read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the decision read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No decision has this name in the view; the hint points to the decision list. */
             404: {
                 headers: {
                     [name: string]: unknown;

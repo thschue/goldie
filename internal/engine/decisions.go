@@ -89,7 +89,7 @@ func parseDecision(name string, raw []byte) (Article, error) {
 		return Article{}, errors.New("title holds a hidden or control character")
 	}
 	status, ok := scalar(meta.Status, "!!str")
-	if !ok || !slices.Contains([]string{StatusProposed, StatusAccepted, StatusRejected, StatusDeprecated, StatusSuperseded}, status) {
+	if !ok || !slices.Contains(DecisionStatuses(), status) {
 		return Article{}, errors.New("status must be proposed, accepted, rejected, deprecated or superseded")
 	}
 	date, ok := scalar(meta.Date, "!!timestamp")
@@ -186,4 +186,67 @@ func (s *Snapshot) Decisions(proj string, opts ...ReadOptions) []Decision {
 	}
 	slices.SortFunc(out, func(a, b Decision) int { return strings.Compare(a.Name, b.Name) })
 	return out
+}
+
+// DecisionChain returns the supersession chain of a decision, oldest to
+// newest, including the decision itself. The decision resolves in proj's view
+// as DecisionIn does, but in every status: a chain is history. The links are
+// resolved in the same view. The predecessors of one decision (those it
+// supersedes and those that name it in superseded_by) are ordered by date,
+// then name. The bool is false when no decision of that name resolves.
+func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
+	all := s.Decisions(proj, ReadOptions{Drafts: true})
+	byName := make(map[string]Decision, len(all))
+	for _, d := range all {
+		byName[d.Name] = d
+	}
+	start, ok := byName[name]
+	if !ok {
+		return nil, false
+	}
+	const prefix = "decision:"
+	predecessors := func(d Decision) []Decision {
+		var out []Decision
+		for _, o := range all {
+			if o.SupersededBy == prefix+d.Name || slices.Contains(d.Supersedes, prefix+o.Name) {
+				out = append(out, o)
+			}
+		}
+		slices.SortFunc(out, func(a, b Decision) int {
+			if c := strings.Compare(a.Date, b.Date); c != 0 {
+				return c
+			}
+			return strings.Compare(a.Name, b.Name)
+		})
+		return out
+	}
+	var chain []Decision
+	seen := map[string]bool{}
+	// visit appends d after its predecessors; seen also stops a cycle.
+	var visit func(d Decision)
+	visit = func(d Decision) {
+		if seen[d.Name] {
+			return
+		}
+		seen[d.Name] = true
+		for _, p := range predecessors(d) {
+			visit(p)
+		}
+		chain = append(chain, d)
+	}
+	visit(start)
+	for cur := start; ; {
+		next, ok := byName[strings.TrimPrefix(cur.SupersededBy, prefix)]
+		if !ok || seen[next.Name] {
+			break
+		}
+		visit(next)
+		cur = next
+	}
+	return chain, true
+}
+
+// DecisionStatuses returns the valid statuses of a decision.
+func DecisionStatuses() []string {
+	return []string{StatusProposed, StatusAccepted, StatusRejected, StatusDeprecated, StatusSuperseded}
 }

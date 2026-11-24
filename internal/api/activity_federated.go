@@ -113,7 +113,7 @@ func (s *Server) activityRequest(next contract.StrictHandlerFunc, op string) con
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
 		var call activityCall
 		if vals, ok := r.URL.Query()["replicas"]; ok {
-			if len(vals) != 1 || vals[0] != string(contract.All) {
+			if len(vals) != 1 || vals[0] != string(contract.GetActivityParamsReplicasAll) {
 				return contract.GetActivity400JSONResponse(badReplicas), nil
 			}
 			call.all = r.Method != http.MethodHead // a HEAD only needs the headers

@@ -32,6 +32,8 @@ tags:
     description: List and read agent definitions.
   - name: loops
     description: List and read loop definitions with their resolved closure.
+  - name: decisions
+    description: List and read decision records with their supersession chain.
   - name: instructions
     description: The managed instruction block for a repository's CLAUDE.md or AGENTS.md.
   - name: bundle
@@ -654,6 +656,135 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
           description: No loop has this name in the view; the hint points to the loop list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/decisions:
+    get:
+      operationId: listDecisions
+      tags:
+        - decisions
+      summary: List the decisions
+      description: |
+        Returns the decisions that answer in the Project's view, sorted by name, one
+        per name: the nearest Scope wins. Only accepted decisions are listed unless
+        `status` asks for another status; a reader may use it. The valid `status`
+        values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+        `all`.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: |
+            The status to list: `accepted` (the default), `proposed`, `rejected`,
+            `deprecated`, `superseded`, or `all` for every status. Any other value is
+            a 400 that does not repeat it.
+          schema:
+            type: string
+            enum:
+              - accepted
+              - proposed
+              - rejected
+              - deprecated
+              - superseded
+              - all
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve for this Project (ADR 0020): its own decision wins over the global
+            one with the same name. Matched ignoring case. An unregistered Project
+            answers the global view with a `hint`; a value that is not a `ProjectId`
+            is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The decisions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionList"
+        "400":
+          description: 'For the decision list, `project` is not a `ProjectId` or `status` is not a status.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the decision list, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/decisions/{name}:
+    get:
+      operationId: getDecision
+      tags:
+        - decisions
+      summary: Read one decision
+      description: |
+        Returns one decision by name, of any status, with its raw Markdown `content`
+        and its supersession `chain`, oldest to newest, including the decision itself.
+        Two predecessors of the same successor are ordered by date, then name. A miss
+        is a 404 whose hint points to the list.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The decision name, one path segment. A name that is not one is a miss.
+          schema:
+            type: string
+            minLength: 1
+          example: use-postgres
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the decision named in the path for this Project (ADR 0020): its own decision wins over the global
+            one with the same name. Matched ignoring case. An unregistered Project
+            answers the global view with a `hint`; a value that is not a `ProjectId`
+            is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400":
+          description: 'For the decision read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the decision read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No decision has this name in the view; the hint points to the decision list.
           content:
             application/json:
               schema:
@@ -1843,6 +1974,142 @@ components:
             loop list answer is the global one, and this says what to do next.
           examples:
             - The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+    DecisionStatus:
+      type: string
+      description: |
+        A decision's status. Only `accepted` is listed by default. Clients ignore
+        values they do not know.
+      enum:
+        - proposed
+        - accepted
+        - rejected
+        - deprecated
+        - superseded
+      x-enum-varnames:
+        - DecisionStatusProposed
+        - DecisionStatusAccepted
+        - DecisionStatusRejected
+        - DecisionStatusDeprecated
+        - DecisionStatusSuperseded
+      examples:
+        - accepted
+    DecisionChainEntry:
+      type: object
+      description: One decision in a supersession chain.
+      required:
+        - name
+        - title
+        - status
+        - scope
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+          examples:
+            - Use PostgreSQL for the shop database
+        status:
+          $ref: "#/components/schemas/DecisionStatus"
+        scope:
+          type: string
+          description: 'The Scope of this entry: `global`, `local`, or a Project.'
+    Decision:
+      type: object
+      description: One decision record. A get also carries `content` and `chain`.
+      examples:
+        - name: use-postgres
+          title: Use PostgreSQL for the shop database
+          status: accepted
+          date: "2023-05-02"
+          scope: global
+          supersedes:
+            - decision:use-mysql
+          superseded_by: ""
+          keywords:
+            - database
+      required:
+        - name
+        - title
+        - status
+        - date
+        - scope
+        - supersedes
+        - superseded_by
+        - keywords
+      properties:
+        name:
+          type: string
+          examples:
+            - use-postgres
+        title:
+          type: string
+          examples:
+            - Use PostgreSQL for the shop database
+        status:
+          $ref: "#/components/schemas/DecisionStatus"
+        date:
+          type: string
+          description: The decision date, YYYY-MM-DD.
+          examples:
+            - "2023-05-02"
+        scope:
+          type: string
+          description: '`global`, `local`, or the Project that holds the decision.'
+        supersedes:
+          type: array
+          description: The decisions this one replaces, as `decision:<name>`.
+          items:
+            type: string
+        superseded_by:
+          type: string
+          description: The decision that replaces this one, as `decision:<name>`; empty when none does.
+        keywords:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+          description: The raw Markdown body. Only a get sends it.
+        chain:
+          type: array
+          description: |
+            The supersession chain, oldest to newest, including this decision. Only a
+            get sends it.
+          items:
+            $ref: "#/components/schemas/DecisionChainEntry"
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            decision answer is the global one, and this says what to do next.
+    DecisionList:
+      type: object
+      description: The decisions that answer in a view.
+      examples:
+        - decisions:
+            - name: use-postgres
+              title: Use PostgreSQL for the shop database
+              status: accepted
+              date: "2023-05-02"
+              scope: global
+              supersedes: []
+              superseded_by: ""
+              keywords: []
+      required:
+        - decisions
+      properties:
+        decisions:
+          type: array
+          description: The decisions, sorted by name.
+          items:
+            $ref: "#/components/schemas/Decision"
+        hint:
+          type: string
+          minLength: 1
+          description: |
+            Present when the request named a Project that is not registered: the
+            decision list answer is the global one, and this says what to do next.
     ProjectDetail:
       type: object
       description: One registered Project and what its `project.yaml` suppresses.

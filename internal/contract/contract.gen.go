@@ -42,6 +42,33 @@ func (e ActivityEventKind) Valid() bool {
 	}
 }
 
+// Defines values for DecisionStatus.
+const (
+	DecisionStatusAccepted   DecisionStatus = "accepted"
+	DecisionStatusDeprecated DecisionStatus = "deprecated"
+	DecisionStatusProposed   DecisionStatus = "proposed"
+	DecisionStatusRejected   DecisionStatus = "rejected"
+	DecisionStatusSuperseded DecisionStatus = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the DecisionStatus enum.
+func (e DecisionStatus) Valid() bool {
+	switch e {
+	case DecisionStatusAccepted:
+		return true
+	case DecisionStatusDeprecated:
+		return true
+	case DecisionStatusProposed:
+		return true
+	case DecisionStatusRejected:
+		return true
+	case DecisionStatusSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ItemStatus.
 const (
 	ItemStatusDeprecated ItemStatus = "deprecated"
@@ -98,13 +125,43 @@ func (e SessionRole) Valid() bool {
 
 // Defines values for GetActivityParamsReplicas.
 const (
-	All GetActivityParamsReplicas = "all"
+	GetActivityParamsReplicasAll GetActivityParamsReplicas = "all"
 )
 
 // Valid indicates whether the value is a known member of the GetActivityParamsReplicas enum.
 func (e GetActivityParamsReplicas) Valid() bool {
 	switch e {
-	case All:
+	case GetActivityParamsReplicasAll:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListDecisionsParamsStatus.
+const (
+	ListDecisionsParamsStatusAccepted   ListDecisionsParamsStatus = "accepted"
+	ListDecisionsParamsStatusAll        ListDecisionsParamsStatus = "all"
+	ListDecisionsParamsStatusDeprecated ListDecisionsParamsStatus = "deprecated"
+	ListDecisionsParamsStatusProposed   ListDecisionsParamsStatus = "proposed"
+	ListDecisionsParamsStatusRejected   ListDecisionsParamsStatus = "rejected"
+	ListDecisionsParamsStatusSuperseded ListDecisionsParamsStatus = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the ListDecisionsParamsStatus enum.
+func (e ListDecisionsParamsStatus) Valid() bool {
+	switch e {
+	case ListDecisionsParamsStatusAccepted:
+		return true
+	case ListDecisionsParamsStatusAll:
+		return true
+	case ListDecisionsParamsStatusDeprecated:
+		return true
+	case ListDecisionsParamsStatusProposed:
+		return true
+	case ListDecisionsParamsStatusRejected:
+		return true
+	case ListDecisionsParamsStatusSuperseded:
 		return true
 	default:
 		return false
@@ -381,6 +438,86 @@ type ContentWarning struct {
 	// Examples: suppress "article:team/gone" names no published Item this Project can see
 	Message string `json:"message"`
 }
+
+// Decision One decision record. A get also carries `content` and `chain`.
+//
+// Examples: {"date":"2023-05-02","keywords":["database"],"name":"use-postgres","scope":"global","status":"accepted","superseded_by":"","supersedes":["decision:use-mysql"],"title":"Use PostgreSQL for the shop database"}
+type Decision struct {
+	// Chain The supersession chain, oldest to newest, including this decision. Only a
+	// get sends it.
+	Chain *[]DecisionChainEntry `json:"chain,omitempty"`
+
+	// Content The raw Markdown body. Only a get sends it.
+	Content *string `json:"content,omitempty"`
+
+	// Date The decision date, YYYY-MM-DD.
+	//
+	// Examples: 2023-05-02
+	Date string `json:"date"`
+
+	// Hint Present when the request named a Project that is not registered: the
+	// decision answer is the global one, and this says what to do next.
+	Hint     *string  `json:"hint,omitempty"`
+	Keywords []string `json:"keywords"`
+
+	// Name Examples: use-postgres
+	Name string `json:"name"`
+
+	// Scope `global`, `local`, or the Project that holds the decision.
+	Scope string `json:"scope"`
+
+	// Status A decision's status. Only `accepted` is listed by default. Clients ignore
+	// values they do not know.
+	//
+	//
+	// Examples: accepted
+	Status DecisionStatus `json:"status"`
+
+	// SupersededBy The decision that replaces this one, as `decision:<name>`; empty when none does.
+	SupersededBy string `json:"superseded_by"`
+
+	// Supersedes The decisions this one replaces, as `decision:<name>`.
+	Supersedes []string `json:"supersedes"`
+
+	// Title Examples: Use PostgreSQL for the shop database
+	Title string `json:"title"`
+}
+
+// DecisionChainEntry One decision in a supersession chain.
+type DecisionChainEntry struct {
+	Name string `json:"name"`
+
+	// Scope The Scope of this entry: `global`, `local`, or a Project.
+	Scope string `json:"scope"`
+
+	// Status A decision's status. Only `accepted` is listed by default. Clients ignore
+	// values they do not know.
+	//
+	//
+	// Examples: accepted
+	Status DecisionStatus `json:"status"`
+
+	// Title Examples: Use PostgreSQL for the shop database
+	Title string `json:"title"`
+}
+
+// DecisionList The decisions that answer in a view.
+//
+// Examples: {"decisions":[{"date":"2023-05-02","keywords":[],"name":"use-postgres","scope":"global","status":"accepted","superseded_by":"","supersedes":[],"title":"Use PostgreSQL for the shop database"}]}
+type DecisionList struct {
+	// Decisions The decisions, sorted by name.
+	Decisions []Decision `json:"decisions"`
+
+	// Hint Present when the request named a Project that is not registered: the
+	// decision list answer is the global one, and this says what to do next.
+	Hint *string `json:"hint,omitempty"`
+}
+
+// DecisionStatus A decision's status. Only `accepted` is listed by default. Clients ignore
+// values they do not know.
+//
+// Examples: accepted
+type DecisionStatus string
 
 // Error One error. It never contains addresses, paths or stack traces.
 type Error struct {
@@ -990,6 +1127,32 @@ type GetBundleParams struct {
 	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
+// ListDecisionsParams defines parameters for ListDecisions.
+type ListDecisionsParams struct {
+	// Status The status to list: `accepted` (the default), `proposed`, `rejected`,
+	// `deprecated`, `superseded`, or `all` for every status. Any other value is
+	// a 400 that does not repeat it.
+	Status *ListDecisionsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Project Resolve for this Project (ADR 0020): its own decision wins over the global
+	// one with the same name. Matched ignoring case. An unregistered Project
+	// answers the global view with a `hint`; a value that is not a `ProjectId`
+	// is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
+// ListDecisionsParamsStatus defines parameters for ListDecisions.
+type ListDecisionsParamsStatus string
+
+// GetDecisionParams defines parameters for GetDecision.
+type GetDecisionParams struct {
+	// Project Resolve the decision named in the path for this Project (ADR 0020): its own decision wins over the global
+	// one with the same name. Matched ignoring case. An unregistered Project
+	// answers the global view with a `hint`; a value that is not a `ProjectId`
+	// is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
 // GetInstructionsParams defines parameters for GetInstructions.
 type GetInstructionsParams struct {
 	// Target The file the block is written into: `claude` (CLAUDE.md) or `agents`
@@ -1295,6 +1458,27 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
 	GetBundle(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDecisions List the decisions
+	//
+	// Returns the decisions that answer in the Project's view, sorted by name, one
+	// per name: the nearest Scope wins. Only accepted decisions are listed unless
+	// `status` asks for another status; a reader may use it. The valid `status`
+	// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+	// `all`.
+	//
+	// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
+	ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetDecision Read one decision
+	//
+	// Returns one decision by name, of any status, with its raw Markdown `content`
+	// and its supersession `chain`, oldest to newest, including the decision itself.
+	// Two predecessors of the same successor are ordered by date, then name. A miss
+	// is a 404 whose hint points to the list.
+	//
+	// Corresponds with GET /api/v1/decisions/{name} (the `GetDecision` operationId).
+	GetDecision(ctx context.Context, name string, params *GetDecisionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInstructions Read the instruction block
 	//
@@ -1696,6 +1880,47 @@ func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticlePa
 // Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
 func (c *Client) GetBundle(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetBundleRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDecisions List the decisions
+//
+// Returns the decisions that answer in the Project's view, sorted by name, one
+// per name: the nearest Scope wins. Only accepted decisions are listed unless
+// `status` asks for another status; a reader may use it. The valid `status`
+// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+// `all`.
+//
+// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
+func (c *Client) ListDecisions(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDecisionsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetDecision Read one decision
+//
+// Returns one decision by name, of any status, with its raw Markdown `content`
+// and its supersession `chain`, oldest to newest, including the decision itself.
+// Two predecessors of the same successor are ordered by date, then name. A miss
+// is a 404 whose hint points to the list.
+//
+// Corresponds with GET /api/v1/decisions/{name} (the `GetDecision` operationId).
+func (c *Client) GetDecision(ctx context.Context, name string, params *GetDecisionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetDecisionRequest(c.Server, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2479,6 +2704,133 @@ func NewGetBundleRequest(server string, params *GetBundleParams) (*http.Request,
 			req.Header.Set("If-None-Match", headerParam0)
 		}
 
+	}
+
+	return req, nil
+}
+
+// NewListDecisionsRequest constructs an http.Request for the ListDecisions method
+func NewListDecisionsRequest(server string, params *ListDecisionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/decisions"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetDecisionRequest constructs an http.Request for the GetDecision method
+func NewGetDecisionRequest(server string, name string, params *GetDecisionParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/decisions/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -3445,6 +3797,31 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/bundle (the `GetBundle` operationId).
 	GetBundleWithResponse(ctx context.Context, params *GetBundleParams, reqEditors ...RequestEditorFn) (*GetBundleResponse, error)
 
+	// ListDecisionsWithResponse List the decisions
+	//
+	// Returns the decisions that answer in the Project's view, sorted by name, one
+	// per name: the nearest Scope wins. Only accepted decisions are listed unless
+	// `status` asks for another status; a reader may use it. The valid `status`
+	// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+	// `all`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
+	ListDecisionsWithResponse(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*ListDecisionsResponse, error)
+
+	// GetDecisionWithResponse Read one decision
+	//
+	// Returns one decision by name, of any status, with its raw Markdown `content`
+	// and its supersession `chain`, oldest to newest, including the decision itself.
+	// Two predecessors of the same successor are ordered by date, then name. A miss
+	// is a 404 whose hint points to the list.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/decisions/{name} (the `GetDecision` operationId).
+	GetDecisionWithResponse(ctx context.Context, name string, params *GetDecisionParams, reqEditors ...RequestEditorFn) (*GetDecisionResponse, error)
+
 	// GetInstructionsWithResponse Read the instruction block
 	//
 	// Returns the instruction block for the Project and target: the clauses that
@@ -4226,6 +4603,193 @@ func (r GetBundleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetBundleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListDecisionsResponse429Headers the declared response headers of an HTTP 429 response for ListDecisions
+type ListDecisionsResponse429Headers struct {
+	RetryAfter *int
+}
+
+type ListDecisionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DecisionList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *ListDecisionsResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDecisionsResponse) GetJSON200() *DecisionList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListDecisionsResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListDecisionsResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r ListDecisionsResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r ListDecisionsResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListDecisionsResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDecisionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDecisionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDecisionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDecisionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDecisionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetDecisionResponse429Headers the declared response headers of an HTTP 429 response for GetDecision
+type GetDecisionResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetDecisionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Decision
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetDecisionResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetDecisionResponse) GetJSON200() *Decision {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetDecisionResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetDecisionResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetDecisionResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetDecisionResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetDecisionResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetDecisionResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetDecisionResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetDecisionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetDecisionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetDecisionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetDecisionResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5822,6 +6386,43 @@ func (c *ClientWithResponses) GetBundleWithResponse(ctx context.Context, params 
 	return ParseGetBundleResponse(rsp)
 }
 
+// ListDecisionsWithResponse List the decisions
+//
+// Returns the decisions that answer in the Project's view, sorted by name, one
+// per name: the nearest Scope wins. Only accepted decisions are listed unless
+// `status` asks for another status; a reader may use it. The valid `status`
+// values are `accepted`, `proposed`, `rejected`, `deprecated`, `superseded` and
+// `all`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/decisions (the `ListDecisions` operationId).
+func (c *ClientWithResponses) ListDecisionsWithResponse(ctx context.Context, params *ListDecisionsParams, reqEditors ...RequestEditorFn) (*ListDecisionsResponse, error) {
+	rsp, err := c.ListDecisions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDecisionsResponse(rsp)
+}
+
+// GetDecisionWithResponse Read one decision
+//
+// Returns one decision by name, of any status, with its raw Markdown `content`
+// and its supersession `chain`, oldest to newest, including the decision itself.
+// Two predecessors of the same successor are ordered by date, then name. A miss
+// is a 404 whose hint points to the list.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/decisions/{name} (the `GetDecision` operationId).
+func (c *ClientWithResponses) GetDecisionWithResponse(ctx context.Context, name string, params *GetDecisionParams, reqEditors ...RequestEditorFn) (*GetDecisionResponse, error) {
+	rsp, err := c.GetDecision(ctx, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetDecisionResponse(rsp)
+}
+
 // GetInstructionsWithResponse Read the instruction block
 //
 // Returns the instruction block for the Project and target: the clauses that
@@ -6667,6 +7268,175 @@ func ParseGetBundleResponse(rsp *http.Response) (*GetBundleResponse, error) {
 		response.Headers304 = &headers
 	case rsp.StatusCode == 429:
 		var headers GetBundleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListDecisionsResponse parses an HTTP response from a ListDecisionsWithResponse call
+func ParseListDecisionsResponse(rsp *http.Response) (*ListDecisionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDecisionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DecisionList
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers ListDecisionsResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetDecisionResponse parses an HTTP response from a GetDecisionWithResponse call
+func ParseGetDecisionResponse(rsp *http.Response) (*GetDecisionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetDecisionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Decision
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetDecisionResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -7975,6 +8745,12 @@ type ServerInterface interface {
 	// GetBundle Download the resolved set as an archive
 	// (GET /api/v1/bundle)
 	GetBundle(w http.ResponseWriter, r *http.Request, params GetBundleParams)
+	// ListDecisions List the decisions
+	// (GET /api/v1/decisions)
+	ListDecisions(w http.ResponseWriter, r *http.Request, params ListDecisionsParams)
+	// GetDecision Read one decision
+	// (GET /api/v1/decisions/{name})
+	GetDecision(w http.ResponseWriter, r *http.Request, name string, params GetDecisionParams)
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(w http.ResponseWriter, r *http.Request, params GetInstructionsParams)
@@ -8284,6 +9060,94 @@ func (siw *ServerInterfaceWrapper) GetBundle(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetBundle(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDecisions operation middleware
+func (siw *ServerInterfaceWrapper) ListDecisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDecisionsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDecisions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDecision operation middleware
+func (siw *ServerInterfaceWrapper) GetDecision(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDecisionParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDecision(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8970,6 +9834,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops", wrapper.ListLoops)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops/{name}", wrapper.GetLoop)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/decisions", wrapper.ListDecisions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/decisions/{name}", wrapper.GetDecision)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/bundle", wrapper.GetBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
@@ -9748,6 +10614,257 @@ type GetBundledefaultJSONResponse struct {
 }
 
 func (response GetBundledefaultJSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisionsRequestObject struct {
+	Params ListDecisionsParams
+}
+
+type ListDecisionsResponseObject interface {
+	VisitListDecisionsResponse(w http.ResponseWriter) error
+}
+
+type ListDecisions200JSONResponse DecisionList
+
+func (response ListDecisions200JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisions400JSONResponse ErrorEnvelope
+
+func (response ListDecisions400JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisions401JSONResponse ErrorEnvelope
+
+func (response ListDecisions401JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisions426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response ListDecisions426JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisions429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response ListDecisions429JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisions503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response ListDecisions503JSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDecisionsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response ListDecisionsdefaultJSONResponse) VisitListDecisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecisionRequestObject struct {
+	Name   string `json:"name"`
+	Params GetDecisionParams
+}
+
+type GetDecisionResponseObject interface {
+	VisitGetDecisionResponse(w http.ResponseWriter) error
+}
+
+type GetDecision200JSONResponse Decision
+
+func (response GetDecision200JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision400JSONResponse ErrorEnvelope
+
+func (response GetDecision400JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision401JSONResponse ErrorEnvelope
+
+func (response GetDecision401JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision404JSONResponse ErrorEnvelope
+
+func (response GetDecision404JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetDecision426JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetDecision429JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecision503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetDecision503JSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetDecisiondefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetDecisiondefaultJSONResponse) VisitGetDecisionResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -11674,6 +12791,12 @@ type StrictServerInterface interface {
 	// GetBundle Download the resolved set as an archive
 	// (GET /api/v1/bundle)
 	GetBundle(ctx context.Context, request GetBundleRequestObject) (GetBundleResponseObject, error)
+	// ListDecisions List the decisions
+	// (GET /api/v1/decisions)
+	ListDecisions(ctx context.Context, request ListDecisionsRequestObject) (ListDecisionsResponseObject, error)
+	// GetDecision Read one decision
+	// (GET /api/v1/decisions/{name})
+	GetDecision(ctx context.Context, request GetDecisionRequestObject) (GetDecisionResponseObject, error)
 	// GetInstructions Read the instruction block
 	// (GET /api/v1/instructions)
 	GetInstructions(ctx context.Context, request GetInstructionsRequestObject) (GetInstructionsResponseObject, error)
@@ -11894,6 +13017,59 @@ func (sh *strictHandler) GetBundle(w http.ResponseWriter, r *http.Request, param
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetBundleResponseObject); ok {
 		if err := validResponse.VisitGetBundleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDecisions operation middleware
+func (sh *strictHandler) ListDecisions(w http.ResponseWriter, r *http.Request, params ListDecisionsParams) {
+	var request ListDecisionsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListDecisions(ctx, request.(ListDecisionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDecisions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDecisionsResponseObject); ok {
+		if err := validResponse.VisitListDecisionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetDecision operation middleware
+func (sh *strictHandler) GetDecision(w http.ResponseWriter, r *http.Request, name string, params GetDecisionParams) {
+	var request GetDecisionRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetDecision(ctx, request.(GetDecisionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetDecision")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetDecisionResponseObject); ok {
+		if err := validResponse.VisitGetDecisionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
