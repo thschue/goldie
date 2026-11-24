@@ -455,3 +455,123 @@ func TestBinaryStopsDuringTheFirstCloneWithinTheDrain(t *testing.T) {
 		t.Errorf("stopping during the first clone logged %s", l)
 	}
 }
+
+// subdirFiles are gitArticles(ids...) moved under dir, the way a platform repo
+// keeps its content in a docs/goldie folder.
+func subdirFiles(dir string, ids ...string) map[string]string {
+	out := map[string]string{}
+	for name, content := range gitArticles(ids...) {
+		out[dir+"/"+name] = content
+	}
+	return out
+}
+
+// warnNames reports whether a warn line names GOLDIE_GIT_PATH.
+func warnNames(t *testing.T, p *proc) bool {
+	t.Helper()
+	for _, l := range logLevels(t, p, 0)["warn"] {
+		if strings.Contains(l, "GOLDIE_GIT_PATH") {
+			return true
+		}
+	}
+	return false
+}
+
+// #848: GOLDIE_GIT_PATH=examples/demo with GOLDIE_GIT_URL serves the content
+// under that directory of the repository; what sits at the repository root or
+// beside the directory is not served.
+func TestBinaryServesTheGitPathSubdirectory(t *testing.T) {
+	repo := newBareRepo(t)
+	files := subdirFiles("examples/demo", "demo-article")
+	for name, content := range gitArticles("root-article") {
+		files[name] = content
+	}
+	for name, content := range subdirFiles("other", "other-article") {
+		files[name] = content
+	}
+	repo.commit(files)
+	p := startServer(t, gitEnv(repo.url(), "GOLDIE_GIT_ALLOW_FILE_URL=true", "GOLDIE_GIT_PATH=examples/demo")...)
+
+	waitUntil(t, p, 10*time.Second, "/readyz never listed source:git ok", func() bool { return sourceGitOk(t, p.admin) })
+	if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/demo-article"); code != 200 {
+		t.Errorf("GET an article under GOLDIE_GIT_PATH = %d %s, want 200", code, body)
+	}
+	for _, id := range []string{"root-article", "other-article"} {
+		if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/"+id); code != 404 {
+			t.Errorf("GET %s outside GOLDIE_GIT_PATH = %d %s, want 404", id, code, body)
+		}
+	}
+}
+
+// #848: with GOLDIE_GIT_PATH unset the repository root is served, as before.
+func TestBinaryServesTheRepositoryRootWithoutAGitPath(t *testing.T) {
+	repo := newBareRepo(t)
+	files := subdirFiles("examples/demo", "demo-article")
+	for name, content := range gitArticles("root-article") {
+		files[name] = content
+	}
+	repo.commit(files)
+	p := startServer(t, gitEnv(repo.url(), "GOLDIE_GIT_ALLOW_FILE_URL=true", "GOLDIE_GIT_PATH=")...)
+
+	waitUntil(t, p, 10*time.Second, "/readyz never listed source:git ok", func() bool { return sourceGitOk(t, p.admin) })
+	if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/root-article"); code != 200 {
+		t.Errorf("GET a root article = %d %s, want 200", code, body)
+	}
+	if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/demo-article"); code != 404 {
+		t.Errorf("GET a subdirectory article = %d %s, want 404", code, body)
+	}
+}
+
+// #848: a GOLDIE_GIT_PATH that is absolute, climbs with .., or is not in the
+// repository stops the first load with a warn naming GOLDIE_GIT_PATH and never
+// the URL; the server stays alive and not ready.
+func TestBinaryRejectsABadGitPathOnTheFirstLoad(t *testing.T) {
+	for name, path := range map[string]string{
+		"absolute": "/etc",
+		"climbing": "../escape",
+		"inner":    "examples/../../escape",
+		"missing":  "no/such/dir",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newBareRepo(t)
+			repo.commit(subdirFiles("examples/demo", "demo-article"))
+			p := startServer(t, gitEnv(repo.url(), "GOLDIE_GIT_ALLOW_FILE_URL=true", "GOLDIE_GIT_PATH="+path)...)
+
+			waitUntil(t, p, 10*time.Second, "no warn named GOLDIE_GIT_PATH", func() bool { return warnNames(t, p) })
+			if sourceGitOk(t, p.admin) {
+				t.Error("/readyz is ready, want source:git not ok after a first load that failed")
+			}
+			if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/demo-article"); code != 503 {
+				t.Errorf("GET article = %d %s, want 503 not_ready", code, body)
+			}
+			for _, l := range logLevels(t, p, 0)["warn"] {
+				if strings.Contains(l, repo.dir) {
+					t.Errorf("a warn names the repository URL: %s", l)
+				}
+			}
+		})
+	}
+}
+
+// #848: when GOLDIE_GIT_PATH is gone from the served ref at a later poll, the
+// last good content is still served, like any failed poll.
+func TestBinaryKeepsTheLastGoodContentWhenTheGitPathGoesAway(t *testing.T) {
+	repo := newBareRepo(t)
+	repo.commit(subdirFiles("examples/demo", "demo-article"))
+	p := startServer(t, gitEnv(repo.url(), "GOLDIE_GIT_ALLOW_FILE_URL=true", "GOLDIE_GIT_PATH=examples/demo")...)
+	waitUntil(t, p, 10*time.Second, "/readyz never listed source:git ok", func() bool { return sourceGitOk(t, p.admin) })
+
+	repo.commit(subdirFiles("moved", "demo-article"))
+	waitUntil(t, p, 10*time.Second, "no warn named GOLDIE_GIT_PATH after the directory went", func() bool { return warnNames(t, p) })
+	if code, body := authGet(t, "http://"+p.app+"/api/v1/articles/demo-article"); code != 200 {
+		t.Errorf("GET article after the directory went = %d %s, want the last good content, 200", code, body)
+	}
+	if !sourceGitOk(t, p.admin) {
+		t.Error("/readyz is not ready while stale, want source:git ok (PC-02)")
+	}
+	for _, l := range logLevels(t, p, 0)["warn"] {
+		if strings.Contains(l, repo.dir) {
+			t.Errorf("a warn names the repository URL: %s", l)
+		}
+	}
+}
