@@ -215,66 +215,66 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       Nothing matches these filters in the last five minutes.
     </p>
     <div v-if="shown.length || chosen" class="feed">
-    <div v-if="shown.length" class="scroll" role="region" aria-label="Activity feed" tabindex="0">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Event</th>
-            <th scope="col">Query → Item</th>
-            <th scope="col">Result</th>
-            <th scope="col">Via</th>
-            <th scope="col">Project</th>
-            <th scope="col">Replica</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e) }">
-            <td>
-              <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
-                {{ timeText(e.time) }}
-              </button>
-              <span v-if="e.late" class="late" title="Arrived after the reorder window">LATE</span>
-            </td>
-            <td>{{ e.kind }}</td>
-            <td :id="`q-${i}`" class="query">{{ queryText(e) }}</td>
-            <td :class="{ result: e.miss }">{{ resultText(e) }}</td>
-            <td><span aria-hidden="true">—</span><span class="sr-only">Not recorded</span></td>
-            <td class="wrap">{{ plain(e.project) || '—' }}</td>
-            <td class="wrap">{{ plain(e.replica) || '—' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <section v-if="chosen" ref="panel" class="detail"aria-label="Event detail">
-      <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
-      <dl>
-        <dt>Query</dt>
-        <dd class="query">{{ queryText(chosen) }}</dd>
-        <dt>Kind</dt>
-        <dd>{{ chosen.kind }}</dd>
-        <template v-if="chosen.project">
-          <dt>Project</dt>
-          <dd class="wrap">{{ plain(chosen.project) }}</dd>
-        </template>
-        <template v-if="chosen.token">
-          <dt>Token</dt>
-          <dd class="wrap">{{ plain(chosen.token) }}</dd>
-        </template>
-        <template v-if="chosen.replica">
-          <dt>Replica</dt>
-          <dd class="wrap">{{ plain(chosen.replica) }}</dd>
-        </template>
-      </dl>
-      <p v-if="chosen.miss">{{ resultText(chosen) }}</p>
-      <p v-if="chosen.miss" class="actions">
-        <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
-        <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
-      </p>
-      <p v-if="canSearch(chosen)" class="actions">
-        <RouterLink class="action" :to="{ path: '/', query: { q: queryText(chosen) } }">Try this search</RouterLink>
-      </p>
-    </section>
+      <div v-if="shown.length" class="scroll" role="region" aria-label="Activity feed" tabindex="0">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Event</th>
+              <th scope="col">Query → Item</th>
+              <th scope="col">Result</th>
+              <th scope="col">Via</th>
+              <th scope="col">Project</th>
+              <th scope="col">Replica</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e) }">
+              <td>
+                <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
+                  {{ timeText(e.time) }}
+                </button>
+                <span v-if="e.late" class="late" title="Arrived after the reorder window">LATE</span>
+              </td>
+              <td>{{ e.kind }}</td>
+              <td :id="`q-${i}`" class="query">{{ queryText(e) }}</td>
+              <td :class="{ result: e.miss }">{{ resultText(e) }}</td>
+              <td><span aria-hidden="true">—</span><span class="sr-only">Not recorded</span></td>
+              <td class="wrap">{{ plain(e.project) || '—' }}</td>
+              <td class="wrap">{{ plain(e.replica) || '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <section v-if="chosen" ref="panel" class="detail" aria-label="Event detail">
+        <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
+        <dl>
+          <dt>Query</dt>
+          <dd class="query">{{ queryText(chosen) }}</dd>
+          <dt>Kind</dt>
+          <dd>{{ chosen.kind }}</dd>
+          <template v-if="chosen.project">
+            <dt>Project</dt>
+            <dd class="wrap">{{ plain(chosen.project) }}</dd>
+          </template>
+          <template v-if="chosen.token">
+            <dt>Token</dt>
+            <dd class="wrap">{{ plain(chosen.token) }}</dd>
+          </template>
+          <template v-if="chosen.replica">
+            <dt>Replica</dt>
+            <dd class="wrap">{{ plain(chosen.replica) }}</dd>
+          </template>
+        </dl>
+        <p v-if="chosen.miss">{{ resultText(chosen) }}</p>
+        <p v-if="chosen.miss" class="actions">
+          <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
+          <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
+        </p>
+        <p v-if="canSearch(chosen)" class="actions">
+          <RouterLink class="action" :to="{ path: '/', query: { q: queryText(chosen) } }">Try this search</RouterLink>
+        </p>
+      </section>
     </div>
   </template>
 </template>
