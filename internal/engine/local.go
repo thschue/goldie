@@ -150,6 +150,7 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	}
 	snap := *s
 	snap.warnings = append(slices.Clone(s.warnings), warnings...)
+	snap.dangling = slices.Clone(s.dangling)
 	snap.local = &localScope{scopeItems: items, configFile: dir + "/" + localConfigName}
 	hidden, _, err := snap.resolveSuppressions("", snap.local.configFile, "the local Scope's", "the local Scope", refs)
 	if err != nil {
