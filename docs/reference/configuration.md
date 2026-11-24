@@ -166,8 +166,8 @@ other instruments: there are no HTTP server duration or runtime metrics.
 | `goldie.searches` | `{request}` | `result`: `hit` or `miss` | Searches answered; a miss is a search with no results. |
 | `goldie.lookups` | `{request}` | `result`: `hit` or `miss` | Article lookups answered; a miss is an id that was not found. |
 | `goldie.skill.gets` | `{request}` | `name`: the skill; `scope`: `global` or `project`; `via`: `cli`, `mcp` or `other` | Skill gets that found the skill. |
-| `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |
-| `goldie.sync.duration` | `s` | `source`: `git` or `dir`; `result`: `ok` or `error` | Histogram of how long each Source poll took, in seconds (buckets 0.05 to 60); a failed poll is recorded with `error`. |
+| `goldie.syncs` | `{poll}` | `source`: the Source's name, from `GOLDIE_SOURCES`, or `git` or `dir` for the `GOLDIE_GIT_URL` or `GOLDIE_CONTENT_DIR` shorthand; `result`: `ok` or `error` | Finished polls of each configured Source; error when the poll recorded a Source error. |
+| `goldie.sync.duration` | `s` | `source`: the Source's name, from `GOLDIE_SOURCES`, or `git` or `dir` for the `GOLDIE_GIT_URL` or `GOLDIE_CONTENT_DIR` shorthand; `result`: `ok` or `error` | Histogram of how long each Source poll took, in seconds (buckets 0.05 to 60); a failed poll is recorded with `error`. |
 | `goldie.mcp.tool.calls` | `{call}` | `tool`: one of the eleven tool names or `other`; `result`: `ok` or `error` | MCP tool calls answered by the server; error when the tool result is an error, rate-limited calls included. |
 
 A skill get that answers 404 is not counted, so a name a caller makes up never becomes a `name` label; `name` is the skill's own spelling, whatever case the caller used.
