@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
-import { add, agoText, announceEvery, queryText, resultText, rowKey, timeText } from './rows';
+import { add, addText, agoText, announceEvery, canSearch, missBoard, queryText, resultText, rowKey, timeText } from './rows';
 import { streamActivity, type ActivityEvent, type Frame } from './stream';
 
 // The activity feed on the merged stream of all replicas (handoff §3.6, §5.1, §5.3, §9; #630,
@@ -10,7 +10,7 @@ import { streamActivity, type ActivityEvent, type Frame } from './stream';
 // one replica's events, and a partial-view banner while a peer is down. New rows never take focus:
 // nothing here calls focus(), and the rows are keyed by event id so a selection stays on its
 // event. The miss count is a polite status that changes at most every 30 s. Out of scope here:
-// the Miss board and detail panel, and the live stage.
+// the live stage.
 const rows = ref<ActivityEvent[]>([]);
 const phase = ref<'connecting' | 'live' | 'error'>('connecting');
 const failed = ref<ApiError | Error>();
@@ -28,6 +28,8 @@ let controller: AbortController | undefined;
 const shown = computed(() =>
   rows.value.filter((r) => (!missesOnly.value || r.miss) && (only.value === undefined || r.replica === only.value)),
 );
+const board = computed(() => missBoard(rows.value));
+const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
 const missCount = computed(() => rows.value.filter((r) => r.miss).length);
 const replica = computed(() => plain(rows.value[0]?.replica));
 
@@ -182,12 +184,28 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       <p v-if="dropped" class="box warning">Some events were missed because this page fell behind.</p>
     </div>
 
+    <section v-if="board.length" class="board" aria-labelledby="board-h">
+      <h2 id="board-h">What people looked for and didn't find</h2>
+      <ul>
+        <li v-for="g in board" :key="g.query">
+          <button type="button" class="control card" @click="selected = rowKey(g.latest)">
+            <span class="q">{{ plain(g.query) }}</span>
+            <span class="n">×{{ g.count }}</span>
+            <span class="meta">
+              {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ timeText(g.latest.time) }}
+            </span>
+          </button>
+        </li>
+      </ul>
+    </section>
+
     <p v-if="phase === 'live' && !rows.length" class="box">
       No requests yet. Run <code>goldie search</code> or ask your agent something.
     </p>
     <p v-else-if="phase === 'live' && !shown.length" class="box">
       Nothing matches these filters in the last five minutes.
     </p>
+    <div v-if="shown.length || chosen" class="feed">
     <div v-if="shown.length" class="scroll" role="region" aria-label="Activity feed" tabindex="0">
       <table>
         <thead>
@@ -219,10 +237,107 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </tbody>
       </table>
     </div>
+    <section v-if="chosen" class="detail" aria-label="Event detail">
+      <h2>{{ chosen.miss ? 'Miss' : 'Served' }}</h2>
+      <dl>
+        <dt>Query</dt>
+        <dd class="query">{{ queryText(chosen) }}</dd>
+        <dt>Kind</dt>
+        <dd>{{ chosen.kind }}</dd>
+        <template v-if="chosen.project">
+          <dt>Project</dt>
+          <dd class="wrap">{{ plain(chosen.project) }}</dd>
+        </template>
+        <template v-if="chosen.token">
+          <dt>Token</dt>
+          <dd class="wrap">{{ plain(chosen.token) }}</dd>
+        </template>
+        <template v-if="chosen.replica">
+          <dt>Replica</dt>
+          <dd class="wrap">{{ plain(chosen.replica) }}</dd>
+        </template>
+      </dl>
+      <p v-if="chosen.miss">{{ resultText(chosen) }}</p>
+      <p v-if="chosen.miss" class="actions">
+        <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
+        <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
+      </p>
+      <p v-if="canSearch(chosen)" class="actions">
+        <RouterLink class="action" :to="{ path: '/', query: { q: queryText(chosen) } }">Try this search</RouterLink>
+      </p>
+    </section>
+    </div>
   </template>
 </template>
 
 <style scoped>
+.board ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-color: var(--miss-border);
+  background: var(--miss-bg);
+  color: var(--miss-ink);
+  text-align: left;
+}
+.card .q {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  unicode-bidi: isolate;
+}
+.card .meta {
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.feed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.feed .scroll {
+  flex: 1 1 640px;
+  min-width: 0;
+}
+.detail {
+  flex: 1 1 280px;
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.detail h2 {
+  margin-top: 0;
+}
+.detail dt {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+}
+.detail dd {
+  margin: 0 0 var(--space-3);
+}
+.actions {
+  margin: 0 0 var(--space-3);
+}
+.action {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--brand);
+  font-weight: 600;
+  text-decoration: underline;
+}
 .switcher {
   display: flex;
   flex-wrap: wrap;

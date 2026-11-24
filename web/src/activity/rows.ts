@@ -50,6 +50,37 @@ export function agoText(iso: string, now: number): string {
   return unit(Math.floor(s / 86400), 'day');
 }
 
+export const boardSize = 4;
+
+export type MissGroup = { query: string; count: number; projects: number; latest: ActivityEvent };
+
+// missBoard groups the misses of a feed (newest first) by query: the most frequent first, the one
+// seen last first among equals, at most boardSize. The latest event of a group is its first one.
+export function missBoard(feed: ActivityEvent[]): MissGroup[] {
+  const groups = new Map<string, MissGroup & { seen: Set<string> }>();
+  for (const e of feed) {
+    if (!e.miss) continue;
+    const g = groups.get(e.query) ?? { query: e.query, count: 0, projects: 0, latest: e, seen: new Set<string>() };
+    g.count++;
+    if (e.project) g.seen.add(e.project);
+    g.projects = g.seen.size;
+    groups.set(e.query, g);
+  }
+  // Map keeps insertion order (newest first) and sort is stable, so ties stay newest first.
+  return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, boardSize);
+}
+
+// The line that says what to add for a miss (handoff §8), by what was asked for: a skill, an agent
+// or an article. A bare get (a replica older than ADR 0021) could be a skill or an agent.
+export function addText(e: ActivityEvent): string {
+  const m = e.kind === 'get' ? /^(skill|agent|article):/.exec(e.query) : null;
+  const what = e.kind === 'get' ? (m?.[1] ?? 'skill or agent') : 'article';
+  return what === 'article' ? 'Start this article in the Source repo ↗' : `Add this ${what} to the Source repo ↗`;
+}
+
+// "Try this search" has a query to run for a search and a lookup, not for a get of a Reference.
+export const canSearch = (e: ActivityEvent) => e.kind !== 'get';
+
 // rowKey is what makes a row one event: ids are per replica and start again at 1 when a
 // process restarts, so two replicas share ids.
 export const rowKey = (e: ActivityEvent) => `${e.replica}/${e.id}`;
