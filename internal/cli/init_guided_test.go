@@ -157,7 +157,7 @@ func TestDefaultEnvReadsStdinOnlyOnACharDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer null.Close()
+	defer func() { _ = null.Close() }()
 	os.Stdin = null
 	if cli.DefaultEnv(&bytes.Buffer{}).In == nil {
 		t.Error("stdin is a char device: Env.In is nil, want a reader")
@@ -167,8 +167,8 @@ func TestDefaultEnvReadsStdinOnlyOnACharDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer r.Close()
-	defer w.Close()
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
 	os.Stdin = r
 	if cli.DefaultEnv(&bytes.Buffer{}).In != nil {
 		t.Error("stdin is a pipe: Env.In is set, want nil")
