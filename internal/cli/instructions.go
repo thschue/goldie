@@ -32,6 +32,13 @@ func (s settings) checkInstructionsUsage(pos []string) error {
 	return nil
 }
 
+// applyInstructions is goldie instructions apply for target, without --force,
+// as init runs it.
+func (c *commander) applyInstructions(ctx context.Context, target string) error {
+	c.s.target, c.s.force = target, false
+	return c.instructions(ctx, "apply")
+}
+
 // instructions is goldie instructions apply and check. It reads the block from
 // the API, then reads the target file at the repository root through an
 // os.Root, so no path above the root is touched. Both commands write nothing

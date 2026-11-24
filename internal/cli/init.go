@@ -187,8 +187,32 @@ func (c *commander) initGuided(ctx context.Context, root string, proj project.De
 	c.s.addr = addr
 	list, why := c.reportServer(ctx)
 	say(c.out, "%s", registeredLines(proj.ID, list, why, isLoopback(addr)))
-	say(c.out, "%s", c.nextBlock(addr, why == tokenRejectedWhy))
-	return nil
+	applied, err := c.offerInstructions(ctx, p, why == "")
+	say(c.out, "%s", c.nextBlock(addr, why == tokenRejectedWhy, applied))
+	return err
+}
+
+// offerInstructions asks to add goldie's block to CLAUDE.md, only when the
+// server answered and accepted the token (usable). It reports whether the
+// block is in place, so Next can drop the command. A no keeps Next as it is.
+// Input that ends at the question is a no (earlier runs ended there and
+// succeeded). A block edited by hand is never forced: the command's message goes to stderr,
+// init still succeeds, and Next keeps the command. Any other failure is
+// returned (exit 1); the config stays.
+func (c *commander) offerInstructions(ctx context.Context, p *prompter, usable bool) (applied bool, err error) {
+	if !usable {
+		return false, nil
+	}
+	yes, err := p.confirm("Add goldie's instruction block to CLAUDE.md?")
+	if err != nil || !yes { // input that ended at the question is a no
+		return false, nil
+	}
+	err = c.applyInstructions(ctx, "claude")
+	if errors.Is(err, ErrBlockEdited) {
+		say(c.errOut, "%s\n", contract.CleanLine(err.Error()))
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // askAddress asks for the server address; the default is the one --addr or
@@ -287,7 +311,7 @@ func (c *commander) tokenSource() string {
 // Without an address there is nothing to paste but the commit: a placeholder
 // such as <server address> is a shell redirect. A rejected token gets the
 // export step too, with a quoted placeholder.
-func (c *commander) nextBlock(addr string, rejected bool) string {
+func (c *commander) nextBlock(addr string, rejected, applied bool) string {
 	var b strings.Builder
 	b.WriteString("\nNext:\n")
 	if addr == "" {
@@ -304,9 +328,14 @@ func (c *commander) nextBlock(addr string, rejected bool) string {
 		say(&b, "export %s=\"<your new token>\"\n", EnvToken)
 	}
 	say(&b, "claude mcp add --transport http goldie %s/mcp --header \"Authorization: Bearer $%s\"\n", addr, EnvToken)
-	b.WriteString("goldie instructions apply\n")
+	files := ".goldie/config.yaml"
+	if applied {
+		files += " CLAUDE.md" // the file init just wrote is committed with the config
+	} else {
+		b.WriteString("goldie instructions apply\n")
+	}
 	b.WriteString("goldie status\n")
-	b.WriteString("git add .goldie/config.yaml && git commit -m \"Add goldie config\"\n")
+	say(&b, "git add %s && git commit -m \"Add goldie config\"\n", files)
 	return b.String()
 }
 
