@@ -366,6 +366,85 @@ func TestServerDevPulledExampleSkillModesMatchGit(t *testing.T) {
 	}
 }
 
+// #767: the demo registers one Project, github.com/harbor/checkout, so --dev
+// shows Project data: the Project list names it, and its article list holds an
+// override of a global demo article and an article only the Project has.
+
+const demoProject = "github.com/harbor/checkout"
+
+// devGetJSON reads a 200 answer of GET path on the --dev server p into out.
+func devGetJSON(t *testing.T, p *devProc, path string, out any) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, p.addr+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+p.token)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // loopback test URL
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200: %s", path, resp.StatusCode, buf.String())
+	}
+	if err := json.Unmarshal(buf.Bytes(), out); err != nil {
+		t.Fatalf("GET %s is not the expected JSON: %v\n%s", path, err, buf.String())
+	}
+}
+
+func TestServerDevOnAnEmptyDirectoryListsTheDemoProject(t *testing.T) {
+	p := startDev(t, devEnv(), t.TempDir())
+	var list struct {
+		Projects []string `json:"projects"`
+	}
+	devGetJSON(t, p, "/api/v1/projects", &list)
+	if !slices.Contains(list.Projects, demoProject) {
+		t.Errorf("GET /api/v1/projects on an empty directory = %v, want it to list %s", list.Projects, demoProject)
+	}
+}
+
+func TestServerDevDemoProjectArticlesHoldAnOverrideAndAProjectOnlyArticle(t *testing.T) {
+	p := startDev(t, devEnv(), t.TempDir())
+	type summary struct {
+		ID        string   `json:"id"`
+		Scope     string   `json:"scope"`
+		Overrides []string `json:"overrides"`
+	}
+	var global, project struct {
+		Articles []summary `json:"articles"`
+	}
+	devGetJSON(t, p, "/api/v1/articles", &global)
+	devGetJSON(t, p, "/api/v1/articles?project="+demoProject, &project)
+
+	globalIDs := map[string]bool{}
+	for _, a := range global.Articles {
+		globalIDs[a.ID] = true
+	}
+	var overrides, only []string
+	for _, a := range project.Articles {
+		if a.Scope != demoProject {
+			continue
+		}
+		if globalIDs[a.ID] {
+			overrides = append(overrides, a.ID)
+			if !slices.Contains(a.Overrides, "global") {
+				t.Errorf("article %q of %s overrides %v, want it to shadow global", a.ID, demoProject, a.Overrides)
+			}
+		} else {
+			only = append(only, a.ID)
+		}
+	}
+	if !slices.Contains(overrides, "retries") {
+		t.Errorf("articles of %s that override a global article = %v, want the demo's retries", demoProject, overrides)
+	}
+	if len(only) == 0 {
+		t.Errorf("%s has no article of its own: %+v", demoProject, project.Articles)
+	}
+}
+
 // #743: a directory Source keeps the executable bit through goldie pull, and
 // the files without it stay 0644.
 func TestServerDevPullOfADirectorySourceKeepsTheExecutableBit(t *testing.T) {
