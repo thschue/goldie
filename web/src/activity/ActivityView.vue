@@ -409,11 +409,11 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
           <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
         </p>
-        <p v-if="traceHref" class="actions">
-          <a class="action" :href="traceHref" target="_blank" rel="noopener noreferrer">Open trace ↗</a>
-        </p>
         <p v-if="canSearch(chosen)" class="actions">
           <RouterLink class="action" :to="{ path: '/', query: { q: queryText(chosen) } }">Try this search</RouterLink>
+        </p>
+        <p v-if="traceHref" class="actions">
+          <a class="action" :href="traceHref" target="_blank" rel="noopener noreferrer">Open trace ↗</a>
         </p>
       </section>
     </div>
