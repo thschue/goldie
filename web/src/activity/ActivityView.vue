@@ -59,6 +59,10 @@ function visibility() {
   drawStage();
 }
 let held: ActivityEvent[] = [];
+// Everything that arrived while paused, for the stage and the tiles (the rows keep only the newest
+// maxRows); capped so a long pause cannot grow it without end.
+const maxPending = 20_000;
+let pending: ActivityEvent[] = [];
 let controller: AbortController | undefined;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let attempts = 0;
@@ -73,7 +77,9 @@ const shown = computed(() =>
       (!picked.value.length || picked.value.includes(surfaceOf(r) as Surface)),
   ),
 );
-const header = computed(() => liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value));
+const header = computed(() =>
+  paused.value ? 'Paused' : liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value),
+);
 // fed changes whenever the tiles are fed, so the read happens again.
 const last5 = computed(() => (fed.value, tiles.read(now.value)));
 const pills = computed(() =>
@@ -108,14 +114,15 @@ const down = computed(() =>
 const choose = (name?: string) => (only.value = name);
 
 // Frames of a reconnect wait here until the live marker arrives, then replace the view in one go.
-let pending: Frame[] = [];
+let replayed: Frame[] = [];
 function replay(frames: Frame[]) {
-  pending.push(...frames);
+  replayed.push(...frames);
   if (!frames.some((f) => f.type === 'live')) return;
-  const all = pending;
-  pending = [];
+  const all = replayed;
+  replayed = [];
   rows.value = [];
   held = [];
+  pending = [];
   fleet.value = new Map();
   tiles = createTiles();
   dropped.value = false;
@@ -138,11 +145,17 @@ function apply(frames: Frame[]) {
       else if (seen) seen.heard = Math.max(seen.heard, t);
     } else if (f.type === 'status') {
       fleet.value.set(f.replica, { up: f.up, lastSeen: f.lastSeen, heard: f.up ? Date.now() : 0 });
-      now.value = Date.now();
+      if (!paused.value) now.value = Date.now();
     } else if (f.type === 'dropped') dropped.value = true;
     else if (phase.value === 'connecting') phase.value = 'live';
   }
   if (!events.length) return;
+  // Paused (WCAG 2.2.2): the stage, the tiles and the rows all stand still; Resume applies what was held.
+  if (paused.value) {
+    held = add(held, events);
+    pending = [...pending, ...events].slice(-maxPending);
+    return;
+  }
   now.value = Date.now();
   if (fresh.length) {
     stage.add(fresh, now.value);
@@ -150,8 +163,7 @@ function apply(frames: Frame[]) {
   }
   tiles.add(events, now.value);
   fed.value++;
-  if (paused.value) held = add(held, events);
-  else rows.value = add(rows.value, events);
+  rows.value = add(rows.value, events);
 }
 
 // connect starts from an empty view (first load, Retry). After a drop, run() keeps the view and asks
@@ -165,6 +177,7 @@ async function connect() {
   held = [];
   tiles = createTiles();
   fed.value++;
+  pending = [];
   stage = createStage({ reduced: calm });
   stage.setHidden(document.hidden, Date.now());
   drawStage();
@@ -180,7 +193,7 @@ async function connect() {
 async function run() {
   controller?.abort();
   const mine = (controller = new AbortController());
-  pending = [];
+  replayed = [];
   const onFrames = (frames: Frame[]) => {
     if (mine.signal.aborted) return;
     if (phase.value === 'reconnecting') replay(frames);
@@ -208,6 +221,13 @@ function togglePause() {
   if (!paused.value) {
     rows.value = add(rows.value, [...held].reverse());
     held = [];
+    // Counted, not animated: Resume is no burst of particles.
+    stage.count(pending);
+    tiles.add(pending, Date.now());
+    fed.value++;
+    pending = [];
+    now.value = Date.now();
+    drawStage();
   }
 }
 
@@ -218,7 +238,8 @@ const announced = ref(0);
 let announcedAt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 // "stopped answering 2 minutes ago" ages while the page is open.
-const tick = setInterval(() => (now.value = Date.now()), 30_000);
+// Paused, the clock stands still too: the tiles' five-minute window would slide otherwise.
+const tick = setInterval(() => !paused.value && (now.value = Date.now()), 30_000);
 // The stage's summary changes at most every 30 s, whether or not a particle is moving.
 const stageTick = setInterval(() => !frame && drawStage(), 5_000);
 function announce() {
