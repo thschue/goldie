@@ -48,6 +48,9 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	// The federated activity settings (#398): Config holds the parsed window.
 	got[envActivityPeers] = reported(t, cfg, envActivityPeers)
 	got[envActivityReorderWindow] = reported(t, cfg, envActivityReorderWindow)
+	// The observability links (#807) are optional and unset by default.
+	got[envGrafanaURL] = ""
+	got[envTraceURLTemplate] = ""
 	if int(cfg.DrainTimeout.Seconds()) != 25 {
 		t.Errorf("drain default = %v", cfg.DrainTimeout)
 	}
