@@ -57,6 +57,8 @@ func serveSourceList(cfg platform.Config) (source, error) {
 		default:
 			src = engine.NewDirSource(spec.Dir)
 		}
+		// A Source publishes only what its Claim covers; no claims deny all (#477).
+		src = engine.NewClaimedSource(src, engine.Claim{Global: spec.Claims.Global, Projects: spec.Claims.Projects})
 		named = append(named, engine.NamedSource{Name: spec.Name, Source: src})
 		list.members = append(list.members, m)
 	}
