@@ -1,16 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
 import { add, addText, agoText, announceEvery, canSearch, missBoard, queryText, resultText, rowKey, timeText } from './rows';
+import { projectOf } from '../projects/api';
+import { createTiles, liveHeader } from './tiles';
 import { streamActivity, type ActivityEvent, type Frame } from './stream';
 
 // The activity feed on the merged stream of all replicas (handoff §3.6, §5.1, §5.3, §9; #630,
 // #631). One table of the events, newest first, kept to the newest maxRows, a switcher that shows
 // one replica's events, and a partial-view banner while a peer is down. New rows never take focus:
 // nothing here calls focus(), and the rows are keyed by event id so a selection stays on its
-// event. The miss count is a polite status that changes at most every 30 s. Out of scope here:
-// the live stage.
+// event. The miss count is a polite status that changes at most every 30 s. The header words how
+// many replicas answered in the last minute, the tiles count the last five minutes from buckets
+// (not from the rows), and the URL's `project` filters the rows (#809). Out of scope here: the
+// live stage.
+const route = useRoute();
+const router = useRouter();
+const project = computed(() => projectOf(route.query));
+const dropProject = () => router.replace({ query: { ...route.query, project: undefined } });
 const rows = ref<ActivityEvent[]>([]);
 const phase = ref<'connecting' | 'live' | 'error'>('connecting');
 const failed = ref<ApiError | Error>();
@@ -18,16 +27,28 @@ const dropped = ref(false);
 const paused = ref(false);
 const missesOnly = ref(false);
 const selected = ref<string>();
-// The replicas seen, by name: from their events (up) and from replica_status (up or down).
-const fleet = ref(new Map<string, { up: boolean; lastSeen: string }>());
+// The replicas seen, by name: from their events (up) and from replica_status (up or down). `heard`
+// is when each last answered (epoch ms): an event's time, or the status that said it is up; a
+// replica reported down is not answering, so its status sets it to 0.
+const fleet = ref(new Map<string, { up: boolean; lastSeen: string; heard: number }>());
+const tiles = createTiles();
+const fed = ref(0);
 const only = ref<string>();
 const now = ref(Date.now());
 let held: ActivityEvent[] = [];
 let controller: AbortController | undefined;
 
 const shown = computed(() =>
-  rows.value.filter((r) => (!missesOnly.value || r.miss) && (only.value === undefined || r.replica === only.value)),
+  rows.value.filter(
+    (r) =>
+      (!missesOnly.value || r.miss) &&
+      (only.value === undefined || r.replica === only.value) &&
+      (!project.value || r.project === project.value),
+  ),
 );
+const header = computed(() => liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value));
+// fed changes whenever the tiles are fed, so the read happens again.
+const last5 = computed(() => (fed.value, tiles.read(now.value)));
 const board = computed(() => missBoard(rows.value));
 const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
 // When narrow the panel sits under the feed: bring it into view on a selection, never moving focus
@@ -40,7 +61,6 @@ watch(selected, async (key) => {
   panel.value?.scrollIntoView?.({ block: 'nearest', behavior: calm ? 'auto' : 'smooth' });
 });
 const missCount = computed(() => rows.value.filter((r) => r.miss).length);
-const replica = computed(() => plain(rows.value[0]?.replica));
 
 const replicas = computed(() =>
   [...fleet.value]
@@ -58,14 +78,20 @@ function apply(frames: Frame[]) {
   for (const f of frames) {
     if (f.type === 'event') {
       events.push(f.event);
-      if (f.event.replica && !fleet.value.has(f.event.replica)) fleet.value.set(f.event.replica, { up: true, lastSeen: '' });
+      const seen = fleet.value.get(f.event.replica);
+      const t = Math.min(Date.parse(f.event.time) || 0, Date.now());
+      if (f.event.replica && !seen) fleet.value.set(f.event.replica, { up: true, lastSeen: '', heard: t });
+      else if (seen) seen.heard = Math.max(seen.heard, t);
     } else if (f.type === 'status') {
-      fleet.value.set(f.replica, { up: f.up, lastSeen: f.lastSeen });
+      fleet.value.set(f.replica, { up: f.up, lastSeen: f.lastSeen, heard: f.up ? Date.now() : 0 });
       now.value = Date.now();
     } else if (f.type === 'dropped') dropped.value = true;
     else if (phase.value === 'connecting') phase.value = 'live';
   }
   if (!events.length) return;
+  now.value = Date.now();
+  tiles.add(events, now.value);
+  fed.value++;
   if (paused.value) held = add(held, events);
   else rows.value = add(rows.value, events);
 }
@@ -148,12 +174,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
     <div class="bar">
       <p class="label">
         <template v-if="phase === 'connecting'">Connecting to the replicas…</template>
-        <template v-else-if="peers">
-          Live · merged from all replicas ({{ replicas.filter((r) => r.up).length }} of {{ replicas.length }} answering)
-        </template>
-        <template v-else>
-          Live · replica<template v-if="replica">{{ ' ' }}<strong>{{ replica }}</strong></template>
-        </template>
+        <template v-else>{{ header }}</template>
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
       <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
@@ -162,6 +183,33 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
     </div>
+
+    <section class="tiles" aria-label="Last five minutes">
+      <ul>
+        <li>
+          <span class="k">Requests</span>{{ ' ' }}
+          <span class="v">{{ Math.round(last5.perMinute) }}<small> per minute</small></span>
+        </li>
+        <li>
+          <span class="k">Misses</span>{{ ' ' }}
+          <span class="v">{{ last5.missPercent === undefined ? '—' : `${last5.missPercent} %` }}</span>
+        </li>
+        <li>
+          <span class="k">Projects asking</span>{{ ' ' }}
+          <span class="v">{{ last5.projects }}</span>
+        </li>
+        <li>
+          <span class="k">Busiest surface</span>{{ ' ' }}
+          <span class="v">—</span>
+        </li>
+      </ul>
+    </section>
+
+    <p v-if="project" class="chips">
+      <button type="button" class="control" :aria-label="`Remove Project filter ${plain(project)}`" @click="dropProject">
+        {{ plain(project) }} <span aria-hidden="true">✕</span>
+      </button>
+    </p>
 
     <div v-if="peers" class="switcher" role="group" aria-label="Replicas">
       <button type="button" class="control" :aria-pressed="only === undefined" @click="choose()">
@@ -280,6 +328,39 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 </template>
 
 <style scoped>
+.tiles ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.tiles li {
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.tiles .k {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+}
+.tiles .v {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.tiles small {
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.chips {
+  margin: 0 0 var(--space-4);
+}
 .board ul {
   display: flex;
   flex-wrap: wrap;
