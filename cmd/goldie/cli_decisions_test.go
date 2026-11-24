@@ -288,3 +288,13 @@ func TestRootHelpListsDecisionsAndItsHelpNamesListAndShow(t *testing.T) {
 	wantCommandHelp(t, "decisions", out, stderr, code,
 		[]string{"--addr", "--dir", "--token", "--json", "--project"}, []string{"process list", "list", "show"})
 }
+
+// An empty list says what to check next, as goldie loops list does.
+func TestCLIDecisionsListOfNoDecisionsSaysWhatToCheckNext(t *testing.T) {
+	addr, _ := saServer(t, map[string]string{"/api/v1/decisions": `{"decisions":[]}`})
+	out, err := saRun(t, addr, "decisions", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireContains(t, "empty decisions list", out, "No decisions", "goldie status")
+}

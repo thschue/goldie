@@ -51,7 +51,7 @@ func (c *commander) decisions(ctx context.Context, verb, name string) error {
 	}
 	var b strings.Builder
 	if len(l.Decisions) == 0 {
-		b.WriteString("No decisions.\n")
+		b.WriteString("No decisions.\n" + emptyNextStep)
 	}
 	for _, d := range l.Decisions {
 		fmt.Fprintf(&b, "%s  %s  (%s)\n", contract.CleanLine(d.Name), contract.CleanLine(d.Title), contract.CleanLine(d.Scope))
