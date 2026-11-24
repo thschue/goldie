@@ -91,7 +91,7 @@ Scope added, over `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml` or empt
 [the local Scope](docs/content-ci.md#the-local-scope-goldie)), and then `--addr` or `GOLDIE_ADDR` is
 an error; `GOLDIE_TOKEN` is ignored. `decisions.path` is a folder of the repository, relative and
 inside it, whose Nygard, MADR or frontmatter ADRs are served as local decisions without moving them;
-`README.md` and templates are skipped, a malformed ADR is a warning that names its file, and a path
+`README.md` and templates are skipped, a malformed ADR is a warning on stderr that names its file, and a path
 that is absolute, uses `..`, leaves the repository by a symlink or holds control characters is an
 error naming `.goldie/config.yaml`. `--dir` or `GOLDIE_DIR` together with `--addr`, or `GOLDIE_DIR`
 and `GOLDIE_ADDR` both set in the environment, is an error naming both. Content that does not load

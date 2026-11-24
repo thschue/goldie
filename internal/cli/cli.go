@@ -297,21 +297,43 @@ func (f *ClientFlags) open(ctx context.Context, env Env, tm tokenMode) (*command
 		return nil, nil, err
 	}
 	c.s.addr, c.s.token, c.local = addr, token, true
+	if goldieDir != "" {
+		c.localWarnings(ctx)
+	}
 	return c, func() {
 		stop()
 		closeContent()
 	}, nil
 }
 
+// localWarnings prints the local Scope's load warnings, such as a decision
+// file that is malformed and so not served, to stderr, one "Warning: <file>:
+// <message>" line each. The embedded server's token is an operator's, so the
+// sync route answers; a failure here is not reported, the command goes on.
+func (c *commander) localWarnings(ctx context.Context) {
+	cl, err := c.client(true)
+	if err != nil {
+		return
+	}
+	resp, err := cl.GetSyncWithResponse(ctx)
+	if err != nil || resp.JSON200 == nil {
+		return
+	}
+	for _, w := range resp.JSON200.Warnings {
+		_, _ = fmt.Fprintln(c.errOut, "Warning: "+contract.CleanLine(w.File+": "+w.Message))
+	}
+}
+
 // localScope finds the repository's local Scope from the working directory:
 // goldieDir is its .goldie directory, set when .goldie/articles exists at the
-// repository root, or config.yaml sets decisions.path. dir is the content directory given by --dir or GOLDIE_DIR,
-// or else the one config.yaml names, which comes back already open as handle
-// (project.OpenConfigContentDir), or "" for empty content. A .goldie without
-// articles and without decisions.path, such as the one goldie init writes, is
-// not a local Scope: dir comes back as it was given. An address
-// together with a local Scope is an error naming both, like one with a
-// directory, because the address would hide the repository's own content.
+// repository root, or config.yaml sets decisions.path. dir is the content
+// directory given by --dir or GOLDIE_DIR, or else the one config.yaml names,
+// which comes back already open as handle (project.OpenConfigContentDir), or
+// "" for empty content. A .goldie without articles and without decisions.path,
+// such as the one goldie init writes, is not a local Scope: dir comes back as
+// it was given. An address together with a local Scope is an error naming
+// both, like one with a directory, because the address would hide the
+// repository's own content.
 func (f *ClientFlags) localScope(env Env, dir string) (goldieDir, content string, handle *os.Root, err error) {
 	wd, werr := os.Getwd()
 	if werr != nil {

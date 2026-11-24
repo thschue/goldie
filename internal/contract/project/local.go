@@ -47,9 +47,11 @@ func LocalRoot(dir string) (root string, ok bool) {
 }
 
 // decisionsPathSet reports whether .goldie/config.yaml, read through r, sets
-// decisions.path: a decisions key that is not null and, when it is a mapping,
-// has a path that is not null. Any other shape counts as set, so that the
-// engine reports it; a file that cannot be read or parsed does not.
+// decisions: a key that is not null and, when it is a mapping, holds a key
+// other than path or a path that is not null. A mapping with a misspelt key
+// counts as set, so the engine reports it and the repository does not silently
+// lose its local Scope; any other shape counts as set too. A file that cannot
+// be read or parsed does not.
 func decisionsPathSet(r *os.Root) bool {
 	b, err := readConfig(r)
 	if err != nil {
@@ -69,8 +71,8 @@ func decisionsPathSet(r *os.Root) bool {
 		return true
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == "path" {
-			return n.Content[i+1].Tag != "!!null"
+		if n.Content[i].Value != "path" || n.Content[i+1].Tag != "!!null" {
+			return true
 		}
 	}
 	return false
