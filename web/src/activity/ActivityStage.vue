@@ -56,7 +56,7 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
       <text x="92%" :y="servedY - 10" text-anchor="end" class="tag">Served</text>
       <text x="92%" :y="missY + 20" text-anchor="end" class="tag">Miss</text>
       <circle v-for="(p, i) in dots" :key="i" :cx="`${p.x}%`" :cy="p.y" r="5" :class="p.cls">
-        <title>{{ p.label }}</title>
+        <title>{{ p.surface }} · {{ p.label }}</title>
       </circle>
     </svg>
     <div class="side">
@@ -142,10 +142,6 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
 .particle {
   fill: var(--fg-secondary);
 }
-.particle.miss {
-  stroke: var(--miss-solid);
-  stroke-width: 2;
-}
 .surface-mcp,
 .k.mcp {
   color: var(--brand);
@@ -161,8 +157,26 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
   color: var(--fg-default);
   fill: var(--fg-default);
 }
+.surface-other {
+  fill: transparent;
+  stroke: var(--fg-secondary);
+  stroke-width: 2;
+}
+.k.other {
+  color: var(--fg-secondary);
+  text-decoration: underline dashed;
+}
+.particle.miss {
+  stroke: var(--miss-solid);
+  stroke-width: 2;
+}
 .k {
   font-weight: 700;
+}
+@media (max-width: 767px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .side {
   grid-column: 1 / -1;
