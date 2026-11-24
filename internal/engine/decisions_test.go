@@ -276,7 +276,7 @@ func TestDecisionIsAKnownKindInReferences(t *testing.T) {
 }
 
 func TestDecisionTitleWithAHiddenRuneFailsTheLoad(t *testing.T) {
-	for _, r := range []string{"‮", "​", "⁦"} {
+	for _, r := range []string{"\u202e", "\u200b", "\u2066"} {
 		doc := "---\ntitle: \"Use" + r + "Postgres\"\nstatus: accepted\ndate: 2023-05-02\n---\nBody\n"
 		msg := loadErr(t, map[string]string{globalDecisionPath + "x.md": doc}, "global/decisions/x.md")
 		if strings.Contains(msg, r) {
