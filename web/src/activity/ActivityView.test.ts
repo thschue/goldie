@@ -12,9 +12,16 @@ import type { ActivityEvent, Frame } from './stream';
 type Node = { tag: string; props: Record<string, unknown>; kids: Node[]; text?: string; parent?: Node };
 
 let feed: (frames: Frame[]) => void = () => {};
+// dropFirst makes the next stream end with an error that drop() raises (a dropped connection, #873).
+let dropFirst = false;
+let drop: () => void = () => {};
 vi.mock('./stream', () => ({
   streamActivity: (_signal: AbortSignal, on: (frames: Frame[]) => void) => {
     feed = on;
+    if (dropFirst) {
+      dropFirst = false;
+      return new Promise<void>((_, reject) => (drop = () => reject(new Error('network error'))));
+    }
     return new Promise<void>(() => {});
   },
 }));
@@ -171,6 +178,33 @@ describe('ActivityView Pause clock (#874)', () => {
 
     await page.press('Resume');
     expect(page.tiles()).toContain('Requests 1 per minute');
+    app.unmount();
+  });
+});
+
+describe('ActivityView reconnect while paused (#873)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the tiles still during the pause and does not count the replayed history twice on Resume', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    dropFirst = true;
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ...Array.from({ length: 10 }, (_, i) => ev(i + 1))]);
+    expect(page.tiles()).toContain('Requests 2 per minute');
+    expect(page.lane()).toContain('10');
+
+    await page.press('Pause');
+    drop();
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(2_000);
+    const history = Array.from({ length: 25 }, (_, i) => ev(101 + i));
+    await page.send([...history, { type: 'live' }, ev(200)]);
+    expect(page.tiles()).toContain('Requests 2 per minute');
+
+    await page.press('Resume');
+    expect(page.tiles()).toContain('Requests 5 per minute');
+    expect(page.lane()).toContain('11');
+    expect(page.lane()).not.toContain('36');
     app.unmount();
   });
 });

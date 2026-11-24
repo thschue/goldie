@@ -63,6 +63,10 @@ let held: ActivityEvent[] = [];
 // maxRows); capped so a long pause cannot grow it without end.
 const maxPending = 20_000;
 let pending: ActivityEvent[] = [];
+// The fresh part of it (live events, not replayed history): all the stage counts on Resume.
+let pendingFresh: ActivityEvent[] = [];
+// A reconnect while paused: the view is wiped on Resume, not under the reader during the pause.
+let wipe = false;
 let controller: AbortController | undefined;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let attempts = 0;
@@ -120,16 +124,23 @@ function replay(frames: Frame[]) {
   if (!frames.some((f) => f.type === 'live')) return;
   const all = replayed;
   replayed = [];
-  rows.value = [];
   held = [];
   pending = [];
+  pendingFresh = [];
   fleet.value = new Map();
-  tiles = createTiles();
   dropped.value = false;
   phase.value = 'connecting';
   attempts = 0;
-  fed.value++;
+  if (paused.value) wipe = true;
+  else wipeView();
   apply(all);
+}
+
+function wipeView() {
+  rows.value = [];
+  tiles = createTiles();
+  fed.value++;
+  wipe = false;
 }
 
 function apply(frames: Frame[]) {
@@ -154,6 +165,7 @@ function apply(frames: Frame[]) {
   if (paused.value) {
     held = add(held, events);
     pending = [...pending, ...events].slice(-maxPending);
+    pendingFresh = [...pendingFresh, ...fresh].slice(-maxPending);
     return;
   }
   now.value = Date.now();
@@ -178,6 +190,8 @@ async function connect() {
   tiles = createTiles();
   fed.value++;
   pending = [];
+  pendingFresh = [];
+  wipe = false;
   stage = createStage({ reduced: calm });
   stage.setHidden(document.hidden, Date.now());
   drawStage();
@@ -219,13 +233,15 @@ async function run() {
 function togglePause() {
   paused.value = !paused.value;
   if (!paused.value) {
+    if (wipe) wipeView();
     rows.value = add(rows.value, [...held].reverse());
     held = [];
     // Counted, not animated: Resume is no burst of particles.
-    stage.count(pending);
+    stage.count(pendingFresh);
     tiles.add(pending, Date.now());
     fed.value++;
     pending = [];
+    pendingFresh = [];
     now.value = Date.now();
     drawStage();
   }
