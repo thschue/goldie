@@ -8,8 +8,9 @@ import (
 // MaxNearest is how many keywords NearestKeywords names at most.
 const MaxNearest = 3
 
-// NearestKeywords is the keywords of the global Items closest to query, at
-// most 3, nearest first, each once. A keyword is near when one of the query's
+// NearestKeywords is the keywords of the global articles (the default view of
+// ArticlesIn) closest to query, at most 3, nearest first, each once. Skill,
+// agent and decision keywords are not suggested. A keyword is near when one of the query's
 // words is within an edit distance of a third of the word's length (at most 2;
 // a transposition counts as one edit) of it. A query that is close to nothing
 // gets none. Drafts are left out unless opts asks for them (as Search).
