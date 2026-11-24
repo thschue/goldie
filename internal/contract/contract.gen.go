@@ -1863,7 +1863,9 @@ type ClientInterface interface {
 	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 	// moves when the poll ends, `revision` when it found a new commit, and
 	// `last_error` when it failed. The request takes no body. At most one
-	// poll runs at a time.
+	// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
+	// available yet: this answers 503 `not_ready`, and each Source polls at its
+	// `poll` or `GOLDIE_POLL_INTERVAL`.
 	//
 	// Corresponds with POST /api/v1/sync (the `PostSync` operationId).
 	PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2486,7 +2488,9 @@ func (c *Client) GetSync(ctx context.Context, reqEditors ...RequestEditorFn) (*h
 // git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 // moves when the poll ends, `revision` when it found a new commit, and
 // `last_error` when it failed. The request takes no body. At most one
-// poll runs at a time.
+// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
+// available yet: this answers 503 `not_ready`, and each Source polls at its
+// `poll` or `GOLDIE_POLL_INTERVAL`.
 //
 // Corresponds with POST /api/v1/sync (the `PostSync` operationId).
 func (c *Client) PostSync(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4333,7 +4337,9 @@ type ClientWithResponsesInterface interface {
 	// git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 	// moves when the poll ends, `revision` when it found a new commit, and
 	// `last_error` when it failed. The request takes no body. At most one
-	// poll runs at a time.
+	// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
+	// available yet: this answers 503 `not_ready`, and each Source polls at its
+	// `poll` or `GOLDIE_POLL_INTERVAL`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -7141,7 +7147,9 @@ func (c *ClientWithResponses) GetSyncWithResponse(ctx context.Context, reqEditor
 // git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 // moves when the poll ends, `revision` when it found a new commit, and
 // `last_error` when it failed. The request takes no body. At most one
-// poll runs at a time.
+// poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
+// available yet: this answers 503 `not_ready`, and each Source polls at its
+// `poll` or `GOLDIE_POLL_INTERVAL`.
 //
 // Returns a wrapper object for the known response body format(s).
 //

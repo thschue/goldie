@@ -301,24 +301,3 @@ func TestUnloadableContentStillFailsInPublicHandler(t *testing.T) {
 		t.Errorf("error = %q, want it to name %s and not the path", err, platform.EnvContentDir)
 	}
 }
-
-// #476: only GOLDIE_SOURCES set and valid. The server cannot serve a list yet
-// and says so, rather than asking for a variable the operator may not want.
-func TestPublicHandlerWithOnlyValidSourcesSaysListsAreNotServedYet(t *testing.T) {
-	cfg := publicConfig(t)
-	cfg.ContentDir = ""
-	cfg.GitURL = ""
-	cfg.Sources = []platform.SourceSpec{{Name: "local", Type: "dir", Dir: t.TempDir()}}
-	pub, err := PublicHandler(cfg, nil)
-	if err == nil {
-		t.Fatal("PublicHandler accepted a list of Sources it cannot serve")
-	}
-	if pub != nil {
-		t.Errorf("PublicHandler returned a non-nil *Public with error %v", err)
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, platform.EnvSources) || !strings.Contains(msg, "cannot serve a list of Sources yet") ||
-		strings.Contains(msg, "needs one Source") {
-		t.Errorf("error = %q, want it to say %s is valid but a list is not served yet", msg, platform.EnvSources)
-	}
-}

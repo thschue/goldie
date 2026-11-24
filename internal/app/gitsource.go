@@ -29,9 +29,20 @@ type source struct {
 	name   string // its name in metrics: "dir" or "git"
 	// logAttrs, when not nil, has Start log every poll with them.
 	logAttrs []any
+	// list, when not nil, is the list of GOLDIE_SOURCES: syncer is nil, and
+	// every member has its own poll loop and readiness check (sourcelist.go).
+	list *sourceList
 	// firstLoadHint, when set, is logged once, after the reason, when the
 	// Source's first load fails.
 	firstLoadHint string
+}
+
+// current is the Snapshot the server serves, nil before the first load.
+func (s source) current() *engine.Snapshot {
+	if s.list != nil {
+		return s.list.set.Current()
+	}
+	return s.syncer.Current()
 }
 
 // serveSource builds the one Source cfg names: the dir Source, loaded here so
@@ -52,7 +63,7 @@ func serveSource(cfg platform.Config) (source, error) {
 		return source{syncer: syncer, check: sourceDirCheck, name: "dir"}, err
 	}
 	if len(cfg.Sources) > 0 {
-		return source{}, fmt.Errorf("%s is valid, but this version cannot serve a list of Sources yet: set %s or %s instead", platform.EnvSources, platform.EnvContentDir, platform.EnvGitURL)
+		return serveSourceList(cfg)
 	}
 	return source{}, fmt.Errorf("%s or %s is not set: the server needs one Source", platform.EnvContentDir, platform.EnvGitURL)
 }
@@ -73,36 +84,55 @@ var gitOptionVars = map[engine.GitOption]string{
 // file, and a URL or ref starting with "-". Every problem is reported, each
 // naming its variable; the engine's messages hold no value.
 func gitSource(cfg platform.Config) (*engine.Syncer, error) {
-	var errs []error
-	if scheme, _, ok := strings.Cut(cfg.GitURL, ":"); ok && strings.EqualFold(scheme, "file") && !cfg.GitAllowFileURL {
-		errs = append(errs, fmt.Errorf("%s is a file:// URL, which is refused unless %s is true", platform.EnvGitURL, platform.EnvGitAllowFileURL))
-	}
-	src, err := engine.NewGitSource(engine.GitOptions{
+	src, err := newGitSource(engine.GitOptions{
 		URL: cfg.GitURL, Ref: cfg.GitRef, Path: cfg.GitPath, Token: cfg.GitToken,
 		SSHKey: cfg.GitSSHKey, KnownHosts: cfg.GitSSHKnownHosts, CABundle: cfg.GitCABundle,
-	})
-	if err != nil {
-		name := platform.EnvGitURL
-		var oe *engine.GitOptionError
-		if errors.As(err, &oe) && gitOptionVars[oe.Option] != "" {
-			name = gitOptionVars[oe.Option]
+	}, cfg.GitAllowFileURL, func(o engine.GitOption) string {
+		if v := gitOptionVars[o]; v != "" {
+			return v
 		}
-		errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		return platform.EnvGitURL
+	}, platform.EnvGitPath)
+	if err != nil {
+		return nil, err
+	}
+	return engine.NewSyncer(src), nil
+}
+
+// newGitSource builds the git Source opts describes, refusing a file:// URL
+// unless allowFile. name says which setting an option came from, for the
+// errors, and pathName which one is the path.
+func newGitSource(opts engine.GitOptions, allowFile bool, name func(engine.GitOption) string, pathName string) (engine.Source, error) {
+	var errs []error
+	if scheme, _, ok := strings.Cut(opts.URL, ":"); ok && strings.EqualFold(scheme, "file") && !allowFile {
+		errs = append(errs, fmt.Errorf("%s is a file:// URL, which is refused unless %s is true", name(engine.GitOptionURL), platform.EnvGitAllowFileURL))
+	}
+	src, err := engine.NewGitSource(opts)
+	if err != nil {
+		var oe *engine.GitOptionError
+		n := name(engine.GitOptionURL)
+		if errors.As(err, &oe) {
+			n = name(oe.Option)
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", n, err))
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
-	return engine.NewSyncer(gitPathSource{src}), nil
+	return gitPathSource{src, pathName}, nil
 }
 
-// gitPathSource names GOLDIE_GIT_PATH in the engine's path error, which the
+// gitPathSource names the path setting in the engine's path error, which the
 // engine words without a setting name. Revision comes from the embedded Source.
-type gitPathSource struct{ *engine.GitSource }
+type gitPathSource struct {
+	*engine.GitSource
+	pathName string
+}
 
 func (s gitPathSource) Load(ctx context.Context) (*engine.Snapshot, error) {
 	snap, err := s.GitSource.Load(ctx)
 	if errors.Is(err, engine.ErrGitPath) {
-		return nil, fmt.Errorf("git source: %s must be a relative directory of the repository at the served ref, without .. elements", platform.EnvGitPath)
+		return nil, fmt.Errorf("git source: %s must be a relative directory of the repository at the served ref, without .. elements", s.pathName)
 	}
 	return snap, err
 }

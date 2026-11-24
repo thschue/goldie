@@ -615,7 +615,9 @@ without waiting for it, for example after merging into the repository a
 git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 moves when the poll ends, `revision` when it found a new commit, and
 `last_error` when it failed. The request takes no body. At most one
-poll runs at a time.
+poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
+available yet: this answers 503 `not_ready`, and each Source polls at its
+`poll` or `GOLDIE_POLL_INTERVAL`.
 
 Operation ID: `postSync`
 

@@ -39,6 +39,8 @@ type SourceSet struct {
 	// Sources changing in the same tick cannot both pass the check.
 	mu     sync.Mutex
 	merged *Snapshot
+	// now is replaced in tests.
+	now func() time.Time
 }
 
 type sourceEntry struct {
@@ -54,7 +56,7 @@ type sourceEntry struct {
 // NewSourceSet returns a SourceSet over srcs, in preference order. It loads
 // nothing until Poll.
 func NewSourceSet(srcs ...NamedSource) *SourceSet {
-	s := &SourceSet{merged: newSnapshot(nil)}
+	s := &SourceSet{merged: newSnapshot(nil), now: time.Now}
 	for _, n := range srcs {
 		s.entries = append(s.entries, &sourceEntry{name: n.Name, src: n.Source})
 	}
@@ -85,44 +87,64 @@ func (s *SourceSet) Status(name string) SyncStatus {
 	return SyncStatus{}
 }
 
+// entry is the named Source's entry, or nil.
+func (s *SourceSet) entry(name string) *sourceEntry {
+	for _, c := range s.entries {
+		if c.name == name {
+			return c
+		}
+	}
+	return nil
+}
+
+// Current is Merged, or nil while no Source has loaded, as Syncer.Current is
+// before its first load.
+func (s *SourceSet) Current() *Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.snap != nil {
+			return s.merged
+		}
+	}
+	return nil
+}
+
 // Poll loads the named Source once. The Snapshot enters the view only when it
 // passes the checks against the other Sources' current Snapshots; otherwise the
 // Source keeps its last good Snapshot, the error is recorded redacted in its
 // status and returned.
 func (s *SourceSet) Poll(ctx context.Context, name string) error {
-	var e *sourceEntry
-	for _, c := range s.entries {
-		if c.name == name {
-			e = c
-			break
-		}
-	}
+	e := s.entry(name)
 	if e == nil {
 		return fmt.Errorf("no Source named %q", name)
 	}
 	e.pollMu.Lock()
 	defer e.pollMu.Unlock()
-	began := time.Now()
-	snap, rev, err := loadSource(ctx, e.src)
-	now := time.Now()
-	if err == nil && snap == nil {
-		err = errNilSnapshot
-	}
+	snap, rev, began, ended, err := timedLoad(ctx, e.src, s.now)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e.status.LastPoll = now
-	e.status.Duration = now.Sub(began)
 	if err == nil {
 		err = s.accept(e, snap)
 	}
-	if err != nil {
-		e.status.LastError = redact(err.Error())
-		return err
+	e.status.stamp(began, ended, rev, err)
+	return err
+}
+
+// Run polls the named Source once at once, then on every tick of interval,
+// and returns when ctx ends, as Syncer.Run does. onPoll, when not nil, gets
+// the Source's status after each poll. A name that is no Source returns at
+// once.
+func (s *SourceSet) Run(ctx context.Context, name string, interval time.Duration, onPoll func(SyncStatus)) {
+	if s.entry(name) == nil {
+		return
 	}
-	e.status.LastSuccess = now
-	e.status.LastError = ""
-	e.status.Revision = rev
-	return nil
+	runLoop(ctx, interval, realTicker, func() {
+		_ = s.Poll(ctx, name)
+		if onPoll != nil {
+			onPoll(s.Status(name))
+		}
+	})
 }
 
 // loaded lists the Sources that hold a Snapshot, in preference order. The

@@ -341,7 +341,7 @@ func (s *Snapshot) enforces(key itemKey) bool {
 	return g != nil && g.Enforced && g.served()
 }
 
-// allArticles lists pointers to every Article in the Snapshot, global first,
+// allItems lists pointers to every Article in the Snapshot, global first,
 // then each Project's in Project order, so errors are deterministic.
 func (s *Snapshot) allItems() []*Article {
 	return append(s.items(), s.projectItems()...)
