@@ -411,3 +411,79 @@ func TestDocsCarryTheInstructionsCISnippetAndTheImportAdvice(t *testing.T) {
 		t.Error("no doc describing goldie instructions apply documents the lost-update window between read and rename")
 	}
 }
+
+// Acceptance tests for #693: code fences follow CommonMark. A closing fence is
+// at least as long as the opener and carries no info string, and a fence is
+// indented 3 spaces at most. A block the checker used to read as closed, but
+// that CommonMark leaves open or that hides raw HTML, is refused with the
+// existing errors, and nothing is written.
+func TestCLIInstructionsApplyRefusesBlocksWhoseFenceCommonMarkLeavesOpen(t *testing.T) {
+	cases := []struct{ name, block, wantErr string }{
+		{"a four-backtick fence closed by three", "Use goldie.\n\n````\nx\n```\n", "a code fence that is never closed"},
+		{"a five-tilde fence closed by three", "Use goldie.\n\n~~~~~\nx\n~~~\n", "a code fence that is never closed"},
+		{"a fence closed by a line with an info string", "Use goldie.\n\n```\nx\n```go\n", "a code fence that is never closed"},
+		{"a fence closed by a four-space-indented fence", "Use goldie.\n\n```\nx\n    ```\n", "a code fence that is never closed"},
+		{"raw HTML between four-space-indented fences", "Use goldie.\n\n    ```\n<div>\n    ```\n", "raw HTML"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			api := newInstructionsAPI(t, c.block)
+			root := gitRepo(t, instrOrigin)
+			path := filepath.Join(root, "CLAUDE.md")
+
+			// New file: refused with the existing error, nothing created.
+			_, err := runInstr(t, api, root, "apply", "--target", "claude")
+			if err == nil {
+				t.Fatal("apply of the block succeeded")
+			}
+			if !strings.Contains(err.Error(), c.wantErr) {
+				t.Errorf("error = %q, want it to mention %q", err, c.wantErr)
+			}
+			mustNotExist(t, path)
+
+			// Existing file with user text after the block: unchanged, with and without --force.
+			api.set(instrBlockV1)
+			if out, err := runInstr(t, api, root, "apply", "--target", "claude"); err != nil {
+				t.Fatalf("apply: %v\n%s", err, out)
+			}
+			before := fileContent(t, path) + instrAfter
+			writeFile(t, path, before)
+			api.set(c.block)
+			for _, args := range [][]string{{"apply", "--target", "claude"}, {"apply", "--target", "claude", "--force"}} {
+				if _, err := runInstr(t, api, root, args...); err == nil {
+					t.Errorf("%v of the block succeeded", args)
+				}
+				if got := fileContent(t, path); got != before {
+					t.Errorf("%v changed the file:\n%s", args, got)
+				}
+			}
+		})
+	}
+}
+
+// Properly fenced blocks are still written: closers longer than the opener,
+// closers with trailing spaces, an opener with an info string, a fence
+// indented up to 3 spaces, and fenced content that looks like HTML or a link
+// definition.
+func TestCLIInstructionsApplyAcceptsProperlyFencedBlocks(t *testing.T) {
+	cases := []struct{ name, block string }{
+		{"a closer longer than the opener", "Use goldie.\n\n```\n<div>\n`````\nDone.\n"},
+		{"a tilde closer longer than the opener", "Use goldie.\n\n~~~\n[a]: x\n~~~~~~\nDone.\n"},
+		{"a closer with trailing spaces", "Use goldie.\n\n```\n<div>\n```   \nDone.\n"},
+		{"a four-backtick fence holding a three-backtick line", "Use goldie.\n\n````\n```\n<div>\n````\nDone.\n"},
+		{"an opener with an info string", "Use goldie.\n\n```go\n<div>\n```\nDone.\n"},
+		{"a fence indented three spaces", "Use goldie.\n\n   ```\n<div>\n   ```\nDone.\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			api := newInstructionsAPI(t, c.block)
+			root := gitRepo(t, instrOrigin)
+			if out, err := runInstr(t, api, root, "apply", "--target", "claude"); err != nil {
+				t.Fatalf("apply: %v\n%s", err, out)
+			}
+			if got := fileContent(t, filepath.Join(root, "CLAUDE.md")); !strings.Contains(got, c.block) {
+				t.Errorf("the block is not in the file:\n%s", got)
+			}
+		})
+	}
+}
