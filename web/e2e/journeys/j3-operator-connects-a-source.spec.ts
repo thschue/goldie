@@ -97,7 +97,7 @@ eachViewport((width, theme) => {
       const row = main(page).getByRole('row').filter({ hasText: query });
       await expect(row).toHaveCount(1);
       await expect(row).toContainText('search');
-      await expect(row).toContainText(`Miss · No results for ${query}`);
+      await expect(row).toContainText('Miss · No Item matched');
       await shot('activity');
     });
 
