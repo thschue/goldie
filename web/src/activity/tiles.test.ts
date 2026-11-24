@@ -4,6 +4,12 @@
 // - read(now) is { perMinute, missPercent, projects }: events of the last five minutes per
 //   minute, the share of misses in whole percent (undefined with no request), and the distinct
 //   Projects asking (an event without a Project asks for none);
+// - #810: read(now) also gives `busiest`, the surface (mcp, cli, ui or other) with the most events
+//   of the last five minutes (undefined with none), and `latency`, { p50, p95 } in microseconds
+//   from the events' latency_us over the same window (undefined with none). An event whose
+//   latency_us is absent or 0 (a replica older than the field) has no latency and is not counted;
+//   p50 and p95 are percentiles of the values, which agree between nearest-rank and interpolation
+//   on the 101 values used here;
 // - maxProjects bounds the distinct Projects tallied;
 // - liveHeader(heard, now) takes the replicas seen and when each was last heard (epoch ms, from an
 //   event or a status) and words the header: "Live" for one replica, and for several
@@ -92,6 +98,47 @@ describe('createTiles', () => {
     );
     expect(maxProjects).toBeLessThan(20_000);
     expect(t.read(now).projects).toBeLessThanOrEqual(maxProjects);
+  });
+});
+
+describe('the busiest surface and the latency of the last five minutes (#810)', () => {
+  it('reads the surface with the most events in the window', () => {
+    const t = createTiles();
+    t.add(
+      [
+        ev(1, { via: 'cli' }),
+        ev(2, { via: 'mcp' }),
+        ev(3, { via: 'mcp' }),
+        ev(4, { via: 'ui' }),
+        at(-6 * min, { via: 'cli' }, 5),
+        at(-7 * min, { via: 'cli' }, 6),
+        at(-8 * min, { via: 'cli' }, 7),
+      ],
+      now,
+    );
+    expect(t.read(now).busiest).toBe('mcp');
+    expect(t.read(now + 6 * min).busiest, 'nothing left in the window').toBeUndefined();
+  });
+
+  it('reads no busiest surface and no latency when nothing was asked', () => {
+    expect(createTiles().read(now)).toMatchObject({ busiest: undefined, latency: undefined });
+  });
+
+  it('reads p50 and p95 of latency_us over the window, from the events with a latency', () => {
+    const t = createTiles();
+    const timed = Array.from({ length: 101 }, (_, i) => ev(i + 1, { latency_us: (i + 1) * 1000 }));
+    t.add(
+      [
+        ...timed,
+        ev(200, { latency_us: 0 }),
+        ev(201),
+        at(-6 * min, { latency_us: 9_000_000 }, 202),
+      ],
+      now,
+    );
+    const l = t.read(now).latency;
+    expect(l?.p50).toBeCloseTo(51_000, -2);
+    expect(l?.p95).toBeCloseTo(96_000, -2);
   });
 });
 
