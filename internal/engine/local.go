@@ -150,6 +150,7 @@ func (s *Snapshot) withLocal(fsys fs.FS, dir string) (*Snapshot, error) {
 	}
 	snap := *s
 	snap.warnings = append(slices.Clone(s.warnings), warnings...)
+	snap.dangling = slices.Clone(s.dangling)
 	snap.local = &localScope{scopeItems: items, configFile: dir + "/" + localConfigName}
 	hidden, _, err := snap.resolveSuppressions("", snap.local.configFile, "the local Scope's", "the local Scope", refs)
 	if err != nil {
@@ -237,19 +238,8 @@ func requireDir(fsys fs.FS, p, what string) (exists bool, err error) {
 // Item). A draft does not enforce and a local draft shadows nothing (#353).
 // The error names both as article:<name>, never their content.
 func (s *Snapshot) checkLocalEnforced() error {
-	for _, a := range s.local.items() {
-		if !a.served() {
-			continue
-		}
-		key := a.key()
-		if s.enforces(key) {
-			return localShadowErr(a, s.index[key])
-		}
-		for _, id := range s.Projects() {
-			if p, _ := s.lookupProject(id); p.enforces(key) {
-				return localShadowErr(a, p.index[key])
-			}
-		}
+	if a, enforced := s.shadowedEnforced(s.local.items(), true); a != nil {
+		return localShadowErr(a, enforced)
 	}
 	return nil
 }

@@ -437,6 +437,9 @@ type Snapshot struct {
 	// warnings are load findings that do not fail the load, such as a
 	// suppress reference that names nothing. Each is safe to show.
 	warnings []string
+	// dangling are the suppress references that named nothing in this
+	// Snapshot, so a SourceSet can apply them to another Source's Item.
+	dangling []danglingRef
 	// local is the repository's own .goldie/ (NewLocalSource), or nil. It
 	// takes part in every view.
 	local *localScope

@@ -21,6 +21,9 @@ type SyncStatus struct {
 	LastSuccess time.Time
 	LastError   string
 	Warnings    []string
+	// Shadowed lists, for a Source in a SourceSet, the Items it lost to an
+	// earlier Source. A Syncer leaves it empty.
+	Shadowed []Shadowed
 	// Duration is how long the last poll's Source load took, success or not.
 	// It is zero before the first poll.
 	Duration time.Duration
@@ -144,14 +147,20 @@ func (s *Syncer) pollLocked(ctx context.Context) (SyncStatus, error) {
 // so a Source bug fails one poll instead of the process, and the panic value
 // never reaches Status.
 func (s *Syncer) load(ctx context.Context) (snap *Snapshot, rev string, err error) {
+	return loadSource(ctx, s.src)
+}
+
+// loadSource is the one guarded call of a Source, shared by Syncer and
+// SourceSet.
+func loadSource(ctx context.Context, src Source) (snap *Snapshot, rev string, err error) {
 	defer func() {
 		if recover() != nil {
 			snap, rev, err = nil, "", errLoadPanicked
 		}
 	}()
-	snap, err = s.src.Load(ctx)
+	snap, err = src.Load(ctx)
 	if err == nil && snap != nil {
-		if r, ok := s.src.(Revisioner); ok {
+		if r, ok := src.(Revisioner); ok {
 			rev = r.Revision()
 		}
 	}
