@@ -23,28 +23,25 @@ const props = defineProps<{
   layout?: 'grid' | 'list';
 }>();
 
-// With no Project selected the tab lists the global assets (#758). It adds the note to pick a
-// Project only when there are Projects to pick. The tab stays mounted when only ?project= changes,
-// so the lookup follows the Project: it runs whenever none is selected and no answer is known yet
-// (a failed lookup is tried again). Until it has answered, nothing is drawn, so the note never
-// pushes the list down; a failed lookup says nothing.
+// With no Project selected the tab lists the global assets (#758). The list never waits on the
+// Projects lookup (#788): its own load states decide what is drawn, and the lookup decides only
+// whether the note to pick a Project shows. The tab stays mounted when only ?project= changes, so
+// the lookup runs whenever none is selected and no answer is known yet (a failed lookup is tried
+// again). While it is pending the note's line is reserved so the list does not jump when the note
+// appears; a failed lookup says nothing.
 const hasProjects = ref<boolean>();
-const settled = ref(false);
-let looking = false;
+const pending = ref(false);
 watch(
   () => props.project,
   async (project) => {
-    if (project) return;
-    settled.value = hasProjects.value !== undefined;
-    if (hasProjects.value !== undefined || looking) return;
-    looking = true;
+    if (project || hasProjects.value !== undefined || pending.value) return;
+    pending.value = true;
     try {
       hasProjects.value = (await listProjects()).length > 0;
     } catch {
       hasProjects.value = undefined;
     } finally {
-      looking = false;
-      settled.value = true;
+      pending.value = false;
     }
   },
   { immediate: true },
@@ -53,9 +50,9 @@ watch(
 
 <template>
   <p v-if="!project && hasProjects" class="note">Pick a Project from the selector to see its {{ noun }}.</p>
+  <p v-else-if="!project && pending" class="note" aria-hidden="true"></p>
 
-  <template v-if="!project && !settled" />
-  <div v-else-if="skeleton" class="grid" :class="layout" aria-busy="true">
+  <div v-if="skeleton" class="grid" :class="layout" aria-busy="true">
     <span role="status" class="sr-only">Loading {{ noun }}</span>
     <div v-for="n in 3" :key="n" class="card bar"></div>
   </div>
@@ -93,6 +90,9 @@ watch(
   max-width: 940px;
   margin: 0 0 var(--space-4);
   color: var(--fg-secondary);
+}
+.note:empty {
+  min-height: 1lh;
 }
 .grid {
   display: grid;
