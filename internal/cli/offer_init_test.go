@@ -226,10 +226,10 @@ func TestOfferInitReturnsWhenTheContextIsCancelledAtThePrompt(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	done := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
-		_, _, err := runOffer(ctx, pr, nil, srv.URL, guidedToken)
-		done <- err
+		defer close(done)
+		_, _, _ = runOffer(ctx, pr, nil, srv.URL, guidedToken) // only the return matters here
 	}()
 	time.Sleep(400 * time.Millisecond) // past the first prompt's grace: it is waiting
 	cancel()
