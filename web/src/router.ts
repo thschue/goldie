@@ -1,8 +1,8 @@
 import { defineComponent, h } from 'vue';
 import { createRouter, createWebHistory, useRoute, type RouteRecordRaw } from 'vue-router';
 import ActivityView from './activity/ActivityView.vue';
+import ArticleView from './articles/ArticleView.vue';
 import ArticlesView from './articles/ArticlesView.vue';
-import ArticleView from'./articles/ArticleView.vue';
 import AgentAssetsNotFound from './assets/AgentAssetsNotFound.vue';
 import AgentAssetsView from './assets/AgentAssetsView.vue';
 import { assetTabs } from './assets/tabs';
