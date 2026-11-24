@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/url"
@@ -40,6 +41,12 @@ type GitOptions struct {
 	// Ref is a branch, a tag or a full ref name (refs/...). Empty means the
 	// remote's HEAD. It never starts with "-".
 	Ref string
+	// Path is a directory of the repository to serve instead of its root,
+	// slash-separated and relative: no leading or trailing slash, no "." or
+	// ".." element. It is checked at each Load, which fails with ErrGitPath
+	// when it is invalid or not a directory at the served ref. Empty serves
+	// the root.
+	Path string
 	// Token is an HTTPS access token, sent as the basic-auth password. It is
 	// only accepted with an https URL.
 	Token string
@@ -111,12 +118,17 @@ func useGitTransports() {
 	})
 }
 
+// ErrGitPath is the error of a Load whose GitOptions.Path is not valid or not
+// a directory at the served ref. It names no path and no URL.
+var ErrGitPath = errors.New("git source: Path is not a directory of the repository")
+
 // GitSource is a Source backed by a git repository. Each Load lists the remote
 // refs; when the ref moved, Load clones that commit into memory (no working
 // tree, no disk) and reads its tree through the loader DirSource uses.
 type GitSource struct {
 	url     string
 	ref     string
+	path    string
 	auth    transport.AuthMethod
 	shallow bool
 	// caBundle is GitOptions.CABundle, checked to hold only certificates.
@@ -175,7 +187,7 @@ func NewGitSource(opts GitOptions) (*GitSource, error) {
 	if opts.CABundle != "" && !isCertBundle(opts.CABundle) {
 		return nil, optionError(GitOptionCABundle, "CABundle is not a PEM certificate bundle")
 	}
-	s := &GitSource{url: opts.URL, ref: opts.Ref, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
+	s := &GitSource{url: opts.URL, ref: opts.Ref, path: opts.Path, timeout: gitLoadTimeout, maxWire: maxGitWireBytes, maxMem: maxGitMemoryBytes}
 	if opts.CABundle != "" {
 		s.caBundle = []byte(opts.CABundle)
 	}
@@ -348,6 +360,14 @@ func (s *GitSource) Load(parent context.Context) (*Snapshot, error) {
 	tree, err := commit.Tree()
 	if err != nil {
 		return nil, errors.New("git source: cannot read the commit's tree")
+	}
+	if s.path != "" {
+		if !fs.ValidPath(s.path) || len(s.path) > maxTreePathLen {
+			return nil, ErrGitPath
+		}
+		if tree, err = tree.Tree(s.path); err != nil {
+			return nil, ErrGitPath
+		}
 	}
 	snap, err := loadTree(tree)
 	if err != nil {

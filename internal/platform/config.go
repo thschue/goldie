@@ -50,6 +50,7 @@ const (
 	// The git Source (#96). Its URL is operator-trusted (ADR-0023).
 	EnvGitURL           = "GOLDIE_GIT_URL" // logged with userinfo, query and fragment redacted
 	EnvGitRef           = "GOLDIE_GIT_REF"
+	EnvGitPath          = "GOLDIE_GIT_PATH"
 	EnvGitToken         = "GOLDIE_GIT_TOKEN"           // secret: never logged
 	EnvGitSSHKey        = "GOLDIE_GIT_SSH_KEY"         // secret: never logged
 	EnvGitSSHKnownHosts = "GOLDIE_GIT_SSH_KNOWN_HOSTS" // secret: never logged
@@ -184,6 +185,7 @@ type Config struct {
 	// RedactedGitURL, as the startup report does.
 	GitURL           string
 	GitRef           string // empty for the remote's HEAD
+	GitPath          string // empty for the repository root
 	GitToken         string // secret
 	GitSSHKey        string // secret
 	GitSSHKnownHosts string // secret
@@ -304,6 +306,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	}
 	cfg.GitURL = str(EnvGitURL, def(EnvGitURL))
 	cfg.GitRef = str(EnvGitRef, def(EnvGitRef))
+	cfg.GitPath = str(EnvGitPath, def(EnvGitPath))
 	cfg.GitToken = str(EnvGitToken, def(EnvGitToken))
 	cfg.GitSSHKey = str(EnvGitSSHKey, def(EnvGitSSHKey))
 	cfg.GitSSHKnownHosts = str(EnvGitSSHKnownHosts, def(EnvGitSSHKnownHosts))
@@ -349,7 +352,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 
 // sourceSettings are the variables of the Source: a ModeUI or ModeMCP process serves no
 // content, so it refuses them rather than ignoring them.
-var sourceSettings = []string{EnvContentDir, EnvGitURL, EnvGitRef, EnvGitToken, EnvGitSSHKey,
+var sourceSettings = []string{EnvContentDir, EnvGitURL, EnvGitRef, EnvGitPath, EnvGitToken, EnvGitSSHKey,
 	EnvGitSSHKnownHosts, EnvGitCABundle, EnvGitAllowFileURL, EnvSources, EnvPollInterval}
 
 // checkModeSettings reads GOLDIE_UPSTREAM_ADDR into cfg and returns what the
