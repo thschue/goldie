@@ -404,7 +404,7 @@ func peerEvent(e contract.ActivityEvent) Event {
 	b := boundEvent(Event{
 		ID: uint64(max(e.Id, 0)), Replica: e.Replica, Time: e.Time, Kind: EventKind(e.Kind),
 		Query: e.Query, Token: e.Token, ClientVersion: e.ClientVersion, Project: e.Project,
-		TraceID: e.TraceId, Miss: e.Miss, Served: deref(e.Served), LatencyUS: deref(e.LatencyUs),
+		TraceID: e.TraceId, Miss: e.Miss, Served: deref(e.Served), LatencyUS: deref(e.LatencyUs), Nearest: deref(e.Nearest),
 	})
 	if e.Via != nil && *e.Via != "" { // absent or empty stays ""; any other value is checked
 		b.Via = knownVia(*e.Via)

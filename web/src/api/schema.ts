@@ -1535,8 +1535,8 @@ export interface components {
         };
         /**
          * @description One search, lookup or get on the activity stream, the `data` of an SSE
-         *     event without a type. Every field is always sent but `via`, `served` and
-         *     `latency_us`, which are optional; text fields are `""` when empty.
+         *     event without a type. Every field is always sent but `via`, `served`,
+         *     `latency_us` and `nearest`, which are optional; text fields are `""` when empty.
          *     Clients ignore fields they do not know.
          */
         ActivityEvent: {
@@ -1629,6 +1629,16 @@ export interface components {
              * @example 850
              */
             latency_us?: number;
+            /**
+             * @description On a search miss, at most 3 keywords near the query, nearest first.
+             *     Absent on a hit, on a lookup or get, when no keyword is near and
+             *     from a replica older than this field. In a federated stream a
+             *     peer's list is cut to 3 entries and each entry to 1,024 bytes.
+             * @example [
+             *       "kubernetes"
+             *     ]
+             */
+            nearest?: string[];
         };
         /**
          * @description The `data` of an SSE event of type `dropped`: this subscriber lost

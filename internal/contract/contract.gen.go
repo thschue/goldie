@@ -203,8 +203,8 @@ type ActivityDropped struct {
 }
 
 // ActivityEvent One search, lookup or get on the activity stream, the `data` of an SSE
-// event without a type. Every field is always sent but `via`, `served` and
-// `latency_us`, which are optional; text fields are `""` when empty.
+// event without a type. Every field is always sent but `via`, `served`,
+// `latency_us` and `nearest`, which are optional; text fields are `""` when empty.
 // Clients ignore fields they do not know.
 type ActivityEvent struct {
 	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.
@@ -242,6 +242,15 @@ type ActivityEvent struct {
 	//
 	// Examples: false
 	Miss bool `json:"miss"`
+
+	// Nearest On a search miss, at most 3 keywords near the query, nearest first.
+	// Absent on a hit, on a lookup or get, when no keyword is near and
+	// from a replica older than this field. In a federated stream a
+	// peer's list is cut to 3 entries and each entry to 1,024 bytes.
+	//
+	//
+	// Examples: ["kubernetes"]
+	Nearest *[]string `json:"nearest,omitempty"`
 
 	// Project The registered spelling of the Project, an unregistered id lower-cased, or `""`.
 	//
