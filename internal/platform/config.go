@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 )
 
 // FirstRunHint is the next step for someone who ran a goldie command with
@@ -392,30 +391,33 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 const TraceIDPlaceholder = "{trace_id}"
 
 // checkLinkURL refuses an observability link (#807) that is not an http or
-// https URL with a host, that holds userinfo, a backslash, whitespace, a
-// control or a format (bidi) character, or that lacks the placeholder when one
-// is required. The browser opens it, so a lax value would be a script or
-// phishing link. Empty is fine: the link is optional. Errors name env and
-// never the value.
+// https URL with a host, that holds userinfo, or that lacks the placeholder
+// when one is required. Empty is fine: the link is optional. Errors name env
+// and never the value.
 func checkLinkURL(env, raw, placeholder string) error {
 	if raw == "" {
 		return nil
 	}
-	for _, r := range raw {
-		if r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			return fmt.Errorf("%s: must not contain backslashes, whitespace or control characters", env)
-		}
+	if _, err := checkHTTPURL(env, raw); err != nil {
+		return err
 	}
-	u, err := url.Parse(raw)
-	switch {
-	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
-		return fmt.Errorf("%s: must be an http or https URL with a host", env)
-	case u.User != nil:
-		return fmt.Errorf("%s must not hold credentials", env)
-	case placeholder != "" && !strings.Contains(raw, placeholder):
+	if placeholder != "" && !strings.Contains(raw, placeholder) {
 		return fmt.Errorf("%s: must contain the placeholder %s", env, placeholder)
 	}
 	return nil
+}
+
+// checkHTTPURL is the rule both CheckServerURL and checkLinkURL start from: an
+// http or https URL with a host and no userinfo. Errors name env and never raw.
+func checkHTTPURL(env, raw string) (*url.URL, error) {
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
+		return nil, fmt.Errorf("%s: must be an http or https URL with a host", env)
+	case u.User != nil:
+		return nil, fmt.Errorf("%s must not hold credentials", env)
+	}
+	return u, nil
 }
 
 // CheckServerURL is the one rule for the address of another goldie server (the
@@ -424,13 +426,11 @@ func checkLinkURL(env, raw, placeholder string) error {
 // so a token or a session never crosses a network in clear. Errors name env,
 // the variable that holds addr, and never addr.
 func CheckServerURL(env, addr string) error {
-	u, err := url.Parse(addr)
-	switch {
-	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
-		return fmt.Errorf("%s: must be an http or https URL with a host", env)
-	case u.User != nil:
-		return fmt.Errorf("%s must not hold credentials", env)
-	case u.Scheme != "https" && !IsLoopbackHost(u.Hostname()):
+	u, err := checkHTTPURL(env, addr)
+	if err != nil {
+		return err
+	}
+	if u.Scheme != "https" && !IsLoopbackHost(u.Hostname()) {
 		return fmt.Errorf("%s: the upstream must use https unless its host is loopback", env)
 	}
 	return nil
