@@ -203,8 +203,9 @@ type ActivityDropped struct {
 }
 
 // ActivityEvent One search, lookup or get on the activity stream, the `data` of an SSE
-// event without a type. Every field is always sent; text fields are `""`
-// when empty. Clients ignore fields they do not know.
+// event without a type. Every field is always sent, except `served` and
+// `latency_us`, which are optional; text fields are `""` when empty.
+// Clients ignore fields they do not know.
 type ActivityEvent struct {
 	// ClientVersion The version in `X-Goldie-Client: goldie/<version>`, or `""`. `X-Goldie-Via` does not change it.
 	//
@@ -228,6 +229,14 @@ type ActivityEvent struct {
 	//
 	// Examples: false
 	Late bool `json:"late"`
+
+	// LatencyUs The time the handler took, in microseconds. A replica older than
+	// this field shows 0. In a federated stream a peer's negative value is
+	// shown as 0.
+	//
+	//
+	// Examples: 850
+	LatencyUs *int64 `json:"latency_us,omitempty"`
 
 	// Miss A search with no results, or a lookup or get answering 404.
 	//
@@ -255,6 +264,15 @@ type ActivityEvent struct {
 	//
 	// Examples: goldie-0
 	Replica string `json:"replica"`
+
+	// Served The Reference `<kind>:<name>` of the Item served: the top result of
+	// a search, or the Item of a lookup or get. Absent on a miss and from
+	// a replica older than this field. In a federated stream a peer's
+	// value is cut to 1,024 bytes.
+	//
+	//
+	// Examples: article:platform/deploy
+	Served *string `json:"served,omitempty"`
 
 	// Time When the server recorded the request.
 	//

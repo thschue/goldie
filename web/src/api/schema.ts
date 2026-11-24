@@ -1520,8 +1520,9 @@ export interface components {
         };
         /**
          * @description One search, lookup or get on the activity stream, the `data` of an SSE
-         *     event without a type. Every field is always sent; text fields are `""`
-         *     when empty. Clients ignore fields they do not know.
+         *     event without a type. Every field is always sent, except `served` and
+         *     `latency_us`, which are optional; text fields are `""` when empty.
+         *     Clients ignore fields they do not know.
          */
         ActivityEvent: {
             /**
@@ -1589,6 +1590,22 @@ export interface components {
              * @example false
              */
             late: boolean;
+            /**
+             * @description The Reference `<kind>:<name>` of the Item served: the top result of
+             *     a search, or the Item of a lookup or get. Absent on a miss and from
+             *     a replica older than this field. In a federated stream a peer's
+             *     value is cut to 1,024 bytes.
+             * @example article:platform/deploy
+             */
+            served?: string;
+            /**
+             * Format: int64
+             * @description The time the handler took, in microseconds. A replica older than
+             *     this field shows 0. In a federated stream a peer's negative value is
+             *     shown as 0.
+             * @example 850
+             */
+            latency_us?: number;
         };
         /**
          * @description The `data` of an SSE event of type `dropped`: this subscriber lost

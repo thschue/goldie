@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
@@ -64,7 +65,9 @@ func noteSkillHit(ctx context.Context, sk engine.Skill) {
 func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
 		ctx, got := withSkillHit(ctx)
+		start := time.Now()
 		resp, err := next(ctx, w, r, req)
+		latency := time.Since(start)
 		if _, hit := resp.(contract.GetSkill200JSONResponse); hit {
 			s.skillGets.Add(ctx, got.name, got.global, clientVia(r.Header))
 		}
@@ -80,6 +83,7 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 				e.ClientVersion = v.String()
 			}
 			e.TraceID = platform.TraceID(ctx)
+			e.LatencyUS = latency.Microseconds()
 			e.Project = s.projectSpelling(e.Project)
 			s.activity.Record(e)
 		}
@@ -96,21 +100,38 @@ func recorded(req, resp any) (Event, bool) {
 	switch resp := resp.(type) {
 	case contract.SearchArticles200JSONResponse:
 		r, _ := req.(contract.SearchArticlesRequestObject)
-		return Event{Kind: KindSearch, Query: resp.Query, Project: sentProject(r.Params.Project), Miss: len(resp.Results) == 0}, true
+		return Event{Kind: KindSearch, Query: resp.Query, Project: sentProject(r.Params.Project), Miss: len(resp.Results) == 0, Served: topHit(resp)}, true
 	case contract.GetArticle200JSONResponse, contract.GetArticle404JSONResponse:
 		r, _ := req.(contract.GetArticleRequestObject)
-		_, miss := resp.(contract.GetArticle404JSONResponse)
-		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: miss}, true
+		found, ok := resp.(contract.GetArticle200JSONResponse)
+		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "article", found.Id)}, true
 	case contract.GetSkill200JSONResponse, contract.GetSkill404JSONResponse:
 		r, _ := req.(contract.GetSkillRequestObject)
-		_, miss := resp.(contract.GetSkill404JSONResponse)
-		return Event{Kind: KindGet, Query: "skill:" + r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
+		found, ok := resp.(contract.GetSkill200JSONResponse)
+		return Event{Kind: KindGet, Query: "skill:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "skill", found.Name)}, true
 	case contract.GetAgent200JSONResponse, contract.GetAgent404JSONResponse:
 		r, _ := req.(contract.GetAgentRequestObject)
-		_, miss := resp.(contract.GetAgent404JSONResponse)
-		return Event{Kind: KindGet, Query: "agent:" + r.Name, Project: sentProject(r.Params.Project), Miss: miss}, true
+		found, ok := resp.(contract.GetAgent200JSONResponse)
+		return Event{Kind: KindGet, Query: "agent:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "agent", found.Name)}, true
 	}
 	return Event{}, false
+}
+
+// topHit is the Reference of a search's first result, or "" without one.
+func topHit(resp contract.SearchArticles200JSONResponse) string {
+	if len(resp.Results) == 0 {
+		return ""
+	}
+	return servedRef(true, string(resp.Results[0].Kind), resp.Results[0].Id)
+}
+
+// servedRef is the Reference <kind>:<name> of the Item served, or "" when
+// nothing was (a miss).
+func servedRef(found bool, kind, name string) string {
+	if !found {
+		return ""
+	}
+	return kind + ":" + name
 }
 
 // projectSpelling is the registered spelling of the Project sent, matched

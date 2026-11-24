@@ -404,13 +404,22 @@ func peerEvent(e contract.ActivityEvent) Event {
 	b := boundEvent(Event{
 		ID: uint64(max(e.Id, 0)), Replica: e.Replica, Time: e.Time, Kind: EventKind(e.Kind),
 		Query: e.Query, Token: e.Token, ClientVersion: e.ClientVersion, Project: e.Project,
-		TraceID: e.TraceId, Miss: e.Miss,
+		TraceID: e.TraceId, Miss: e.Miss, Served: deref(e.Served), LatencyUS: deref(e.LatencyUs),
 	})
 	b.Replica = strings.Clone(truncateQuery(b.Replica))
 	b.Kind = EventKind(strings.Clone(string(b.Kind)))
 	b.Query, b.Token, b.ClientVersion = strings.Clone(b.Query), strings.Clone(b.Token), strings.Clone(b.ClientVersion)
 	b.Project, b.TraceID = strings.Clone(b.Project), strings.Clone(b.TraceID)
+	b.Served = strings.Clone(b.Served)
 	return b
+}
+
+// deref is *p, or the zero value for an absent field.
+func deref[T any](p *T) (v T) {
+	if p != nil {
+		v = *p
+	}
+	return v
 }
 
 // sleep waits d, and reports false when ctx ended first.

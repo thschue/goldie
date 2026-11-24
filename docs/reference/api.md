@@ -661,8 +661,9 @@ know.
 ### `ActivityEvent`
 
 One search, lookup or get on the activity stream, the `data` of an SSE
-event without a type. Every field is always sent; text fields are `""`
-when empty. Clients ignore fields they do not know.
+event without a type. Every field is always sent, except `served` and
+`latency_us`, which are optional; text fields are `""` when empty.
+Clients ignore fields they do not know.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
@@ -670,10 +671,12 @@ when empty. Clients ignore fields they do not know.
 | `id` | `integer` | yes | Increases per server process (per replica); starts again at 1 on restart. Order events of one replica by it. |
 | `kind` | `string` | yes | A search, an article lookup, or a get of a skill or an agent. |
 | `late` | `boolean` | yes | The event reached a merge of replicas' streams after its reorder window, so it is out of time order. Always 'false' on a replica's own stream. |
+| `latency_us` | `integer` | no | The time the handler took, in microseconds. A replica older than this field shows 0. In a federated stream a peer's negative value is shown as 0. |
 | `miss` | `boolean` | yes | A search with no results, or a lookup or get answering 404. |
 | `project` | `string` | yes | The registered spelling of the Project, an unregistered id lower-cased, or '""'. |
 | `query` | `string` | yes | The search words, the article id a lookup asked for (bare), or for a get the Reference '&lt;kind&gt;:&lt;name&gt;' (ADR 0021), such as 'skill:review' or 'agent:review'. A replica older than this form shows the bare name of a get in a federated stream. |
 | `replica` | `string` | yes | The name of the replica that recorded the event: the first label of its host name (a StatefulSet pod name), or 'goldie'. Never an address. |
+| `served` | `string` | no | The Reference '&lt;kind&gt;:&lt;name&gt;' of the Item served: the top result of a search, or the Item of a lookup or get. Absent on a miss and from a replica older than this field. In a federated stream a peer's value is cut to 1,024 bytes. |
 | `time` | `string` | yes | When the server recorded the request. |
 | `token` | `string` | yes | The name of the token that sent the request, never its secret. |
 | `trace_id` | `string` | yes | The request's trace id, or '""' without a span. |

@@ -174,12 +174,16 @@ func (st *activityStream) appendEvent(b []byte, e Event) []byte {
 
 // activityEventData is e as the spec's ActivityEvent.
 func activityEventData(e Event) contract.ActivityEvent {
-	return contract.ActivityEvent{
+	data := contract.ActivityEvent{
 		Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
 		Query: e.Query, Project: e.Project, Token: e.Token,
 		ClientVersion: e.ClientVersion, TraceId: e.TraceID, Miss: e.Miss,
-		Replica: e.Replica, Late: e.Late,
+		Replica: e.Replica, Late: e.Late, LatencyUs: &e.LatencyUS,
 	}
+	if e.Served != "" {
+		data.Served = &e.Served
+	}
+	return data
 }
 
 // appendData appends one SSE event to b: the field lines in head, then v as
