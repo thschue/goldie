@@ -45,8 +45,7 @@ quality work becomes a follow-up with its value stated. Security sits on the cri
 - **Audit** a sample of merged PRs with the `reviewer`, the highest test:code ratios first, and
   file what it finds without a milestone. When the milestone has no open issue and `./run ux` is
   green on `main`, the inbox says "RC for <milestone>"; a red journey is a P1 `bug` in it.
-- **The maintainer reads one inbox:** short, decision-ready entries, rewritten each tick, including
-  the top 5 harness-feedback items for the weekly batch.
+- **The maintainer reads one inbox:** short, decision-ready entries, rewritten each tick.
 - **Measure** outcomes first: `./run ux` green on `main`, days since the last release, net
   hand-written lines merged this week; then claim-to-merge time, fix rounds, harness-PR share and
   test-change approval rate. Name the worst bottleneck.

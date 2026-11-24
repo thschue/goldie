@@ -53,7 +53,7 @@ What holds: the `security-reviewer` on risk paths, `scripts/agent-gate`, `script
 (which only gains rules), `./run check`, the architect's review, the test lock. A HIGH or MEDIUM
 security finding and every testing-checklist item count as a named risk and need no further
 justification; the prune pass never deletes the only test of a criterion, a checklist item or a
-security case. Harness feedback must name a rule to remove or a script to simplify.
+security case. A `harness:` issue must name a rule to remove or a script to simplify.
 
 This supersedes ADR 0018's ready buffer, its follow-up filing and its metrics; the session
 topology, markers, gates and test lock of ADR 0018 stand.

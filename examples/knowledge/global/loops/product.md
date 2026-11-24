@@ -20,8 +20,7 @@ summary (`goldie lookup agent-loops`).
    - you decide what goes in.
 4. Only with a full buffer: report stalls, audit merged PRs with `agent:reviewer`, and sweep the
    architecture.
-5. Rewrite the maintainer inbox: stop-the-line items, merges to approve, decisions, closing windows,
-   and the top harness-feedback items.
+5. Rewrite the maintainer inbox: stop-the-line items, merges to approve, decisions, closing windows.
 
 Decide what the record answers. Ask the maintainer only about the critical list, with one
 recommendation.
