@@ -108,7 +108,7 @@ func (c *commander) initProject(ctx context.Context) error {
 		if err := initPreflight(root); err != nil {
 			return err
 		}
-		return c.initGuided(ctx, root, proj)
+		return c.initGuided(ctx, root, proj, newPrompter(c.env.In, c.errOut))
 	}
 	return c.initPlain(ctx, root, proj, true)
 }
@@ -159,10 +159,10 @@ func registeredLines(id string, list []string, why string, loopback bool) string
 // writes the config, asks for the server address, probes the server and the
 // token once, and prints the commands to run next. Questions and the Server
 // and Token lines go to stderr, results to stdout. A run whose input ends at
-// the first question, before it was shown, is initPlain. An end of input
+// the first question, before it was shown, is initPlain. p is the run's
+// prompter, shared with an offer that asked before it. An end of input
 // after a question was shown stops it; what was written stays.
-func (c *commander) initGuided(ctx context.Context, root string, proj project.Detected) error {
-	p := newPrompter(c.env.In, c.errOut)
+func (c *commander) initGuided(ctx context.Context, root string, proj project.Detected, p *prompter) error {
 	say(c.out, "Project: %s\n", describeProject(proj, ""))
 	use, err := p.confirm("Use this Project?")
 	switch {
