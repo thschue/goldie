@@ -1,6 +1,7 @@
 import { defineComponent, h } from 'vue';
 import { createRouter, createWebHistory, useRoute, type RouteRecordRaw } from 'vue-router';
 import ActivityView from './activity/ActivityView.vue';
+import ArticleView from './articles/ArticleView.vue';
 import AgentAssetsNotFound from './assets/AgentAssetsNotFound.vue';
 import AgentAssetsView from './assets/AgentAssetsView.vue';
 import { assetTabs } from './assets/tabs';
@@ -44,6 +45,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/ops/activity', component: ActivityView, meta: { title: 'Activity' } },
   // Sign in is public: the guard lets it through, and the shell shows no role chip.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },
+  { path: '/items/article/:name', component: ArticleView, meta: { title: 'Article' } },
   { path: '/ops/sources', component: SourcesView, meta: { title: 'Sources' } },
   ...pages.map(([path, title]): RouteRecordRaw => ({ path, component: EmptyView, meta: { title } })),
   { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: 'Page not found' } },
