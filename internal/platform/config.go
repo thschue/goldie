@@ -169,6 +169,9 @@ type Config struct {
 	// the server picks a random key per process.
 	SessionKey string
 
+	// The GitHub sign-in settings (#642), checked as a whole; none set is sign-in off.
+	githubConfig
+
 	// The git Source, as read; LoadConfig checks only that GitURL and
 	// ContentDir are not both set. GitURL may carry userinfo: log it only as
 	// RedactedGitURL, as the startup report does.
@@ -231,6 +234,7 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	cfg.APIToken = str(EnvAPIToken, def(EnvAPIToken))
 	cfg.APITokens = str(EnvAPITokens, def(EnvAPITokens))
 	cfg.SessionKey = str(EnvSessionKey, def(EnvSessionKey))
+	cfg.githubConfig = loadGitHub(str, &errs)
 	if err := CheckAPITokenPairing(cfg.APIToken, cfg.APITokens); err != nil {
 		errs = append(errs, err)
 	}
