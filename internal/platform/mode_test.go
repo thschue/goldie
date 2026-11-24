@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// #635: GOLDIE_MODE is all (default), api or ui (#636). Environment only (PC-04).
+// #635: GOLDIE_MODE is all (default), api, ui (#636) or mcp (#637). Environment only (PC-04).
 func TestModeSetting(t *testing.T) {
 	load := func(env map[string]string) (Config, error) {
 		return LoadConfig(mapLookup(env))
@@ -24,7 +24,7 @@ func TestModeSetting(t *testing.T) {
 			t.Errorf("GOLDIE_MODE=%q: startup report says %q, want %q", value, got, want)
 		}
 	}
-	for _, bad := range []string{"mcp", "UI", "API", "everything"} {
+	for _, bad := range []string{"MCP", "UI", "API", "everything"} {
 		_, err := load(map[string]string{"GOLDIE_MODE": bad})
 		if err == nil {
 			t.Errorf("GOLDIE_MODE=%q: want a startup error", bad)
