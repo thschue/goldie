@@ -764,3 +764,57 @@ test.describe('wide content at 375 px', () => {
     expect(over).toBeLessThanOrEqual(0);
   });
 });
+
+// Choosing another Project in the selector on an open article (#844). The view fetches again
+// for the new Project; it never keeps the previous Project's copy on screen.
+test.describe('an article when the Project changes', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const shop = 'github.com/acme/shop';
+  const billing = 'github.com/acme/billing';
+  const selector = (page: Page) => page.locator('header').getByRole('combobox', { name: /project/i });
+
+  async function stub(page: Page, copies: Record<string, ReturnType<typeof article> | null>) {
+    await page.route(/\/api\/v1\/projects$/, (route) => json(route, 200, { projects: [shop, billing] }));
+    await page.route(apiArticle, (route) => {
+      const project = new URL(route.request().url()).searchParams.get('project') ?? '';
+      const copy = copies[project];
+      return copy ? json(route, 200, copy) : json(route, 404, envelope('not_found', 'No article has the id platform/deploy.', 'Search for it by its keywords.'));
+    });
+  }
+
+  async function choose(page: Page, project: string) {
+    await selector(page).click();
+    await page.getByRole('option', { name: new RegExp(project.replace(/[./]/g, '\\$&')) }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('project')).toBe(project);
+  }
+
+  test("shows the other Project's copy of the article without a reload", async ({ page }) => {
+    await stub(page, {
+      [shop]: article({ name: 'Shop deploy copy', content: '## Steps\n\nShop steps.' }),
+      [billing]: article({ name: 'Billing deploy copy', content: '## Steps\n\nBilling steps.' }),
+    });
+    await open(page, `platform%2Fdeploy?project=${encodeURIComponent(shop)}`);
+    await expect(h1(page)).toHaveText('Shop deploy copy');
+    await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
+
+    await choose(page, billing);
+
+    await expect(h1(page)).toHaveText('Billing deploy copy');
+    await expect(main(page)).toContainText('Billing steps.');
+    await expect(main(page)).not.toContainText('Shop steps.');
+    expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept), 'the page was reloaded').toBe(true);
+  });
+
+  test('shows the not-found state, not the stale copy, where the article does not resolve', async ({ page }) => {
+    await stub(page, { [shop]: article({ name: 'Shop deploy copy' }), [billing]: null });
+    await open(page, `platform%2Fdeploy?project=${encodeURIComponent(shop)}`);
+    await expect(h1(page)).toHaveText('Shop deploy copy');
+
+    await choose(page, billing);
+
+    await expect(alert(page)).toContainText('No article has the id platform/deploy.');
+    await expect(main(page)).not.toContainText('Shop deploy copy');
+    await expect(h1(page)).toHaveCount(0);
+  });
+});
