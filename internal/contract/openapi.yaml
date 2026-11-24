@@ -805,6 +805,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "422":
+          description: |
+            The archive is over 16 MiB, what the goldie client reads; the
+            error code is `bundle_too_large`. Nothing of the archive is sent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "426":
           $ref: "#/components/responses/UpgradeRequired"
         "429":

@@ -4150,6 +4150,8 @@ type GetBundleResponse struct {
 	JSON400 *ErrorEnvelope
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *ErrorEnvelope
+	// JSON422 the response for an HTTP 422 `application/json` response
+	JSON422 *ErrorEnvelope
 	// JSON426 the response for an HTTP 426 `application/json` response
 	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
@@ -4174,6 +4176,11 @@ func (r GetBundleResponse) GetJSON400() *ErrorEnvelope {
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
 func (r GetBundleResponse) GetJSON401() *ErrorEnvelope {
 	return r.JSON401
+}
+
+// GetJSON422 returns the response for an HTTP 422 `application/json` response
+func (r GetBundleResponse) GetJSON422() *ErrorEnvelope {
+	return r.JSON422
 }
 
 // GetJSON426 returns the response for an HTTP 426 `application/json` response
@@ -6599,6 +6606,13 @@ func ParseGetBundleResponse(rsp *http.Response) (*GetBundleResponse, error) {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
 		var dest UpgradeRequired
@@ -9659,6 +9673,20 @@ func (response GetBundle401JSONResponse) VisitGetBundleResponse(w http.ResponseW
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBundle422JSONResponse ErrorEnvelope
+
+func (response GetBundle422JSONResponse) VisitGetBundleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(422)
 	_, err := buf.WriteTo(w)
 	return err
 }

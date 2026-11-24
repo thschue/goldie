@@ -2331,6 +2331,18 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /**
+             * @description The archive is over 16 MiB, what the goldie client reads; the
+             *     error code is `bundle_too_large`. Nothing of the archive is sent.
+             */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["NotReady"];
