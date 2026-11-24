@@ -5,7 +5,8 @@ import { useRoute } from 'vue-router';
 import { useLoad } from '../api/useLoad';
 import { plain } from '../assets/api';
 import ScopeBadge from '../components/ScopeBadge.vue';
-import { projectOf } from '../projects/api';
+import { projectOf, projectQuery } from '../projects/api';
+import DecisionDetail from './DecisionDetail.vue';
 import { listDecisions, statusFilters, type StatusFilter } from './api';
 
 // The Decisions page (handoff §3.8, #736): the decisions for the Project in the URL, accepted by
@@ -15,6 +16,18 @@ import { listDecisions, statusFilters, type StatusFilter } from './api';
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
 const status = ref<StatusFilter>('accepted');
+// The selected decision is `d` in the URL (handoff §2.2); a card links to it and keeps the Project.
+const selected = computed(() => {
+  const v = Array.isArray(route.query.d) ? route.query.d[0] : route.query.d;
+  return typeof v === 'string' ? v : '';
+});
+const to = (name: string) => ({ path: '/decisions', query: { ...projectQuery(route.query), d: name } });
+// A filter change is announced with the count (a polite role=status); the first load is not.
+const changed = ref(false);
+const pick = (v: StatusFilter) => {
+  status.value = v;
+  changed.value = true;
+};
 const key = computed(() => `${status.value}\n${project.value}`);
 const { state, data, failure, wait, skeleton, limited, retry } = useLoad(key, (k, signal) => {
   const [s = 'accepted', p = ''] = k.split('\n');
@@ -39,51 +52,61 @@ const supersession = (d: (typeof decisions.value)[number]) => [
       :key="f.value"
       type="button"
       :aria-pressed="status === f.value"
-      @click="status = f.value"
+      @click="pick(f.value)"
     >
       {{ f.label }}
     </button>
   </div>
 
-  <div v-if="skeleton" class="list" aria-busy="true">
-    <div v-for="n in 3" :key="n" class="card bar"></div>
-  </div>
-  <template v-else-if="state === 'loading' || state === 'idle'" />
+  <div class="layout" :class="{ selected }">
+    <div class="column">
+      <div v-if="skeleton" class="list" aria-busy="true">
+        <div v-for="n in 3" :key="n" class="card bar"></div>
+      </div>
+      <template v-else-if="state === 'loading' || state === 'idle'" />
 
-  <div v-else-if="state === 'error' && limited" class="box warning">
-    <p role="status">
-      {{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}
-    </p>
-    <button type="button" class="retry" :disabled="wait > 0" @click="retry">Retry</button>
-  </div>
-  <div v-else-if="state === 'error'" class="box danger" role="alert">
-    <p>{{ errorSentence(failure?.message ?? '', failure?.hint) }} {{ failure?.hint }}</p>
-    <button type="button" class="retry" @click="retry">Retry</button>
-  </div>
+      <div v-else-if="state === 'error' && limited" class="box warning">
+        <p role="status">
+          {{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}
+        </p>
+        <button type="button" class="retry" :disabled="wait > 0" @click="retry">Retry</button>
+      </div>
+      <div v-else-if="state === 'error'" class="box danger" role="alert">
+        <p>{{ errorSentence(failure?.message ?? '', failure?.hint) }} {{ failure?.hint }}</p>
+        <button type="button" class="retry" @click="retry">Retry</button>
+      </div>
 
-  <template v-else-if="state === 'ready'">
-    <p v-if="data?.hint" class="note">{{ plain(data.hint) }}</p>
-    <div v-if="!decisions.length" role="status" class="box">
-      <p>
-        No decisions with this status and Scope. Proposed and rejected decisions are only shown when you ask for them — agents
-        never see them.
-      </p>
+      <template v-else-if="state === 'ready'">
+        <p v-if="data?.hint" class="note">{{ plain(data.hint) }}</p>
+        <div v-if="!decisions.length" role="status" class="box">
+          <p>
+            No decisions with this status and Scope. Proposed and rejected decisions are only shown when you ask for them — agents
+            never see them.
+          </p>
+        </div>
+        <p v-else-if="changed" role="status" class="note">
+          {{ decisions.length }} {{ decisions.length === 1 ? 'decision' : 'decisions' }}
+        </p>
+        <ul v-if="decisions.length" class="list">
+          <li v-for="d in decisions" :key="d.name">
+            <article class="card" :class="d.status">
+              <div class="meta">
+                <span class="status" :class="d.status">{{ d.status }}</span>
+                <span v-if="d.status === 'accepted'" class="binding">binding</span>
+                <ScopeBadge :scope="plain(d.scope)" />
+                <time>{{ plain(d.date) }}</time>
+              </div>
+              <h2>
+                <RouterLink :to="to(d.name)">{{ plain(d.title) }}</RouterLink>
+              </h2>
+              <p v-for="line in supersession(d)" :key="line" class="note">{{ line }}</p>
+            </article>
+          </li>
+        </ul>
+      </template>
     </div>
-    <ul v-else class="list">
-      <li v-for="d in decisions" :key="d.name">
-        <article class="card" :class="d.status">
-          <div class="meta">
-            <span class="status" :class="d.status">{{ d.status }}</span>
-            <span v-if="d.status === 'accepted'" class="binding">binding</span>
-            <ScopeBadge :scope="plain(d.scope)" />
-            <time>{{ plain(d.date) }}</time>
-          </div>
-          <h2>{{ plain(d.title) }}</h2>
-          <p v-for="line in supersession(d)" :key="line" class="note">{{ line }}</p>
-        </article>
-      </li>
-    </ul>
-  </template>
+    <DecisionDetail v-if="selected" :name="selected" :project="project" :to="to" />
+  </div>
 </template>
 
 <style scoped>
@@ -168,6 +191,25 @@ const supersession = (d: (typeof decisions.value)[number]) => [
 .binding {
   border-color: var(--brand-tint-ink);
   color: var(--brand-tint-ink);
+}
+.layout {
+  display: grid;
+  gap: var(--space-4);
+}
+@media (min-width: 900px) {
+  .layout.selected {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+    align-items: start;
+  }
+}
+.column {
+  min-width: 0;
+}
+h2 a {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: inherit;
 }
 h2 {
   margin: 0;
