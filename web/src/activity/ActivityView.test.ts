@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRenderer, nextTick } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
+import { ApiError } from '../api/client';
 import type { ActivityEvent, Frame } from './stream';
 
 type Node = { tag: string; props: Record<string, unknown>; kids: Node[]; text?: string; parent?: Node };
@@ -15,9 +16,16 @@ let feed: (frames: Frame[]) => void = () => {};
 // dropFirst makes the next stream end with an error that drop() raises (a dropped connection, #873).
 let dropFirst = false;
 let drop: () => void = () => {};
+// refuse makes the next connect fail at once with this error (a 429 on connect, #877).
+let refuse: Error | undefined;
 vi.mock('./stream', () => ({
   streamActivity: (_signal: AbortSignal, on: (frames: Frame[]) => void) => {
     feed = on;
+    if (refuse) {
+      const e = refuse;
+      refuse = undefined;
+      return Promise.reject(e);
+    }
     if (dropFirst) {
       dropFirst = false;
       return new Promise<void>((_, reject) => (drop = () => reject(new Error('network error'))));
@@ -76,6 +84,22 @@ async function mount() {
     particles: () => all(root, (n) => n.tag === 'circle' && String(n.props.class).includes('particle')).length,
     lane: () => squash(textOf(all(root, (n) => n.tag === 'button' && n.props.class === 'lane')[0])),
     board: () => all(root, (n) => n.props['aria-labelledby'] === 'board-h').length,
+    text: () => squash(textOf(root)),
+    busy: () => all(root, (n) => n.props['aria-busy'] === 'true' || n.props['aria-busy'] === true).length,
+    button: (label: string) => all(root, (n) => n.tag === 'button' && textOf(n).trim() === label)[0],
+    // The decorative dots in the header line and on the replica buttons (#877).
+    headerDots: () =>
+      all(all(root, (n) => n.tag === 'p' && n.props.class === 'label')[0], (n) =>
+        String(n.props.class ?? '')
+          .split(' ')
+          .includes('dot'),
+      ),
+    replicaDots: (name: string) =>
+      all(all(root, (n) => n.tag === 'button' && textOf(n).includes(name) && n.props['aria-pressed'] !== undefined)[0], (n) =>
+        String(n.props.class ?? '')
+          .split(' ')
+          .includes('dot'),
+      ),
     press: async (label: string) => {
       const b = all(root, (n) => n.tag === 'button' && textOf(n).trim() === label)[0];
       const h = b.props.onClick;
@@ -205,6 +229,103 @@ describe('ActivityView reconnect while paused (#873)', () => {
     expect(page.tiles()).toContain('Requests 5 per minute');
     expect(page.lane()).toContain('11');
     expect(page.lane()).not.toContain('36');
+    app.unmount();
+  });
+});
+
+describe('ActivityView states (#877)', () => {
+  afterEach(() => vi.useRealTimers());
+  const timers = () =>
+    vi.useFakeTimers({
+      toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
+
+  it('counts a 429 down from Retry-After with Retry disabled, then says you can retry now', async () => {
+    timers();
+    refuse = new ApiError(429, 'Too many requests.', '', 5);
+    const { app, page } = await mount();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(page.text()).toContain('Too many requests — try again in 5 s.');
+    expect(page.button('Retry').props.disabled).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(page.text()).toContain('Too many requests — try again in 3 s.');
+    expect(page.button('Retry').props.disabled).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(page.text()).toContain('Too many requests — you can retry now.');
+    expect(page.text()).not.toContain('try again in');
+    expect(page.button('Retry').props.disabled).toBeFalsy();
+    app.unmount();
+  });
+
+  it('shows tile and row skeletons only once the connect has taken longer than 300 ms, and drops them when live', async () => {
+    timers();
+    const { app, page } = await mount();
+    await vi.advanceTimersByTimeAsync(299);
+    expect(page.busy()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(page.busy()).toBeGreaterThanOrEqual(2);
+    expect(page.tiles()).not.toContain('per minute');
+
+    await page.send([{ type: 'live' }, ev(1)]);
+    expect(page.busy()).toBe(0);
+    expect(page.tiles()).toContain('per minute');
+    app.unmount();
+  });
+
+  it('puts a decorative status dot next to Live, and a dot marked down on a replica that is not answering', async () => {
+    const { app, page } = await mount();
+    await page.send([
+      { type: 'live' },
+      ev(1),
+      { type: 'status', replica: 'goldie-1', up: true, lastSeen: '' },
+      {
+        type: 'status',
+        replica: 'goldie-2',
+        up: false,
+        lastSeen: new Date().toISOString(),
+      },
+    ]);
+    expect(page.header()).toContain('Live');
+    const dots = page.headerDots();
+    expect(dots).toHaveLength(1);
+    expect(dots[0].props['aria-hidden']).toBe('true');
+    // The words carry the state: the dot adds no text.
+    expect(textOf(dots[0])).toBe('');
+
+    const up = page.replicaDots('goldie-1');
+    const off = page.replicaDots('goldie-2');
+    expect(up).toHaveLength(1);
+    expect(off).toHaveLength(1);
+    expect(off[0].props['aria-hidden']).toBe('true');
+    expect(String(off[0].props.class).split(' ')).toContain('down');
+    expect(String(up[0].props.class).split(' ')).not.toContain('down');
+    app.unmount();
+  });
+
+  it('announces a 429 once: no alert region changes text while the countdown ticks', async () => {
+    timers();
+    refuse = new ApiError(429, 'Too many requests.', '', 3);
+    const { app, page } = await mount();
+    await vi.advanceTimersByTimeAsync(0);
+    // The page has no root handle: climb to it from the Retry button.
+    let root = page.button('Retry');
+    while (root.parent) root = root.parent;
+    const alerts = () =>
+      all(root, (n) => n.props.role === 'alert')
+        .map((n) => textOf(n))
+        .join('|');
+    const live = () =>
+      all(root, (n) => n.props.role === 'status' && textOf(n).includes('Too many requests'))
+        .map((n) => all(n, (k) => k.props['aria-hidden'] !== 'true' && k.tag === 'span').map((k) => textOf(k)).join(''))
+        .join('|');
+    const before = [alerts(), live()];
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect([alerts(), live()]).toEqual(before);
+    expect(alerts()).toBe('');
+    expect(live()).toContain('Too many requests. Try again shortly.');
     app.unmount();
   });
 });
