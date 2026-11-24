@@ -112,7 +112,7 @@ Details: [`goldie init`](docs/reference/cli.md), and for other agents or MCP ove
 
 ## Use it on your own content
 
-A Source holds `global/articles/`, `global/skills/`, `global/agents/`, `global/loops/` and
+Serve your own repository with [Serve your Source from git](docs/git-source.md). A Source holds `global/articles/`, `global/skills/`, `global/agents/`, `global/loops/` and
 `global/decisions/`, and `projects/<host>/<org>/<repo>/` for one Project's own. Start with
 [Writing content](docs/content.md): the smallest article that loads. Then
 [add a skill](docs/skills.md), and check a Source in CI with `goldie validate`
