@@ -97,7 +97,7 @@ eachViewport((width, theme) => {
     const nav = await withNav(page);
     await expect(nav).toHaveAttribute('aria-label', /.+/);
     const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Articles', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Articles', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions', 'API reference ↗']);
     const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
     const at = ['Home', 'Articles', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
       (s) => text.indexOf(s),
