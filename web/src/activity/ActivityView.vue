@@ -415,9 +415,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </button>
       </p>
       <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
-        <button type="button" role="checkbox" class="control miss-toggle" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
-          <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
-        </button>
+      <button type="button" role="checkbox" class="control miss-toggle" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
+        <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
+      </button>
     </div>
 
     <p v-if="phase === 'live' && !rows.length" class="box">
