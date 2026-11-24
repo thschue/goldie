@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { add, maxRows, resultText } from './rows';
+import { add, maxRows, resultText, surfaceOf } from './rows';
 import { split, type ActivityEvent } from './stream';
 
 const ev = (id: number, o: Partial<ActivityEvent> = {}): ActivityEvent => ({
@@ -48,5 +48,17 @@ describe('rows', () => {
     expect(resultText(ev(1, { miss: true, kind: 'get', query: 'agent:x' }))).toMatch(/agent/);
     expect(resultText(ev(1, { miss: true, kind: 'lookup', query: 'a/b' }))).toMatch(/article/);
     expect(resultText(ev(1, { miss: true }))).not.toMatch(/skill|agent|article/);
+  });
+});
+
+// #810: rows.ts gives surfaceOf(event), the pill an event counts under: mcp, cli or ui as sent, and
+// other for any other value.
+describe('surfaceOf', () => {
+  it('is the surface the event came from, and other for a value it does not know', () => {
+    expect(surfaceOf(ev(1, { via: 'mcp' }))).toBe('mcp');
+    expect(surfaceOf(ev(1, { via: 'cli' }))).toBe('cli');
+    expect(surfaceOf(ev(1, { via: 'ui' }))).toBe('ui');
+    expect(surfaceOf(ev(1, { via: 'other' }))).toBe('other');
+    expect(surfaceOf(ev(1, { via: 'robot' }))).toBe('other');
   });
 });

@@ -21,9 +21,10 @@
 //   replicas (n of m answering)" for several; the replica's name is in the table's Replica column;
 // - the h1 is "Activity".
 // Not pinned: the row cap (only that it is below the 10,000 events a replica's
-// history can hold, and that the newest rows are the ones kept), the Via cell (an
-// event carries no `via`), the Item half of Query → Item (an event carries none),
-// and the time format.
+// history can hold, and that the newest rows are the ones kept), and the time format.
+// #810 adds (see the specs at the end): the Via cell shows the surface, the Result cell the served
+// Item or "No Item matched", the detail adds Query → Item, Latency, Via and Trace id, and the
+// surface pills and the Latency tile.
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { eachViewport, evidence, expectFocusRing, problems, sideNav } from './ux';
 
@@ -39,6 +40,9 @@ type Ev = {
   miss: boolean;
   replica: string;
   late: boolean;
+  via?: string;
+  served?: string;
+  latency_us?: number;
 };
 
 // An ActivityEvent as the API sends it: every field present.
@@ -386,8 +390,12 @@ test.describe('the empty states', () => {
 test.describe('a miss row (#576)', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  // The row's text without the Reference the person typed, so only the copy the page adds is judged.
-  const copyOf = async (page: Page, query: string) => (await text(rowOf(page, query))).split(query).join('');
+  // The detail's text without the Reference the person typed, so only the copy the page adds is
+  // judged. The row's Result cell says "No Item matched" (#810); what was asked for is said here.
+  const copyOf = async (page: Page, query: string) => {
+    await rowButton(page, query).click();
+    return (await text(detail(page))).split(query).join('');
+  };
 
   test('speaks of the kind that was asked for: a skill, an agent or an article', async ({ page }) => {
     await open(page, sample);
@@ -1042,7 +1050,7 @@ test.describe('the live header', () => {
 // The last five minutes and the Project chip (#809, handoff §3.6). Contract these specs pin down:
 // - a region in main named /last five minutes/i holds four list items, the tiles, each text
 //   starting with its label: Requests (a whole number per minute), Misses (a percent), Projects asking
-//   (a count) and Busiest surface ("—" until #805);
+//   (a count), Busiest surface and (#810) Latency;
 // - the Project filter is the URL's `project`: only that Project's events are rows, and a button in
 //   main named /remove.*<project>/i is its chip; pressing it drops `project` from the URL.
 const tiles = (page: Page) => main(page).getByRole('region', { name: /last five minutes/i });
@@ -1051,7 +1059,7 @@ const tile = (page: Page, label: string) => tiles(page).getByRole('listitem').fi
 test.describe('the last five minutes', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test('shows Requests, Misses, Projects asking and a dash for the busiest surface', async ({ page }) => {
+  test('shows Requests, Misses and Projects asking, five minutes wide', async ({ page }) => {
     const at = (ms: number) => new Date(Date.now() + ms).toISOString();
     const batch = Array.from({ length: 600 }, (_, i) =>
       ev(i + 1, { query: `bulk ${i}`, miss: i % 10 === 0, project: `github.com/acme/p${i % 3}` }),
@@ -1062,13 +1070,12 @@ test.describe('the last five minutes', () => {
       ev(1001, { query: 'skewed', project: 'github.com/acme/p0', time: at(60 * 60_000) }),
     ]);
     await expect(tiles(page)).toBeVisible();
-    await expect(tiles(page).getByRole('listitem')).toHaveCount(4);
+    await expect(tiles(page).getByRole('listitem')).toHaveCount(5);
     // 601 requests in five minutes is 120 a minute, though the feed keeps 500 rows; the replayed
     // one is older than five minutes and the skewed one counts as now.
     await expect(tile(page, 'Requests')).toContainText(/\b120\b/);
     await expect(tile(page, 'Misses')).toContainText(/\b10\s*%/);
     await expect(tile(page, 'Projects asking')).toContainText(/\b3\b/);
-    await expect(tile(page, 'Busiest surface')).toContainText('—');
   });
 
   test('does not render a link to Grafana in this slice', async ({ page }) => {
@@ -1146,5 +1153,195 @@ test.describe('the Live stream stage (#811)', () => {
     await page.setViewportSize({ width: 375, height: 800 });
     const box = await main(page).locator('svg[role="img"]').boundingBox();
     expect(box?.width ?? 0).toBeGreaterThan(250);
+
+// The surface pills, the Via and Result columns, Query → Item and the Latency tile (#810, handoff
+// §3.6). Contract these specs pin down:
+// - above the table in main, a group named /surface/i holds four checkboxes (role=checkbox, so the
+//   switcher's buttons with aria-pressed stay the only such buttons), named MCP, CLI, UI and Other,
+//   each with the number of events of that surface in the feed in its name; checking one shows only
+//   that surface's rows, unchecking it shows all again; it combines with the Project chip and the
+//   other filters;
+// - the Via cell holds the surface's name (MCP, CLI, UI, Other, in any case);
+// - the Result cell of a served row holds the served Item (the Reference as sent, as text), and of a
+//   miss the words "No Item matched" besides Miss; the detail still says what was asked for;
+// - the detail adds "Query → Item" as `<query> → <served>`, Latency (milliseconds, one decimal),
+//   Via and Trace id; a field the event lacks (no served, a latency_us of 0 or none, no via, no
+//   trace id: a peer on an older version) is left out with its label;
+// - the Latency tile holds p50 and p95 over five minutes in milliseconds with one decimal, and
+//   Busiest surface holds the surface's name;
+// - event text (served, trace id) is text without invisible or bidirectional controls, and a long
+//   served is cut by code point, never in the middle of a character.
+const surfaces = (page: Page) => main(page).getByRole('group', { name: /surface/i });
+const pill = (page: Page, label: string) => surfaces(page).getByRole('checkbox', { name: new RegExp(`^${label}\\b`, 'i') });
+
+const surfaced: Ev[] = [
+  ev(1, { query: 'm one', via: 'mcp', project: 'github.com/acme/shop', served: 'article:platform/deploy' }),
+  ev(2, { query: 'm two', via: 'mcp', project: 'github.com/acme/api' }),
+  ev(3, { query: 'c one', via: 'cli', project: 'github.com/acme/shop' }),
+  ev(4, { query: 'u one', via: 'ui' }),
+  ev(5, { query: 'u two', via: 'ui' }),
+  ev(6, { query: 'u three', via: 'ui', project: 'github.com/acme/shop' }),
+  ev(7, { query: 'o one', via: 'other' }),
+];
+
+test.describe('the surface pills', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('are MCP, CLI, UI and Other with their counts, and filter the feed', async ({ page }) => {
+    await open(page, surfaced);
+    await expect(surfaces(page).getByRole('checkbox')).toHaveCount(4);
+    await expect(pill(page, 'MCP')).toContainText(/\b2\b/);
+    await expect(pill(page, 'CLI')).toContainText(/\b1\b/);
+    await expect(pill(page, 'UI')).toContainText(/\b3\b/);
+    await expect(pill(page, 'Other')).toContainText(/\b1\b/);
+    await expect(rows(page)).toHaveCount(7);
+
+    await pill(page, 'UI').click();
+    await expect(pill(page, 'UI')).toBeChecked();
+    await expect(rows(page)).toHaveCount(3);
+    await expect(rowOf(page, 'u two')).toHaveCount(1);
+    await expect(rowOf(page, 'm one')).toHaveCount(0);
+    await expect(pill(page, 'MCP'), 'the counts are of the feed, not of the filtered rows').toContainText(/\b2\b/);
+
+    await send(page, frame(ev(8, { query: 'u four', via: 'ui' })) + frame(ev(9, { query: 'm three', via: 'mcp' })));
+    await expect(rowOf(page, 'u four')).toHaveCount(1);
+    await expect(rowOf(page, 'm three'), 'a new row of another surface stays filtered out').toHaveCount(0);
+    await expect(pill(page, 'UI')).toContainText(/\b4\b/);
+    await expect(pill(page, 'MCP')).toContainText(/\b3\b/);
+
+    await pill(page, 'UI').click();
+    await expect(pill(page, 'UI')).not.toBeChecked();
+    await expect(rows(page)).toHaveCount(9);
+  });
+
+  test('work alongside the Project chip', async ({ page }) => {
+    const shop = 'github.com/acme/shop';
+    await open(page, surfaced, `/ops/activity?project=${encodeURIComponent(shop)}`);
+    await expect(rows(page)).toHaveCount(3);
+    await pill(page, 'MCP').click();
+    await expect(rows(page), 'MCP of the shop Project only').toHaveCount(1);
+    await expect(rowOf(page, 'm one')).toHaveCount(1);
+    await main(page)
+      .getByRole('button', { name: /remove.*github\.com\/acme\/shop/i })
+      .click();
+    await expect(rows(page), 'the pill filter stays when the Project is dropped').toHaveCount(2);
+    await expect(pill(page, 'MCP')).toBeChecked();
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+  });
+});
+
+test.describe('the Via and Result columns', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('Via shows the surface, and Result the served Item or No Item matched', async ({ page }) => {
+    await open(page, [...surfaced, ev(10, { query: 'nothing here', via: 'cli', miss: true })]);
+    await expect(cell(rowOf(page, 'm one'), col.via)).toContainText(/mcp/i);
+    await expect(cell(rowOf(page, 'c one'), col.via)).toContainText(/cli/i);
+    await expect(cell(rowOf(page, 'u one'), col.via)).toContainText(/\bui\b/i);
+    await expect(cell(rowOf(page, 'o one'), col.via)).toContainText(/other/i);
+    const served = cell(rowOf(page, 'm one'), col.result);
+    await expect(served).toContainText('article:platform/deploy');
+    expect(await text(served), 'a served row is not a Miss').not.toMatch(/miss|no item matched|\bServed\b/i);
+    const miss = cell(rowOf(page, 'nothing here'), col.result);
+    await expect(miss).toContainText('No Item matched');
+    await expect(miss, 'colour is not the only sign of a Miss').toContainText(/miss/i);
+  });
+
+  test('render the served Item as text, without invisible controls, cut by code point', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
+    const hostile = 'article:<img src=x onerror="window.__pwned=1"><b>bold</b>';
+    const hidden = 'article:a‮evil‬​z⁦q';
+    const longOdd = `skill:a${'\u{1F600}'.repeat(50_000)}`;
+    const longEven = `skill:ab${'\u{1F600}'.repeat(50_000)}`;
+    await open(page, [
+      ev(1, { query: 'hostile', served: hostile }),
+      ev(2, { query: 'hidden', served: hidden }),
+      ev(3, { query: 'long odd', served: longOdd }),
+      ev(4, { query: 'long even', served: longEven }),
+    ]);
+    await expect(rows(page)).toHaveCount(4);
+    await expect(cell(rowOf(page, 'hostile'), col.result)).toContainText(hostile);
+    await expect(table(page).locator('img, script, b, iframe')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as Win).__pwned), 'the markup ran').toBeUndefined();
+    const shown = await cell(rowOf(page, 'hidden'), col.result).innerText();
+    expect(shown).toContain('article:aevilzq');
+    expect(shown).not.toMatch(/[​-‏‪-‮⁠-⁩﻿]/);
+    for (const q of ['long odd', 'long even']) {
+      const cut = await cell(rowOf(page, q), col.result).innerText();
+      expect(cut.length, `${q}: some of it is shown`).toBeGreaterThan(0);
+      expect(cut.length, `${q}: 100,000 characters are not`).toBeLessThan(10_000);
+      expect(cut.isWellFormed(), `${q}: not cut inside a character`).toBe(true);
+    }
+    await rowButton(page, 'long odd').click();
+    const d = await detail(page).innerText();
+    expect(d.length, 'the detail is cut too').toBeLessThan(10_000);
+    expect(d.isWellFormed()).toBe(true);
+    expect(seen.errors, 'page errors and CSP violations').toEqual([]);
+    expect(seen.external).toEqual([]);
+  });
+});
+
+test.describe('the detail of a served event', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows Query → Item, Latency, Via, Replica and Trace id', async ({ page }) => {
+    await open(page, [
+      ev(1, {
+        query: 'database',
+        via: 'cli',
+        served: 'article:platform/deploy',
+        latency_us: 850,
+        trace_id: '4bf92f3577b34da6a3ce929d0e0e4736',
+        replica: 'goldie-1',
+      }),
+    ]);
+    await rowButton(page, 'database').click();
+    const d = await text(detail(page));
+    expect(d).toMatch(/database\s*→\s*article:platform\/deploy/);
+    expect(d).toMatch(/\bLatency\b\s*0\.9\s*ms/);
+    expect(d).toMatch(/\bVia\b\s*CLI/i);
+    expect(d).toMatch(/\bReplica\b\s*goldie-1/);
+    expect(d).toMatch(/Trace id\s*4bf92f3577b34da6a3ce929d0e0e4736/i);
+  });
+
+  test('leaves out what a peer on an older version does not send', async ({ page }) => {
+    await open(page, [ev(1, { query: 'old peer', latency_us: 0, trace_id: '', replica: 'goldie-1' })]);
+    await rowButton(page, 'old peer').click();
+    await expect(detail(page)).toContainText('old peer');
+    const d = await text(detail(page));
+    expect(d, 'no Via without a surface').not.toMatch(/\bVia\b/);
+    expect(d, 'no Latency for 0 or none').not.toMatch(/\bLatency\b/);
+    expect(d, 'no Trace id without one').not.toMatch(/Trace id/i);
+    expect(d, 'no Query → Item without a served Item').not.toContain('→');
+    expect(d).toMatch(/\bReplica\b/);
+    expect(d, 'no placeholder for what is missing').not.toMatch(/\b(undefined|null|none|n\/a|0\.0)\b|—/i);
+  });
+
+  test('shows a trace id as text', async ({ page }) => {
+    await open(page, [ev(1, { query: 'traced', trace_id: '<b>t</b>‮1', via: 'mcp' })]);
+    await rowButton(page, 'traced').click();
+    await expect(detail(page)).toContainText('<b>t</b>1');
+    await expect(detail(page).locator('b')).toHaveCount(0);
+  });
+});
+
+test.describe('the Busiest surface and Latency tiles', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('name the busiest surface and the p50 and p95 of the last five minutes, in ms with one decimal', async ({ page }) => {
+    const old = new Date(Date.now() - 10 * 60_000).toISOString();
+    const batch = Array.from({ length: 101 }, (_, i) =>
+      ev(i + 1, { query: `timed ${i}`, via: i < 60 ? 'mcp' : i < 90 ? 'cli' : 'ui', latency_us: (i + 1) * 1000 }),
+    );
+    await open(page, [...batch, ev(500, { query: 'replayed', via: 'ui', latency_us: 9_000_000, time: old })]);
+    await expect(tile(page, 'Busiest surface')).toContainText(/mcp/i);
+    expect(await text(tile(page, 'Busiest surface'))).not.toContain('—');
+    const l = await text(tile(page, 'Latency'));
+    expect(l).toMatch(/p50/i);
+    expect(l).toMatch(/p95/i);
+    expect(l.indexOf('51.0'), 'p50 is 51.0 ms').toBeGreaterThan(-1);
+    expect(l.indexOf('96.0'), 'p95 is 96.0 ms').toBeGreaterThan(l.indexOf('51.0'));
+    expect(l).toMatch(/\bms\b/);
+    expect(l, 'the replayed 9,000 ms is outside the window').not.toMatch(/9000|9,000/);
   });
 });
