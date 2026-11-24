@@ -227,7 +227,11 @@ func (t *tools) search(ctx context.Context, q, project string) *sdk.CallToolResu
 		return success(fmt.Sprintf("No articles match %q. Try other words.", contract.CleanLine(q)) + hintLine(res.Hint))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d articles for %q, best first. Read one with get_article.\n", len(hits), contract.CleanLine(q))
+	noun := "articles"
+	if len(hits) == 1 {
+		noun = "article"
+	}
+	fmt.Fprintf(&b, "%d %s for %q, best first. Read one with get_article.\n", len(hits), noun, contract.CleanLine(q))
 	for _, h := range hits {
 		fmt.Fprintf(&b, "\n- id: %s\n  name: %s\n  keywords: %s\n  matched: %s\n",
 			contract.CleanLine(h.Id), contract.CleanLine(h.Name), contract.CleanList(h.Keywords), contract.CleanList(h.Matched))
