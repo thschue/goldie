@@ -8,7 +8,7 @@
 // is deterministic. The session role is stubbed too: the page is for
 // operators, a reader gets the 403 page. The Resync button (#634) calls
 // POST /api/v1/sync with the session's CSRF token (#490).
-import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
 import { eachViewport, evidence, expectFocusRing, sideNav, withNav } from './ux';
 
 const apiSync = /\/api\/v1\/sync$/;
@@ -105,6 +105,38 @@ const cards: Source[] = [
 const card = (page: Page, name: string) => rows(page).filter({ hasText: name });
 const anySync = /\/api\/v1\/sync(\?.*)?$/;
 
+// badgeLook reads a badge's rendered ink and background and the resolved tokens it should use.
+async function badgeLook(el: Locator, tone: 'ok' | 'danger') {
+  return el.evaluate((node, t) => {
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const rgb = (c: string) => {
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = '#000';
+      ctx.fillStyle = c;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+      return [r, g, b];
+    };
+    const lum = (c: number[]) => {
+      const [r, g, b] = c.map((v) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const root = getComputedStyle(document.documentElement);
+    const token = (n: string) => rgb(root.getPropertyValue(n).trim()).join(',');
+    const s = getComputedStyle(node);
+    const ink = rgb(s.color);
+    const bg = rgb(s.backgroundColor);
+    const [hi, lo] = [lum(ink), lum(bg)].sort((a, b) => b - a);
+    return {
+      look: { ink: ink.join(','), bg: bg.join(','), ratio: (hi + 0.05) / (lo + 0.05) },
+      want: { ink: token(`--${t}-ink`), bg: token(`--${t}-bg`) },
+    };
+  }, tone);
+}
+
 eachViewport((width, theme) => {
   test('the Sources page with a healthy, a failing and an unpolled Source is captured and axe-clean', async ({
     page,
@@ -149,6 +181,29 @@ eachViewport((width, theme) => {
     const titles = await main(page).getByRole('heading', { level: 2 }).allInnerTexts();
     expect(new Set(titles).size, 'every card heading is distinct').toBe(titles.length);
     await evidence(page, width, theme, '-badges', 'sources');
+  });
+
+  test('a healthy badge uses the ok tokens, a failing or errored one the danger tokens, at AA contrast (#871)', async ({
+    page,
+  }) => {
+    const errored: Source = { revision: '4444444444444444444444444444444444444444', last_error: 'clone failed' };
+    await asOperatorWithCsrf(page);
+    await stubSync(page, [
+      { ...healthy, name: 'platform', preference: 1, shadowed: [] },
+      { ...failing, name: 'team', preference: 2, shadowed: [] },
+      { ...errored, name: 'broken', preference: 3, shadowed: [] },
+    ]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    const looks = [
+      await badgeLook(card(page, 'platform').getByText(/^healthy$/i), 'ok'),
+      await badgeLook(card(page, 'team').getByText(/^failing · serving last good$/i), 'danger'),
+      await badgeLook(card(page, 'broken').getByText(/^errored$/i), 'danger'),
+    ];
+    for (const { look, want } of looks) {
+      expect({ ink: look.ink, bg: look.bg }).toEqual(want);
+      expect(look.ratio, 'AA contrast of the badge text on its background').toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   test('the Sources page empty state is captured and axe-clean', async ({ page }) => {
