@@ -190,11 +190,10 @@ func TestExchangeYieldsLoginAndReaderRoleForOrgMember(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Login != "alice" || id.Role != github.RoleReader {
+	// Compiles only while Role is a plain string, not a named type.
+	func(string) {}(id.Role)
+	if id.Login != "alice" || id.Role != "reader" {
 		t.Fatalf("identity = %+v, want alice as reader", id)
-	}
-	if got := github.RoleReader.String(); got != "reader" {
-		t.Errorf("RoleReader.String() = %q, want reader", got)
 	}
 }
 
@@ -265,11 +264,8 @@ func TestExchangeActiveOperatorTeamMemberIsOperator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Login != "alice" || id.Role != github.RoleOperator {
+	if id.Login != "alice" || id.Role != "operator" {
 		t.Fatalf("identity = %+v, want alice as operator", id)
-	}
-	if got := github.RoleOperator.String(); got != "operator" {
-		t.Errorf("RoleOperator.String() = %q, want operator", got)
 	}
 }
 
@@ -281,8 +277,8 @@ func TestExchangeOperatorTeamMemberOutsideListedOrgsIsStillOperator(t *testing.T
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Role != github.RoleOperator {
-		t.Fatalf("role = %v, want operator", id.Role)
+	if id.Role != "operator" {
+		t.Fatalf("role = %q, want operator", id.Role)
 	}
 }
 
@@ -296,8 +292,8 @@ func TestExchangeOrgMemberNotOnTheTeamStaysReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Role != github.RoleReader {
-		t.Fatalf("role = %v, want reader", id.Role)
+	if id.Role != "reader" {
+		t.Fatalf("role = %q, want reader", id.Role)
 	}
 }
 
@@ -309,8 +305,8 @@ func TestExchangeAnyListedOrgGrantsReader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Role != github.RoleReader {
-		t.Fatalf("role = %v, want reader", id.Role)
+	if id.Role != "reader" {
+		t.Fatalf("role = %q, want reader", id.Role)
 	}
 }
 
@@ -355,8 +351,8 @@ func TestExchangePendingTeamDoesNotElevateAnActiveOrgMember(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange: %v", err)
 	}
-	if id.Role != github.RoleReader {
-		t.Fatalf("role = %v, want reader: a pending team membership is not operator", id.Role)
+	if id.Role != "reader" {
+		t.Fatalf("role = %q, want reader: a pending team membership is not operator", id.Role)
 	}
 }
 
@@ -484,8 +480,8 @@ func TestExchangeHonoursAnEnterpriseBaseURL(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Exchange with base %q: %v", base, err)
 		}
-		if id.Role != github.RoleOperator {
-			t.Errorf("base %q: role = %v, want operator", base, id.Role)
+		if id.Role != "operator" {
+			t.Errorf("base %q: role = %q, want operator", base, id.Role)
 		}
 		if !f.requested("/api/v3/user") {
 			t.Errorf("base %q: /api/v3/user was not called", base)
