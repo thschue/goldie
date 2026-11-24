@@ -29,6 +29,7 @@ func TestSettingsRegistryMatchesLoadConfigDefaults(t *testing.T) {
 	_, rec, _ := reportKeys(t, cfg)
 	got[envGitURL] = reported(t, cfg, envGitURL)
 	got[envGitRef] = reported(t, cfg, envGitRef)
+	got[EnvGitPath] = ""
 	got[envGitAllowFileURL] = fmt.Sprint(rec[envGitAllowFileURL])
 	got[envPollInterval] = reported(t, cfg, envPollInterval)
 	got[EnvSources] = reported(t, cfg, EnvSources)
