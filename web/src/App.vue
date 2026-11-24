@@ -116,13 +116,13 @@ async function onSignOut() {
   gap: var(--space-6);
   min-height: 100vh;
   padding: var(--space-6) var(--space-4);
-  background: var(--surface-1);
+  background: var(--surface-2);
 }
 .logo {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: var(--text-xl, 1.5rem);
+  font-size: var(--text-display-lg);
   font-weight: 700;
 }
 .page-alert {
