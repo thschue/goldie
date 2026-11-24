@@ -3,9 +3,11 @@
 #
 #   scripts/merge-pr <pr> <head sha>
 #
-# Refuses unless all of these hold, then marks the PR ready and enables
-# auto-merge (squash, pinned to <head sha>), which waits for the required
-# checks. GitHub refuses auto-merge on a PR that is already mergeable with
+# Refuses unless all of these hold, then enables auto-merge (squash, pinned
+# to <head sha>), which waits for the required checks. A PR with a clean
+# review and a passing test lock is marked ready before the gate runs: a PR
+# the gate holds for the maintainer is ready to merge, not a draft (a draft
+# means the stream is still working on it). GitHub refuses auto-merge on a PR that is already mergeable with
 # green checks (CLEAN); such a PR is merged directly, with the same pin. The
 # repository can't have a merge queue (user-owned), so skew between PRs is
 # caught by CI on main (stop the line):
@@ -70,6 +72,16 @@ for f in scripts/agent-gate scripts/test-lock run; do
 done
 
 status=0
+out=$("$g/test-lock" origin/main "$sha" $authors 2>&1) || status=$?
+case "$status" in
+0) ;;
+1) printf '%s\n' "$out"; exit 3 ;;
+*) die "test-lock failed: $out" ;;
+esac
+
+if [ "$(q .isDraft)" = true ]; then gh pr ready "$pr" >/dev/null || die "cannot mark PR $pr ready"; fi
+
+status=0
 out=$(GATE_RUN="$g/run" GOLDIE_TOOLS="$root/.tools" "$g/agent-gate" origin/main "$sha" 2>&1) || status=$?
 if [ "$status" != 0 ]; then
 	printf '%s\n' "$out"
@@ -80,15 +92,6 @@ printf '%s\n' "$out" | sed -n 's/^review: //p' | while IFS= read -r reason; do
 		die "the clean marker does not judge the review reason: $reason"
 done
 
-status=0
-out=$("$g/test-lock" origin/main "$sha" $authors 2>&1) || status=$?
-case "$status" in
-0) ;;
-1) printf '%s\n' "$out"; exit 3 ;;
-*) die "test-lock failed: $out" ;;
-esac
-
-if [ "$(q .isDraft)" = true ]; then gh pr ready "$pr" >/dev/null || die "cannot mark PR $pr ready"; fi
 if gh pr merge "$pr" --auto --squash --match-head-commit "$sha" 2>"$g/err"; then
 	printf 'merge-pr: PR %s set to auto-merge at %s\n' "$pr" "$sha"
 else

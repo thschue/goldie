@@ -45,7 +45,9 @@ Every loop comment ends with exactly one marker, as its final line. A marker cou
 Triage labels are in [triage-labels.md](./triage-labels.md). Flow labels:
 - `in-progress` + assignee: display only. `scripts/claim` sets both; delivery removes both when the
   PR merges or closes. The frontier skips any assigned issue, so a leftover assignee hides it.
-- `needs-maintainer` on a PR: the gate holds it; the maintainer approves by merging.
+- `needs-maintainer` on a PR: the gate holds it; the maintainer approves by merging. The PR is
+  **ready for review, never a draft**: a draft means its stream is still working. `scripts/merge-pr`
+  marks it ready once the review is clean and the test lock passes, before the gate decides.
 - `needs-info` with a `reason=`:
   - `spec`, `product`, `decision`: owned by the product session;
   - `round-cap`, `security`, `human-check`, `credential`: owned by the maintainer.

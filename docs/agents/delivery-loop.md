@@ -98,14 +98,15 @@ reason), consults, test change requests, and harness feedback filed.
      milestone.
 5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
    agent: fixed, or why not. Then:
-   - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker, `main`'s gate and the test
-     lock, marks the PR ready, and merges it (auto-merge, or directly when already green). Exit 1:
-     the gate holds it; add `needs-maintainer` with the reasons (for a new dependency, the verified
+   - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker and the test lock, marks
+     the PR ready, then runs `main`'s gate and merges (auto-merge, or directly when already green).
+     Exit 1: the gate holds the ready PR; add `needs-maintainer` with the reasons (for a new dependency, the verified
      brief in three lines). Exit 3: the test lock failed, a blocking finding. Exit 2: a tool error;
      retry the same command on later ticks, and after 3 add `needs-maintainer`;
    - **decision:** the PR is clean except for one product question. Post the marker with the
-     question, the options and a recommendation, and add `needs-info` and `question` **in the same
-     command**. The answer (`PM decision:`, or the maintainer's comment) is handled in step 2;
+     question, the options and a recommendation, add `needs-info` and `question` **in the same
+     command**, and run `gh pr ready <pr>`: the maintainer reads a PR that is ready to merge but for
+     the answer. The answer (`PM decision:`, or the maintainer's comment) is handled in step 2;
    - **needs-info** `security` or `human-check`: post it and stop the stream; it is the
      maintainer's.
 
