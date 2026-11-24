@@ -159,3 +159,20 @@ func TestServerRefusesGitURLCredentialsFromAFlagOrTheFile(t *testing.T) {
 		}
 	}
 }
+
+// The refusal says what to do next on the surface the user used.
+func TestServerGitURLCredentialsErrorSaysTheNextStepPerSurface(t *testing.T) {
+	url := "https://bob:hunter2@example.com/r.git"
+	_, err := layersFrom(t, []string{"--git-url", url}, map[string]string{}, "")
+	if err == nil || !strings.Contains(err.Error(), "when set as a flag, which shows in the process list: name the token with --git-token-file") {
+		t.Errorf("flag error = %v", err)
+	}
+	_, err = layersFrom(t, nil, map[string]string{}, "git_url: "+url+"\n")
+	if err == nil || !strings.Contains(err.Error(), "in the config file, which is easy to share: use git_token_file") {
+		t.Errorf("file error = %v", err)
+	}
+	_, err = layersFrom(t, []string{"--sources", `[{"name":"a","type":"git","url":"` + url + `"}]`}, map[string]string{}, "")
+	if err == nil || !strings.Contains(err.Error(), "name the token with token_env on the Source") {
+		t.Errorf("sources flag error = %v", err)
+	}
+}

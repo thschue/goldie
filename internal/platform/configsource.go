@@ -103,16 +103,18 @@ func NewLayers(fs *pflag.FlagSet, env Lookup, readFile func(string) ([]byte, err
 // never the URL.
 func (l *Layers) checkURLCredentials() []error {
 	var errs []error
-	for _, s := range []struct{ name, hint string }{
-		{EnvGitURL, "git_token_file"}, {EnvSources, "token_env on the Source"},
+	for _, s := range []struct{ name, flagHint, fileHint string }{
+		{EnvGitURL, "--git-token-file", "git_token_file"}, {EnvSources, "token_env on the Source", "token_env on the Source"},
 	} {
 		flag := "--" + settingFlag(s.name)
-		var where, text string
+		var where, text, reason string
 		switch {
 		case l.flags.Changed(settingFlag(s.name)):
 			where, text = flag, l.flags.Lookup(settingFlag(s.name)).Value.String()
+			reason = "when set as a flag, which shows in the process list: name the token with " + s.flagHint
 		case l.file[settingKey(s.name)] != "":
 			where, text = settingKey(s.name), l.file[settingKey(s.name)]
+			reason = "in the config file, which is easy to share: use " + s.fileHint
 		default:
 			continue
 		}
@@ -135,7 +137,7 @@ func (l *Layers) checkURLCredentials() []error {
 				if s.name == EnvSources {
 					label = fmt.Sprintf("%s[%d].url", where, i)
 				}
-				errs = append(errs, fmt.Errorf("%s: a URL must not hold credentials when set here, they would be shared: use %s", label, s.hint))
+				errs = append(errs, fmt.Errorf("%s: a URL must not hold credentials %s", label, reason))
 			}
 		}
 	}
