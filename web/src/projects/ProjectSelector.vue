@@ -37,19 +37,24 @@ async function load() {
 async function show() {
   open.value = true;
   await load();
-  active.value = Math.max(projects.value.findIndex((p) => key(p) === key(current.value)), 0);
+  const at = projects.value.findIndex((p) => key(p) === key(current.value));
+  active.value = at < 0 ? 0 : at + 1;
 }
 
 const close = () => (open.value = false);
 
-function choose(id: string) {
+// choose(undefined) is the "All projects" option: the query without `project`.
+function choose(id?: string) {
   close();
-  void router.push({ query: { ...route.query, project: id } });
+  const query = { ...route.query };
+  if (id === undefined) delete query.project;
+  else query.project = id;
+  void router.push({ query });
 }
 
 function move(by: number) {
-  const n = projects.value.length;
-  if (n) active.value = (active.value + by + n) % n;
+  const n = projects.value.length + 1;
+  active.value = (active.value + by + n) % n;
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -70,9 +75,7 @@ function onKeydown(e: KeyboardEvent) {
     move(k === 'ArrowDown' ? 1 : -1);
   } else if (k === 'Enter' || k === ' ') {
     e.preventDefault();
-    const id = projects.value[active.value];
-    if (id) choose(id);
-    else close();
+    choose(active.value ? projects.value[active.value - 1] : undefined);
   } else if (k === 'Tab') {
     close();
   }
@@ -118,7 +121,7 @@ watch(current, (id) => {
       aria-controls="project-listbox"
       :aria-expanded="open"
       :aria-describedby="current && loaded ? 'project-chip' : undefined"
-      :aria-activedescendant="open && loaded && projects.length ? `project-option-${active}` : undefined"
+      :aria-activedescendant="open ? `project-option-${active}` : undefined"
       @click="open ? close() : show()"
       @keydown="onKeydown"
       @keyup.space.prevent
@@ -134,12 +137,22 @@ watch(current, (id) => {
     </button>
     <ul v-if="open" id="project-listbox" class="listbox" role="listbox" aria-label="Projects">
       <li
+        id="project-option-0"
+        role="option"
+        class="option"
+        :class="{ active: active === 0 }"
+        :aria-selected="!current"
+        @click="choose()"
+      >
+        <span>All projects (global guidance)</span>
+      </li>
+      <li
         v-for="(id, i) in projects"
-        :id="`project-option-${i}`"
+        :id="`project-option-${i + 1}`"
         :key="id"
         role="option"
         class="option"
-        :class="{ active: i === active }"
+        :class="{ active: i + 1 === active }"
         :aria-selected="key(id) === key(current)"
         @click="choose(id)"
       >
