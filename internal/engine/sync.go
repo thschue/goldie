@@ -127,7 +127,8 @@ func (s *Syncer) poll(ctx context.Context) (SyncStatus, error) {
 // Trigger starts one poll in the background, with ctx and then onPoll as Run
 // has them, and reports whether it did. It starts none, and reports false,
 // when a poll is already running or ctx has ended. The poll runs to the end of
-// ctx, not of the caller's request.
+// ctx, not of the caller's request, and nothing waits for it at stop: a
+// triggered poll is deliberately not tracked, unlike Run's.
 func (s *Syncer) Trigger(ctx context.Context, onPoll func(SyncStatus)) bool {
 	if ctx.Err() != nil || !s.pollMu.TryLock() {
 		return false

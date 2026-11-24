@@ -121,6 +121,11 @@ func (s *SourceSet) Poll(ctx context.Context, name string) error {
 	}
 	e.pollMu.Lock()
 	defer e.pollMu.Unlock()
+	return s.pollLocked(ctx, e)
+}
+
+// pollLocked is Poll for a caller that holds e.pollMu.
+func (s *SourceSet) pollLocked(ctx context.Context, e *sourceEntry) error {
 	snap, rev, began, ended, err := timedLoad(ctx, e.src, s.now)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -129,6 +134,39 @@ func (s *SourceSet) Poll(ctx context.Context, name string) error {
 	}
 	e.status.stamp(began, ended, rev, err)
 	return err
+}
+
+// Trigger starts one poll of the named Source in the background, with ctx and
+// then onPoll as Run has them. found is false for a name that is no Source.
+// started is false, with found true, when that Source's poll is already
+// running or ctx has ended. The poll runs to the end of ctx, not of the
+// caller's request, and nothing waits for it at stop: like Syncer.Trigger, a
+// triggered poll is deliberately not tracked.
+func (s *SourceSet) Trigger(ctx context.Context, name string, onPoll func(SyncStatus)) (started, found bool) {
+	e := s.entry(name)
+	if e == nil {
+		return false, false
+	}
+	if ctx.Err() != nil || !e.pollMu.TryLock() {
+		return false, true
+	}
+	go func() {
+		defer e.pollMu.Unlock()
+		_ = s.pollLocked(ctx, e)
+		if onPoll != nil {
+			onPoll(s.Status(name))
+		}
+	}()
+	return true, true
+}
+
+// Names lists the Sources in preference order.
+func (s *SourceSet) Names() []string {
+	names := make([]string, len(s.entries))
+	for i, e := range s.entries {
+		names[i] = e.name
+	}
+	return names
 }
 
 // Run polls the named Source once at once, then on every tick of interval,

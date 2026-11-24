@@ -3,6 +3,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -431,6 +432,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		// Nothing to poll: only the proxied streams end with the server.
 	case p.list != nil:
 		p.list.run(ctx, &p.loops, p.poll)
+		p.sync.run(ctx, nil) // after run: a trigger polls with each member's hook
 	default:
 		onPoll := pollHook(ctx, p.pollLog, p.polls, p.firstLoadHint, p.syncer.Current)
 		p.sync.run(ctx, onPoll)
@@ -623,7 +625,7 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 				"This server runs with GOLDIE_MODE=api and does not serve /mcp or the UI.")
 		}))
 	}
-	m.sync.bind(src.syncer) // a list has none: the sync operations answer 503 not_ready
+	m.sync.bind(src.syncer, cmp.Or(src.name, "source"), src.list)
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {
 		p.pollLog = logger.With(src.logAttrs...)

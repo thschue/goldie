@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thschue/goldie/internal/api"
 	"github.com/thschue/goldie/internal/engine"
 	"github.com/thschue/goldie/internal/platform"
 )
@@ -30,6 +31,7 @@ type member struct {
 	logAttrs []any         // the Source's name, and its URL redacted for a git Source
 	pollLog  *slog.Logger  // logs every poll; set by logTo
 	polls    *platform.PollCounter
+	onPoll   func(engine.SyncStatus) // set by run: logs and counts every poll, a triggered one too
 }
 
 // check is the member's readiness check.
@@ -115,9 +117,33 @@ func (l *sourceList) addChecks(reg *platform.Registry) {
 func (l *sourceList) run(ctx context.Context, wg *sync.WaitGroup, fallback time.Duration) {
 	for _, m := range l.members {
 		onPoll := pollHook(ctx, m.pollLog, m.polls, "", nil)
+		m.onPoll = onPoll
 		interval := max(cmp.Or(m.interval, fallback), minPollInterval)
 		wg.Go(func() { l.set.Run(ctx, m.name, interval, onPoll) })
 	}
+}
+
+// statuses lists every member's status, in preference order.
+func (l *sourceList) statuses() []api.SourceSync {
+	out := make([]api.SourceSync, len(l.members))
+	for i, m := range l.members {
+		out[i] = api.SourceSync{Name: m.name, Status: l.set.Status(m.name)}
+	}
+	return out
+}
+
+// trigger starts a poll of the named member, or of every member for an empty
+// name. started is true when any poll started; found is false for a name that
+// is no member.
+func (l *sourceList) trigger(ctx context.Context, name string) (started, found bool) {
+	for _, m := range l.members {
+		if name != "" && name != m.name {
+			continue
+		}
+		s, _ := l.set.Trigger(ctx, m.name, m.onPoll)
+		started, found = started || s, true
+	}
+	return started, found
 }
 
 // logTo has every member's polls logged to log, with its attributes. Nil

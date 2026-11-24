@@ -498,28 +498,36 @@ export interface paths {
         };
         /**
          * Read the content sync status and warnings
-         * @description Returns, per Source, the revision served and when it was last polled,
-         *     when that last succeeded and why it last failed, and the findings of the
-         *     last content load that did not fail it, for
+         * @description Returns, per Source, its `name` and `preference`, the revision served
+         *     and when it was last polled, when that last succeeded and why it last
+         *     failed, the Items it lost to an earlier Source (`shadowed`), and the
+         *     findings of the last content load that did not fail it, for
          *     operator tokens only, such as a `suppress` reference that names nothing
          *     in a Project's `project.yaml`. Each warning names a file relative to the
          *     Source root and shows what the Source wrote escaped to printable ASCII
          *     and cut, which is why only operators read them. `goldie validate` prints
          *     the same warnings for a content directory.
+         *
+         *     With `GOLDIE_SOURCES` every member of the list is one entry, in the
+         *     order listed, named as configured and with `preference` 1 for the first.
+         *     A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+         *     one entry, named `dir` or `git`.
          */
         get: operations["getSync"];
         put?: never;
         /**
-         * Poll the Source now
-         * @description Starts one poll of the Source now instead of waiting for
+         * Poll the Sources now
+         * @description Starts one poll of each Source now, or of the one named by `source`,
+         *     instead of waiting for
          *     `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
          *     without waiting for it, for example after merging into the repository a
          *     git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
          *     moves when the poll ends, `revision` when it found a new commit, and
          *     `last_error` when it failed. The request takes no body. At most one
-         *     poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-         *     available yet: this answers 503 `not_ready`, and each Source polls at its
-         *     `poll` or `GOLDIE_POLL_INTERVAL`.
+         *     poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+         *     the list is polled, or only the one named by `source`. A name that is no
+         *     Source answers 404 `not_found` and polls nothing; read the names from
+         *     `GET /api/v1/sync`.
          */
         post: operations["postSync"];
         delete?: never;
@@ -1287,12 +1295,15 @@ export interface components {
         /** @description How the last content load went, for operators. */
         SyncStatus: {
             /**
-             * @description One entry per Source. This server has exactly one.
+             * @description One entry per Source, most preferred first.
              * @example [
              *       {
+             *         "name": "team",
+             *         "preference": 1,
              *         "revision": "3f786850e387550fdab836ed7e6dc881de23001b",
              *         "last_poll": "2026-11-23T10:00:00Z",
-             *         "last_success": "2026-11-23T10:00:00Z"
+             *         "last_success": "2026-11-23T10:00:00Z",
+             *         "shadowed": []
              *       }
              *     ]
              */
@@ -1308,8 +1319,29 @@ export interface components {
              */
             warnings: components["schemas"]["ContentWarning"][];
         };
-        /** @description How polling one Source is going. */
+        /**
+         * @description How polling one Source is going. The server always sends `name`,
+         *     `preference` and `shadowed`; they are not required, so a client written
+         *     before they were added still accepts a status without them.
+         */
         SourceSyncStatus: {
+            /**
+             * @description The Source's name as configured in `GOLDIE_SOURCES`; `dir` or `git`
+             *     for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`.
+             * @example team
+             */
+            name?: string;
+            /**
+             * @description Where the Source stands in the list, 1 for the first listed. An earlier Source wins an Item both have in the same Scope.
+             * @example 1
+             */
+            preference?: number;
+            /**
+             * @description Items this Source has that an earlier Source's copy in the same
+             *     Scope hides, at most the first 100 in load order. Empty for the
+             *     first Source.
+             */
+            shadowed?: components["schemas"]["ShadowedItem"][];
             /**
              * @description The commit the served content comes from. Absent for a Source
              *     without revisions, such as a directory.
@@ -1333,6 +1365,42 @@ export interface components {
              * @example global/articles/sub/bad.md: frontmatter not closed with ---
              */
             last_error?: string;
+        };
+        /** @description An Item of one Source that an earlier Source's copy hides. */
+        ShadowedItem: {
+            /**
+             * @description The Item's kind, such as `article`.
+             * @example article
+             */
+            kind: string;
+            /**
+             * @description The Item's ID.
+             * @example style
+             */
+            id: string;
+            /**
+             * @description Where both copies live: `global`, `local`, or the Project (`host/org/repo`).
+             * @example global
+             */
+            scope: string;
+            /** @description The Project, when `scope` is one. Absent for `global` and `local`. */
+            project?: string;
+            shadowed_by: components["schemas"]["ShadowedBy"];
+        };
+        /** @description The Source whose copy answers instead. */
+        ShadowedBy: {
+            /**
+             * @description The name of that Source.
+             * @example team
+             */
+            source: string;
+            /**
+             * @description Where its copy lives; the same Scope as the shadowed copy.
+             * @example global
+             */
+            scope: string;
+            /** @description The Project whose copy answers, when its `scope` is one. Absent for `global` and `local`. */
+            project?: string;
         };
         /** @description The answer to starting a poll. */
         SyncTriggered: {
@@ -3187,9 +3255,30 @@ export interface operations {
                      * @example {
                      *       "sources": [
                      *         {
+                     *           "name": "team",
+                     *           "preference": 1,
                      *           "revision": "3f786850e387550fdab836ed7e6dc881de23001b",
                      *           "last_poll": "2026-11-23T10:00:00Z",
-                     *           "last_success": "2026-11-23T10:00:00Z"
+                     *           "last_success": "2026-11-23T10:00:00Z",
+                     *           "shadowed": []
+                     *         },
+                     *         {
+                     *           "name": "platform",
+                     *           "preference": 2,
+                     *           "revision": "91c2d1f0a1c5b0a4a7e0e5a6d6f3b9c2e8d7a111",
+                     *           "last_poll": "2026-11-23T10:00:00Z",
+                     *           "last_success": "2026-11-23T10:00:00Z",
+                     *           "shadowed": [
+                     *             {
+                     *               "kind": "article",
+                     *               "id": "style",
+                     *               "scope": "global",
+                     *               "shadowed_by": {
+                     *                 "source": "team",
+                     *                 "scope": "global"
+                     *               }
+                     *             }
+                     *           ]
                      *         }
                      *       ],
                      *       "warnings": [
@@ -3229,7 +3318,13 @@ export interface operations {
     };
     postSync: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description The name of one Source to poll, as `GET /api/v1/sync` lists it. Without it every Source is polled.
+                 * @example platform
+                 */
+                source?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3261,6 +3356,18 @@ export interface operations {
             };
             /** @description A reader token was sent to trigger a poll; only an operator token may. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /**
+             * @description The `source` is no Source (`error.code` is `not_found`). Nothing was
+             *     polled and the name is not echoed.
+             */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

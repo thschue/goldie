@@ -584,14 +584,20 @@ Operation ID: `getSkillFile`
 
 Read the content sync status and warnings
 
-Returns, per Source, the revision served and when it was last polled,
-when that last succeeded and why it last failed, and the findings of the
-last content load that did not fail it, for
+Returns, per Source, its `name` and `preference`, the revision served
+and when it was last polled, when that last succeeded and why it last
+failed, the Items it lost to an earlier Source (`shadowed`), and the
+findings of the last content load that did not fail it, for
 operator tokens only, such as a `suppress` reference that names nothing
 in a Project's `project.yaml`. Each warning names a file relative to the
 Source root and shows what the Source wrote escaped to printable ASCII
 and cut, which is why only operators read them. `goldie validate` prints
 the same warnings for a content directory.
+
+With `GOLDIE_SOURCES` every member of the list is one entry, in the
+order listed, named as configured and with `preference` 1 for the first.
+A server with one Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`) has
+one entry, named `dir` or `git`.
 
 Operation ID: `getSync`
 
@@ -607,17 +613,19 @@ Operation ID: `getSync`
 
 ### `POST /api/v1/sync`
 
-Poll the Source now
+Poll the Sources now
 
-Starts one poll of the Source now instead of waiting for
+Starts one poll of each Source now, or of the one named by `source`,
+instead of waiting for
 `GOLDIE_POLL_INTERVAL`, for operator tokens only, and answers at once
 without waiting for it, for example after merging into the repository a
 git Source reads. Read the outcome from `GET /api/v1/sync`: `last_poll`
 moves when the poll ends, `revision` when it found a new commit, and
 `last_error` when it failed. The request takes no body. At most one
-poll runs at a time. With `GOLDIE_SOURCES`, sync status and Resync are not
-available yet: this answers 503 `not_ready`, and each Source polls at its
-`poll` or `GOLDIE_POLL_INTERVAL`.
+poll of a Source runs at a time. With `GOLDIE_SOURCES` every member of
+the list is polled, or only the one named by `source`. A name that is no
+Source answers 404 `not_found` and polls nothing; read the names from
+`GET /api/v1/sync`.
 
 Operation ID: `postSync`
 
@@ -626,6 +634,7 @@ Operation ID: `postSync`
 | `202` | A poll was started. | `application/json` (`SyncTriggered`) |
 | `401` | No bearer token was sent to trigger a poll, or it is not a configured token. | `application/json` (`ErrorEnvelope`) |
 | `403` | A reader token was sent to trigger a poll; only an operator token may. | `application/json` (`ErrorEnvelope`) |
+| `404` | The 'source' is no Source ('error.code' is 'not_found'). Nothing was polled and the name is not echoed. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | A poll is already running, so none was started ('error.code' is 'sync_running'), or the token sent more requests than 'GOLDIE_RATE_LIMIT' allows ('rate_limited', with 'Retry-After'). Wait, then read 'GET /api/v1/sync'. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -1013,6 +1022,28 @@ The token to sign in with.
 |---|---|---|---|
 | `token` | `string` | yes | A configured API token, in plain text. |
 
+### `ShadowedBy`
+
+The Source whose copy answers instead.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `project` | `string` | no | The Project whose copy answers, when its 'scope' is one. Absent for 'global' and 'local'. |
+| `scope` | `string` | yes | Where its copy lives; the same Scope as the shadowed copy. |
+| `source` | `string` | yes | The name of that Source. |
+
+### `ShadowedItem`
+
+An Item of one Source that an earlier Source's copy hides.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | yes | The Item's ID. |
+| `kind` | `string` | yes | The Item's kind, such as 'article'. |
+| `project` | `string` | no | The Project, when 'scope' is one. Absent for 'global' and 'local'. |
+| `scope` | `string` | yes | Where both copies live: 'global', 'local', or the Project ('host/org/repo'). |
+| `shadowed_by` | `ShadowedBy` | yes |  |
+
 ### `Skill`
 
 One skill bundle.
@@ -1047,14 +1078,19 @@ The skills that answer in a view.
 
 ### `SourceSyncStatus`
 
-How polling one Source is going.
+How polling one Source is going. The server always sends `name`,
+`preference` and `shadowed`; they are not required, so a client written
+before they were added still accepts a status without them.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `last_error` | `string` | no | Why the last poll failed, absent when it succeeded. It names a file relative to the Source root and never a host path, URL or credential. The served content stays the last good one. |
 | `last_poll` | `string` | no | When the last poll ended, whether it succeeded or not. Absent before the first poll ends. |
 | `last_success` | `string` | no | When the last poll that loaded the content ended. Absent before the first one. |
+| `name` | `string` | no | The Source's name as configured in 'GOLDIE_SOURCES'; 'dir' or 'git' for the one Source of 'GOLDIE_CONTENT_DIR' or 'GOLDIE_GIT_URL'. |
+| `preference` | `integer` | no | Where the Source stands in the list, 1 for the first listed. An earlier Source wins an Item both have in the same Scope. |
 | `revision` | `string` | no | The commit the served content comes from. Absent for a Source without revisions, such as a directory. |
+| `shadowed` | `array` | no | Items this Source has that an earlier Source's copy in the same Scope hides, at most the first 100 in load order. Empty for the first Source. |
 
 ### `SyncStatus`
 
@@ -1062,7 +1098,7 @@ How the last content load went, for operators.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `sources` | `array` | yes | One entry per Source. This server has exactly one. |
+| `sources` | `array` | yes | One entry per Source, most preferred first. |
 | `warnings` | `array` | yes | Load findings that did not fail the load, in load order. |
 
 ### `SyncTriggered`
