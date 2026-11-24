@@ -109,7 +109,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 ### 3.3 Search results (`/?q=`)
 
 - The hero stays, with the query in the field and a clear button.
-- Kind filter pills with counts, plus "← Back to home".
+- Kind filter pills (All, article, skill, agent, decision), plus "← Back to home". A pill sets `kind` on the API call and in the URL; there are no counts, since a count per Kind would need another call.
 - A result card shows Kind badge · name · Scope badge · lifecycle badges · match explanation, then a score bar, title, summary, and "Overrides `x` from global" when it shadows another Item.
 - Order: score, descending (exact keyword +4, name word +2, keyword substring +1). The `matched` text from the API is shown verbatim.
 

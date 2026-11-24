@@ -34,6 +34,8 @@ type State =
   | { kind: 'done'; hits: SearchHit[]; hint?: string }
   | { kind: 'error'; message: string; hint?: string };
 const state = ref<State>({ kind: 'idle' });
+// The Kind pills stay mounted while the next search loads, so a pressed pill keeps focus.
+const pillsUp = ref(false);
 const retries = ref(0);
 
 // Each search aborts the one before it, and only the newest may set the state:
@@ -44,15 +46,19 @@ async function search(q: string, k: string, p: string) {
   current = undefined;
   if (!q) {
     state.value = { kind: 'idle' };
+    pillsUp.value = false;
     return;
   }
   const mine = (current = new AbortController());
   state.value = { kind: 'loading' };
   try {
     const { results, hint } = await searchItems(q, { kind: k, project: p }, mine.signal);
-    if (current === mine) state.value = { kind: 'done', hits: results, hint };
+    if (current !== mine) return;
+    state.value = { kind: 'done', hits: results, hint };
+    pillsUp.value = results.length > 0 || !!k;
   } catch (e) {
     if (current !== mine) return;
+    pillsUp.value = false;
     state.value =
       e instanceof ApiError ? { kind: 'error', message: e.message, hint: e.status === 401 && ended.value ? undefined : e.hint } : { kind: 'error', message: "Couldn't load search results." };
   }
@@ -117,6 +123,11 @@ onBeforeUnmount(() => {
   <h1>What are you deciding today?</h1>
   <SearchField ref="field" v-model="draft" @submit="submit" @clear="clear" />
 
+  <div v-if="pillsUp && (state.kind === 'loading' || state.kind === 'done')" class="pills" role="group" aria-label="Filter by Kind">
+    <button type="button" class="pill" :aria-pressed="!kind" @click="go(query)">All</button>
+    <button v-for="k in searchKinds" :key="k" type="button" class="pill" :aria-pressed="kind === k" @click="go(query, k)">{{ k }}</button>
+  </div>
+
   <template v-if="state.kind === 'idle'">
     <p class="chips">
       <span>Try:</span>
@@ -136,12 +147,12 @@ onBeforeUnmount(() => {
   <template v-else-if="state.kind === 'done'">
     <!-- The API's hint for an unregistered Project, as served and as text. -->
     <p v-if="state.hint" class="hint-line">{{ state.hint }}</p>
-    <div v-if="hits.length || kind" class="pills" role="group" aria-label="Filter by Kind">
-      <button type="button" class="pill" :aria-pressed="!kind" @click="go(query)">All</button>
-      <button v-for="k in searchKinds" :key="k" type="button" class="pill" :aria-pressed="kind === k" @click="go(query, k)">{{ k }}</button>
+    <!-- Handoff §5, "Empty Kind": a Kind that matches nothing is a neutral panel, not a Miss. -->
+    <div v-if="!hits.length && kind" role="status" class="empty-kind">
+      {{ project ? `No ${kind}s for ${project} yet.` : `No ${kind}s yet.` }}
     </div>
     <!-- Copy: handoff §8, "No results". Gold and dashed: a Miss is guidance wanted, not a failure. -->
-    <div v-if="!hits.length" role="status" class="miss">
+    <div v-else-if="!hits.length" role="status" class="miss">
       <strong>No golden path for “{{ query }}” yet.</strong>
       Try other words — Items are found by their keywords. This search was recorded as a <strong>Miss</strong>, so the platform team knows
       guidance is wanted here.
@@ -176,10 +187,16 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .miss,
+.empty-kind,
 .alert {
   max-width: 760px;
   padding: var(--space-6);
   border-radius: var(--radius-md);
+}
+.empty-kind {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-1);
+  color: var(--fg-secondary);
 }
 .miss {
   border: 1px dashed var(--miss-line);

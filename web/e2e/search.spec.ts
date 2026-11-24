@@ -804,3 +804,42 @@ test.describe('rapid typing', () => {
     await expect(field(page)).toHaveValue('second');
   });
 });
+
+test.describe('a Kind that matches nothing, and the pills while loading', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows the neutral Empty Kind panel, not the Miss, and keeps the pills to go back', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto(`/?q=x&kind=decision&project=${encodeURIComponent(shop)}`);
+    const panel = main(page).getByRole('status').filter({ hasText: `No decisions for ${shop} yet.` });
+    await expect(panel).toHaveCount(1);
+    await expect(main(page)).not.toContainText('Miss');
+    await expect(panel).not.toHaveCSS('border-top-style', 'dashed');
+    await expect(pill(page, /decision/i)).toHaveAttribute('aria-pressed', 'true');
+    await pill(page, /all/i).click();
+    await expect(rows(page)).toHaveCount(5);
+  });
+
+  test('without a Project the Empty Kind panel names only the Kind', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto('/?q=x&kind=decision');
+    await expect(main(page).getByRole('status').filter({ hasText: 'No decisions yet.' })).toHaveCount(1);
+    await expect(missPanel(page)).toHaveCount(0);
+  });
+
+  test('an unfiltered search with no hits is still the Miss', async ({ page }) => {
+    await stubSearch(page, []);
+    await page.goto('/?q=quantum');
+    await expect(missPanel(page)).toBeVisible();
+  });
+
+  test('a pressed Kind pill keeps keyboard focus while the search loads', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto('/?q=x');
+    await expect(rows(page)).toHaveCount(5);
+    await pill(page, /skill/i).focus();
+    await page.keyboard.press('Enter');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(pill(page, /skill/i)).toBeFocused();
+  });
+});
