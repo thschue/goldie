@@ -5,6 +5,8 @@ import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
 import { add, addText, agoText, announceEvery, canSearch, missBoard, queryText, resultText, rowKey, timeText } from './rows';
 import { projectOf } from '../projects/api';
+import ActivityStage from './ActivityStage.vue';
+import { createStage } from './stage';
 import { createTiles, liveHeader } from './tiles';
 import { streamActivity, type ActivityEvent, type Frame } from './stream';
 
@@ -14,11 +16,13 @@ import { streamActivity, type ActivityEvent, type Frame } from './stream';
 // nothing here calls focus(), and the rows are keyed by event id so a selection stays on its
 // event. The miss count is a polite status that changes at most every 30 s. The header words how
 // many replicas answered in the last minute, the tiles count the last five minutes from buckets
-// (not from the rows), and the URL's `project` filters the rows (#809). Out of scope here: the
-// live stage.
+// (not from the rows), and the URL's `project` filters the rows (#809). The stage (#811) animates
+// the live events only (not the history replayed on connect), pauses while the tab is hidden and
+// draws no particle under prefers-reduced-motion; a lane filters the feed by the same `project`.
 const route = useRoute();
 const router = useRouter();
 const project = computed(() => projectOf(route.query));
+const setProject = (p?: string) => router.replace({ query: { ...route.query, project: p } });
 const dropProject = () => router.replace({ query: { ...route.query, project: undefined } });
 const rows = ref<ActivityEvent[]>([]);
 const phase = ref<'connecting' | 'live' | 'error'>('connecting');
@@ -35,6 +39,21 @@ const tiles = createTiles();
 const fed = ref(0);
 const only = ref<string>();
 const now = ref(Date.now());
+const calm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+let stage = createStage({ reduced: calm });
+const stageView = ref(stage.read(Date.now()));
+let frame = 0;
+function drawStage() {
+  frame = 0;
+  stageView.value = stage.read(Date.now());
+  if (stageView.value.particles.length && !document.hidden) frame = requestAnimationFrame(drawStage);
+}
+// Hidden: the stage drops its queue and stops drawing, so coming back is no burst.
+function visibility() {
+  stage.setHidden(document.hidden, Date.now());
+  cancelAnimationFrame(frame);
+  drawStage();
+}
 let held: ActivityEvent[] = [];
 let controller: AbortController | undefined;
 
@@ -75,9 +94,11 @@ const choose = (name?: string) => (only.value = name);
 
 function apply(frames: Frame[]) {
   const events: ActivityEvent[] = [];
+  const fresh: ActivityEvent[] = [];
   for (const f of frames) {
     if (f.type === 'event') {
       events.push(f.event);
+      if (phase.value === 'live') fresh.push(f.event);
       const seen = fleet.value.get(f.event.replica);
       const t = Math.min(Date.parse(f.event.time) || 0, Date.now());
       if (f.event.replica && !seen) fleet.value.set(f.event.replica, { up: true, lastSeen: '', heard: t });
@@ -90,6 +111,10 @@ function apply(frames: Frame[]) {
   }
   if (!events.length) return;
   now.value = Date.now();
+  if (fresh.length) {
+    stage.add(fresh, now.value);
+    if (!frame) drawStage();
+  }
   tiles.add(events, now.value);
   fed.value++;
   if (paused.value) held = add(held, events);
@@ -101,6 +126,9 @@ async function connect() {
   const mine = (controller = new AbortController());
   rows.value = [];
   held = [];
+  stage = createStage({ reduced: calm });
+  stage.setHidden(document.hidden, Date.now());
+  drawStage();
   fleet.value = new Map();
   only.value = undefined;
   selected.value = undefined;
@@ -133,6 +161,8 @@ let announcedAt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 // "stopped answering 2 minutes ago" ages while the page is open.
 const tick = setInterval(() => (now.value = Date.now()), 30_000);
+// The stage's summary changes at most every 30 s, whether or not a particle is moving.
+const stageTick = setInterval(() => !frame && drawStage(), 5_000);
 function announce() {
   clearTimeout(timer);
   timer = undefined;
@@ -147,11 +177,17 @@ watch(missCount, () => {
   else timer = setTimeout(announce, wait);
 });
 
-onMounted(connect);
+onMounted(() => {
+  document.addEventListener('visibilitychange', visibility);
+  connect();
+});
 onBeforeUnmount(() => {
   controller?.abort();
   clearTimeout(timer);
   clearInterval(tick);
+  clearInterval(stageTick);
+  cancelAnimationFrame(frame);
+  document.removeEventListener('visibilitychange', visibility);
 });
 
 const status = computed(() => (failed.value instanceof ApiError ? failed.value.status : 0));
@@ -183,6 +219,8 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
     </div>
+
+    <ActivityStage :view="stageView" :filter="project || undefined" @filter="setProject" />
 
     <section class="tiles" aria-label="Last five minutes">
       <ul>
