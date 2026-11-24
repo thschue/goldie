@@ -21,12 +21,12 @@ import (
 // repository. A failed first clone keeps the server running, not ready.
 //
 // Seam for the default repository URL: the string variable devGitURL in
-// internal/cli, set at link time like platform.pollIntervalFloor
-// (-X github.com/thschue/goldie/internal/cli.devGitURL=<url>). Unset, it is
+// internal/app, set at link time like platform.pollIntervalFloor
+// (-X github.com/thschue/goldie/internal/app.devGitURL=<url>). Unset, it is
 // https://github.com/thschue/goldie.git. The tests link it to a file://
 // repository and set GOLDIE_GIT_ALLOW_FILE_URL=true.
 
-const devGitURLSeam = "github.com/thschue/goldie/internal/cli.devGitURL"
+const devGitURLSeam = "github.com/thschue/goldie/internal/app.devGitURL"
 
 // buildDevGitBinary builds goldie linked with version (empty keeps the "dev"
 // build) and with url as the default --git repository.
