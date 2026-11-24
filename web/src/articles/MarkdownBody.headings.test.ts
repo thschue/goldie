@@ -5,7 +5,8 @@ import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import MarkdownBody from './MarkdownBody.vue';
 
-const render = async (source: string) => renderToString(createSSRApp({ render: () => h(MarkdownBody, { source }) }));
+const render = async (source: string, contiguous = false) =>
+  renderToString(createSSRApp({ render: () => h(MarkdownBody, { source, contiguous }) }));
 
 describe('MarkdownBody heading levels', () => {
   it('turns a body that opens with an h2 into an h2, not an h3', async () => {
@@ -19,5 +20,12 @@ describe('MarkdownBody heading levels', () => {
     expect(html).toMatch(/<h2[^>]*>Deep<\/h2>/);
     expect(html).toMatch(/<h2[^>]*>Top<\/h2>/);
     expect(html).not.toMatch(/<h1\b/);
+  });
+
+  it('never skips a level the source skipped when contiguous', async () => {
+    const html = await render('# Top\n\n### Deep\n\n###### Deeper\n', true);
+    expect(html).toMatch(/<h2[^>]*>Top<\/h2>/);
+    expect(html).toMatch(/<h3[^>]*>Deep<\/h3>/);
+    expect(html).toMatch(/<h4[^>]*>Deeper<\/h4>/);
   });
 });
