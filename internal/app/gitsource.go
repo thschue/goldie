@@ -43,7 +43,7 @@ func serveSource(cfg platform.Config) (source, error) {
 	case cfg.GitURL != "":
 		syncer, err := gitSource(cfg)
 		// The URL is logged here and nowhere else, redacted by platform.
-		return source{syncer: syncer, check: sourceGitCheck, name: "git", logAttrs: []any{"source", "git", "url", logURL(cfg)}}, err
+		return source{syncer: syncer, check: sourceGitCheck, name: "git", logAttrs: []any{"source", "git", "url", cfg.RedactedGitURL()}}, err
 	case cfg.ContentDir != "":
 		syncer, err := content(cfg.ContentDir)
 		return source{syncer: syncer, check: sourceDirCheck, name: "dir"}, err
@@ -52,15 +52,6 @@ func serveSource(cfg platform.Config) (source, error) {
 		return source{}, fmt.Errorf("%s is valid, but this version cannot serve a list of Sources yet: set %s or %s instead", platform.EnvSources, platform.EnvContentDir, platform.EnvGitURL)
 	}
 	return source{}, fmt.Errorf("%s or %s is not set: the server needs one Source", platform.EnvContentDir, platform.EnvGitURL)
-}
-
-// logURL is the URL a poll record carries: platform's redacted form, except
-// that a file:// URL, whose rest is a path on this host, shows only the scheme.
-func logURL(cfg platform.Config) string {
-	if scheme, _, ok := strings.Cut(cfg.GitURL, ":"); ok && strings.EqualFold(scheme, "file") {
-		return "file://(path)"
-	}
-	return cfg.RedactedGitURL()
 }
 
 // gitOptionVars names the setting behind each git Source option.
