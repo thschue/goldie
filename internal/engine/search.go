@@ -85,16 +85,20 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	return s.SearchKindIn(proj, KindArticle, query, opts...)
 }
 
-// SearchKindIn is SearchIn for one Kind: KindArticle, KindAgent or KindSkill.
-// Skills and agents match on their name and keywords only, never on the
-// description (ADR 0005). A skill's keywords are those in its SKILL.md. Any
-// other kind finds nothing.
+// SearchKindIn is SearchIn for one Kind: KindArticle, KindAgent, KindSkill or
+// KindDecision. Skills and agents match on their name and keywords only, never
+// on the description (ADR 0005). A skill's keywords are those in its SKILL.md.
+// A decision matches on its title and keywords; only accepted decisions are
+// hits, and a superseded one is replaced by its accepted successor. Any other
+// kind finds nothing.
 func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
 	switch kind {
 	case KindSkill:
 		hits = s.searchSkills(proj, words, readOpts(opts))
+	case KindDecision:
+		hits = s.searchDecisions(proj, words, readOpts(opts))
 	case KindArticle, KindAgent:
 		hits = s.searchItems(proj, kind, words, readOpts(opts))
 	}
@@ -118,6 +122,69 @@ func (s *Snapshot) searchSkills(proj string, words []string, o ReadOptions) []Hi
 		}
 	}
 	return hits
+}
+
+// searchDecisions scores the decisions that answer in proj's view. Only an
+// accepted decision is a hit by default: a superseded match stands for the
+// accepted decision at the end of its superseded_by chain, and is dropped when
+// there is none. The best score of a name wins. Drafts (o) serve every status
+// as it is.
+func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) []Hit {
+	all := s.Decisions(proj, ReadOptions{Drafts: true})
+	byName := make(map[string]Decision, len(all))
+	for _, d := range all {
+		byName[d.Name] = d
+	}
+	best := map[string]Hit{}
+	var order []string
+	for _, d := range all {
+		h := decisionHit(d)
+		scoreWords(&h, d.Title, d.Keywords, words)
+		if h.Score == 0 {
+			continue
+		}
+		if !o.Drafts {
+			succ, ok := acceptedSuccessor(d, byName)
+			if !ok {
+				continue
+			}
+			if succ.Name != d.Name {
+				score, matched := h.Score, h.Matched
+				h = decisionHit(succ)
+				h.Score, h.Matched = score, matched
+			}
+		}
+		if prev, seen := best[h.ID]; !seen {
+			order = append(order, h.ID)
+			best[h.ID] = h
+		} else if h.Score > prev.Score {
+			best[h.ID] = h
+		}
+	}
+	hits := make([]Hit, 0, len(order))
+	for _, id := range order {
+		hits = append(hits, best[id])
+	}
+	return hits
+}
+
+func decisionHit(d Decision) Hit {
+	return Hit{ID: d.Name, Name: d.Title, Kind: KindDecision, Scope: d.Scope, Keywords: append([]string(nil), d.Keywords...), Status: d.Status, Enforced: d.Enforced}
+}
+
+// acceptedSuccessor returns d when it is accepted, or the accepted decision
+// that its superseded_by chain ends in. The bool is false for any other end.
+func acceptedSuccessor(d Decision, byName map[string]Decision) (Decision, bool) {
+	seen := map[string]bool{}
+	for d.Status == StatusSuperseded && !seen[d.Name] {
+		seen[d.Name] = true
+		next, ok := byName[strings.TrimPrefix(d.SupersededBy, "decision:")]
+		if !ok {
+			return Decision{}, false
+		}
+		d = next
+	}
+	return d, d.Status == StatusAccepted
 }
 
 // searchItems scores the articles or agents that answer in proj's view.

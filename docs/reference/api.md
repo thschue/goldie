@@ -369,7 +369,7 @@ Operation ID: `getProjectItems`
 
 ### `GET /api/v1/search`
 
-Search articles, skills and agents by keyword
+Search articles, skills, agents and decisions by keyword
 
 Returns the Items of one Kind that match the search words, best first.
 Without `kind` only articles are searched, so a client that follows a hit
@@ -386,7 +386,7 @@ Operation ID: `searchArticles`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The matching Items, best first. | `application/json` (`SearchResults`) |
-| `400` | The search words are missing or longer than 1024 bytes, 'kind' is not 'article', 'skill' or 'agent', or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `400` | The search words are missing or longer than 1024 bytes, 'kind' is not 'article', 'skill', 'agent' or 'decision', or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | The search asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |

@@ -52,7 +52,7 @@ paths:
       operationId: searchArticles
       tags:
         - articles
-      summary: Search articles, skills and agents by keyword
+      summary: Search articles, skills, agents and decisions by keyword
       description: |
         Returns the Items of one Kind that match the search words, best first.
         Without `kind` only articles are searched, so a client that follows a hit
@@ -77,14 +77,18 @@ paths:
           in: query
           required: false
           description: |
-            The Kind of Item to search: `article` (the default), `skill` or
-            `agent`. Any other value is a 400.
+            The Kind of Item to search: `article` (the default), `skill`,
+            `agent` or `decision`. Any other value is a 400. A decision matches
+            on its title and keywords; only accepted decisions are hits, and a
+            superseded one is replaced by its accepted successor. A decision
+            hit's `id` is its name and its `name` is its title.
           schema:
             type: string
             enum:
               - article
               - skill
               - agent
+              - decision
         - name: project
           in: query
           required: false
@@ -104,7 +108,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResults"
         "400":
-          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`.
+          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill`, `agent` or `decision`, or `project` is not a `ProjectId`.
           content:
             application/json:
               schema:
