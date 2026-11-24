@@ -188,13 +188,24 @@ function apply(frames: Frame[]) {
 
 // A live row fades in from --row-flash over 1 s (handoff §3.6); history and Resume never flash,
 // and under prefers-reduced-motion nothing does.
-const fresh = ref(new Set<string>());
-let freshTimer: ReturnType<typeof setTimeout> | undefined;
+const freshKeys = ref(new Set<string>());
+const freshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 function flash(events: ActivityEvent[]) {
-  if (!events.length || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-  fresh.value = new Set([...fresh.value, ...events.map(rowKey)]);
-  clearTimeout(freshTimer);
-  freshTimer = setTimeout(() => (fresh.value = new Set()), 1000);
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  for (const key of events.map(rowKey)) {
+    clearTimeout(freshTimers.get(key));
+    freshKeys.value = new Set(freshKeys.value).add(key);
+    // Each row leaves the flash on its own 1 s, whatever arrives after it.
+    freshTimers.set(
+      key,
+      setTimeout(() => {
+        freshTimers.delete(key);
+        const next = new Set(freshKeys.value);
+        next.delete(key);
+        freshKeys.value = next;
+      }, 1000),
+    );
+  }
 }
 
 // connect starts from an empty view (first load, Retry). After a drop, run() keeps the view and asks
@@ -313,7 +324,7 @@ onMounted(() => {
   connect();
 });
 onBeforeUnmount(() => {
-  clearTimeout(freshTimer);
+  freshTimers.forEach(clearTimeout);
   controller?.abort();
   clearTimeout(retry);
   clearTimeout(slowTimer);
@@ -496,7 +507,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e), fresh: fresh.has(rowKey(e)) }">
+            <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e), fresh: freshKeys.has(rowKey(e)) }">
               <td>
                 <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
                   {{ timeText(e.time) }}
@@ -610,7 +621,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 }
 tr.fresh {
   background: var(--row-flash);
-  animation: row-fade 1s ease-out;
+  animation: row-fade 1s ease-out forwards;
 }
 @keyframes row-fade {
   to {

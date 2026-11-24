@@ -488,4 +488,21 @@ describe('ActivityView tiles and rows (#879)', () => {
     expect(source).toMatch(/\.fresh[^{]*\{[^}]*var\(--row-flash\)/);
     expect(source).toMatch(/(?:transition|animation)[^;}]*\b1s\b/);
   });
+
+  it('lights each live row for its own second: events 600 ms apart do not re-light the first row', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    try {
+      const { app, page } = await mount();
+      await page.send([{ type: 'live' }, ev(1, { query: 'first-one' })]);
+      const root = rootOf(page.button('Pause'));
+      await vi.advanceTimersByTimeAsync(600);
+      await page.send([ev(2, { query: 'second-one' })]);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(classes(rowOf(root, 'first-one'))).not.toContain('fresh');
+      expect(classes(rowOf(root, 'second-one'))).toContain('fresh');
+      app.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
