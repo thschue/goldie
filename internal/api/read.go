@@ -184,10 +184,10 @@ func (s *Server) Register(m contract.ServeMux) {
 	})
 }
 
-// badKind is the 400 envelope for a kind that is none of article, skill or
-// agent. It does not echo the value.
+// badKind is the 400 envelope for a kind that is none of article, skill,
+// agent or decision. It does not echo the value.
 var badKind = envelope("bad_request", "invalid kind",
-	"Use kind=article, kind=skill or kind=agent, or leave it out to search articles.")
+	"Use kind=article, kind=skill, kind=agent or kind=decision, or leave it out to search articles.")
 
 // searchKind is the Kind a search asks for: an article when kind is absent.
 func searchKind(k *contract.SearchArticlesParamsKind) (string, bool) {
@@ -195,7 +195,7 @@ func searchKind(k *contract.SearchArticlesParamsKind) (string, bool) {
 		return engine.KindArticle, true
 	}
 	switch kind := string(*k); kind {
-	case engine.KindArticle, engine.KindSkill, engine.KindAgent:
+	case engine.KindArticle, engine.KindSkill, engine.KindAgent, engine.KindDecision:
 		return kind, true
 	}
 	return "", false

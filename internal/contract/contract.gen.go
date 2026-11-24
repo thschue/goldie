@@ -170,9 +170,10 @@ func (e ListDecisionsParamsStatus) Valid() bool {
 
 // Defines values for SearchArticlesParamsKind.
 const (
-	SearchArticlesParamsKindAgent   SearchArticlesParamsKind = "agent"
-	SearchArticlesParamsKindArticle SearchArticlesParamsKind = "article"
-	SearchArticlesParamsKindSkill   SearchArticlesParamsKind = "skill"
+	SearchArticlesParamsKindAgent    SearchArticlesParamsKind = "agent"
+	SearchArticlesParamsKindArticle  SearchArticlesParamsKind = "article"
+	SearchArticlesParamsKindDecision SearchArticlesParamsKind = "decision"
+	SearchArticlesParamsKindSkill    SearchArticlesParamsKind = "skill"
 )
 
 // Valid indicates whether the value is a known member of the SearchArticlesParamsKind enum.
@@ -181,6 +182,8 @@ func (e SearchArticlesParamsKind) Valid() bool {
 	case SearchArticlesParamsKindAgent:
 		return true
 	case SearchArticlesParamsKindArticle:
+		return true
+	case SearchArticlesParamsKindDecision:
 		return true
 	case SearchArticlesParamsKindSkill:
 		return true
@@ -798,7 +801,7 @@ type SearchHit struct {
 	// Examples: false
 	Enforced *bool `json:"enforced,omitempty"`
 
-	// Id The Item's id, an article id for a lookup or a skill or agent name.
+	// Id The Item's id: an article id for a lookup, or a skill's, agent's or decision's name.
 	//
 	// Examples: platform/deploy
 	Id string `json:"id"`
@@ -813,13 +816,13 @@ type SearchHit struct {
 	// Examples: article
 	Kind string `json:"kind"`
 
-	// Matched What matched, in order of first match - keywords, and `name` when the name matched.
+	// Matched What matched, in order of first match - keywords, and `name` when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record.
 	//
 	// Examples: ["kubernetes","name"]
 	Matched []string `json:"matched"`
 
-	// Name The display title from the frontmatter of an article. A skill's or
-	// agent's name is its id.
+	// Name The display title from the frontmatter of an article, or a decision's
+	// title. A skill's or agent's name is its id.
 	//
 	//
 	// Examples: Deploying to Kubernetes
@@ -1205,8 +1208,11 @@ type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
 	Q string `form:"q" json:"q"`
 
-	// Kind The Kind of Item to search: `article` (the default), `skill` or
-	// `agent`. Any other value is a 400.
+	// Kind The Kind of Item to search: `article` (the default), `skill`,
+	// `agent` or `decision`. Any other value is a 400. A decision matches
+	// on its title and keywords; only accepted decisions are hits, and a
+	// superseded one is replaced by its accepted successor. A decision
+	// hit's `id` is its name and its `name` is its title.
 	Kind *SearchArticlesParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
 
 	// Project Resolve for this Project (ADR 0020): its articles come before the
@@ -1552,7 +1558,7 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
 	GetProjectItems(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// SearchArticles Search articles, skills and agents by keyword
+	// SearchArticles Search articles, skills, agents and decisions by keyword
 	//
 	// Returns the Items of one Kind that match the search words, best first.
 	// Without `kind` only articles are searched, so a client that follows a hit
@@ -2063,7 +2069,7 @@ func (c *Client) GetProjectItems(ctx context.Context, id ProjectId, reqEditors .
 	return c.Client.Do(req)
 }
 
-// SearchArticles Search articles, skills and agents by keyword
+// SearchArticles Search articles, skills, agents and decisions by keyword
 //
 // Returns the Items of one Kind that match the search words, best first.
 // Without `kind` only articles are searched, so a client that follows a hit
@@ -3906,7 +3912,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/projects/{id}/items (the `GetProjectItems` operationId).
 	GetProjectItemsWithResponse(ctx context.Context, id ProjectId, reqEditors ...RequestEditorFn) (*GetProjectItemsResponse, error)
 
-	// SearchArticlesWithResponse Search articles, skills and agents by keyword
+	// SearchArticlesWithResponse Search articles, skills, agents and decisions by keyword
 	//
 	// Returns the Items of one Kind that match the search words, best first.
 	// Without `kind` only articles are searched, so a client that follows a hit
@@ -6543,7 +6549,7 @@ func (c *ClientWithResponses) GetProjectItemsWithResponse(ctx context.Context, i
 	return ParseGetProjectItemsResponse(rsp)
 }
 
-// SearchArticlesWithResponse Search articles, skills and agents by keyword
+// SearchArticlesWithResponse Search articles, skills, agents and decisions by keyword
 //
 // Returns the Items of one Kind that match the search words, best first.
 // Without `kind` only articles are searched, so a client that follows a hit
@@ -8769,7 +8775,7 @@ type ServerInterface interface {
 	// GetProjectItems Export a Project's resolved view
 	// (GET /api/v1/projects/{id}/items)
 	GetProjectItems(w http.ResponseWriter, r *http.Request, id ProjectId)
-	// SearchArticles Search articles, skills and agents by keyword
+	// SearchArticles Search articles, skills, agents and decisions by keyword
 	// (GET /api/v1/search)
 	SearchArticles(w http.ResponseWriter, r *http.Request, params SearchArticlesParams)
 	// DeleteSession Sign out
@@ -12815,7 +12821,7 @@ type StrictServerInterface interface {
 	// GetProjectItems Export a Project's resolved view
 	// (GET /api/v1/projects/{id}/items)
 	GetProjectItems(ctx context.Context, request GetProjectItemsRequestObject) (GetProjectItemsResponseObject, error)
-	// SearchArticles Search articles, skills and agents by keyword
+	// SearchArticles Search articles, skills, agents and decisions by keyword
 	// (GET /api/v1/search)
 	SearchArticles(ctx context.Context, request SearchArticlesRequestObject) (SearchArticlesResponseObject, error)
 	// DeleteSession Sign out

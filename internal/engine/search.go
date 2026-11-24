@@ -85,16 +85,20 @@ func (s *Snapshot) SearchIn(proj, query string, opts ...ReadOptions) []Hit {
 	return s.SearchKindIn(proj, KindArticle, query, opts...)
 }
 
-// SearchKindIn is SearchIn for one Kind: KindArticle, KindAgent or KindSkill.
-// Skills and agents match on their name and keywords only, never on the
-// description (ADR 0005). A skill's keywords are those in its SKILL.md. Any
-// other kind finds nothing.
+// SearchKindIn is SearchIn for one Kind: KindArticle, KindAgent, KindSkill or
+// KindDecision. Skills and agents match on their name and keywords only, never
+// on the description (ADR 0005). A skill's keywords are those in its SKILL.md.
+// A decision matches on its title and keywords; only accepted decisions are
+// hits, and a superseded one is replaced by its accepted successor. Any other
+// kind finds nothing.
 func (s *Snapshot) SearchKindIn(proj, kind, query string, opts ...ReadOptions) []Hit {
 	words := strings.Fields(strings.ToLower(query))
 	var hits []Hit
 	switch kind {
 	case KindSkill:
 		hits = s.searchSkills(proj, words, readOpts(opts))
+	case KindDecision:
+		hits = s.searchDecisions(proj, words, readOpts(opts))
 	case KindArticle, KindAgent:
 		hits = s.searchItems(proj, kind, words, readOpts(opts))
 	}
@@ -118,6 +122,99 @@ func (s *Snapshot) searchSkills(proj string, words []string, o ReadOptions) []Hi
 		}
 	}
 	return hits
+}
+
+// searchDecisions scores the decisions that answer in proj's view. By default
+// only an accepted decision is a hit, taken from the default view so that its
+// id resolves through DecisionIn. A superseded match stands for the accepted
+// decision at the end of its superseded_by chain, which is walked in the
+// drafts view (history) and dropped when it ends anywhere else. The best score
+// of a name wins. Drafts (o) serve every status as stored.
+func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) []Hit {
+	all := s.Decisions(proj, ReadOptions{Drafts: true})
+	best := map[string]Hit{}
+	var order []string
+	add := func(h Hit) {
+		if prev, seen := best[h.ID]; !seen {
+			order = append(order, h.ID)
+			best[h.ID] = h
+		} else if h.Score > prev.Score {
+			best[h.ID] = h
+		}
+	}
+	if o.Drafts {
+		for _, d := range all {
+			if h := scoredDecision(d, d, words); h.Score > 0 {
+				add(h)
+			}
+		}
+	} else {
+		published := map[string]Decision{}
+		for _, d := range s.Decisions(proj) {
+			published[keyOf(KindDecision, d.Name).name] = d
+			if d.Status != StatusAccepted {
+				continue
+			}
+			if h := scoredDecision(d, d, words); h.Score > 0 {
+				add(h)
+			}
+		}
+		byName := make(map[string]Decision, len(all))
+		for _, d := range all {
+			byName[keyOf(KindDecision, d.Name).name] = d
+		}
+		for _, d := range all {
+			if d.Status != StatusSuperseded {
+				continue
+			}
+			end, ok := chainEnd(d, byName)
+			succ, served := published[keyOf(KindDecision, end.Name).name]
+			if !ok || !served || succ.Status != StatusAccepted {
+				continue
+			}
+			if h := scoredDecision(d, succ, words); h.Score > 0 {
+				add(h)
+			}
+		}
+	}
+	hits := make([]Hit, 0, len(order))
+	for _, id := range order {
+		hits = append(hits, best[id])
+	}
+	return hits
+}
+
+// scoredDecision is the hit for shown, scored on the title and keywords of
+// matched (the same decision, or a superseded one that shown replaces).
+func scoredDecision(matched, shown Decision, words []string) Hit {
+	h := Hit{ID: shown.Name, Name: shown.Title, Kind: KindDecision, Scope: shown.Scope, Keywords: append([]string(nil), shown.Keywords...), Status: shown.Status, Enforced: shown.Enforced}
+	scoreWords(&h, matched.Title, matched.Keywords, words)
+	return h
+}
+
+// chainEnd follows superseded_by from d to the first decision that is not
+// superseded. The bool is false at a missing link, an unreadable reference or
+// a cycle. References parse as everywhere (parseRef) and names match ignoring
+// case (keyOf).
+func chainEnd(d Decision, byName map[string]Decision) (Decision, bool) {
+	seen := map[string]bool{}
+	for d.Status == StatusSuperseded {
+		key := keyOf(KindDecision, d.Name).name
+		if seen[key] {
+			return Decision{}, false
+		}
+		seen[key] = true
+		ref, err := parseRef(d.SupersededBy)
+		if err != nil || ref.kind != KindDecision {
+			return Decision{}, false
+		}
+		next, ok := byName[ref.name]
+		if !ok {
+			return Decision{}, false
+		}
+		d = next
+	}
+	return d, true
 }
 
 // searchItems scores the articles or agents that answer in proj's view.

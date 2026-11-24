@@ -369,7 +369,7 @@ Operation ID: `getProjectItems`
 
 ### `GET /api/v1/search`
 
-Search articles, skills and agents by keyword
+Search articles, skills, agents and decisions by keyword
 
 Returns the Items of one Kind that match the search words, best first.
 Without `kind` only articles are searched, so a client that follows a hit
@@ -386,7 +386,7 @@ Operation ID: `searchArticles`
 | Status | Description | Body |
 |---|---|---|
 | `200` | The matching Items, best first. | `application/json` (`SearchResults`) |
-| `400` | The search words are missing or longer than 1024 bytes, 'kind' is not 'article', 'skill' or 'agent', or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `400` | The search words are missing or longer than 1024 bytes, 'kind' is not 'article', 'skill', 'agent' or 'decision', or 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
 | `401` | The bearer token is missing or wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | The search asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
@@ -909,11 +909,11 @@ One Item that matched a search.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `enforced` | `boolean` | no | Whether the hit is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false. |
-| `id` | `string` | yes | The Item's id, an article id for a lookup or a skill or agent name. |
+| `id` | `string` | yes | The Item's id: an article id for a lookup, or a skill's, agent's or decision's name. |
 | `keywords` | `array` | yes | The Item's keywords, lower case. |
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
-| `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
-| `name` | `string` | yes | The display title from the frontmatter of an article. A skill's or agent's name is its id. |
+| `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record. |
+| `name` | `string` | yes | The display title from the frontmatter of an article, or a decision's title. A skill's or agent's name is its id. |
 | `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies: 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won (ADR 0005). |

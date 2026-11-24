@@ -52,7 +52,7 @@ paths:
       operationId: searchArticles
       tags:
         - articles
-      summary: Search articles, skills and agents by keyword
+      summary: Search articles, skills, agents and decisions by keyword
       description: |
         Returns the Items of one Kind that match the search words, best first.
         Without `kind` only articles are searched, so a client that follows a hit
@@ -77,14 +77,18 @@ paths:
           in: query
           required: false
           description: |
-            The Kind of Item to search: `article` (the default), `skill` or
-            `agent`. Any other value is a 400.
+            The Kind of Item to search: `article` (the default), `skill`,
+            `agent` or `decision`. Any other value is a 400. A decision matches
+            on its title and keywords; only accepted decisions are hits, and a
+            superseded one is replaced by its accepted successor. A decision
+            hit's `id` is its name and its `name` is its title.
           schema:
             type: string
             enum:
               - article
               - skill
               - agent
+              - decision
         - name: project
           in: query
           required: false
@@ -104,7 +108,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SearchResults"
         "400":
-          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`.
+          description: The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill`, `agent` or `decision`, or `project` is not a `ProjectId`.
           content:
             application/json:
               schema:
@@ -2370,14 +2374,14 @@ components:
       properties:
         id:
           type: string
-          description: The Item's id, an article id for a lookup or a skill or agent name.
+          description: "The Item's id: an article id for a lookup, or a skill's, agent's or decision's name."
           examples:
             - platform/deploy
         name:
           type: string
           description: |
-            The display title from the frontmatter of an article. A skill's or
-            agent's name is its id.
+            The display title from the frontmatter of an article, or a decision's
+            title. A skill's or agent's name is its id.
           examples:
             - Deploying to Kubernetes
         kind:
@@ -2406,7 +2410,7 @@ components:
             - 6
         matched:
           type: array
-          description: What matched, in order of first match - keywords, and `name` when the name matched.
+          description: What matched, in order of first match - keywords, and `name` when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record.
           items:
             type: string
           examples:

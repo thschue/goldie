@@ -12,7 +12,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Search articles, skills and agents by keyword
+         * Search articles, skills, agents and decisions by keyword
          * @description Returns the Items of one Kind that match the search words, best first.
          *     Without `kind` only articles are searched, so a client that follows a hit
          *     with an article lookup keeps working. An exact keyword match scores 4, a
@@ -1262,13 +1262,13 @@ export interface components {
          */
         SearchHit: {
             /**
-             * @description The Item's id, an article id for a lookup or a skill or agent name.
+             * @description The Item's id: an article id for a lookup, or a skill's, agent's or decision's name.
              * @example platform/deploy
              */
             id: string;
             /**
-             * @description The display title from the frontmatter of an article. A skill's or
-             *     agent's name is its id.
+             * @description The display title from the frontmatter of an article, or a decision's
+             *     title. A skill's or agent's name is its id.
              * @example Deploying to Kubernetes
              */
             name: string;
@@ -1296,7 +1296,7 @@ export interface components {
              */
             score: number;
             /**
-             * @description What matched, in order of first match - keywords, and `name` when the name matched.
+             * @description What matched, in order of first match - keywords, and `name` when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record.
              * @example [
              *       "kubernetes",
              *       "name"
@@ -1651,10 +1651,13 @@ export interface operations {
                  */
                 q: string;
                 /**
-                 * @description The Kind of Item to search: `article` (the default), `skill` or
-                 *     `agent`. Any other value is a 400.
+                 * @description The Kind of Item to search: `article` (the default), `skill`,
+                 *     `agent` or `decision`. Any other value is a 400. A decision matches
+                 *     on its title and keywords; only accepted decisions are hits, and a
+                 *     superseded one is replaced by its accepted successor. A decision
+                 *     hit's `id` is its name and its `name` is its title.
                  */
-                kind?: "article" | "skill" | "agent";
+                kind?: "article" | "skill" | "agent" | "decision";
                 /**
                  * @description Resolve for this Project (ADR 0020): its articles come before the
                  *     global ones and win on an equal id. Matched ignoring case. A Project
@@ -1687,7 +1690,7 @@ export interface operations {
                     "application/json": components["schemas"]["SearchResults"];
                 };
             };
-            /** @description The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill` or `agent`, or `project` is not a `ProjectId`. */
+            /** @description The search words are missing or longer than 1024 bytes, `kind` is not `article`, `skill`, `agent` or `decision`, or `project` is not a `ProjectId`. */
             400: {
                 headers: {
                     [name: string]: unknown;
