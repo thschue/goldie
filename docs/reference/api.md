@@ -12,6 +12,15 @@ server itself at `/openapi.yaml` and `/openapi.json`.
 The admin endpoints (`/livez`, `/readyz`, `/version`) are served on the
 separate admin port and are not part of this document.
 
+The document and Swagger UI (`/swagger-ui`) take the same credential as
+the API: a token of at least the `reader` Role, sent as
+`Authorization: Bearer <token>`. A browser signed in to the UI also
+sends its session cookie, which is accepted when no `Authorization` header
+is sent, so Swagger UI opens without a proxy or an extension. A browser
+with no session needs one that adds the Bearer header to every request,
+the page's fetch of `/openapi.json` included. `GOLDIE_SWAGGER_UI_ENABLED=false`
+turns Swagger UI off.
+
 ## Endpoints
 
 ### `GET /api/v1/activity`
