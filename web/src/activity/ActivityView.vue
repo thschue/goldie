@@ -26,7 +26,9 @@ const project = computed(() => projectOf(route.query));
 const setProject = (p?: string) => router.replace({ query: { ...route.query, project: p } });
 const dropProject = () => router.replace({ query: { ...route.query, project: undefined } });
 const rows = ref<ActivityEvent[]>([]);
-const phase = ref<'connecting' | 'live' | 'error'>('connecting');
+const phase = ref<'connecting' | 'live' | 'reconnecting' | 'error'>('connecting');
+// kept: a refusal on reconnect leaves the view that was live on screen, under the message.
+const kept = ref(false);
 const failed = ref<ApiError | Error>();
 const dropped = ref(false);
 const paused = ref(false);
@@ -36,7 +38,7 @@ const selected = ref<string>();
 // is when each last answered (epoch ms): an event's time, or the status that said it is up; a
 // replica reported down is not answering, so its status sets it to 0.
 const fleet = ref(new Map<string, { up: boolean; lastSeen: string; heard: number }>());
-const tiles = createTiles();
+let tiles = createTiles();
 const fed = ref(0);
 const only = ref<string>();
 const picked = ref<Surface[]>([]);
@@ -58,6 +60,10 @@ function visibility() {
 }
 let held: ActivityEvent[] = [];
 let controller: AbortController | undefined;
+let retry: ReturnType<typeof setTimeout> | undefined;
+let attempts = 0;
+const maxPause = 30_000;
+const maxPending = 20_000;
 
 const shown = computed(() =>
   rows.value.filter(
@@ -102,6 +108,25 @@ const down = computed(() =>
 );
 const choose = (name?: string) => (only.value = name);
 
+// Frames of a reconnect wait here until the live marker arrives, then replace the view in one go.
+let pending: Frame[] = [];
+function replay(frames: Frame[]) {
+  pending.push(...frames);
+  if (pending.length > maxPending) pending = pending.slice(-maxPending);
+  if (!frames.some((f) => f.type === 'live')) return;
+  const all = pending;
+  pending = [];
+  rows.value = [];
+  held = [];
+  fleet.value = new Map();
+  tiles = createTiles();
+  dropped.value = false;
+  phase.value = 'connecting';
+  attempts = 0;
+  fed.value++;
+  apply(all);
+}
+
 function apply(frames: Frame[]) {
   const events: ActivityEvent[] = [];
   const fresh: ActivityEvent[] = [];
@@ -131,11 +156,17 @@ function apply(frames: Frame[]) {
   else rows.value = add(rows.value, events);
 }
 
+// connect starts from an empty view (first load, Retry). After a drop, run() keeps the view and asks
+// again after a growing pause (1 s, 2 s, 4 s ... 30 s, with jitter) that starts over once the live
+// marker has arrived.
 async function connect() {
-  controller?.abort();
-  const mine = (controller = new AbortController());
+  clearTimeout(retry);
+  kept.value = false;
+  attempts = 0;
   rows.value = [];
   held = [];
+  tiles = createTiles();
+  fed.value++;
   stage = createStage({ reduced: calm });
   stage.setHidden(document.hidden, Date.now());
   drawStage();
@@ -145,11 +176,30 @@ async function connect() {
   dropped.value = false;
   failed.value = undefined;
   phase.value = 'connecting';
+  await run();
+}
+
+async function run() {
+  controller?.abort();
+  const mine = (controller = new AbortController());
+  pending = [];
+  const onFrames = (frames: Frame[]) => {
+    if (mine.signal.aborted) return;
+    if (phase.value === 'reconnecting') replay(frames);
+    else apply(frames);
+  };
   try {
-    await streamActivity(mine.signal, (frames) => !mine.signal.aborted && apply(frames));
+    await streamActivity(mine.signal, onFrames);
     if (!mine.signal.aborted) throw new Error('The stream ended.');
   } catch (e) {
     if (mine.signal.aborted) return;
+    const refused = e instanceof ApiError && [401, 403, 503].includes(e.status);
+    if (!refused && phase.value !== 'connecting') {
+      phase.value = 'reconnecting';
+      retry = setTimeout(run, Math.min(maxPause, 1000 * 2 ** attempts++) * (0.75 + Math.random() * 0.25));
+      return;
+    }
+    kept.value = rows.value.length > 0 || fleet.value.size > 0;
     failed.value = e instanceof ApiError ? e : new Error("goldie isn't answering right now.");
     phase.value = 'error';
   }
@@ -193,6 +243,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   controller?.abort();
+  clearTimeout(retry);
   clearTimeout(timer);
   clearInterval(tick);
   clearInterval(stageTick);
@@ -216,11 +267,15 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
     <button type="button" class="control" @click="connect">Retry</button>
   </div>
 
-  <template v-else>
+  <template v-if="phase !== 'error' || kept">
     <div class="bar">
       <p class="label">
+        <span v-if="phase === 'reconnecting'" class="dot idle" aria-hidden="true"></span>
+        <!-- Always present, so the words reach a screen reader when they appear. -->
+        <span role="status">{{ phase === 'reconnecting' ? 'Reconnecting…' : '' }}</span>
         <template v-if="phase === 'connecting'">Connecting to the replicas…</template>
-        <template v-else>{{ header }}</template>
+        <template v-else-if="phase === 'error'">Not live</template>
+        <template v-else-if="phase === 'live'">{{ header }}</template>
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
       <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
@@ -537,6 +592,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   margin-right: var(--space-2);
   border-radius: 50%;
   background: currentColor;
+}
+.dot.idle {
+  color: var(--fg-secondary);
 }
 .dot.off {
   background: transparent;
