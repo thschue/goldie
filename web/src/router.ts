@@ -7,6 +7,7 @@ import AgentAssetsView from './assets/AgentAssetsView.vue';
 import { assetTabs } from './assets/tabs';
 import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
+import DecisionsView from './decisions/DecisionsView.vue';
 import ProjectHome from './projects/ProjectHome.vue';
 import { projectOf } from './projects/api';
 import HomeView from './search/HomeView.vue';
@@ -18,7 +19,6 @@ import NotFoundView from './views/NotFoundView.vue';
 // in the shell; any other path renders the not-found view. The server answers
 // every extensionless path with the SPA index (internal/ui), so nothing 404s.
 const pages: [path: string, title: string][] = [
-  ['/decisions', 'Decisions'],
   ['/items/:kind/:name', 'Item'],
 ];
 
@@ -42,6 +42,7 @@ export const routes: RouteRecordRaw[] = [
     sensitive: true,
   },
   { path: '/assets/:rest(.*)*', component: AgentAssetsNotFound, meta: { title: 'Page not found' } },
+  { path: '/decisions', component: DecisionsView, meta: { title: 'Decisions' } },
   { path: '/ops/activity', component: ActivityView, meta: { title: 'Activity' } },
   // Sign in is public: the guard lets it through, and the shell shows no role chip.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },

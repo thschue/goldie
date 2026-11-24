@@ -20,7 +20,7 @@ eachViewport((width, theme) => {
     expect(seen.errors, 'page errors and CSP violations').toEqual([]);
   });
 
-  test('the shell has header, nav and main landmarks and one h1; Home has no empty-state placeholder (#721) and /decisions keeps it', async ({ page }) => {
+  test('the shell has header, nav and main landmarks and one h1; Home has no empty-state placeholder (#721) and /items/skill/x keeps it', async ({ page }) => {
     await page.goto('/');
     await expect(page.locator('header')).toHaveCount(1);
     await expect(page.getByRole('banner')).toBeVisible();
@@ -29,12 +29,12 @@ eachViewport((width, theme) => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
     await expect(page.getByRole('main')).not.toContainText(emptyCopy);
-    await page.goto('/decisions');
+    await page.goto('/items/skill/x');
     await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
   });
 
   test('the empty-state panel is neutral, never gold', async ({ page }) => {
-    await page.goto('/decisions');
+    await page.goto('/items/skill/x');
     const colours = await page.getByRole('main').getByRole('status').evaluate((el) => {
       // Normalise any CSS colour (oklch included) to sRGB through a canvas.
       const ctx = document.createElement('canvas').getContext('2d')!;
@@ -167,6 +167,7 @@ test.describe('routes and the current page', () => {
       // The assets pages show the Agent assets frame (#584), not the empty state.
       if (path.startsWith('/assets/')) await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agent assets');
       else if (path === '/') await expect(page.getByRole('main')).not.toContainText(emptyCopy);
+      else if (path === '/decisions') await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
       else await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
       nav = await withNav(page);
       const current = nav.getByRole('link', { name, exact: true });
