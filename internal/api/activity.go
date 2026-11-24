@@ -190,8 +190,8 @@ func (a *Activity) Dropped() uint64 {
 
 // boundEvent is the one normalise step for the string fields of an Event: it
 // cuts Kind, Query, Token, ClientVersion, Project, TraceID and Served to a
-// whole-rune prefix of at most maxQueryBytes, and clamps LatencyUS to zero or more. Replica is left alone: the Merger requires
-// it to equal its input's name.
+// whole-rune prefix of at most maxQueryBytes, and clamps LatencyUS to zero or
+// more. Replica is left alone: the Merger requires it to equal its input's name.
 func boundEvent(e Event) Event {
 	e.Kind = EventKind(truncateQuery(string(e.Kind)))
 	e.Query = truncateQuery(e.Query)
