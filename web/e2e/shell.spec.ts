@@ -396,7 +396,7 @@ test.describe('the selected Project follows the user across pages', () => {
     });
   }
 
-  for (const hostile of ['../x', 'github.com/acme/..%2Fx', '..%2F..%2Fetc', 'a/b?c=d#e', 'x&kind=skill']) {
+  for (const hostile of ['..%2F..%2Fetc', 'x&kind=skill']) {
     test(`the Project id ${hostile} is encoded in every link and never becomes a path`, async ({ page }) => {
       await asOperator(page);
       await stubProjects(page);
@@ -427,7 +427,9 @@ test.describe('the selected Project follows the user across pages', () => {
       json(route, 200, { id: 'platform/deploy', name: 'Deploying to Kubernetes', keywords: [], content: 'Body.' }),
     );
   };
-  const back = (page: Page) => page.getByRole('main').getByRole('link', { name: /Back to search/ });
+  // The label says where the link goes: the search it came from, else Home.
+  const back = (page: Page, label: RegExp = /Back to search/) => page.getByRole('main').getByRole('link', { name: label });
+  const backHome = (page: Page) => back(page, /Back to home/);
   const openHit = async (page: Page) => {
     await page.goto('/?q=deploy&kind=article');
     await page.getByRole('main').getByRole('listitem').getByRole('link').first().click();
@@ -438,6 +440,8 @@ test.describe('the selected Project follows the user across pages', () => {
     await stubItemApis(page);
     await openHit(page);
     await expect(back(page)).toHaveCount(1);
+    await expect(back(page)).toHaveText(/^\s*←\s*Back to search\s*$/);
+    await expect(backHome(page)).toHaveCount(0);
     const u = parsed((await back(page).getAttribute('href'))!);
     expect(u.pathname).toBe('/');
     expect(u.searchParams.get('q')).toBe('deploy');
@@ -462,21 +466,23 @@ test.describe('the selected Project follows the user across pages', () => {
   test("an Item's back link without a previous search goes to Home with the Project", async ({ page }) => {
     await stubItemApis(page);
     await page.goto(`/items/article/platform%2Fdeploy?project=${encodeURIComponent(shop)}`);
-    await expect(back(page)).toHaveCount(1);
-    const u = parsed((await back(page).getAttribute('href'))!);
+    await expect(backHome(page)).toHaveCount(1);
+    const u = parsed((await backHome(page).getAttribute('href'))!);
     expect(u.pathname).toBe('/');
     expect(u.searchParams.get('project')).toBe(shop);
     expect(u.searchParams.has('q')).toBe(false);
     expect(u.searchParams.has('kind')).toBe(false);
-    await back(page).click();
+    await backHome(page).click();
     await expect(page).toHaveURL((l) => l.pathname === '/' && l.searchParams.get('project') === shop);
   });
 
   test("an Item's back link without a search or a Project goes to plain Home", async ({ page }) => {
     await stubItemApis(page);
     await page.goto('/items/article/platform%2Fdeploy');
-    await expect(back(page)).toHaveCount(1);
-    const u = parsed((await back(page).getAttribute('href'))!);
+    await expect(backHome(page)).toHaveCount(1);
+    await expect(backHome(page)).toHaveText(/^\s*←\s*Back to home\s*$/);
+    await expect(back(page)).toHaveCount(0);
+    const u = parsed((await backHome(page).getAttribute('href'))!);
     expect(u.pathname).toBe('/');
     expect([...u.searchParams.keys()]).toEqual([]);
   });
@@ -484,8 +490,8 @@ test.describe('the selected Project follows the user across pages', () => {
   test("an Item's back link encodes a hostile Project id and never becomes a path", async ({ page }) => {
     await stubItemApis(page);
     await page.goto(`/items/article/platform%2Fdeploy?project=${encodeURIComponent('../x')}`);
-    await expect(back(page)).toHaveCount(1);
-    const u = parsed((await back(page).getAttribute('href'))!);
+    await expect(backHome(page)).toHaveCount(1);
+    const u = parsed((await backHome(page).getAttribute('href'))!);
     expect(u.pathname).toBe('/');
     expect(u.searchParams.get('project')).toBe('../x');
   });

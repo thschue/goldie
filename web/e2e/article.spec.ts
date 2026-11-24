@@ -12,7 +12,8 @@
 // - the lifecycle banner is a role=status in main, above the h1, with a dashed
 //   border for a draft; the replaced_by link is inside it;
 // - an error is a role=alert in main holding the envelope's message and hint
-//   and a link named /Back to search/ that goes to `/`;
+//   and a link that goes to `/`, named /Back to home/ when the article was opened
+//   without a search (#754) and /Back to search/ when it came from one;
 // - a nested id is requested as GET /api/v1/articles/<id with %2F>, one segment;
 // - wide `pre` and `table` scroll inside their own box (an ancestor inside main
 //   with overflow-x auto or scroll), never the page.
@@ -28,7 +29,7 @@ const apiArticle = /\/api\/v1\/articles\//;
 // The shell's own "← Back to search" link (#729) is on a loaded article too; the
 // link specs below are about links made from the article's Markdown, and match
 // only that exact link, so any other extra anchor still fails them.
-const shellBack = /^\s*←\s*Back to search\s*$/;
+const shellBack = /^\s*←\s*Back to (search|home)\s*$/;
 
 type Article = {
   id?: string;
@@ -486,26 +487,27 @@ test.describe('a missing article', () => {
 
   const notFound = () => envelope('not_found', 'No article has the id platform/gone.', 'Search for it by its keywords on the Home page.');
 
-  test('shows the API message and hint and a link back to search, never in gold', async ({ page }) => {
+  test('shows the API message and hint and a link back to home, never in gold', async ({ page }) => {
     await page.route(apiArticle, (route) => json(route, 404, notFound()));
     await open(page, 'platform%2Fgone');
     await expect(alert(page)).toHaveCount(1);
     await expect(alert(page)).toContainText('No article has the id platform/gone.');
     await expect(alert(page)).toContainText('Search for it by its keywords on the Home page.');
-    const back = main(page).getByRole('link', { name: /Back to search/ });
+    const back = main(page).getByRole('link', { name: /Back to home/ });
     await expect(back).toHaveCount(1);
-    await expect(back).toHaveText(/^\s*←\s*Back to search\s*$/);
+    await expect(back).toHaveText(/^\s*←\s*Back to home\s*$/);
+    await expect(main(page).getByRole('link', { name: /Back to search/ })).toHaveCount(0);
     expect(new URL((await back.getAttribute('href'))!, 'file:///').pathname).toBe('/');
 
     expect(await alert(page).evaluate(gold), 'the error panel is gold').toEqual([]);
     expect(await back.evaluate(gold)).toEqual([]);
   });
 
-  test('the back link returns to search inside the shell, without a page load', async ({ page }) => {
+  test('the back link returns home inside the shell, without a page load', async ({ page }) => {
     await page.route(apiArticle, (route) => json(route, 404, notFound()));
     await open(page, 'platform%2Fgone');
     await page.evaluate(() => ((window as unknown as { marker: number }).marker = 5));
-    await main(page).getByRole('link', { name: /Back to search/ }).click();
+    await main(page).getByRole('link', { name: /Back to home/ }).click();
     await expect(page).toHaveURL((u) => u.pathname === '/');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
     expect(await page.evaluate(() => (window as unknown as { marker?: number }).marker)).toBe(5);
@@ -541,7 +543,7 @@ test.describe('a missing article', () => {
     await open(page);
     await expect(alert(page)).toContainText('Something went wrong.');
     await expect(alert(page)).toContainText('Try again in a moment.');
-    await expect(main(page).getByRole('link', { name: /Back to search/ })).toHaveCount(1);
+    await expect(main(page).getByRole('link', { name: /Back to home/ })).toHaveCount(1);
   });
 
   test('a reply that is not an envelope is not echoed', async ({ page }) => {
@@ -552,7 +554,7 @@ test.describe('a missing article', () => {
     await expect(alert(page)).toBeVisible();
     const text = await mainText(page);
     expect(text).not.toMatch(/panic|\/srv|10\.0\.0\.7/);
-    await expect(main(page).getByRole('link', { name: /Back to search/ })).toHaveCount(1);
+    await expect(main(page).getByRole('link', { name: /Back to home/ })).toHaveCount(1);
   });
 });
 
