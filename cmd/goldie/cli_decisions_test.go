@@ -126,6 +126,9 @@ func TestCLIDecisionsShowJSONIsTheAPIAnswer(t *testing.T) {
 // The commands against a real server over the test content, so the CLI and
 // the API agree on the shapes.
 func TestCLIDecisionsReadTheContent(t *testing.T) {
+	// dirContent is absolute but resolves against the working directory,
+	// which every runner changes, so it is read before the first run.
+	dir := dirContent(t)
 	srv := cliServer(t)
 	out, err := saRun(t, srv.URL, "decisions", "list")
 	if err != nil {
@@ -138,7 +141,7 @@ func TestCLIDecisionsReadTheContent(t *testing.T) {
 	}
 	requireContains(t, "decisions show use-postgres", out, "PostgreSQL is the default relational store.")
 	// Local mode: --dir starts an embedded server, no token and no address.
-	out, err = runCLI(t, "decisions", "show", "use-postgres", "--dir", dirContent(t))
+	out, err = runCLI(t, "decisions", "show", "use-postgres", "--dir", dir)
 	if err != nil {
 		t.Fatalf("decisions show --dir: %v", err)
 	}
