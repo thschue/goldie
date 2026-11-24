@@ -49,6 +49,7 @@ func (e *UsageError) Error() string { return e.Msg }
 type Env struct {
 	Lookup   platform.Lookup              // environment variables
 	ReadFile func(string) ([]byte, error) // reads a _FILE secret
+	In       io.Reader                    // answers to init's questions; nil: no terminal, init does not ask
 	Out      io.Writer                    // results
 	Err      io.Writer                    // warnings, such as a deprecated article's; nil discards them
 	Client   *http.Client                 // nil: contract's client, with a timeout
@@ -64,8 +65,15 @@ type Env struct {
 }
 
 // DefaultEnv is the process environment.
+//
+// In is stdin only when it is a character device, so a pipe or a file never
+// answers init's questions.
 func DefaultEnv(out io.Writer) Env {
-	return Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out, Err: os.Stderr}
+	e := Env{Lookup: os.LookupEnv, ReadFile: os.ReadFile, Out: out, Err: os.Stderr}
+	if fi, err := os.Stdin.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		e.In = os.Stdin
+	}
+	return e
 }
 
 // settings are the flags and variables common to every command.
