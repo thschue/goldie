@@ -176,7 +176,7 @@ From top to bottom:
 6. **Feed + detail**:
    - The feed has surface pills, a removable project chip, and "Misses only". Columns: Time · Event · Query → Item · Result · Via · Project · Replica.
    - Events that arrive after the reorder window (`late: true`, Q50) are inserted at their timestamp with a small gold **LATE** marker under the time (tooltip: "Arrived after the reorder window").
-   - The detail panel shows the result, query, either the served Item or "No Item matched" with nearest keywords and "Start this article in the Source repo ↗", then Via, Project, Token, Replica and Latency, plus "Try this search" and "Open trace ↗". The panel varies by Kind: for skill and agent gets "Try this search" is hidden (there is no query to run) and nothing replaces it; "Open trace ↗" stays. The trace link is rendered from `GOLDIE_TRACE_URL_TEMPLATE` with the event's `trace_id`, and hidden when the template is unset.
+   - The detail panel shows the result, query, either the served Item or "No Item matched" with nearest keywords and "Start this article in the Source repo ↗", then Via, Project, Token, Replica and Latency, plus "Try this search" and "Open trace ↗". The panel varies by Kind: for skill and agent gets "Try this search" is hidden (there is no query to run) and nothing replaces it; "Open trace ↗" does not depend on the Kind. The trace link is rendered from `GOLDIE_TRACE_URL_TEMPLATE` with the event's `trace_id`, and shown only when the template is set and the event has a `trace_id`.
 
 ### 3.7 Sources (`/ops/sources`, operator)
 
