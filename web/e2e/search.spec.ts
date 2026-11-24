@@ -100,6 +100,23 @@ eachViewport((width, theme) => {
     await expect(main(page).getByRole('alert')).toBeVisible();
     await evidence(page, width, theme, '-error', 'search');
   });
+
+  test('a Kind with no hits is captured and axe-clean', async ({ page }) => {
+    await stubScoped(page);
+    await page.goto(`/?q=x&kind=decision&project=${encodeURIComponent(shop)}`);
+    await expect(main(page).getByRole('status').filter({ hasText: `No decisions for ${shop} yet.` })).toBeVisible();
+    await evidence(page, width, theme, '-empty-kind', 'search');
+  });
+
+  test('the unregistered-Project hint is captured and axe-clean, and wraps without scrolling', async ({ page }) => {
+    const hint = `The Project ${none} is not registered on this server, so this is global guidance only. To register it, add a projects/${none}/ directory to one of goldie's Sources.`;
+    await stubScoped(page, { unregistered: none, hint });
+    await page.goto(`/?q=database&project=${encodeURIComponent(none)}`);
+    await expect(main(page).getByText('is not registered on this server')).toBeVisible();
+    await expect(rows(page)).toHaveCount(5);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await evidence(page, width, theme, '-hint', 'search');
+  });
 });
 
 test.describe('the Home search field', () => {
