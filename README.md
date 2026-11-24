@@ -119,9 +119,10 @@ root); a refusal writes nothing.
 On a terminal, `goldie init` guides you. It prints the Project and asks `Use this Project? [Y/n]`
 (`n` stops and names `--project`), writes the config, asks for the server address (the default is
 `--addr` or `GOLDIE_ADDR`), and reports `Server:` (reachable or not, probed once, no redirect
-followed) and `Token:` (accepted, rejected or not set, from `--token`, `GOLDIE_TOKEN` or `GOLDIE_TOKEN_FILE`, never from a prompt; the token is never
-printed). The questions and those two lines go to stderr; the Project, the file, `Registered:` and a
-`Next` block go to stdout. The `Next` block holds the commands to run, one per line:
+followed) and `Token:` (accepted, rejected or not set, from `--token`, `GOLDIE_TOKEN` or
+`GOLDIE_TOKEN_FILE`, never from a prompt; the token is never printed). The questions and those two
+lines go to stderr; the Project, the file, `Registered:` and a `Next` block go to stdout.
+The `Next` block holds the commands to run, one per line:
 
 ```sh
 export GOLDIE_ADDR=http://127.0.0.1:8080
