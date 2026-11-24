@@ -40,6 +40,9 @@ import (
 var (
 	activityEventFields   = []string{"client_version", "id", "kind", "late", "miss", "project", "query", "replica", "time", "token", "trace_id"}
 	activityDroppedFields = []string{"dropped"}
+	// optionalFields are declared by a component but not required: #806's
+	// served and latency_us on an event, absent when there is nothing to say.
+	optionalFields = map[string][]string{"ActivityEvent": {"latency_us", "served"}}
 )
 
 // componentSchema compiles components/schemas/<name> of the spec and checks
@@ -78,8 +81,10 @@ func componentSchema(t *testing.T, name string, fields []string) *jsonschema.Sch
 		declared = append(declared, k)
 	}
 	sort.Strings(declared)
-	if !slices.Equal(declared, fields) {
-		t.Errorf("%s declares %v, want the wire fields %v", name, declared, fields)
+	wantDeclared := append(slices.Clone(fields), optionalFields[name]...)
+	sort.Strings(wantDeclared)
+	if !slices.Equal(declared, wantDeclared) {
+		t.Errorf("%s declares %v, want the wire fields %v", name, declared, wantDeclared)
 	}
 	required := slices.Clone(s.Required)
 	sort.Strings(required)
