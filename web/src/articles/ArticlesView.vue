@@ -17,11 +17,12 @@ const { state, data, failure, wait, skeleton, limited, retry } = useAssetLoad(pr
 const articles = computed(() => data.value?.articles ?? []);
 const query = computed(() => projectQuery(route.query));
 // /items/article/<id>: the id is one encoded segment (ADR 0016).
-const to = (id: string) => ({ path: `/items/article/${encodeURIComponent(id)}`, query: query.value });
+const to = (id: string) => ({ path: `/items/article/${encodeURIComponent(id)}`, query: { ...query.value, from: 'articles' } });
 </script>
 
 <template>
   <h1>Articles</h1>
+  <p v-if="!project" class="note">Global guidance. Choose a Project to include its articles.</p>
 
   <div v-if="skeleton" class="list" aria-busy="true">
     <div v-for="n in 3" :key="n" class="card bar"></div>

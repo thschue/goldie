@@ -19,6 +19,8 @@ const assets = assetTabs.map((t) => [t.name, `/assets/${t.slug}`]);
 const route = useRoute();
 const query = computed(() => projectQuery(route.query));
 const to = (path: string) => ({ path, query: query.value });
+// Articles stays current on an article page too (#812): the page belongs to the index.
+const onArticles = computed(() => route.path === '/articles' || route.path.startsWith('/items/article/'));
 </script>
 
 <template>
@@ -26,6 +28,9 @@ const to = (path: string) => ({ path, query: query.value });
     <slot />
     <ul>
       <li><RouterLink :to="to('/')">Home</RouterLink></li>
+      <li><RouterLink v-slot="{ href, navigate }" :to="to('/articles')" custom>
+          <a :href="href" :aria-current="onArticles ? 'page' : undefined" @click="navigate">Articles</a>
+        </RouterLink></li>
       <li><RouterLink :to="to('/decisions')">Decisions</RouterLink></li>
     </ul>
     <p id="nav-assets" class="group">Agent assets</p>

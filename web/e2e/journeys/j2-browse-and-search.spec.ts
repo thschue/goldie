@@ -41,8 +41,11 @@ eachViewport((width, theme) => {
       await shot('item');
     });
 
-    await test.step('back goes to Home', async () => {
-      await page.getByRole('link', { name: /Back to home/ }).click();
+    await test.step('back goes to the article index, then Home', async () => {
+      await page.getByRole('link', { name: /Back to articles/ }).click();
+      await expect(page).toHaveURL((u) => u.pathname === '/articles' && u.search === '');
+      await expect(main(page).getByRole('link', { name: article })).toBeVisible();
+      await page.goto('/');
       await expect(page).toHaveURL((u) => u.pathname === '/' && u.search === '');
       await expect(h1(page)).toHaveText(home);
     });
