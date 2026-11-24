@@ -208,31 +208,10 @@ func pairConflict(an string, a *Snapshot, bn string, b *Snapshot) error {
 // narrowOver returns a served Project or local Item of n that shadows a
 // published enforced Item of w at a wider Scope, with that Item, or nil.
 func narrowOver(n, w *Snapshot) (narrow, enforced *Article) {
-	for _, id := range n.Projects() {
-		p, _ := n.lookupProject(id)
-		for _, a := range p.items() {
-			if a.served() && w.enforces(a.key()) {
-				return a, w.index[a.key()]
-			}
-		}
+	if narrow, enforced = w.shadowedEnforced(n.projectItems(), false); narrow != nil || n.local == nil {
+		return narrow, enforced
 	}
-	if n.local == nil {
-		return nil, nil
-	}
-	for _, a := range n.local.items() {
-		if !a.served() {
-			continue
-		}
-		if w.enforces(a.key()) {
-			return a, w.index[a.key()]
-		}
-		for _, id := range w.Projects() {
-			if p, _ := w.lookupProject(id); p.enforces(a.key()) {
-				return a, p.index[a.key()]
-			}
-		}
-	}
-	return nil, nil
+	return w.shadowedEnforced(n.local.items(), true)
 }
 
 // suppressKeys lists every Item a Project or the local Scope of s suppresses,
