@@ -200,7 +200,7 @@ func serverCmd(out io.Writer) *cobra.Command {
 			"With --dev it serves dir (else " + platform.EnvContentDir + ", else the working directory)\n" +
 			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
 			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables, and reads no config file.\n" +
-			"With --dev --git it serves a git Source instead: " + platform.EnvGitURL + " (with " + platform.EnvGitRef + " and " + platform.EnvGitPath + "),\n" +
+			"With --dev --git it serves a git Source instead: --git-url (with --git-ref and --git-path),\n" +
 			"else the demo content of the goldie repository at the release tag of this binary.",
 		Example: "  goldie server\n" +
 			"  # Prints an export line; run that line in another terminal.\n" +

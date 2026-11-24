@@ -27,7 +27,7 @@ is refused as a flag or in the config file, which show it: name the token with `
 Every check applies whichever way a value arrives. A bad value stops the server, naming the
 variable and whether it came from a flag, the environment or the config file, never the value.
 The startup report (PC-06) shows each value with its source: `flag`, `environment`, `file` or
-`default`, secrets redacted. `goldie health` reads the environment only.
+`default`, secrets redacted. `goldie health` reads `--config` or `GOLDIE_CONFIG` too: it takes the admin address from the environment, then the file, then the default.
 
 | Variable | Default | Meaning |
 |---|---|---|
