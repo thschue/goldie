@@ -242,6 +242,45 @@ test.describe('the article page', () => {
     expect(flat[0]).toBe('/api/v1/articles/retry');
   });
 
+  test('opened for a Project it requests the article with that Project, encoded; without one, none (#826)', async ({ page }) => {
+    const seen = await stubArticle(page, article());
+    await page.goto('/items/article/platform%2Fdeploy?project=github.com%2Fharbor%2Fcheckout');
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    expect(seen).toEqual(['/api/v1/articles/platform%2Fdeploy?project=github.com%2Fharbor%2Fcheckout']);
+
+    await page.unroute(apiArticle);
+    const plain = await stubArticle(page, article());
+    await open(page);
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    expect(plain).toEqual(['/api/v1/articles/platform%2Fdeploy']);
+  });
+
+  test("an unregistered Project shows the global article and the API's hint, styled like the index hint (#826)", async ({ page }) => {
+    const unknown = 'github.com/nobody/nothing';
+    const hint = 'No Project is registered under this id, so this is the global article.';
+    const apiList = /\/api\/v1\/articles(\?.*)?$/;
+    await page.route(/\/api\/v1\/projects$/, (route) => json(route, 200, { projects: [] }));
+    await page.route(apiList, (route) => json(route, 200, { articles: [], hint }));
+    await page.goto(`/articles?project=${encodeURIComponent(unknown)}`);
+    const note = main(page).getByText(hint);
+    await expect(note).toBeVisible();
+    const style = (l: ReturnType<Page['locator']>) =>
+      l.evaluate((e) => {
+        const c = getComputedStyle(e);
+        return { color: c.color, size: c.fontSize };
+      });
+    const want = await style(note);
+
+    await page.unroute(apiList);
+    await page.route(apiArticle, (route) => json(route, 200, { ...article(), hint }));
+    await page.goto(`/items/article/platform%2Fdeploy?project=${encodeURIComponent(unknown)}`);
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    await expect(alert(page)).toHaveCount(0);
+    const shown = main(page).getByText(hint);
+    await expect(shown).toBeVisible();
+    expect(await style(shown)).toEqual(want);
+  });
+
   test('shows the enforced chip only for enforced: true', async ({ page }) => {
     await stubArticle(page, article({ enforced: true, overrides: [] }));
     await open(page);

@@ -652,6 +652,7 @@ func TestActivityWithoutReplicasAllIsTheLocalStreamUnchanged(t *testing.T) {
 	r.drain(500 * time.Millisecond)
 	known := map[string]bool{"id": true, "time": true, "kind": true, "query": true, "project": true, "token": true,
 		"client_version": true, "trace_id": true, "miss": true, "replica": true, "late": true, "via": true}
+	known["served"], known["latency_us"] = true, true // #806: optional fields beyond the original set
 	if len(r.seen) != 3 || r.seen[1].Type != "live" || r.seen[1].Data != "{}" {
 		t.Fatalf("the local stream: %+v, want a-1, the live marker, a-2", r.seen)
 	}
