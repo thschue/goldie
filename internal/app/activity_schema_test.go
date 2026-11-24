@@ -38,7 +38,7 @@ import (
 
 // activityEventFields and activityDroppedFields are the wire format.
 var (
-	activityEventFields   = []string{"client_version", "id", "kind", "late", "miss", "project", "query", "replica", "time", "token", "trace_id"}
+	activityEventFields   = []string{"client_version", "id", "kind", "late", "miss", "project", "query", "replica", "time", "token", "trace_id", "via"}
 	activityDroppedFields = []string{"dropped"}
 )
 
@@ -83,8 +83,9 @@ func componentSchema(t *testing.T, name string, fields []string) *jsonschema.Sch
 	}
 	required := slices.Clone(s.Required)
 	sort.Strings(required)
-	if !slices.Equal(required, fields) {
-		t.Errorf("%s requires %v, want every wire field %v: the server always sends them", name, required, fields)
+	wantRequired := slices.DeleteFunc(slices.Clone(fields), func(f string) bool { return f == "via" }) // #805: via is optional
+	if !slices.Equal(required, wantRequired) {
+		t.Errorf("%s requires %v, want every wire field but the optional via %v: the server always sends them", name, required, wantRequired)
 	}
 
 	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))

@@ -149,7 +149,7 @@ func TestTheLocalStreamCarriesReplicaAndLateOnEveryEvent(t *testing.T) {
 		t.Fatalf("the local stream: %+v, want a-1, the live marker, then the lookup", seen)
 	}
 	known := map[string]bool{"id": true, "time": true, "kind": true, "query": true, "project": true, "token": true,
-		"client_version": true, "trace_id": true, "miss": true, "replica": true, "late": true}
+		"client_version": true, "trace_id": true, "miss": true, "replica": true, "late": true, "via": true}
 	for i, e := range []sseEvent{seen[0], seen[2]} {
 		if e.Type != "message" || e.DataLines != 1 {
 			t.Errorf("event %d is %+v, want one line of JSON without a type", i, e)

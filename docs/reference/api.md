@@ -661,8 +661,8 @@ know.
 ### `ActivityEvent`
 
 One search, lookup or get on the activity stream, the `data` of an SSE
-event without a type. Every field is always sent; text fields are `""`
-when empty. Clients ignore fields they do not know.
+event without a type. Every field is always sent but `via`; text fields
+are `""` when empty. Clients ignore fields they do not know.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
@@ -677,6 +677,7 @@ when empty. Clients ignore fields they do not know.
 | `time` | `string` | yes | When the server recorded the request. |
 | `token` | `string` | yes | The name of the token that sent the request, never its secret. |
 | `trace_id` | `string` | yes | The request's trace id, or '""' without a span. |
+| `via` | `string` | no | The surface that asked: 'mcp', 'cli', 'ui' (the web UI, a session cookie) or 'other'. Omitted when unknown, as from a replica older than this field. A string, not an enum: a later surface adds a value. A federated stream shows a peer's value outside this set as 'other'. |
 
 ### `ActivityLive`
 

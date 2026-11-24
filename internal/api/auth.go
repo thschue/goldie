@@ -177,6 +177,7 @@ func validName(name string) bool {
 type (
 	tokenNameKey struct{}
 	tokenRoleKey struct{}
+	sessionKey   struct{} // set when a session cookie authenticated the request
 )
 
 // TokenName is the name of the token that authenticated the request, never

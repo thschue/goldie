@@ -195,6 +195,7 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 			w.Header().Set(CSRFHeader, t.sessions.csrf(e, issued.Unix()))
 		}
 		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
+		ctx = context.WithValue(ctx, sessionKey{}, true)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))
 	}
 	return true
