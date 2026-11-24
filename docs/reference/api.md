@@ -996,9 +996,11 @@ Who a session signs in.
 
 | Property | Type | Required | Description |
 |---|---|---|---|
+| `grafana_url` | `string` | no | The Grafana dashboard of the activity view (GOLDIE_GRAFANA_URL, an http or https URL). Sent to the operator role only, and omitted when unset. |
 | `name` | `string` | yes | The name of the token behind the session. |
 | `role` | `string` | yes | The token's role, read from the configuration now. Clients ignore values they do not know. |
 | `swagger_ui` | `boolean` | yes | True when the server serves Swagger UI at /swagger-ui, so a client may link to it. |
+| `trace_url_template` | `string` | no | The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset. |
 
 ### `SessionRequest`
 

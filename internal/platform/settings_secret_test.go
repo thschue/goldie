@@ -158,6 +158,10 @@ func TestStartupReportTakesKeysAndOrderFromTheRegistry(t *testing.T) {
 		envActivityPeers:         "goldie-headless.goldie.svc",
 		envActivityReorderWindow: "750ms",
 
+		// The observability links (#807).
+		envGrafanaURL:       "https://grafana.example.com/d/goldie",
+		envTraceURLTemplate: "https://tempo.example.com/trace/{trace_id}",
+
 		// The GitHub sign-in settings (#642), valid only together.
 		EnvGitHubClientID: "Iv1.sample",
 		EnvGitHubURL:      "https://ghe.example.com",

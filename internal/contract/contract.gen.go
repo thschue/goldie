@@ -977,6 +977,11 @@ type SearchResults struct {
 
 // Session Who a session signs in.
 type Session struct {
+	// GrafanaUrl The Grafana dashboard of the activity view (GOLDIE_GRAFANA_URL, an http or https URL). Sent to the operator role only, and omitted when unset.
+	//
+	// Examples: HTTPS://GRAFANA.EXAMPLE.COM/d/goldie
+	GrafanaUrl *string `json:"grafana_url,omitempty"`
+
 	// Name The name of the token behind the session.
 	//
 	// Examples: ci-reader
@@ -991,6 +996,11 @@ type Session struct {
 	//
 	// Examples: true
 	SwaggerUi bool `json:"swagger_ui"`
+
+	// TraceUrlTemplate The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset.
+	//
+	// Examples: HTTPS://TEMPO.EXAMPLE.COM/trace/{trace_id}
+	TraceUrlTemplate *string `json:"trace_url_template,omitempty"`
 }
 
 // SessionRole The token's role, read from the configuration now. Clients ignore values they do not know.
