@@ -13,6 +13,7 @@ const copy = () => write(props.command);
 <template>
   <div class="snippet">
     <code>{{ command }}</code>
+    {{ ' ' }}
     <button type="button" aria-label="Copy command" @click="copy">Copy</button>
     <span role="status" class="status">{{ status }}</span>
   </div>
