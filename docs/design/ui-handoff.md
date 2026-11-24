@@ -119,6 +119,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 ![Item detail](screenshots/article.png)
 
+- A link above everything goes back to `/`, carrying the Project, Kind and search: "← Back to search" when the Item was opened from a search (`q` set), "← Back to home" otherwise (#754).
 - Two columns: the article (Markdown, max 760 px), and an aside of at most 360 px.
 - The aside contains four cards:
   - **Use it**: the CLI command, with a copy button, and the MCP tool name.
