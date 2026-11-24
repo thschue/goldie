@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"testing"
@@ -152,7 +153,7 @@ func TestDocsEndpointsRejectCredentialsOutsideTheBearerHeader(t *testing.T) {
 		"authorization query":  query("authorization"),
 		"token cookie":         cookie("token"),
 		"goldie_token cookie":  cookie("goldie_token"),
-		"session cookie":       cookie("__Host-goldie-session"),
+		"session cookie":       cookie("__Host-goldie_session"),
 		"authorization cookie": cookie("Authorization"),
 		"x-api-key header":     func(r *http.Request) { r.Header.Set("X-Api-Key", readerToken) },
 		"x-goldie-token":       func(r *http.Request) { r.Header.Set("X-Goldie-Token", readerToken) },
@@ -162,6 +163,32 @@ func TestDocsEndpointsRejectCredentialsOutsideTheBearerHeader(t *testing.T) {
 			resp, body := rawDo(t, http.MethodGet, srv.URL+p, auth)
 			assertUnauthorized(t, p+", "+name, resp, body, readerToken)
 		}
+	}
+}
+
+// A valid session cookie opens the docs without an Authorization header (#802):
+// the page, one of its assets and the spec answer 200, the Swagger UI keeps its
+// Content-Security-Policy, and the same cookie still cannot write to the API
+// without the CSRF token.
+func TestDocsEndpointsOpenForAValidSessionCookie(t *testing.T) {
+	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
+	for who, token := range map[string]string{"reader": readerToken, "operator": operatorToken} {
+		c := signedIn(t, h, secureBase, token)
+		for _, p := range []string{"/swagger-ui", "/swagger-ui/swagger-ui.css", "/openapi.json"} {
+			resp, body := serve(t, h, httptest.NewRequest(http.MethodGet, secureBase+p, nil))
+			assertUnauthorized(t, p+" without a cookie", resp, body)
+			req := httptest.NewRequest(http.MethodGet, secureBase+p, nil)
+			withCookie(c)(req)
+			resp, body = serve(t, h, req)
+			assertStatus(t, p+" with the "+who+" session cookie", resp, body, http.StatusOK)
+			if strings.HasPrefix(p, "/swagger-ui") {
+				if csp := resp.Header.Get("Content-Security-Policy"); csp != swaggerUICSP {
+					t.Errorf("%s with a cookie: CSP %q, want the Swagger UI policy", p, csp)
+				}
+			}
+		}
+		resp, body := postTrigger(t, h, withCookie(c))
+		assertRefusedCSRF(t, "cookie POST without X-Goldie-CSRF as "+who, resp, body)
 	}
 }
 
