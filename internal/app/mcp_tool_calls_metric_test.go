@@ -27,7 +27,7 @@ import (
 var registeredTools = []string{
 	"search_knowledge", "get_article", "list_projects", "current_context",
 	"find_skills", "get_skill", "list_skills", "list_agents",
-	"list_loops", "get_loop",
+	"list_loops", "get_loop", "find_decisions",
 }
 
 // toolCallTelemetry is metrics-only telemetry exporting to col.
@@ -81,7 +81,7 @@ func TestMCPToolCallsAreCountedByToolAndResultOverMCP(t *testing.T) {
 	cs := mustConnectHTTP(t, srv.URL+mcpEndpoint, withBearer(testToken, http.DefaultTransport))
 
 	// The drift test: the tools the server registers are exactly the counter's
-	// ten names, and each is counted under its own name, never "other".
+	// eleven names, and each is counted under its own name, never "other".
 	res, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +113,7 @@ func TestMCPToolCallsAreCountedByToolAndResultOverMCP(t *testing.T) {
 		"list_agents":      {},
 		"list_loops":       {},
 		"get_loop":         {"name": idMarker, "project": projMarker},
+		"find_decisions":   {"query": queryMarker},
 	}
 	want := map[string]int64{}
 	for _, tool := range registeredTools {
