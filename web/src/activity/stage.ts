@@ -67,14 +67,20 @@ export function createStage(o: { reduced?: boolean } = {}) {
     return `${plural(seen, 'request', 'requests')} so far, ${plural(missed, 'miss', 'misses')}.`;
   };
 
+  const tally = (events: ActivityEvent[]) => {
+    for (const e of events) {
+      seen++;
+      if (e.miss) missed++;
+      if (e.project && (lanes.has(e.project) || lanes.size < maxTallied)) lanes.set(e.project, (lanes.get(e.project) ?? 0) + 1);
+    }
+  };
+
   return {
+    // count only counts (lanes, totals): what a Pause held, applied on Resume without a particle.
+    count: tally,
     // add counts every event, and queues a particle for as many as the pool has room for.
     add(events: ActivityEvent[], now: number) {
-      for (const e of events) {
-        seen++;
-        if (e.miss) missed++;
-        if (e.project && (lanes.has(e.project) || lanes.size < maxTallied)) lanes.set(e.project, (lanes.get(e.project) ?? 0) + 1);
-      }
+      tally(events);
       if (o.reduced || away || !events.length) return;
       expire(now);
       const room = maxParticles - live.length;

@@ -57,6 +57,10 @@ function visibility() {
   drawStage();
 }
 let held: ActivityEvent[] = [];
+// Everything that arrived while paused, for the stage and the tiles (the rows keep only the newest
+// maxRows); capped so a long pause cannot grow it without end.
+const maxPending = 20_000;
+let pending: ActivityEvent[] = [];
 let controller: AbortController | undefined;
 
 const shown = computed(() =>
@@ -68,7 +72,9 @@ const shown = computed(() =>
       (!picked.value.length || picked.value.includes(surfaceOf(r) as Surface)),
   ),
 );
-const header = computed(() => liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value));
+const header = computed(() =>
+  paused.value ? 'Paused' : liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value),
+);
 // fed changes whenever the tiles are fed, so the read happens again.
 const last5 = computed(() => (fed.value, tiles.read(now.value)));
 const pills = computed(() =>
@@ -121,14 +127,19 @@ function apply(frames: Frame[]) {
   }
   if (!events.length) return;
   now.value = Date.now();
+  // Paused (WCAG 2.2.2): the stage, the tiles and the rows all stand still; Resume applies what was held.
+  if (paused.value) {
+    held = add(held, events);
+    pending = [...pending, ...events].slice(-maxPending);
+    return;
+  }
   if (fresh.length) {
     stage.add(fresh, now.value);
     if (!frame) drawStage();
   }
   tiles.add(events, now.value);
   fed.value++;
-  if (paused.value) held = add(held, events);
-  else rows.value = add(rows.value, events);
+  rows.value = add(rows.value, events);
 }
 
 async function connect() {
@@ -136,6 +147,7 @@ async function connect() {
   const mine = (controller = new AbortController());
   rows.value = [];
   held = [];
+  pending = [];
   stage = createStage({ reduced: calm });
   stage.setHidden(document.hidden, Date.now());
   drawStage();
@@ -160,6 +172,13 @@ function togglePause() {
   if (!paused.value) {
     rows.value = add(rows.value, [...held].reverse());
     held = [];
+    // Counted, not animated: Resume is no burst of particles.
+    stage.count(pending);
+    tiles.add(pending, Date.now());
+    fed.value++;
+    pending = [];
+    now.value = Date.now();
+    drawStage();
   }
 }
 
