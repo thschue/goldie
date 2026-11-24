@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -60,6 +61,47 @@ func TestTransportErrorDropsTheCause(t *testing.T) {
 		err := wordError(errors.New("dial tcp 10.0.0.1:8080: connection refused"), local)
 		if strings.Contains(err.Error(), "10.0.0.1") {
 			t.Errorf("local %v: error leaks the address: %v", local, err)
+		}
+	}
+}
+
+// searchCountAPI answers every search with n article hits.
+func searchCountAPI(t *testing.T, n int) *httptest.Server {
+	t.Helper()
+	hits := make([]string, n)
+	for i := range hits {
+		hits[i] = fmt.Sprintf(`{"id":"a%d","name":"Article %d","kind":"article","scope":"global","keywords":["k"],"matched":["k"]}`, i, i)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":"deploy","results":[` + strings.Join(hits, ",") + `]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// #760: the summary of search_knowledge uses the singular for one hit, like
+// `goldie search`, and the plural for several. Zero hits has its own sentence.
+func TestSearchKnowledgeSummaryAgreesWithTheCount(t *testing.T) {
+	for _, tc := range []struct {
+		hits         int
+		want, reject string
+	}{
+		{1, `1 article for "deploy", best first.`, "1 articles"},
+		{2, `2 articles for "deploy", best first.`, ""},
+		{3, `3 articles for "deploy", best first.`, ""},
+		{0, `No articles match "deploy".`, ""},
+	} {
+		cs := toolSession(t, searchCountAPI(t, tc.hits).URL)
+		text, isErr := callTool(t, cs, "search_knowledge", map[string]any{"query": "deploy"})
+		if isErr {
+			t.Fatalf("%d hits: tool error: %s", tc.hits, text)
+		}
+		if !strings.Contains(text, tc.want) {
+			t.Errorf("%d hits: answer = %q, want it to contain %q", tc.hits, text, tc.want)
+		}
+		if tc.reject != "" && strings.Contains(text, tc.reject) {
+			t.Errorf("%d hits: answer says %q: %q", tc.hits, tc.reject, text)
 		}
 	}
 }
