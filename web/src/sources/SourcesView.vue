@@ -109,7 +109,7 @@ function syncMessage(e: unknown) {
       <li v-for="(s, i) in rows" :key="s.name ?? i" class="row" :class="{ bad: isFailing(s) }">
         <div class="head">
           <h2>{{ s.name ? plain(s.name) : `Source ${s.preference ?? i + 1}` }}</h2>
-          <strong class="badge">{{ sourceState(s) }}</strong>
+          <strong class="badge" :class="isFailing(s) ? 'badge-bad' : 'badge-ok'">{{ sourceState(s) }}</strong>
           <span class="chip">{{ origin(s.name) }}</span>{{ " " }}
           <span v-if="s.preference" class="chip">Order {{ s.preference }}</span>{{ " " }}
           <span class="chip">{{ s.shadowed?.length ?? 0 }} shadowed {{ s.shadowed?.length === 1 ? 'Item' : 'Items' }}</span>{{ " " }}
@@ -184,6 +184,14 @@ code {
   border: 1px solid currentColor;
   border-radius: var(--radius-sm);
   font-size: var(--text-sm);
+}
+.badge-ok {
+  color: var(--ok-ink);
+  background: var(--ok-bg);
+}
+.badge-bad {
+  color: var(--danger-ink);
+  background: var(--danger-bg);
 }
 dl {
   display: grid;
