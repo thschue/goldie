@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -73,9 +74,12 @@ func served(t *testing.T, g *runningGit, id string) bool {
 	return code == http.StatusOK
 }
 
-// readyOn waits for /readyz to answer 200 with every name listed ok.
+// readyOn waits for /readyz to answer 200 with exactly names listed, all ok.
+// /readyz sorts its checks by name, so the order of names does not matter.
 func readyOn(t *testing.T, g *runningGit, names ...string) {
 	t.Helper()
+	names = append([]string(nil), names...)
+	sort.Strings(names)
 	eventually(t, 5*time.Second, "/readyz never answered 200 with "+strings.Join(names, ", ")+" ok", func() bool {
 		code, _, checks := readyz(t, g.admin)
 		if code != http.StatusOK || len(checks) != len(names) {
