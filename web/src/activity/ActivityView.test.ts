@@ -9,6 +9,7 @@ import { createRenderer, nextTick } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import type { ActivityEvent, Frame } from './stream';
+import source from './ActivityView.vue?raw';
 
 type Node = { tag: string; props: Record<string, unknown>; kids: Node[]; text?: string; parent?: Node };
 
@@ -395,5 +396,96 @@ describe('ActivityView Miss detail and Miss board (#878)', () => {
     expect(page.text()).toContain('last seen 5 minutes ago');
     expect(page.text()).not.toContain('last seen 2 minutes ago');
     app.unmount();
+  });
+});
+
+describe('ActivityView tiles and rows (#879)', () => {
+  const classes = (n: Node) => String(n.props.class ?? '').split(' ');
+  const rootOf = (n: Node) => {
+    while (n.parent) n = n.parent;
+    return n;
+  };
+  // A tile is a list item of the tiles section; its sub-line is the element classed `sub`.
+  const tile = (root: Node, label: string) =>
+    all(
+      all(root, (n) => n.props['aria-label'] === 'Last five minutes')[0],
+      (n) => n.tag === 'li' && textOf(n).includes(label),
+    )[0];
+  const sub = (t: Node) =>
+    squash(
+      all(t, (n) => classes(n).includes('sub'))
+        .map(textOf)
+        .join(' '),
+    );
+  const feedRows = (root: Node) => all(root, (n) => n.tag === 'tr' && n.parent?.tag === 'tbody');
+  const rowOf = (root: Node, query: string) => feedRows(root).find((r) => textOf(r).includes(query))!;
+
+  it('gives each tile a sub-line: per minute, of requests, and p95 under p50 for latency', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1, { latency_us: 500 }), ev(2, { latency_us: 1000 })]);
+    const root = rootOf(page.button('Pause'));
+    expect(sub(tile(root, 'Requests'))).toBe('per minute');
+    expect(sub(tile(root, 'Misses'))).toBe('of requests');
+    expect(sub(tile(root, 'Latency'))).toBe('p95 1.0 ms');
+    expect(squash(textOf(tile(root, 'Latency')))).toMatch(/^Latency (p50 )?0\.5 ms p95 1\.0 ms$/);
+    app.unmount();
+  });
+
+  it('turns the Misses tile attention (gold) only when misses are above 0 %', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1)]);
+    const root = rootOf(page.button('Pause'));
+    expect(page.tiles()).toContain('Misses 0 %');
+    expect(classes(tile(root, 'Misses'))).not.toContain('attention');
+
+    await page.send([ev(2, { miss: true, served: undefined, query: 'nothing here' })]);
+    expect(page.tiles()).toContain('Misses 50 %');
+    expect(classes(tile(root, 'Misses'))).toContain('attention');
+    expect(classes(tile(root, 'Requests'))).not.toContain('attention');
+    app.unmount();
+  });
+
+  it('reads a latency under 0.05 ms as "< 0.1 ms" and 0.05 ms as "0.1 ms"', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1, { latency_us: 49 })]);
+    expect(page.tiles()).toContain('Latency < 0.1 ms');
+    expect(page.tiles()).toContain('p95 < 0.1 ms');
+    expect(page.tiles()).not.toContain('0.0 ms');
+
+    await page.send([ev(2, { latency_us: 50 }), ev(3, { latency_us: 50 })]);
+    expect(page.tiles()).toContain('Latency 0.1 ms');
+    expect(page.tiles()).not.toContain('< 0.1 ms');
+    app.unmount();
+  });
+
+  it('flashes a live row as fresh, and never a row replayed from history', async () => {
+    const { app, page } = await mount();
+    await page.send([ev(1, { query: 'old-one' }), ev(2, { query: 'old-two' }), { type: 'live' }, ev(3, { query: 'new-one' })]);
+    const root = rootOf(page.button('Pause'));
+    expect(classes(rowOf(root, 'new-one'))).toContain('fresh');
+    expect(classes(rowOf(root, 'old-one'))).not.toContain('fresh');
+    expect(classes(rowOf(root, 'old-two'))).not.toContain('fresh');
+    app.unmount();
+  });
+
+  it('flashes nothing under prefers-reduced-motion', async () => {
+    // The same live row flashes without the preference, so its absence below is the preference's doing.
+    const motion = await mount();
+    await motion.page.send([{ type: 'live' }, ev(1, { query: 'new-one' })]);
+    expect(classes(rowOf(rootOf(motion.page.button('Pause')), 'new-one'))).toContain('fresh');
+    motion.app.unmount();
+
+    vi.stubGlobal('window', { matchMedia: (q: string) => ({ matches: q.includes('prefers-reduced-motion') }) });
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1, { query: 'new-one' })]);
+    const root = rootOf(page.button('Pause'));
+    expect(feedRows(root)).toHaveLength(1);
+    expect(classes(rowOf(root, 'new-one'))).not.toContain('fresh');
+    app.unmount();
+  });
+
+  it('paints the fresh row with --row-flash and fades it in about one second', () => {
+    expect(source).toMatch(/\.fresh[^{]*\{[^}]*var\(--row-flash\)/);
+    expect(source).toMatch(/(?:transition|animation)[^;}]*\b1s\b/);
   });
 });
