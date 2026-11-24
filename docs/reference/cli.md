@@ -17,6 +17,9 @@ help you ask for goes to stdout and exits 0.
 `goldie --version` prints the same as `goldie version`; on a subcommand `--version` stays an unknown flag.
 `goldie health` with no admin port answering exits 1 and says to check that the server runs and
 `GOLDIE_ADMIN_ADDR` matches its admin address.
+`goldie health --config <file>` (or `GOLDIE_CONFIG`) probes the `admin_addr` of that YAML config file when
+`GOLDIE_ADMIN_ADDR` is unset; the environment wins over the file. `goldie server --dev` reads no config
+file and stops with an error if `--config` or `GOLDIE_CONFIG` is given.
 
 `goldie skills list|show <name>`, `goldie agents list|show <name>` and `goldie loops list|show <name>`
 read the skill bundles (name and file list), agent definitions (name and description) and loops

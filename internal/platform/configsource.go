@@ -37,18 +37,44 @@ func settingFlag(name string) string { return strings.ReplaceAll(settingKey(name
 // value that was given from one that was not, and LoadConfig checks the text
 // as it does for the environment.
 func AddConfigFlags(fs *pflag.FlagSet) {
-	fs.String(settingFlag(EnvConfig), "", "YAML config file the settings may come from ("+EnvConfig+")")
+	AddConfigFileFlag(fs)
 	for _, s := range Settings {
 		name := settingFlag(s.Name)
-		usage := strings.ReplaceAll(firstSentence(s.Meaning), "`", "'")
+		usage := inFlagTerms(strings.ReplaceAll(firstSentence(s.Meaning), "`", "'"))
 		if !s.Secret {
-			fs.String(name, "", usage)
+			fs.String(name, "", usage+" ("+s.Name+")")
 			continue
 		}
 		fs.String(name, "", "")
 		_ = fs.MarkHidden(name)
-		fs.String(name+"-file", "", "file that holds "+s.Name+": "+usage)
+		fs.String(name+"-file", "", "file that holds "+s.Name+": "+usage+" ("+s.Name+"_FILE)")
 	}
+}
+
+// inFlagTerms rewrites the variable of every other setting in a flag's help to
+// the flag that sets it, so --help reads in flag terms and names a variable
+// only as the alternative to the flag it describes.
+func inFlagTerms(text string) string {
+	return settingName.ReplaceAllStringFunc(text, func(tok string) string {
+		if found, secret := spec(tok); found {
+			if secret {
+				return "--" + settingFlag(tok) + "-file"
+			}
+			return "--" + settingFlag(tok)
+		}
+		if base, ok := strings.CutSuffix(tok, "_FILE"); ok {
+			if found, _ := spec(base); found {
+				return "--" + settingFlag(base) + "-file"
+			}
+		}
+		return tok
+	})
+}
+
+// AddConfigFileFlag registers --config alone, for a command that reads one
+// setting from the file, such as goldie health.
+func AddConfigFileFlag(fs *pflag.FlagSet) {
+	fs.String(settingFlag(EnvConfig), "", "YAML config file the settings may come from ("+EnvConfig+")")
 }
 
 // firstSentence is text up to its first full stop followed by a space.
@@ -80,16 +106,16 @@ func NewLayers(fs *pflag.FlagSet, env Lookup, readFile func(string) ([]byte, err
 			errs = append(errs, fmt.Errorf("--%s: a secret is never given as a flag, it would show in the process list: use --%s-file", settingFlag(s.Name), settingFlag(s.Name)))
 		}
 	}
-	path, ok := "", false
+	path, via := "", ""
 	if fs.Changed(settingFlag(EnvConfig)) {
-		path, ok = fs.Lookup(settingFlag(EnvConfig)).Value.String(), true
+		path, via = fs.Lookup(settingFlag(EnvConfig)).Value.String(), "--"+settingFlag(EnvConfig)
 	} else if v, set := env(EnvConfig); set {
-		path, ok = v, true
+		path, via = v, EnvConfig
 	}
-	if ok {
+	if via != "" {
 		if path == "" {
-			errs = append(errs, errors.New("config: the config file path is empty"))
-		} else if err := l.readFile(path, readFile); err != nil {
+			errs = append(errs, fmt.Errorf("config: the config file path given as %s is empty", via))
+		} else if err := l.readFile(path, via, readFile); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -156,16 +182,18 @@ func urlHoldsCredentials(raw string) bool {
 	return hasPassword || u.Scheme == "http" || u.Scheme == "https"
 }
 
-// readFile loads the YAML config file into l.file. viper parses the file.
-func (l *Layers) readFile(path string, readFile func(string) ([]byte, error)) error {
+// readFile loads the YAML config file into l.file. viper parses the file. via
+// is how the file was given (--config or GOLDIE_CONFIG): a failure to read or
+// parse names the file as the user gave it and via, never the file's content.
+func (l *Layers) readFile(path, via string, readFile func(string) ([]byte, error)) error {
 	b, err := readFile(path)
 	if err != nil {
-		return errors.New("config: cannot read the config file")
+		return fmt.Errorf("config: cannot read the config file %q (given as %s)", path, via)
 	}
 	v := viper.New()
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(bytes.NewReader(b)); err != nil {
-		return errors.New("config: the config file is not valid YAML")
+		return fmt.Errorf("config: the config file %q (given as %s) is not valid YAML", path, via)
 	}
 	known := map[string]bool{}
 	secret := map[string]bool{}

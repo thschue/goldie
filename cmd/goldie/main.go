@@ -278,18 +278,22 @@ func withDevHint(cfg platform.Config, err error) error {
 }
 
 // healthCheckHint is the line after an unreachable admin port.
-const healthCheckHint = "Check that goldie server is running and that " + platform.EnvAdminAddr + " matches its admin address."
+const healthCheckHint = "The admin address is " + platform.EnvAdminAddr + " or admin_addr in the config file (--config, " + platform.EnvConfig + ").\n" +
+	healthLastLine
+
+// healthLastLine is the last line of that hint, on its own line.
+const healthLastLine = "Check that goldie server is running and that " + platform.EnvAdminAddr + " matches its admin address."
 
 // runHealth probes the local admin port (PC-09). It checks /livez, or /readyz
 // when ready, and returns an error (exit 1) unless the answer is 200.
-func runHealth(ready bool) error {
+func runHealth(ready bool, layers *platform.Layers) error {
 	path := "/livez"
 	if ready {
 		path = "/readyz"
 	}
-	cfg, err := platform.LoadConfig(os.LookupEnv)
+	cfg, err := platform.LoadConfig(layers.Lookup())
 	if err != nil {
-		return fmt.Errorf("invalid configuration:\n%w", err)
+		return fmt.Errorf("invalid configuration:\n%w", layers.Annotate(err))
 	}
 	host, port, err := net.SplitHostPort(cfg.AdminAddr)
 	if err != nil {

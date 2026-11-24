@@ -162,7 +162,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("Every check applies whichever way a value arrives. A bad value stops the server, naming the\n")
 	b.WriteString("variable and whether it came from a flag, the environment or the config file, never the value.\n")
 	b.WriteString("The startup report (PC-06) shows each value with its source: `flag`, `environment`, `file` or\n")
-	b.WriteString("`default`, secrets redacted. `goldie health` reads the environment only.\n\n")
+	b.WriteString("`default`, secrets redacted. `goldie health` reads `--config` or `GOLDIE_CONFIG` too: it takes the admin address from the environment, then the file, then the default.\n\n")
 	table(&b, rows)
 	b.WriteString("\n## Connection timeouts\n\n")
 	b.WriteString("These are fixed, not settings. The public listener closes a connection that takes more than\n")
