@@ -94,7 +94,7 @@ export default defineComponent({
   font-size: var(--text-md);
 }
 .article-body code {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 .article-body pre:focus-visible,

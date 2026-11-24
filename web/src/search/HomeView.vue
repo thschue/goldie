@@ -32,11 +32,21 @@ type State =
   | { kind: 'idle' }
   | { kind: 'loading' }
   | { kind: 'done'; hits: SearchHit[]; hint?: string }
-  | { kind: 'error'; message: string; hint?: string };
+  | { kind: 'error'; message: string; hint?: string; limited?: boolean };
 const state = ref<State>({ kind: 'idle' });
 // The Kind pills stay mounted while the next search loads, so a pressed pill keeps focus.
 const pillsUp = ref(false);
 const retries = ref(0);
+// A search still loading after 300 ms shows a skeleton (handoff §5.1: no flash for a fast answer).
+// A 429 counts its Retry-After down, and Retry stays disabled meanwhile (#731).
+const slow = ref(false);
+const wait = ref(0);
+let slowTimer: ReturnType<typeof setTimeout> | undefined;
+let ticker: ReturnType<typeof setInterval> | undefined;
+function settle() {
+  clearTimeout(slowTimer);
+  slow.value = false;
+}
 
 // Each search aborts the one before it, and only the newest may set the state:
 // a slow older answer never overwrites a newer one, nor the Home that followed.
@@ -44,6 +54,9 @@ let current: AbortController | undefined;
 async function search(q: string, k: string, p: string) {
   current?.abort();
   current = undefined;
+  settle();
+  clearInterval(ticker);
+  wait.value = 0;
   if (!q) {
     state.value = { kind: 'idle' };
     pillsUp.value = false;
@@ -51,16 +64,27 @@ async function search(q: string, k: string, p: string) {
   }
   const mine = (current = new AbortController());
   state.value = { kind: 'loading' };
+  slowTimer = setTimeout(() => (slow.value = true), 300);
   try {
     const { results, hint } = await searchItems(q, { kind: k, project: p }, mine.signal);
     if (current !== mine) return;
+    settle();
     state.value = { kind: 'done', hits: results, hint };
     pillsUp.value = results.length > 0 || !!k;
   } catch (e) {
     if (current !== mine) return;
+    settle();
     pillsUp.value = false;
+    if (e instanceof ApiError && e.status === 429) {
+      wait.value = e.retryAfter;
+      ticker = setInterval(() => {
+        if (--wait.value <= 0) clearInterval(ticker);
+      }, 1000);
+    }
     state.value =
-      e instanceof ApiError ? { kind: 'error', message: e.message, hint: e.status === 401 && ended.value ? undefined : e.hint } : { kind: 'error', message: "Couldn't load search results." };
+      e instanceof ApiError
+        ? { kind: 'error', message: e.message, hint: e.status === 401 && ended.value ? undefined : e.hint, limited: e.status === 429 }
+        : { kind: 'error', message: "Couldn't load search results." };
   }
 }
 
@@ -116,6 +140,8 @@ async function clear() {
 onBeforeUnmount(() => {
   current?.abort();
   current = undefined;
+  settle();
+  clearInterval(ticker);
 });
 </script>
 
@@ -136,7 +162,18 @@ onBeforeUnmount(() => {
     <HomeGuide />
   </template>
 
-  <p v-else-if="state.kind === 'loading'" class="loading" role="status">Searching…</p>
+  <!-- Handoff §5.1: skeleton cards after 300 ms, never a spinner; nothing before. -->
+  <div v-else-if="state.kind === 'loading'" :class="{ hits: slow }" :aria-busy="slow ? 'true' : undefined">
+    <template v-if="slow">
+      <span role="status" class="sr-only">Searching…</span>
+      <div v-for="n in 3" :key="n" class="skeleton"></div>
+    </template>
+  </div>
+
+  <div v-else-if="state.kind === 'error' && state.limited" class="alert warning">
+    <p role="status">{{ wait > 0 ? `Too many requests — try again in ${wait} s.` : 'Too many requests — you can retry now.' }}</p>
+    <button type="button" class="retry" :disabled="wait > 0" @click="retries++">Retry</button>
+  </div>
 
   <div v-else-if="state.kind === 'error'" role="alert" class="alert">
     <p class="alert-message">{{ state.message }}</p>
@@ -164,8 +201,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.loading {
-  color: var(--fg-secondary);
+.skeleton {
+  min-height: 96px;
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
 }
 .chips {
   display: flex;
@@ -211,6 +250,15 @@ onBeforeUnmount(() => {
   border: 1px solid var(--danger-border);
   background: var(--danger-bg);
   color: var(--danger-ink);
+}
+.warning {
+  border-color: var(--miss-border);
+  background: var(--miss-bg);
+  color: var(--miss-ink);
+}
+.retry:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .alert p {
   margin: 0 0 var(--space-2);
