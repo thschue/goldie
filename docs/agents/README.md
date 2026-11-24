@@ -63,7 +63,7 @@ An issue is claimable only when it is in the **current milestone**, the open one
 number, or labelled `security`. Without a milestone it is inert whatever its labels: a follow-up
 the loops file waits for the maintainer to pull it in. Only the maintainer creates, edits or closes
 a milestone (`scripts/loop-guard`); the product session adds an issue to the current one only as a
-step of a journey its description names, or as a `bug` in a journey already shipped. With no open
+`bug` in behaviour already shipped. With no open
 milestone, the loops idle.
 
 **Finish before starting:** resumed streams before new claims, and the started epic before a new
@@ -141,8 +141,8 @@ Reproduce it on `origin/main` first; a bug only claimed in text that doesn't rep
 
 ## Humans decide
 
-The maintainer decides only: product direction beyond the record, and **the milestones** (goal,
-journeys, which issues are in); security posture, secrets and credentials; **the harness** (this
+The maintainer decides only: product direction beyond the record, and **the milestones** (goal and
+which issues are in); security posture, secrets and credentials; **the harness** (this
 directory, `.claude/`, `scripts/`, CI); releases; licensing, cost and external commitments;
 deleting user data or a feature; closing an external contributor's PR.
 

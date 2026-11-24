@@ -28,13 +28,13 @@ Three changes to the shape of the pipeline, each enforced by a script or a count
 sentence:
 
 1. **The milestone is the only input.** A GitHub milestone, created and scoped by the maintainer,
-   names the goal and the user journeys that define done. `scripts/frontier` and `scripts/loop-poll`
+   names the goal; the issues in it are the scope, and its text is read by humans only. `scripts/frontier` and `scripts/loop-poll`
    count an issue as claimable only when it is in the current milestone (the open one with the
    lowest number) or labelled `security`; `scripts/loop-guard` denies milestone writes through the
-   API. The product session refines what is in the milestone, adds an issue to it only as a step of
-   a named journey or a `bug` in a shipped journey, and files everything else without a milestone,
+   API. The product session refines what is in the milestone, adds an issue to it only as a `bug` in
+   behaviour it has shipped, and files everything else without a milestone,
    where it is inert until the maintainer pulls it in. The ready-buffer rule is deleted. When the
-   milestone has no open issue and the journeys' specs are green on `main`, the inbox says "RC";
+   milestone has no open issue and `./run ux` is green on `main`, the inbox says "RC";
    the maintainer releases, closes the milestone and opens the next one.
 2. **One stage may subtract.** The `test-author` prunes the branch's tests after implementation
    and before review, as the only role that deletes a test line (its commit is recorded as approved,
@@ -46,8 +46,8 @@ sentence:
    returns deletion candidates, filed as `shrink:` issues whose PRs are net-negative.
 3. **Growth is counted.** `./run size` prints the net hand-written lines and the test:code ratio of
    a change; they go into every PR body and review report, the product session audits the highest
-   ratios first, and the inbox leads with outcomes (journeys green, days since release, net lines
-   this week) before flow metrics.
+   ratios first, and the inbox leads with outcomes (`./run ux` green on `main`, days since release, net
+   lines this week) before flow metrics.
 
 What holds: the `security-reviewer` on risk paths, `scripts/agent-gate`, `scripts/loop-guard`
 (which only gains rules), `./run check`, the architect's review, the test lock. A HIGH or MEDIUM
@@ -63,9 +63,10 @@ topology, markers, gates and test lock of ADR 0018 stand.
 - **The loop can run dry, by design.** With no claimable issue in the milestone, delivery prints
   `work=0` and the product session lists the outside issues; the maintainer's act is to scope, not to
   review supply. The inbox's "Outside the milestone" section is where ideas wait.
-- **A slice is a user-reachable journey step**, so a package nothing imports is not ready, and the
-  journeys' specs (`web/e2e/journeys/`, run by `./run ux`) are the executable definition of done
-  outside the loop.
+- **A slice is a step a user can exercise on merge**, so a package nothing imports is not ready. The
+  e2e journeys (`web/e2e/journeys/`, run by `./run ux`) are the executable release check. They are
+  tests of the repository, not milestone text: a milestone carries a goal and its issues, nothing
+  else.
 - **Fewer lines per criterion.** The prune pass and the "one test per criterion" rule shrink the
   test side; the fix-round rule and the counted ratio make additions visible and reviewable.
 - **Reusable kit.** The three mechanisms depend on GitHub milestones, a frontier script and a size
