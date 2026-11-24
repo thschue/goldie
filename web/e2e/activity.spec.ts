@@ -1700,3 +1700,116 @@ test.describe('the pressed toggles use the brand style, and gold is for Miss', (
     await expect(missesOnly(page)).not.toHaveCSS('background-color', gold);
   });
 });
+
+// The feed layout (#876, handoff §3.6 item 6, §7, §9.1 2.4.6). Contract these specs pin down:
+// - the surface pills, the Project chip and "Misses only" share one container (the toolbar) that is
+//   below the stage, the tiles and the Miss board and directly above the feed table, in one row at
+//   1280 px;
+// - Live stream, Last five minutes, the Miss board and the feed each have one visible h2 (the feed's
+//   is named "Feed");
+// - with the Event detail open every column is visible with no horizontal scroll at 1280 px; the feed
+//   is at least 800 px wide beside the detail, and where that does not fit the detail stacks under
+//   the feed. At 1024 and 375 px the detail stacks under the feed and the page does not scroll sideways.
+test.describe('the feed layout', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+  const shop = 'github.com/acme/shop';
+  const chip = (page: Page) => main(page).getByRole('button', { name: /remove.*github\.com\/acme\/shop/i });
+  const box = async (l: Locator) => {
+    const b = await l.boundingBox();
+    if (!b) throw new Error('not rendered');
+    return b;
+  };
+  const feedRegion = (page: Page) => main(page).getByRole('region', { name: 'Activity feed' });
+  const detail = (page: Page) => main(page).getByRole('region', { name: 'Event detail' });
+  const h2 = (page: Page, name: string) => main(page).getByRole('heading', { level: 2, name, exact: true });
+
+  test('the surface pills, the Project chip and Misses only form one toolbar directly above the table', async ({ page }) => {
+    await open(page, sample, `/ops/activity?project=${encodeURIComponent(shop)}`);
+    await expect(chip(page)).toBeVisible();
+    const tilesRegion = main(page).getByRole('region', { name: 'Last five minutes' });
+    await expect(tilesRegion).toBeVisible();
+    const boxes = [await box(surfaces(page)), await box(chip(page)), await box(missesOnly(page))];
+
+    const shared = await surfaces(page).evaluate((el) => {
+      const m = el.closest('main')!;
+      const others = [...m.querySelectorAll('button')].filter(
+        (b) => /misses only/i.test(b.textContent ?? '') || /^Remove Project filter/.test(b.getAttribute('aria-label') ?? ''),
+      );
+      let a: HTMLElement | null = el as HTMLElement;
+      while (a && a !== m && !others.every((o) => a!.contains(o))) a = a.parentElement;
+      return { isMain: a === m, hasTable: !!a && !!a.querySelector('table'), others: others.length };
+    });
+    expect(shared.others).toBe(2);
+    expect(shared.isMain, 'the three controls share a container smaller than main').toBe(false);
+    expect(shared.hasTable, 'the toolbar does not contain the table').toBe(false);
+
+    const tiles = await box(tilesRegion);
+    const stage = await box(main(page).getByRole('region', { name: 'Live stream' }));
+    const feed = await box(feedRegion(page));
+    for (const b of boxes) {
+      expect(b.y, 'below the tiles').toBeGreaterThanOrEqual(tiles.y + tiles.height - 1);
+      expect(b.y, 'below the stage').toBeGreaterThanOrEqual(stage.y + stage.height - 1);
+      expect(b.y + b.height, 'above the table').toBeLessThanOrEqual(feed.y + 1);
+    }
+    const lowest = Math.max(...boxes.map((b) => b.y + b.height));
+    expect(feed.y - lowest, 'the toolbar sits directly above the table').toBeLessThanOrEqual(64);
+    const tops = boxes.map((b) => b.y);
+    expect(Math.max(...tops) - Math.min(...tops), 'one row at 1280 px').toBeLessThan(24);
+  });
+
+  test('Live stream, Last five minutes, the Miss board and Feed each have one visible h2', async ({ page }) => {
+    await open(page, sample);
+    await expect(rows(page)).toHaveCount(sample.length);
+    for (const name of ['Live stream', 'Last five minutes', 'Feed']) {
+      const h = h2(page, name);
+      await expect(h, name).toHaveCount(1);
+      await expect(h, name).toBeVisible();
+      const b = await box(h);
+      expect(b.width, `${name} is not a hidden heading`).toBeGreaterThan(24);
+      expect(b.height, `${name} is not a hidden heading`).toBeGreaterThan(10);
+    }
+    const board = main(page)
+      .getByRole('region', { name: /didn't find/i })
+      .getByRole('heading', { level: 2 });
+    await expect(board).toHaveCount(1);
+    await expect(board).toBeVisible();
+    expect((await box(board)).height).toBeGreaterThan(10);
+    const ys = [(await box(h2(page, 'Live stream'))).y, (await box(h2(page, 'Last five minutes'))).y, (await box(board)).y, (await box(h2(page, 'Feed'))).y];
+    expect([...ys].sort((a, b) => a - b), 'in reading order: stage, tiles, board, feed').toEqual(ys);
+  });
+
+  test('at 1280 px with the detail open every column is visible and nothing scrolls sideways', async ({ page }) => {
+    await open(page, sample);
+    await rowOf(page, 'database').getByRole('button').click();
+    await expect(detail(page)).toBeVisible();
+    const region = await box(feedRegion(page));
+    for (const name of ['Time', 'Event', 'Query → Item', 'Result', 'Via', 'Project', 'Replica']) {
+      const th = table(page).getByRole('columnheader', { name, exact: true });
+      await expect(th, name).toBeVisible();
+      const b = await box(th);
+      expect(b.x, `${name} starts inside the feed`).toBeGreaterThanOrEqual(region.x - 1);
+      expect(b.x + b.width, `${name} ends inside the feed`).toBeLessThanOrEqual(region.x + region.width + 1);
+    }
+    expect(await feedRegion(page).evaluate((el) => el.scrollWidth <= el.clientWidth), 'the feed has no horizontal scroll').toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    const d = await box(detail(page));
+    const beside = d.x >= region.x + region.width - 1 && d.y < region.y + region.height;
+    if (beside) expect(region.width, 'beside the detail the feed is 800 px').toBeGreaterThanOrEqual(799);
+    else expect(d.y, 'otherwise the detail stacks under the feed').toBeGreaterThanOrEqual(region.y + region.height - 1);
+  });
+
+  for (const width of [1024, 375]) {
+    test(`at ${width} px with the detail open the detail stacks under the feed and the page does not scroll sideways`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await open(page, sample);
+      await rowOf(page, 'database').getByRole('button').click();
+      await expect(detail(page)).toBeVisible();
+      const region = await box(feedRegion(page));
+      const d = await box(detail(page));
+      expect(d.y, 'under the feed').toBeGreaterThanOrEqual(region.y + region.height - 1);
+      expect(d.x + d.width, 'inside the viewport').toBeLessThanOrEqual(width + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    });
+  }
+});
