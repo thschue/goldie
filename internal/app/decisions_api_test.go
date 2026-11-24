@@ -352,3 +352,34 @@ func TestDecisionPayloadIsSnakeCase(t *testing.T) {
 		t.Errorf("the payload does not use superseded_by: %s", body)
 	}
 }
+
+// #757 criterion 1: for a Project whose view holds a non-accepted copy of a
+// decision, the list and the get answer the same record.
+func TestDecisionListAndGetAgreeOnAProjectNonAcceptedCopy(t *testing.T) {
+	srv, _ := decisionServer(t, map[string]string{
+		"projects/" + decisionsShop + "/decisions/alpha.md": decisionFile("Shop Alpha", "proposed", "2023-07-02"),
+	})
+	q := "?project=" + decisionsShop
+	list, _ := listDecisions(t, srv, readerToken, decisionsAPI+q)
+	var listed *decisionEntry
+	for i := range list {
+		if list[i].Name == "alpha" {
+			listed = &list[i]
+		}
+	}
+	status, body := itemsGet(t, srv, readerToken, decisionsAPI+"/alpha"+q)
+	if listed == nil {
+		if status != http.StatusNotFound {
+			t.Fatalf("the list omits alpha but GET answers %d: %s", status, body)
+		}
+		return
+	}
+	if status != http.StatusOK {
+		t.Fatalf("the list holds alpha but GET answers %d: %s", status, body)
+	}
+	got := getDecision(t, srv, readerToken, decisionsAPI+"/alpha"+q)
+	if got.Title != listed.Title || got.Status != listed.Status || got.Scope != listed.Scope || got.Date != listed.Date {
+		t.Errorf("GET alpha = %q/%s/%s/%s, the list holds %q/%s/%s/%s; want the same record",
+			got.Title, got.Status, got.Scope, got.Date, listed.Title, listed.Status, listed.Scope, listed.Date)
+	}
+}
