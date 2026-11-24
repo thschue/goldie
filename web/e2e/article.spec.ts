@@ -617,6 +617,8 @@ test.describe('the item detail aside', () => {
     await expect(aside(page).getByText('get_article')).toBeVisible();
     await aside(page).getByRole('button', { name: 'Copy command', exact: true }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('goldie lookup platform/deploy');
+    await expect(aside(page).locator('[aria-live="polite"]')).toHaveText('Copied');
+    await expect(aside(page).getByRole('status')).toHaveCount(0);
   });
 
   test('Details has the keywords, and the override only when the article shadows one', async ({ page }) => {

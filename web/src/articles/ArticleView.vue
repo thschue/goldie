@@ -215,14 +215,6 @@ dd {
 .bar.short {
   width: 40%;
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 .meta,
 .keywords {
   display: flex;
