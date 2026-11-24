@@ -60,7 +60,7 @@ function toggle(id: string) {
       <RouterLink v-for="t in tiles" :key="t.slug" :to="`/assets/${t.slug}`" class="tile">
         <span class="name">{{ t.name }}</span>
         <span class="purpose">{{ t.purpose }}</span>
-        <span v-if="t.load.state.value === 'ready'" class="count">{{ t.load.data.value }}<span class="sr"> items</span></span>
+        <span v-if="t.load.state.value === 'ready'" class="count">{{ t.load.data.value }}<span class="sr-only">{{ t.load.data.value === 1 ? ' item' : ' items' }}</span></span>
       </RouterLink>
     </div>
   </section>
@@ -116,14 +116,6 @@ function toggle(id: string) {
 .count {
   font-size: var(--text-lg, 1.25rem);
   font-weight: 600;
-}
-.sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }
 .steps {
   display: grid;
