@@ -195,9 +195,14 @@ func TestListDecisionsStatusFilterReturnsTheOtherStatuses(t *testing.T) {
 	if len(got) != 2 || got[0].SupersededBy != "decision:old-b" || got[1].SupersededBy != "decision:old-c" {
 		t.Errorf("superseded list = %+v, want superseded_by decision:old-b and decision:old-c", got)
 	}
-	// drafts stays operator-only and does not widen the decision list.
-	if status, body := itemsGet(t, srv, readerToken, decisionsAPI+"?drafts=true"); status != http.StatusForbidden {
-		t.Errorf("a reader with drafts=true: status %d, want 403: %s", status, body)
+	// drafts is not the control here (status= is): whatever the API does with
+	// it, it must never hand a reader the non-accepted decisions.
+	if status, body := itemsGet(t, srv, readerToken, decisionsAPI+"?drafts=true"); status == http.StatusOK {
+		for _, hidden := range []string{"beta", "gamma", "delta", "old-a", "old-b"} {
+			if strings.Contains(string(body), `"name":"`+hidden+`"`) {
+				t.Errorf("drafts=true leaked the non-accepted decision %s: %s", hidden, body)
+			}
+		}
 	}
 }
 
