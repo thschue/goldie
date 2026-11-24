@@ -1520,8 +1520,8 @@ export interface components {
         };
         /**
          * @description One search, lookup or get on the activity stream, the `data` of an SSE
-         *     event without a type. Every field is always sent; text fields are `""`
-         *     when empty. Clients ignore fields they do not know.
+         *     event without a type. Every field is always sent but `via`; text fields
+         *     are `""` when empty. Clients ignore fields they do not know.
          */
         ActivityEvent: {
             /**
@@ -1570,6 +1570,14 @@ export interface components {
              * @example 4bf92f3577b34da6a3ce929d0e0e4736
              */
             trace_id: string;
+            /**
+             * @description The surface that asked: `mcp`, `cli`, `ui` (the web UI, a session
+             *     cookie) or `other`. Omitted when unknown, as from a replica older
+             *     than this field. A string, not an enum: a later surface adds a value.
+             *     A federated stream shows a peer's value outside this set as `other`.
+             * @example cli
+             */
+            via?: string;
             /**
              * @description A search with no results, or a lookup or get answering 404.
              * @example false

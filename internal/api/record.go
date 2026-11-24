@@ -80,6 +80,10 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 				e.ClientVersion = v.String()
 			}
 			e.TraceID = platform.TraceID(ctx)
+			e.Via = clientVia(r.Header)
+			if viaSession, _ := ctx.Value(sessionKey{}).(bool); viaSession {
+				e.Via = viaUI // the SPA signs in with a cookie; it sends no client header
+			}
 			e.Project = s.projectSpelling(e.Project)
 			s.activity.Record(e)
 		}
