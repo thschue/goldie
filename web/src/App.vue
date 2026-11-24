@@ -2,6 +2,8 @@
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from './components/AppShell.vue';
+import ApiUnreachable from './components/ApiUnreachable.vue';
+import { attempt, unreachable } from './api/reachability';
 import SessionBanner from './auth/SessionBanner.vue';
 import { checkFailed, refresh, role, signOut } from './auth/session';
 
@@ -46,6 +48,17 @@ async function retryCheck() {
   }
 }
 
+// Retry now: a failed first session check asks again (an answer clears the state); otherwise
+// the view is mounted again and repeats its calls, and a repeat failure brings the state back.
+async function retryNow() {
+  if (checkFailed.value) {
+    await retryCheck();
+    return;
+  }
+  unreachable.value = false;
+  attempt.value++;
+}
+
 async function onSignOut() {
   signOutFailed.value = !(await signOut());
   if (signOutFailed.value) {
@@ -68,7 +81,8 @@ async function onSignOut() {
       Could not sign you out. You are still signed in.
       <button ref="retry" type="button" @click="onSignOut">Retry</button>
     </div>
-    <div v-if="checkFailed && !route.meta.public" :key="checkFailures" role="alert" class="page-alert">
+    <ApiUnreachable v-if="unreachable && !route.meta.public" @retry="retryNow" />
+    <div v-else-if="checkFailed && !route.meta.public" :key="checkFailures" role="alert" class="page-alert">
       <h1>Could not check your session</h1>
       <p>Your sign-in is not affected.</p>
       <button ref="checkRetry" type="button" :aria-disabled="checking" @click="retryCheck">Retry</button>
@@ -79,7 +93,7 @@ async function onSignOut() {
          every route is a stateless view). A view whose state must survive a
          path change needs another key; see docs/design/ui-handoff.md A8. -->
     <RouterView v-else v-slot="{ Component, route: view }">
-      <component :is="Component" :key="view.path" />
+      <component :is="Component" :key="`${view.path}#${attempt}`" />
     </RouterView>
   </AppShell>
 </template>

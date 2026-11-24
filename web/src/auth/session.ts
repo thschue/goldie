@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { failure } from '../api/client';
+import { note } from '../api/reachability';
 import type { components } from '../api/schema';
 
 // The session store (#495). The browser never holds the token: sign-in
@@ -29,10 +30,18 @@ const keepCSRF = (res: Response) => {
 export const role = (): Role => (session.value?.role === 'operator' ? 'operator' : 'reader');
 
 // api is fetch for the API: a 401 marks a signed-in session as ended, and the
-// caller still gets the response. Sign-in does not use it: a wrong token is
+// caller still gets the response. A failed fetch, or the UI-mode proxy's 502, marks the API
+// unreachable (#638). Sign-in does not use it: a wrong token is
 // not a session ending.
 export async function api(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(path, init);
+  let res: Response;
+  try {
+    res = await fetch(path, init);
+  } catch (e) {
+    if (!(e instanceof DOMException && e.name === 'AbortError')) await note();
+    throw e;
+  }
+  await note(res);
   if (res.status === 401 && session.value) ended.value = true;
   return res;
 }
