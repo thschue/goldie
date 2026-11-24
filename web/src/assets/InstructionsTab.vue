@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useLoad } from '../api/useLoad';
 import MarkdownBody from '../articles/MarkdownBody.vue';
@@ -7,6 +7,7 @@ import { projectOf } from '../projects/api';
 import { getInstructions, instructionTargets, plain, targetOf, type InstructionTarget } from './api';
 import AssetList from './AssetList.vue';
 import CommandSnippet from './CommandSnippet.vue';
+import { useCopy } from './useCopy';
 
 // The Instructions tab (handoff §3.5, #590): the server's managed block for one target, its
 // digest and the command that writes it. The target is the URL's ?target=, pushed on a click so
@@ -23,23 +24,15 @@ const { state, data, failure, wait, skeleton, limited, retry } = useLoad(key, (k
 });
 const items = computed(() => (data.value ? [{ name: target.value }] : []));
 
-const choose = (t: InstructionTarget) => {
-  if (t !== target.value) void router.push({ path: route.path, query: { ...route.query, target: t } });
-};
+// What is shown is what is copied: the digest without invisible and bidirectional controls.
+const digest = computed(() => plain(data.value?.digest));
+const { status: copied, copy, clear } = useCopy('digest');
 
-const copied = ref('');
-let timer: ReturnType<typeof setTimeout> | undefined;
-async function copyDigest() {
-  try {
-    await navigator.clipboard.writeText(data.value?.digest ?? '');
-    copied.value = 'Copied';
-  } catch {
-    copied.value = 'Copy failed. Select the digest and copy it.';
-  }
-  clearTimeout(timer);
-  timer = setTimeout(() => (copied.value = ''), 2500);
-}
-onBeforeUnmount(() => clearTimeout(timer));
+const choose = (t: InstructionTarget) => {
+  if (t === target.value) return;
+  clear();
+  void router.push({ path: route.path, query: { ...route.query, target: t } });
+};
 </script>
 
 <template>
@@ -71,9 +64,9 @@ onBeforeUnmount(() => clearTimeout(timer));
       <article class="block">
         <div class="digest">
           <span class="label">Digest</span>
-          <code>{{ plain(data?.digest) }}</code>
-          <button type="button" class="copy" aria-label="Copy digest" @click="copyDigest">Copy</button>
-          <span role="status" class="sr-only">{{ copied }}</span>
+          <code>{{ digest }}</code>
+          <button type="button" class="copy" aria-label="Copy digest" @click="copy(digest)">Copy</button>
+          <span role="status" class="copied">{{ copied }}</span>
         </div>
         <MarkdownBody class="body" contiguous :source="plain(data?.block)" />
         <CommandSnippet :command="`goldie instructions apply --target ${target}`" />
@@ -102,7 +95,7 @@ onBeforeUnmount(() => clearTimeout(timer));
   cursor: pointer;
 }
 .switch button[aria-pressed='true'] {
-  background: var(--brand-tint-bg, var(--surface-3));
+  background: var(--brand-tint);
   color: var(--brand-tint-ink);
   font-weight: 700;
   box-shadow: inset 0 -3px 0 currentColor;
@@ -146,6 +139,10 @@ code {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+.copied {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
 }
 .copy:hover {
   background: var(--surface-3);
