@@ -169,11 +169,13 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       </button>
     </div>
 
-    <div v-if="down.length" class="box warning">
-      <strong>Partial view.</strong>
-      <template v-for="d in down" :key="d.name">
-        {{ plain(d.name) }} stopped answering {{ d.ago }} — its newer events are missing until it's back.
-      </template>
+    <div role="status">
+      <div v-if="down.length" class="box warning">
+        <strong>Partial view.</strong>
+        <template v-for="d in down" :key="d.name">
+          {{ plain(d.name) }} stopped answering {{ d.ago }} — its newer events are missing until it's back.
+        </template>
+      </div>
     </div>
 
     <div role="status">
@@ -205,7 +207,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
               <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
                 {{ timeText(e.time) }}
               </button>
-              <span v-if="e.late" class="late" title="This event reached the merge after its reorder window">LATE</span>
+              <span v-if="e.late" class="late" title="Arrived after the reorder window">LATE</span>
             </td>
             <td>{{ e.kind }}</td>
             <td :id="`q-${i}`" class="query">{{ queryText(e) }}</td>
