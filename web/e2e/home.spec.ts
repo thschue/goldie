@@ -13,6 +13,8 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { eachViewport, evidence, problems } from './ux';
 
 const apiSearch = /\/api\/v1\/search(\?|$)/;
+const apiArticles = /\/api\/v1\/articles(\?|$)/;
+const shop = 'github.com/acme/shop';
 const lists = { skills: /\/api\/v1\/skills(\?|$)/, agents: /\/api\/v1\/agents(\?|$)/, loops: /\/api\/v1\/loops(\?|$)/ };
 
 const json = (route: Route, status: number, body: unknown) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -22,12 +24,29 @@ type Answer = number | 'fail';
 
 // stubLists answers each list with that many entries, or with a 500 for 'fail'.
 async function stubLists(page: Page, a: { skills: Answer; agents: Answer; loops: Answer }) {
+  // Home also reads the article list; a test that cares registers its own stub afterwards (it wins).
+  await stubArticles(page, []);
   for (const key of ['skills', 'agents', 'loops'] as const) {
     const v = a[key];
     await page.route(lists[key], (route) =>
       v === 'fail' ? json(route, 500, { error: { code: 'internal', message: 'boom', details: {} } }) : json(route, 200, { [key]: named(v, key) }),
     );
   }
+}
+
+type Art = { id: string; name: string; scope?: string; overrides?: string[] };
+const art = (a: Art) => ({ keywords: [], scope: 'global', overrides: [], enforced: false, ...a });
+
+// stubArticles answers the article list (or a 500 for 'fail') and records every request URL.
+async function stubArticles(page: Page, articles: Art[] | 'fail' = [], hint?: string) {
+  const urls: URL[] = [];
+  await page.route(apiArticles, (route) => {
+    urls.push(new URL(route.request().url()));
+    return articles === 'fail'
+      ? json(route, 500, { error: { code: 'internal', message: 'boom', details: {} } })
+      : json(route, 200, { articles: articles.map(art), ...(hint ? { hint } : {}) });
+  });
+  return urls;
 }
 
 async function stubSearch(page: Page) {
@@ -210,5 +229,220 @@ eachViewport((width, theme) => {
     await expect(tile(page, 'Skills')).toContainText('3');
     await evidence(page, width, theme, '', 'home');
     expect(seen.errors, 'page errors and CSP violations').toEqual([]);
+  });
+});
+
+const specific = (page: Page) =>
+  main(page)
+    .locator('section, div, article')
+    .filter({ has: page.getByRole('heading', { name: /Specific to/ }) })
+    .last();
+
+const withProject = (project = shop) => `/?project=${encodeURIComponent(project)}`;
+
+test.describe('the Articles tile', () => {
+  test('sits with the other tiles, shows the count from the article list and opens /articles', async ({ page }) => {
+    await stubLists(page, { skills: 3, agents: 2, loops: 5 });
+    await stubArticles(page, [
+      { id: 'a', name: 'A' },
+      { id: 'b', name: 'B' },
+      { id: 'c', name: 'C' },
+      { id: 'd', name: 'D' },
+    ]);
+    await page.goto('/');
+    const t = tile(page, 'Articles');
+    await expect(t).toHaveAttribute('href', '/articles');
+    await expect(t).toContainText('4');
+    const words = (await t.innerText()).replace(/\d+/g, '').replace('Articles', '').trim();
+    expect(words.length, 'a one-line purpose in the Articles tile').toBeGreaterThan(10);
+    await t.click();
+    await expect(page).toHaveURL((u) => u.pathname === '/articles');
+  });
+
+  test('a failing article list leaves the tile without a count; Home still renders', async ({ page, baseURL }) => {
+    const seen = await problems(page, baseURL ?? '');
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, 'fail');
+    await page.goto(withProject());
+    await expect(tile(page, 'Articles')).toBeVisible();
+    await expect(tile(page, 'Articles')).not.toContainText(/\d/);
+    await expect(tile(page, 'Skills')).toContainText('1');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    await expect(main(page).getByRole('alert')).toHaveCount(0);
+    await expect(main(page)).not.toContainText(/boom/);
+    expect(seen.errors, 'page errors and CSP violations').toEqual([]);
+  });
+});
+
+test.describe('the selected Project on Home', () => {
+  test('every tile keeps the Project in its link and counts from ?project=', async ({ page }) => {
+    const asked: URL[] = [];
+    for (const key of ['skills', 'agents', 'loops'] as const) {
+      await page.route(lists[key], (route) => {
+        asked.push(new URL(route.request().url()));
+        return json(route, 200, { [key]: named(key === 'skills' ? 3 : 1, key) });
+      });
+    }
+    const urls = await stubArticles(page, [{ id: 'a', name: 'A' }]);
+    await page.goto(withProject());
+    await expect(tile(page, 'Skills')).toContainText('3');
+    for (const [name, path] of [
+      ['Articles', '/articles'],
+      ['Skills', '/assets/skills'],
+      ['Agents', '/assets/agents'],
+      ['Loops', '/assets/loops'],
+    ]) {
+      const u = new URL((await tile(page, name).getAttribute('href')) ?? '', 'http://x');
+      expect(u.pathname).toBe(path);
+      expect(u.searchParams.get('project'), `project on ${name}`).toBe(shop);
+    }
+    expect(asked).toHaveLength(3);
+    for (const u of [...asked, ...urls]) expect(u.searchParams.get('project')).toBe(shop);
+    await tile(page, 'Skills').click();
+    await expect(page).toHaveURL((u) => u.pathname === '/assets/skills' && u.searchParams.get('project') === shop);
+  });
+});
+
+test.describe('the "Specific to <project>" card', () => {
+  test('lists the articles whose scope is not global, overrides first then by id, each linking to its detail view', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    const urls = await stubArticles(page, [
+      { id: 'zeta', name: 'Zeta rules', scope: shop },
+      { id: 'platform/deploy', name: 'Deploying', scope: 'global' },
+      { id: 'beta', name: 'Beta rules', scope: shop },
+      { id: 'retry', name: 'Retry budgets', scope: shop, overrides: ['global'] },
+      { id: 'alpha', name: 'Alpha rules', scope: 'local' },
+    ]);
+    await page.goto(withProject());
+    const card = specific(page);
+    await expect(card).toContainText(shop);
+    const links = card.getByRole('link');
+    await expect(links).toHaveCount(4);
+    await expect(links.nth(0)).toContainText('Retry budgets');
+    await expect(links.nth(1)).toContainText('Alpha rules');
+    await expect(links.nth(2)).toContainText('Beta rules');
+    await expect(links.nth(3)).toContainText('Zeta rules');
+    await expect(card).not.toContainText('Deploying');
+    const u = new URL((await links.nth(0).getAttribute('href')) ?? '', 'http://x');
+    expect(u.pathname).toBe('/items/article/retry');
+    expect(u.searchParams.get('project')).toBe(shop);
+    expect(urls, 'the tile count and the card share one request').toHaveLength(1);
+    expect(urls[0].searchParams.get('project')).toBe(shop);
+    await links.nth(0).click();
+    await expect(page).toHaveURL((x) => x.pathname === '/items/article/retry');
+  });
+
+  test('an article id with a slash is one encoded path segment', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, [{ id: 'team/retry', name: 'Team retry', scope: shop }]);
+    await page.goto(withProject());
+    await expect(specific(page).getByRole('link', { name: /Team retry/ })).toHaveAttribute('href', /^\/items\/article\/team%2Fretry(\?|$)/);
+  });
+
+  test('with no Project selected it says "Pick a project", lists nothing and makes one article request', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    const urls = await stubArticles(page, [{ id: 'retry', name: 'Retry budgets', scope: shop }]);
+    await page.goto('/');
+    await expect(specific(page)).toContainText('Pick a project');
+    await expect(specific(page)).not.toContainText('Retry budgets');
+    await expect(specific(page).getByRole('link')).toHaveCount(0);
+    expect(urls).toHaveLength(1);
+    expect(urls[0].searchParams.has('project')).toBe(false);
+  });
+
+  test('a Project with no specific articles says "Nothing specific to <project> yet"', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, [{ id: 'platform/deploy', name: 'Deploying', scope: 'global' }]);
+    await page.goto(withProject());
+    await expect(specific(page)).toContainText(`Nothing specific to ${shop} yet`);
+    await expect(specific(page)).not.toContainText('Pick a project');
+    await expect(specific(page).getByRole('link')).toHaveCount(0);
+  });
+
+  test('a Project that is not registered (the hint case) says the same', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, [{ id: 'platform/deploy', name: 'Deploying', scope: 'global' }], 'Project is not registered.');
+    await page.goto(withProject('github.com/acme/unknown'));
+    await expect(specific(page)).toContainText('Nothing specific to github.com/acme/unknown yet');
+  });
+
+  test('a failing article list leaves the card without a list or an error, and Home renders', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, 'fail');
+    await page.goto(withProject());
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    await expect(main(page).getByRole('alert')).toHaveCount(0);
+    await expect(specific(page).getByRole('link')).toHaveCount(0);
+  });
+
+  test('names from a Source render as text, never as markup', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, [{ id: 'x', name: '<img src=x onerror=alert(1)>Evil‮txt', scope: shop }]);
+    await page.goto(withProject());
+    await expect(specific(page)).toContainText('<img src=x onerror=alert(1)>');
+    await expect(main(page).locator('img')).toHaveCount(0);
+    expect(await specific(page).innerText()).not.toContain('‮');
+  });
+});
+
+test("Home has no \"What's new\" card and no placeholder for it", async ({ page }) => {
+  await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+  await page.goto('/');
+  await expect(tile(page, 'Skills')).toBeVisible();
+  await expect(main(page)).not.toContainText(/what.s new/i);
+  await expect(main(page)).not.toContainText(/coming soon/i);
+});
+
+test.describe('/?project= is Home', () => {
+  test("renders Home with the Project selected, and never reads the Project's Item list", async ({ page }) => {
+    await stubLists(page, { skills: 3, agents: 2, loops: 5 });
+    const itemPaths: string[] = [];
+    await page.route(/\/api\/v1\/projects\/[^/]+\/items$/, (route) => {
+      itemPaths.push(new URL(route.request().url()).pathname);
+      return json(route, 200, { items: [], suppressions: [] });
+    });
+    await page.goto(withProject());
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    await expect(main(page).locator('input[type="search"]')).toHaveCount(1);
+    await expect(main(page)).toContainText('Browse the golden path');
+    await expect(main(page)).toContainText('Put your agent on the golden path');
+    await expect(specific(page)).toContainText(shop);
+    expect(itemPaths, 'no Project Items list request').toEqual([]);
+  });
+
+  test('a hostile Project value renders as text on Home, never as markup', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await page.goto(withProject('<img src=x onerror=window.__pwn=1>'));
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('What are you deciding today?');
+    expect(await main(page).locator('img').count()).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { __pwn?: number }).__pwn)).toBeUndefined();
+  });
+});
+
+// The J2 browse step (#748, #772): a reader reaches an Item's detail by clicks alone.
+test.describe('browsing from Home to an article by clicks', () => {
+  test('Home, the Articles tile, a row of the index, the article, with the Project kept all the way', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await stubArticles(page, [
+      { id: 'platform/deploy', name: 'Deploying to Kubernetes' },
+      { id: 'retry', name: 'Retry budgets', scope: shop, overrides: ['global'] },
+    ]);
+    await page.route(/\/api\/v1\/articles\/retry(\?|$)/, (route) =>
+      json(route, 200, { id: 'retry', name: 'Retry budgets', keywords: [], scope: shop, overrides: ['global'], enforced: false, content: 'Retry with jitter.' }),
+    );
+    await page.goto(withProject());
+    await tile(page, 'Articles').click();
+    await expect(page).toHaveURL((u) => u.pathname === '/articles' && u.searchParams.get('project') === shop);
+    await expect(main(page).getByRole('listitem')).toHaveCount(2);
+    await main(page).getByRole('listitem').filter({ hasText: 'Retry budgets' }).getByRole('link', { name: /Retry budgets/ }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/items/article/retry' && u.searchParams.get('project') === shop);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Retry budgets');
+    await expect(main(page)).toContainText('Retry with jitter.');
+  });
+
+  test('the side nav has no Articles entry', async ({ page }) => {
+    await stubLists(page, { skills: 1, agents: 1, loops: 1 });
+    await page.goto('/');
+    await expect(page.getByRole('navigation').getByRole('link', { name: /articles/i })).toHaveCount(0);
   });
 });

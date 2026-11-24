@@ -3,6 +3,7 @@ package examples
 import (
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -131,5 +132,39 @@ func TestExamplesDocumentWhichSetIsBuiltInAndWhichIsGoldiesOwn(t *testing.T) {
 	}
 	if !strings.Contains(read("embed.go"), "examples/demo") {
 		t.Error("the examples/embed.go doc comment does not name examples/demo")
+	}
+}
+
+// #767: examples/demo registers one demo Project, github.com/harbor/checkout,
+// with an article that overrides a global demo article (retries) and an article
+// only the Project has; the README lists the Project.
+const demoProject = "github.com/harbor/checkout"
+
+func TestBuiltInExamplesRegisterADemoProjectWithAnOverrideAndAProjectOnlyArticle(t *testing.T) {
+	fsys := Knowledge()
+	dir := "projects/" + demoProject + "/articles"
+	project := entryNames(t, fsys, dir)
+	global := entryNames(t, fsys, "global/articles")
+	if !slices.Contains(project, "retries.md") {
+		t.Errorf("%s holds %v, want retries.md overriding the global article", dir, project)
+	}
+	only := 0
+	for _, a := range project {
+		if !slices.Contains(global, a) {
+			only++
+		}
+	}
+	if only == 0 {
+		t.Errorf("%s holds %v, want an article the global set does not have", dir, project)
+	}
+}
+
+func TestExamplesDemoReadmeListsTheDemoProject(t *testing.T) {
+	b, err := os.ReadFile("demo/README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), demoProject) {
+		t.Errorf("examples/demo/README.md does not list the demo Project %s", demoProject)
 	}
 }

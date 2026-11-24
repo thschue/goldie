@@ -2,7 +2,7 @@
 // tabs Skills, Agents, Loops and Instructions (#647), the WAI-ARIA tabs pattern,
 // the side nav group, reload, and the `goldie pull --dry-run` header snippet.
 // Per width and theme: the shot, axe, no horizontal scroll, targets of 44 px.
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import { eachViewport, evidence, problems, sideNav, withNav } from './ux';
 
 const tabNames = ['Skills', 'Agents', 'Loops', 'Instructions'] as const;
@@ -301,8 +301,10 @@ test.describe('the header snippet', () => {
     test(`/assets/${slug} shows goldie pull --dry-run with a Copy command button`, async ({ page }) => {
       await page.goto(`/assets/${slug}`);
       const main = page.getByRole('main');
-      await expect(main.getByText('goldie pull --dry-run', { exact: true })).toBeVisible();
-      const copy = main.getByRole('button', { name: 'Copy command', exact: true });
+      const command = main.getByText('goldie pull --dry-run', { exact: true });
+      await expect(command).toBeVisible();
+      // The button beside the header command; the global cards and blocks below carry their own.
+      const copy = command.locator('xpath=following-sibling::button[@aria-label="Copy command"]');
       await expect(copy).toHaveCount(1);
       await expect(copy).toHaveAttribute('aria-label', 'Copy command');
       await expect(copy).toBeVisible();
@@ -331,4 +333,167 @@ test.describe('the header snippet', () => {
     await page.goto('/assets/skills');
     await expect(page.getByRole('main').getByRole('link', { name: /goldie pull/ })).toHaveCount(0);
   });
+});
+
+// A first run (#758, handoff §3.5, §5.2): `server --dev` with no registered Projects and no
+// Project selected. Each tab lists what the API serves globally: its request leaves `project`
+// out (an empty `?project=` answers 400 invalid project), and no tab asks for a Project.
+// These run against the real server, no stubs.
+const pick = /Pick a Project/;
+
+type Call = { query: URLSearchParams; status: number };
+
+// listCalls records the tab's list requests and the status each answered.
+function listCalls(page: Page, noun: string) {
+  const calls: Call[] = [];
+  page.on('response', (res) => {
+    const u = new URL(res.url());
+    if (u.pathname === `/api/v1/${noun}`) calls.push({ query: u.searchParams, status: res.status() });
+  });
+  return calls;
+}
+
+function expectGlobalCalls(calls: Call[]) {
+  expect(calls.length, 'the tab asked the API for its list').toBeGreaterThan(0);
+  for (const c of calls) {
+    expect(c.query.has('project'), 'the list request leaves project out').toBe(false);
+    expect(c.status, 'the global list answers 200').toBe(200);
+  }
+}
+
+eachViewport((width, theme) => {
+  test('the Skills tab on a first run is captured and axe-clean', async ({ page }) => {
+    await page.goto('/assets/skills');
+    await expect(page.getByRole('tabpanel').getByRole('status').filter({ hasText: 'No skills yet.' })).toBeVisible();
+    await evidence(page, width, theme, '-no-project', 'assets-skills');
+  });
+
+  test('the Agents tab on a first run is captured and axe-clean', async ({ page }) => {
+    await page.goto('/assets/agents');
+    await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2, name: 'implementer', exact: true })).toBeVisible();
+    await evidence(page, width, theme, '-no-project', 'assets-agents');
+  });
+
+  test('the Loops tab on a first run is captured and axe-clean', async ({ page }) => {
+    await page.goto('/assets/loops');
+    await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2, name: 'product', exact: true })).toBeVisible();
+    await evidence(page, width, theme, '-no-project', 'assets-loops');
+  });
+
+  test('the Instructions tab on a first run is captured and axe-clean', async ({ page }) => {
+    await page.goto('/assets/instructions');
+    await expect(page.getByRole('tabpanel').getByText('goldie instructions apply --target claude')).toBeVisible();
+    await evidence(page, width, theme, '-no-project', 'assets-instructions');
+  });
+
+  test('the search panel for an empty Kind with no Project is captured and axe-clean', async ({ page }) => {
+    await page.goto('/?q=x&kind=decision');
+    await expect(page.getByRole('main').getByRole('status').filter({ hasText: 'No decisions yet.' })).toHaveCount(1);
+    await evidence(page, width, theme, '-empty-kind-no-project', 'search');
+  });
+});
+
+test.describe('a first run: no Projects registered, none selected', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('the Skills tab loads the global list without project and says "No skills yet."', async ({ page }) => {
+    const calls = listCalls(page, 'skills');
+    await page.goto('/assets/skills');
+    const panel = page.getByRole('tabpanel');
+    const empty = panel.getByRole('status').filter({ hasText: 'No skills yet.' });
+    await expect(empty).toHaveCount(1);
+    await expect(empty).not.toContainText('Project');
+    await expect(page.getByRole('main')).not.toContainText(pick);
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    expectGlobalCalls(calls);
+  });
+
+  test('the Agents tab loads the global list without project and lists the global agents', async ({ page }) => {
+    const calls = listCalls(page, 'agents');
+    await page.goto('/assets/agents');
+    const panel = page.getByRole('tabpanel');
+    await expect(panel.getByRole('heading', { level: 2, name: 'implementer', exact: true })).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2, name: 'reviewer', exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(pick);
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    expectGlobalCalls(calls);
+  });
+
+  test('the Loops tab loads the global list without project and lists the global loops', async ({ page }) => {
+    const calls = listCalls(page, 'loops');
+    await page.goto('/assets/loops');
+    const panel = page.getByRole('tabpanel');
+    await expect(panel.getByRole('heading', { level: 2, name: 'product', exact: true })).toBeVisible();
+    await expect(panel.getByRole('heading', { level: 2, name: 'delivery', exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(pick);
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    expectGlobalCalls(calls);
+  });
+
+  test('the Instructions tab loads the global block without project and shows it', async ({ page }) => {
+    const calls = listCalls(page, 'instructions');
+    await page.goto('/assets/instructions');
+    const panel = page.getByRole('tabpanel');
+    await expect(panel.getByText('goldie instructions apply --target claude')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Copy digest', exact: true })).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(pick);
+    await expect(panel.getByRole('alert')).toHaveCount(0);
+    expectGlobalCalls(calls);
+  });
+});
+
+// With Projects registered and none selected, the tab shows the global list and a note.
+test.describe('Projects registered, none selected', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const json = (route: Route, body: unknown) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  const zero = '0'.repeat(64);
+  const bodies = {
+    skills: { skills: [{ name: 'deploy', scope: 'global', files: [{ path: 'SKILL.md', size: 16 }] }] },
+    agents: { agents: [{ name: 'reviewer', scope: 'global', description: '' }] },
+    loops: {
+      loops: [{ name: 'product', scope: 'global', description: '', stop: '', dynamic: false, digest: zero, closure: { agents: [], skills: [] } }],
+    },
+    instructions: { block: '## Golden paths\n\nGlobal block.', digest: 'a'.repeat(64) },
+  } as const;
+  const shows = {
+    skills: 'deploy',
+    agents: 'reviewer',
+    loops: 'product',
+    instructions: 'goldie instructions apply --target claude',
+  } as const;
+
+  for (const noun of ['skills', 'agents', 'loops', 'instructions'] as const) {
+    test(`the ${noun} tab shows the global list and the note to pick a Project`, async ({ page }) => {
+      await page.route(/\/api\/v1\/projects$/, (route) => json(route, { projects: ['github.com/acme/shop'] }));
+      const seen: URLSearchParams[] = [];
+      await page.route(new RegExp(`/api/v1/${noun}(\\?.*)?$`), (route) => {
+        seen.push(new URL(route.request().url()).searchParams);
+        return json(route, bodies[noun]);
+      });
+      await page.goto(`/assets/${noun}`);
+      const shown = noun === 'instructions' ? page.getByRole('tabpanel').getByText(shows[noun]) : page.getByRole('tabpanel').getByRole('heading', { level: 2, name: shows[noun], exact: true });
+      await expect(shown).toBeVisible();
+      await expect(
+        page.getByRole('main').getByText(`Pick a Project from the selector to see its ${noun}.`, { exact: true }),
+      ).toHaveCount(1);
+      expect(seen.length).toBeGreaterThan(0);
+      for (const q of seen) expect(q.has('project'), 'the list request leaves project out').toBe(false);
+    });
+  }
+});
+
+// The tab stays mounted when only ?project= changes: Back to the unselected view still shows the note.
+test('Back from a selected Project to none shows the note to pick a Project', async ({ page }) => {
+  await page.route(/\/api\/v1\/projects$/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ projects: ['github.com/acme/shop'] }) }),
+  );
+  await page.goto('/assets/skills');
+  await page.getByRole('combobox', { name: /Project/ }).click();
+  await page.getByRole('option', { name: 'github.com/acme/shop' }).click();
+  await expect(page).toHaveURL(/project=/);
+  await expect(page.getByRole('main').getByText(/Pick a Project/)).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole('main').getByText('Pick a Project from the selector to see its skills.', { exact: true })).toHaveCount(1);
 });

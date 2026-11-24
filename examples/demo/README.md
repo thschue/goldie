@@ -10,4 +10,8 @@ goldie's own process, which lives in `examples/knowledge` and is not built in.
 - one agent, `release-reviewer`;
 - one loop, `release-watch`.
 
+`projects/github.com/harbor/checkout/` registers one demo Project, `github.com/harbor/checkout`, with:
+- one article that overrides a global one: `retries`;
+- one article only the Project has: `payment-flow`.
+
 The binary embeds this directory through `examples/embed.go`. Edit it like any content directory.

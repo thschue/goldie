@@ -22,7 +22,8 @@
 #   ./run ui         build the SPA (npm ci --ignore-scripts, npm run build in web/) into internal/ui/dist/app;
 #                    needs Node, not part of check
 #   ./run ux         build, type-check and run the component tests, serve examples/knowledge and run the
-#                    Playwright specs in web/e2e
+#                    Playwright specs in web/e2e; a second server --dev on an empty directory
+#                    serves the demo specs (GOLDIE_UX_DEMO_URL, GOLDIE_UX_DEMO_TOKEN)
 #                    (screenshots, axe) into ux/, the CI artifact for the UX review; the specs sign in
 #                    with a throwaway reader token (GOLDIE_UX_TOKEN); needs Node
 #   ./run regen-check  fail if generated code differs from a fresh generation
@@ -73,7 +74,7 @@ cleanup() {
 		wait "$bg_pid" 2>/dev/null || :
 		bg_pid=
 	fi
-	[ -z "${ux_pid:-}" ] || ux_stop
+	[ -z "${ux_pid:-}${ux_demo_pid:-}" ] || ux_stop
 	if [ -n "$RUN_WT" ]; then
 		git worktree remove --force "$RUN_WT" >/dev/null 2>&1 || :
 		RUN_WT=
@@ -611,6 +612,7 @@ cmd_ux() {
 	(cd web && npx --no playwright install ${CI:+--with-deps} chromium) || die "playwright install failed"
 	ux_tmp=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
 	ux_pid=
+	ux_demo_pid=
 	say "ux: go build"
 	go build -o "$ux_tmp/goldie" ./cmd/goldie || die "go build failed"
 	(umask 077 && od -An -tx1 -N32 /dev/urandom | tr -d ' \n' >"$ux_tmp/token") ||
@@ -633,9 +635,27 @@ cmd_ux() {
 		[ "$i" -lt 30 ] || ux_fail "goldie server not ready after 30 seconds"
 		sleep 1
 	done
-	say "ux: playwright test against http://$app"
+	# The demo specs (web/e2e/demo-project.spec.ts) need the built-in demo: a
+	# second server --dev on an empty directory, which prints its address and
+	# throwaway token as an export line on stdout (kept out of ux/, it holds the token).
+	say "ux: goldie server --dev on an empty directory"
+	mkdir "$ux_tmp/demo" || die "cannot create a temporary directory"
+	(ux_demo "$ux_tmp/demo") >"$ux_tmp/demo.out" 2>"$UX_DIR/demo-server.log" &
+	ux_demo_pid=$!
+	i=0
+	while ! grep -q '^export GOLDIE_ADDR=' "$ux_tmp/demo.out"; do
+		kill -0 "$ux_demo_pid" 2>/dev/null || ux_fail_log demo-server.log "goldie server --dev exited during startup"
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || ux_fail_log demo-server.log "goldie server --dev not ready after 30 seconds"
+		sleep 1
+	done
+	demo_url=$(sed -n 's/^export GOLDIE_ADDR=\([^ ]*\) GOLDIE_TOKEN=.*/\1/p' "$ux_tmp/demo.out" | head -n 1)
+	demo_token=$(sed -n 's/^export GOLDIE_ADDR=[^ ]* GOLDIE_TOKEN=\([0-9a-f]*\)$/\1/p' "$ux_tmp/demo.out" | head -n 1)
+	[ -n "$demo_url" ] && [ -n "$demo_token" ] || ux_fail_log demo-server.log "goldie server --dev printed no address and token"
+	say "ux: playwright test against http://$app and the demo at $demo_url"
 	status=0
 	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" GOLDIE_UX_TOKEN="$(cat "$ux_tmp/token")" \
+		GOLDIE_UX_DEMO_URL="$demo_url" GOLDIE_UX_DEMO_TOKEN="$demo_token" \
 		GOLDIE_UX_STATE="$ux_tmp/state.json" npx --no playwright test) || status=$?
 	[ "$status" = 0 ] || die "ux: the Playwright specs failed; the report is in $UX_DIR/"
 	say "ux: screenshots and report in $UX_DIR/"
@@ -658,6 +678,13 @@ ux_goldie() {
 	exec "$ux_tmp/goldie" "$@"
 }
 
+# ux_demo <dir>: exec goldie server --dev on dir with no GOLDIE_ variable from
+# the caller's environment. Call it in a subshell, like ux_goldie.
+ux_demo() {
+	for v in $(env | sed -n 's/^\(GOLDIE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+	exec "$ux_tmp/goldie" server --dev "$1"
+}
+
 # ux_addr <listener>: the address the server logged for the app or admin listener.
 ux_addr() {
 	grep '"msg":"listening"' "$UX_DIR/server.log" | grep "\"listener\":\"$1\"" |
@@ -665,9 +692,12 @@ ux_addr() {
 }
 
 # ux_fail prints the server log, which stays in ux/ for the artifact, and fails.
-ux_fail() {
-	printf 'run: ux: %s; the server log (%s/server.log):\n' "$1" "$UX_DIR" >&2
-	cat "$UX_DIR/server.log" >&2
+ux_fail() { ux_fail_log server.log "$1"; }
+
+# ux_fail_log <log> <message>: the same for a log in ux/.
+ux_fail_log() {
+	printf 'run: ux: %s; the server log (%s/%s):\n' "$2" "$UX_DIR" "$1" >&2
+	cat "$UX_DIR/$1" >&2
 	exit 1
 }
 
@@ -677,6 +707,11 @@ ux_stop() {
 		wait "$ux_pid" 2>/dev/null || :
 	fi
 	ux_pid=
+	if [ -n "${ux_demo_pid:-}" ]; then
+		kill "$ux_demo_pid" 2>/dev/null || :
+		wait "$ux_demo_pid" 2>/dev/null || :
+	fi
+	ux_demo_pid=
 }
 
 cmd_regen() {

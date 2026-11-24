@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { useLoad } from '../api/useLoad';
+import { useAssetLoad } from './useAssetLoad';
 import ScopeBadge from '../components/ScopeBadge.vue';
 import { projectOf } from '../projects/api';
 import { listLoops, plain } from './api';
@@ -12,7 +12,7 @@ import CommandSnippet from './CommandSnippet.vue';
 // name. Everything from a Source (description, stop, chip names) is untrusted and renders as text.
 const route = useRoute();
 const project = computed(() => projectOf(route.query));
-const { state, data, failure, wait, skeleton, limited, retry } = useLoad(project, listLoops);
+const { state, data, failure, wait, skeleton, limited, retry } = useAssetLoad(project, listLoops);
 const loops = computed(() => data.value?.loops ?? []);
 const chips = (l: (typeof loops.value)[number]) => [
   ...l.closure.agents.map((a) => ({ key: `agent:${a.name}`, kind: 'agent', name: a.name })),
