@@ -38,6 +38,9 @@ Each step runs only after the steps before it are done.
    - **Value check:** is the user, security or maintenance benefit worth a stream (about 30 min of
      agents and a review)? If not, close it `wontfix`: "overengineered: <why>" (the architect's view
      for a refactor). Tier 1 for issues the loops filed, tier 2 for the maintainer's.
+   - **`harness:` issues** get the strictest check: close one that excuses skipped work, adds a
+     rule where one can go, or lacks evidence (tier 1). One that removes real, repeated cost goes
+     into the current milestone with a priority level; when unsure, it is a `question`.
    - Fold each follow-up into the open issue that touches the same code or first makes it matter
      (any area), else bundle by area. Then one verdict, plus a priority level with `ready-for-agent`:
 
@@ -52,9 +55,10 @@ Each step runs only after the steps before it are done.
 
 3. **Refine the current milestone** ([order of work](./README.md#order-of-work)): its open
    issues become claimable steps, the started epic first, then the next epic by the order of work.
-   Never create demand: a follow-up, sweep candidate or idea is filed without a milestone and
-   listed in the inbox. An issue enters the milestone only as a `bug` in behaviour already shipped
-     (tier 1); the maintainer pulls in the rest. The milestone's text is a goal for humans.
+   Never create demand: a follow-up, sweep candidate or idea is filed without a milestone. An issue
+   enters the milestone only as a `bug` in behaviour already shipped or an accepted `harness:`
+   issue (tier 1); the maintainer pulls
+   in the rest from the tracker. The milestone's text is a goal for humans.
    - **Slice** epics and large issues into sub-issues chained by `blocked_by`, so the first slice
      needs nothing open. An issue labelled `ready-for-agent` that fails the size check is sliced in
      this tick.
@@ -88,7 +92,7 @@ Each step runs only after the steps before it are done.
    - a red workflow on `main`.
 
    Release `in-progress` claims older than 24 h that have no PR, and remove an assignee left on an
-   open issue without `in-progress` and without an open PR.
+   open issue without `in-progress` and without an open PR..
 5. **Audit.** Each day, sample about 1 in 5 merged PRs that no gate held, the highest `ratio`
    lines (`./run size`, in the PR body) first, with the `reviewer` in audit mode on the merged diff.
    File each finding as a follow-up without a milestone; a bug in shipped behaviour becomes a
@@ -128,19 +132,16 @@ sections, in order:
 3. **Decide:** tier-3 questions and PRs labelled `question` for the maintainer, `grilling-needed`,
    maintainer-owned `needs-info`, "RC for <milestone>".
 4. **Windows closing:** tier-2 decisions, with their UTC deadline.
-5. **Outside the milestone:** `<milestone>`: open n, claimable n, outside n. The outside issues
-   that are claimable but for the milestone, each with one line: pull in or close.
-6. **Harness feedback:** the top 5 open items from the pinned `Harness feedback` issue, ranked by
-   occurrences and time lost, for the weekly batch. Close items unconfirmed for 3 weeks.
-7. **Merged on judgement:** PRs merged in the last 24 h whose marker judged a `review:` reason not
+5. **Merged on judgement:** PRs merged in the last 24 h whose marker judged a `review:` reason not
    significant. The maintainer vetoes by commenting.
-8. **Advisories:** ids only.
+6. **Advisories:** ids only.
 
 When a new entry appears in sections 1 to 3, send a push notification when the session can.
 
 ## Metrics
 
 Each tick, append a ledger line. Outcomes come first, in the inbox header every day:
+- `<milestone>`: open n, claimable n;
 - `./run ux` green on `main`, and days since the last release;
 - net hand-written lines merged this week and the week's median test:code ratio (the `net` and
   `ratio` lines of `./run size` in each PR body); the top 3 ratios are audited first.

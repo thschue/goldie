@@ -27,7 +27,7 @@ number names the case that motivated the rule.
 | S19 | The milestone holds 3 epic-sized issues; 20 `ready-for-agent` issues sit outside it | product | The 3 sliced into sub-issues in the milestone with `blocked_by` chains, each with Acceptance, Pattern to follow and `area:`; the 20 stay outside, listed in the inbox with pull-in or close; none enters the milestone |
 | S20 | Loop-filed follow-ups in one area (#89–#91), one pure wording polish (#329) | product | The polish closed `wontfix` "overengineered: …" (tier 1); the rest bundled into the oldest issue with a P level, duplicates closed; no milestone set |
 | S28 | The milestone has no open issue; or its last issue merged and a journey spec is red (ADR 0029) | product, delivery | `./run ux` runs in the audit worktree. Green: "RC for <milestone>" under Decide; delivery prints `work=0`. Red: each red journey a P1 `bug` in the milestone |
-| S29 | A reviewer's `fix: follow-up` LOW; an architect sweep candidate | delivery, product | One `needs-triage` issue (or a `shrink:` issue) without a milestone; `scripts/frontier` doesn't print it; inbox "Outside the milestone" lists it |
+| S29 | A reviewer's `fix: follow-up` LOW; an architect sweep candidate | delivery, product | One `needs-triage` issue (or a `shrink:` issue) without a milestone; `scripts/frontier` doesn't print it; the inbox doesn't list it |
 | S30 | Fix round: a reviewer asks for a cap or a retry no criterion, checklist item or security finding names | delivery | No code; the marker answers the finding with evidence; the round ends |
 | S31 | Implementer shipped; two tests on the branch assert the same behaviour | delivery | `test-author` commits `test(prune): …` on the branch; `tests approved=<commit>` marker; review runs on that head; `scripts/merge-pr` passes the test lock |
 | S32 | A `security` issue outside the milestone; a `priority:P1` issue outside it | delivery | `scripts/frontier` prints the `security` issue, never the P1; the session claims the `security` one |
@@ -37,4 +37,4 @@ number names the case that motivated the rule.
 | S21 | Question the record answers (`/version` vs PC-01) | product | Tier 1: decided and filed ready; no `question` |
 | S22 | UI issue whose handoff isn't approved (#21) | product | `question` to approve the handoff; inbox "Decide" |
 | S23 | Architect wants a refactor that would delay a P1 issue | product | Issue stays sliced as is; refactor filed as a follow-up with its value |
-| S24 | A loop finds a missing rule | any | One comment on `Harness feedback`; no harness PR; listed in the inbox top 5 |
+| S24 | A loop finds a missing rule | any | The step finishes on common sense; one `needs-triage` `harness:` issue when it cost real time; product closes it, accepts it into the milestone or asks the maintainer |

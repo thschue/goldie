@@ -69,12 +69,24 @@ func goldieClient(values []string) (string, bool) {
 	return strings.CutPrefix(values[0], contract.ClientHeaderPrefix)
 }
 
-// Client kinds, the via attribute of goldie.skill.gets.
+// Client kinds: the via attribute of goldie.skill.gets and Event.Via. viaUI is
+// an event's only (a metric has no such series).
 const (
 	viaCLI   = "cli"
 	viaMCP   = "mcp"
+	viaUI    = "ui"
 	viaOther = "other"
 )
+
+// knownVia is v when it is one of the documented surfaces, else viaOther. A
+// peer's value is untrusted text and must not reach a client as sent.
+func knownVia(v string) string {
+	switch v {
+	case viaCLI, viaMCP, viaUI:
+		return v
+	}
+	return viaOther
+}
 
 // clientVia is the surface a request came through: viaMCP when it carries
 // exactly one X-Goldie-Via of mcp, else viaCLI when it names a goldie client

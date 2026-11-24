@@ -142,16 +142,19 @@ Reproduce it on `origin/main` first; a bug only claimed in text that doesn't rep
 ## Humans decide
 
 The maintainer decides only: product direction beyond the record, and **the milestones** (goal and
-which issues are in); security posture, secrets and credentials; **the harness** (this
+which issues are in); security posture, secrets and credentials; merging **harness** changes (this
 directory, `.claude/`, `scripts/`, CI); releases; licensing, cost and external commitments;
 deleting user data or a feature; closing an external contributor's PR.
 
 Everything else, the loops decide and record. A question goes to the maintainer as one concrete
 either/or with a recommendation, through the product session's `Maintainer inbox`.
 
-**Harness feedback.** When a rule is missing, wrong or slows the flow, append one comment to the
-pinned `Harness feedback` issue: what happened, its cost in time, the evidence, and the rule to
-remove or the script to simplify (a rule to add only when nothing can go). Never open a harness PR; the maintainer ships a batch weekly. The host is fixed: on low disk,
+**Harness issues.** A missing or wrong rule is no reason to stop work: do what the record and
+common sense say, and finish the step. When a rule cost real time, file one `needs-triage` issue
+titled `harness: <what>`: what happened, the evidence, and the rule to remove or the script to
+simplify (a rule to add only when nothing can go). The product session triages it like any other
+issue and asks the maintainer only when it is unsure. An accepted harness issue is built like any
+other; `scripts/agent-gate` holds its PR for the maintainer. The host is fixed: on low disk,
 remove finished worktrees and their `node_modules` and run `go clean -testcache`, unreported. A
 host problem that still blocks work goes to the user once in the session report, never in an issue.
 
@@ -162,7 +165,7 @@ host problem that still blocks work goes to the user once in the session report,
   writes, statuses, settings, labels, milestones, secrets, containers and cloud CLIs. Cases are in
   `testdata/loop-guard/cases.tsv`. It matches command text, so post every comment and PR body
   with `--body-file`, and never `go clean -cache` (the cache is shared between sessions).
-- With the allowlist in `.claude/settings.json`, a permission prompt in a loop is harness feedback.
+- With the allowlist in `.claude/settings.json`, a permission prompt in a loop is a harness issue.
 - Agent definitions pin model and tools; they are copies of `examples/knowledge/global/agents/`
   (`./run sync-agents`).
 

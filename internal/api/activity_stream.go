@@ -174,8 +174,12 @@ func (st *activityStream) appendEvent(b []byte, e Event) []byte {
 
 // activityEventData is e as the spec's ActivityEvent.
 func activityEventData(e Event) contract.ActivityEvent {
+	var via *string
+	if e.Via != "" {
+		via = &e.Via
+	}
 	data := contract.ActivityEvent{
-		Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
+		Via: via, Id: int64(e.ID), Time: e.Time, Kind: contract.ActivityEventKind(e.Kind), //nolint:gosec // ids stay far below 2^63
 		Query: e.Query, Project: e.Project, Token: e.Token,
 		ClientVersion: e.ClientVersion, TraceId: e.TraceID, Miss: e.Miss,
 		Replica: e.Replica, Late: e.Late, LatencyUs: &e.LatencyUS,

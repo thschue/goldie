@@ -406,6 +406,9 @@ func peerEvent(e contract.ActivityEvent) Event {
 		Query: e.Query, Token: e.Token, ClientVersion: e.ClientVersion, Project: e.Project,
 		TraceID: e.TraceId, Miss: e.Miss, Served: deref(e.Served), LatencyUS: deref(e.LatencyUs),
 	})
+	if e.Via != nil && *e.Via != "" { // absent or empty stays ""; any other value is checked
+		b.Via = knownVia(*e.Via)
+	}
 	b.Replica = strings.Clone(truncateQuery(b.Replica))
 	b.Kind = EventKind(strings.Clone(string(b.Kind)))
 	b.Query, b.Token, b.ClientVersion = strings.Clone(b.Query), strings.Clone(b.Token), strings.Clone(b.ClientVersion)

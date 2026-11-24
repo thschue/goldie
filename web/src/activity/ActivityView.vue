@@ -152,7 +152,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           Live · merged from all replicas ({{ replicas.filter((r) => r.up).length }} of {{ replicas.length }} answering)
         </template>
         <template v-else>
-          Live · replica<template v-if="replica"> <strong>{{ replica }}</strong></template>
+          Live · replica<template v-if="replica">{{ ' ' }}<strong>{{ replica }}</strong></template>
         </template>
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>

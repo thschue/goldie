@@ -41,7 +41,7 @@ Humans are asked only about product direction, security, the harness itself and 
 - **Every bug is fixed now, never filed.** Vulnerabilities at MEDIUM or worse go to a private
   advisory fork.
 - **Stop the line:** a red `main` comes before new work.
-- **The harness changes in weekly batches by the maintainer.** The loops record friction instead of
-  rewriting their own rules.
+- **The maintainer merges every harness change.** The loops file friction as issues, the product
+  session triages them strictly, and an accepted fix is built like any other.
 
 The repository's loop rules are authoritative. In goldie, they are in `docs/agents/`.

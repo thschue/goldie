@@ -203,7 +203,7 @@ type ActivityDropped struct {
 }
 
 // ActivityEvent One search, lookup or get on the activity stream, the `data` of an SSE
-// event without a type. Every field is always sent, except `served` and
+// event without a type. Every field is always sent but `via`, `served` and
 // `latency_us`, which are optional; text fields are `""` when empty.
 // Clients ignore fields they do not know.
 type ActivityEvent struct {
@@ -288,6 +288,15 @@ type ActivityEvent struct {
 	//
 	// Examples: 4bf92f3577b34da6a3ce929d0e0e4736
 	TraceId string `json:"trace_id"`
+
+	// Via The surface that asked: `mcp`, `cli`, `ui` (the web UI, a session
+	// cookie) or `other`. Omitted when unknown, as from a replica older
+	// than this field. A string, not an enum: a later surface adds a value.
+	// A federated stream shows a peer's value outside this set as `other`.
+	//
+	//
+	// Examples: cli
+	Via *string `json:"via,omitempty"`
 }
 
 // ActivityEventKind A search, an article lookup, or a get of a skill or an agent.

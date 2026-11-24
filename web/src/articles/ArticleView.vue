@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { carried } from '../projects/api';
 import { getArticle, type Article, ArticleError } from './api';
 import MarkdownBody from './MarkdownBody.vue';
+import CommandSnippet from '../assets/CommandSnippet.vue';
 import { errorSentence } from '../api/errorSentence';
 
 // The article view (#498, handoff §3.4, §5.2, §8): `/items/article/:name`, the
@@ -58,25 +59,62 @@ onMounted(async () => {
     </template>
   </div>
 
-  <p v-if="!article && !error" role="status" class="loading">Loading the article…</p>
-  <h1>{{ article ? article.name : error ? 'Article not available' : 'Loading…' }}</h1>
+  <!-- Two columns (handoff §3.4): the article, and an aside below it under 1024 px. While the
+       article loads the same layout shows as a skeleton, with no h1 (never "Loading…"). -->
+  <div v-if="!error" class="detail">
+    <div class="article">
+      <p v-if="!article" role="status" class="sr-only">Loading the article…</p>
+      <div v-if="article" class="head">
+        <h1>{{ article.name }}</h1>
+        <span class="kind">Article</span>
+      </div>
+      <div v-else class="bar title" aria-hidden="true"></div>
 
-  <template v-if="article">
-    <div class="meta">
-      <code class="id">{{ article.id }}</code>
-      <span v-if="article.scope" class="chip">{{ article.scope }}</span>
-      <span v-if="article.enforced === true" class="chip enforced">Enforced</span>
+      <template v-if="article">
+        <div class="meta">
+          <code class="id">{{ article.id }}</code>
+          <span v-if="article.enforced === true" class="chip enforced">Enforced</span>
+        </div>
+        <MarkdownBody :source="article.content" />
+      </template>
+      <template v-else>
+        <div class="bar" aria-hidden="true"></div>
+        <div class="bar" aria-hidden="true"></div>
+        <div class="bar short" aria-hidden="true"></div>
+      </template>
     </div>
-    <p v-if="overrides.length" class="overrides">
-      Overrides article:{{ article.name }} from {{ overrides.join(', ') }}
-    </p>
-    <p v-if="article.keywords.length" class="keywords">
-      <span v-for="k in article.keywords" :key="k" class="chip">{{ k }}</span>
-    </p>
-    <MarkdownBody :source="article.content" />
-  </template>
 
-  <template v-else-if="error">
+    <aside class="aside" aria-label="About this article">
+      <template v-if="article">
+        <section class="card">
+          <h2>Use it</h2>
+          <CommandSnippet :command="`goldie lookup ${article.id}`" />
+          <p class="tool">MCP tool <code>get_article</code></p>
+        </section>
+        <section class="card">
+          <h2>Details</h2>
+          <dl>
+            <dt>Scope</dt>
+            <dd>{{ article.scope || '—' }}</dd>
+            <template v-if="article.keywords.length">
+              <dt>Keywords</dt>
+              <dd class="keywords">
+                <span v-for="k in article.keywords" :key="k" class="chip">{{ k }}</span>
+              </dd>
+            </template>
+          </dl>
+          <p v-if="overrides.length" class="overrides">Overrides article:{{ article.name }} from {{ overrides.join(', ') }}</p>
+        </section>
+      </template>
+      <template v-else>
+        <section class="card" aria-hidden="true"><div class="bar short"></div><div class="bar"></div></section>
+        <section class="card" aria-hidden="true"><div class="bar short"></div><div class="bar"></div></section>
+      </template>
+    </aside>
+  </div>
+
+  <template v-else>
+    <h1>Article not available</h1>
     <div role="alert" class="alert">
       {{ errorText }} <span v-if="error.hint">{{ error.hint }}</span>
     </div>
@@ -109,6 +147,74 @@ onMounted(async () => {
   color: inherit;
   font-weight: 600;
 }
+.detail {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) minmax(0, 360px);
+  gap: var(--space-6);
+  align-items: start;
+}
+@media (max-width: 1023px) {
+  .detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.kind {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--brand-tint);
+  color: var(--brand-tint-ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.card {
+  padding: var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.card h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+}
+.tool {
+  margin: var(--space-3) 0 0;
+  color: var(--fg-secondary);
+}
+dl {
+  margin: 0;
+}
+dt {
+  color: var(--fg-secondary);
+  font-size: var(--text-sm);
+}
+dd {
+  margin: 0 0 var(--space-3);
+}
+.bar {
+  height: 1rem;
+  margin-bottom: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+.bar.title {
+  width: 60%;
+  height: 2rem;
+}
+.bar.short {
+  width: 40%;
+}
 .meta,
 .keywords {
   display: flex;
@@ -138,13 +244,9 @@ onMounted(async () => {
   font-weight: 600;
 }
 .overrides {
-  margin: 0 0 var(--space-4);
+  margin: 0;
   color: var(--fg-secondary);
   font-size: var(--text-md);
-}
-.loading {
-  margin: 0 0 var(--space-4);
-  color: var(--fg-secondary);
 }
 .alert {
   max-width: 760px;
