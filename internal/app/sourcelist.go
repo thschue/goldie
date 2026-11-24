@@ -114,7 +114,7 @@ func (l *sourceList) addChecks(reg *platform.Registry) {
 // wg, until ctx ends.
 func (l *sourceList) run(ctx context.Context, wg *sync.WaitGroup, fallback time.Duration) {
 	for _, m := range l.members {
-		onPoll := pollHook(ctx, m.pollLog, m.polls)
+		onPoll := pollHook(ctx, m.pollLog, m.polls, "", nil)
 		interval := max(cmp.Or(m.interval, fallback), minPollInterval)
 		wg.Go(func() { l.set.Run(ctx, m.name, interval, onPoll) })
 	}

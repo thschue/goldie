@@ -432,7 +432,7 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 	case p.list != nil:
 		p.list.run(ctx, &p.loops, p.poll)
 	default:
-		onPoll := pollHook(ctx, p.pollLog, p.polls)
+		onPoll := pollHook(ctx, p.pollLog, p.polls, p.firstLoadHint, p.syncer.Current)
 		p.sync.run(ctx, onPoll)
 		p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	}
@@ -447,10 +447,19 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 // times it in goldie.sync.duration. A poll that ends with ctx, the server
 // stopping, is no result and is not counted. It is nil when there is nothing
 // to do.
-func pollHook(ctx context.Context, log *slog.Logger, polls *platform.PollCounter) func(engine.SyncStatus) {
+func pollHook(ctx context.Context, log *slog.Logger, polls *platform.PollCounter, hint string, current func() *engine.Snapshot) func(engine.SyncStatus) {
 	var logged func(engine.SyncStatus)
 	if log != nil {
 		logged = logPolls(ctx, log)
+		if hint != "" {
+			polls, once := logged, sync.Once{}
+			logged = func(st engine.SyncStatus) {
+				polls(st)
+				if st.LastError != "" && current() == nil && ctx.Err() == nil {
+					once.Do(func() { log.Warn("the first load failed: " + st.LastError + ": " + hint) })
+				}
+			}
+		}
 	}
 	if logged == nil && polls == nil {
 		return nil

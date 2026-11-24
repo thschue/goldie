@@ -190,32 +190,41 @@ func helpCmd(root *cobra.Command) *cobra.Command {
 }
 
 func serverCmd(out io.Writer) *cobra.Command {
-	var dev bool
+	var dev, git bool
 	cmd := &cobra.Command{
-		Use:     "server [--dev [dir]]",
+		Use:     "server [--dev [--git | dir]]",
 		Short:   "Serve the API, UI and MCP over HTTP",
 		GroupID: groupRun,
 		Long: "Run the goldie server, configured by GOLDIE_* variables (docs/reference/configuration.md).\n" +
 			"With --dev it serves dir (else " + platform.EnvContentDir + ", else the working directory)\n" +
 			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
-			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.",
+			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.\n" +
+			"With --dev --git it serves a git Source instead: " + platform.EnvGitURL + " (with " + platform.EnvGitRef + " and " + platform.EnvGitPath + "),\n" +
+			"else the demo content of the goldie repository at the release tag of this binary.",
 		Example: "  goldie server\n" +
 			"  # Prints an export line; run that line in another terminal.\n" +
-			"  goldie server --dev ./content",
+			"  goldie server --dev ./content\n" +
+			"  goldie server --dev --git",
 		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) > 1 || (len(args) == 1 && !dev) {
+			switch {
+			case git && !dev:
+				return newUsageErr(cmd.CommandPath(), "--git needs --dev")
+			case git && len(args) > 0:
+				return newUsageErr(cmd.CommandPath(), "--git serves a repository: it takes no directory")
+			case len(args) > 1 || (len(args) == 1 && !dev):
 				return newUsageErr(cmd.CommandPath(), "server takes a directory only with --dev")
 			}
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dev {
-				return runDev(args, out)
+				return misuse(runDev(args, out, git))
 			}
 			return runServer(out)
 		},
 	}
 	cmd.Flags().BoolVar(&dev, "dev", false, "serve a directory on loopback with a random token")
+	cmd.Flags().BoolVar(&git, "git", false, "with --dev, serve a git Source (GOLDIE_GIT_URL, else the goldie demo content)")
 	return cmd
 }
 

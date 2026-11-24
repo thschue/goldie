@@ -32,6 +32,9 @@ type source struct {
 	// list, when not nil, is the list of GOLDIE_SOURCES: syncer is nil, and
 	// every member has its own poll loop and readiness check (sourcelist.go).
 	list *sourceList
+	// firstLoadHint, when set, is logged once, after the reason, when the
+	// Source's first load fails.
+	firstLoadHint string
 }
 
 // current is the Snapshot the server serves, nil before the first load.

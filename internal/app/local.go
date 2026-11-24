@@ -85,6 +85,13 @@ type Local struct {
 	// top (upstream.go). Start does not need it reachable: until its first good
 	// load /readyz fails source:upstream and the API answers 503 not_ready.
 	Upstream Upstream
+	// Git, when true, serves the git Source Config's GitURL, GitRef and GitPath
+	// describe, in place of the content directory and the examples: what
+	// goldie server --dev --git runs. It is not loaded at start; until its
+	// first good poll /readyz fails source:git and the API answers 503
+	// not_ready, as for goldie server. The first failed load says why, once,
+	// with the hint to run --dev without --git.
+	Git bool
 	// OnListen, when not nil, is called once for each listener, "app" and
 	// "admin", with the address it bound, before Start returns.
 	OnListen func(listener, addr string)
@@ -96,6 +103,23 @@ func (l Local) logger() *slog.Logger {
 		return discardLogger
 	}
 	return l.Logger
+}
+
+// devGitHint follows the reason the first load of the --git Source failed.
+const devGitHint = "run goldie server --dev without --git to try the built-in examples offline"
+
+// gitNotice is the line that says, once, which repository and path
+// goldie server --dev --git serves. The URL is redacted.
+func gitNotice(cfg platform.Config) string {
+	path := cfg.GitPath
+	if path == "" {
+		path = "the repository root"
+	}
+	msg := "serving " + path + " of " + cfg.RedactedGitURL()
+	if cfg.GitRef != "" {
+		msg += " at " + cfg.GitRef
+	}
+	return msg
 }
 
 // examplesNotice returns the callback that says, once, that the built-in
@@ -126,11 +150,24 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, err
 	}
 	cfg := LocalConfig(l.Config, l.Config.ContentDir) // loopback whatever the caller passed
+	if l.Git {
+		var err error
+		if cfg, err = withDevGit(cfg); err != nil {
+			return "", "", nil, err
+		}
+	}
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		return "", "", nil, err
 	}
 	var src engine.Source = engine.EmptySource{}
-	if l.Upstream.Addr != "" {
+	var syncer *engine.Syncer
+	if l.Git {
+		syncer, err = gitSource(cfg)
+		if err != nil {
+			return "", "", nil, err
+		}
+		l.logger().Info(gitNotice(cfg))
+	} else if l.Upstream.Addr != "" {
 		base, err := upstreamBase(l.Upstream, l.GoldieDir)
 		if err != nil {
 			return "", "", nil, err
@@ -149,15 +186,17 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	if l.GoldieDir != "" {
 		src = engine.NewLocalSource(src, l.GoldieDir)
 	}
-	syncer, err := loadSource(ctx, src)
-	var upstreamErr *upstreamError
-	if err != nil && !errors.As(err, &upstreamErr) {
-		return "", "", nil, contentLoadError(err)
-	}
-	// An upstream that cannot be loaded does not stop the server: it is not
-	// ready until a poll succeeds.
 	if syncer == nil {
-		syncer = engine.NewSyncer(src)
+		syncer, err = loadSource(ctx, src)
+		var upstreamErr *upstreamError
+		if err != nil && !errors.As(err, &upstreamErr) {
+			return "", "", nil, contentLoadError(err)
+		}
+		// An upstream that cannot be loaded does not stop the server: it is not
+		// ready until a poll succeeds.
+		if syncer == nil {
+			syncer = engine.NewSyncer(src)
+		}
 	}
 	token, err = newLocalToken()
 	if err != nil {
@@ -169,7 +208,10 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 	}
 	logger := l.logger()
 	served := source{syncer: syncer, check: sourceDirCheck}
-	if l.Upstream.Addr != "" {
+	switch {
+	case l.Git:
+		served = source{syncer: syncer, check: sourceGitCheck, name: "git", logAttrs: []any{"source", "git", "url", cfg.RedactedGitURL()}, firstLoadHint: devGitHint}
+	case l.Upstream.Addr != "":
 		served = source{syncer: syncer, check: sourceUpstreamCheck, logAttrs: []any{"source", "upstream"}}
 	}
 	opt, calls := resultCounters(l.Telemetry)
