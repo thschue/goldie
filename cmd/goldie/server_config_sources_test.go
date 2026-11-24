@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -424,5 +426,112 @@ func TestConfigurationDocsDescribeTheThreeWaysAndThePrecedence(t *testing.T) {
 	}
 	if strings.Contains(pc04, "Environment-only") || !strings.Contains(pc04, "config file") || !strings.Contains(pc04, "flag") {
 		t.Errorf("PC-04 is not amended for flags and a config file: %s", pc04)
+	}
+}
+
+// #858 acceptance 1: with admin_addr set only in the file given by --config,
+// goldie health probes that address, not the default one.
+func TestHealthProbesTheAdminAddrFromTheConfigFile(t *testing.T) {
+	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/livez" {
+			http.NotFound(w, r)
+		}
+	}))
+	defer admin.Close()
+	file := configFile(t, "admin_addr: "+strings.TrimPrefix(admin.URL, "http://")+"\n")
+	cmd := exec.Command(goldieBinary(t), "health", "--config", file)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("health --config did not reach the admin address in the file: %v\n%s", err, out)
+	}
+}
+
+// #858 acceptance 2: --dev reads no config file, so --config with it stops
+// the server with an error that says so.
+func TestServerDevRejectsAConfigFile(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, goldieBinary(t), "server", "--dev", "--config", configFile(t, "poll_interval: 45s\n"), contentDir(t))
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("--dev --config kept running instead of stopping:\n%s", out)
+	}
+	if err == nil {
+		t.Fatalf("--dev --config exited zero:\n%s", out)
+	}
+	msg := strings.ToLower(string(out))
+	if !strings.Contains(msg, "--dev") || !strings.Contains(msg, "config file") {
+		t.Errorf("the error does not say --dev does not read a config file:\n%s", out)
+	}
+}
+
+// #858 acceptance 3: a malformed config file fails naming the file and how it
+// was given.
+func TestServerMalformedConfigFileNamesTheFileAndHowItWasGiven(t *testing.T) {
+	file := configFile(t, "poll_interval: [unclosed\n")
+	for _, tc := range []struct {
+		name string
+		args []string
+		env  []string
+		want string
+	}{
+		{"flag", []string{"--config", file}, nil, "--config"},
+		{"variable", nil, []string{"GOLDIE_CONFIG=" + file}, "GOLDIE_CONFIG"},
+	} {
+		run := runServerConfig(t, tc.args, tc.env...)
+		if !run.failed {
+			t.Errorf("%s: the server started on a malformed file", tc.name)
+			continue
+		}
+		f := failure(run.out)
+		if !strings.Contains(f, file) {
+			t.Errorf("%s: the failure does not name the file %s: %s", tc.name, file, run.out)
+		}
+		if !strings.Contains(f, tc.want) {
+			t.Errorf("%s: the failure does not say it was given as %s: %s", tc.name, tc.want, run.out)
+		}
+	}
+}
+
+// #858 acceptance 4: --help describes each flag in flag terms, naming no other
+// setting by its variable, and names the flag's own variable as the
+// alternative.
+func TestServerHelpDescribesFlagsInFlagTermsAndNamesTheVariable(t *testing.T) {
+	out, err := exec.Command(goldieBinary(t), "server", "--help").CombinedOutput()
+	if err != nil {
+		t.Fatalf("server --help: %v\n%s", err, out)
+	}
+	_, flags, _ := strings.Cut(string(out), "\nFlags:\n")
+	entry := regexp.MustCompile(`^\s+(?:-\w, )?--([a-z0-9-]+)`)
+	variable := regexp.MustCompile(`GOLDIE_[A-Z0-9_]+`)
+	descriptions := map[string]string{}
+	var current string
+	for _, line := range strings.Split(flags, "\n") {
+		if m := entry.FindStringSubmatch(line); m != nil {
+			current = m[1]
+		}
+		if current != "" {
+			descriptions[current] += line + "\n"
+		}
+	}
+	checked := 0
+	for name, text := range descriptions {
+		if name == "dev" || name == "git" || name == "help" {
+			continue
+		}
+		checked++
+		own := "GOLDIE_" + strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+		if !strings.Contains(text, own) {
+			t.Errorf("--%s does not name its variable %s:\n%s", name, own, text)
+		}
+		for _, v := range variable.FindAllString(text, -1) {
+			if v != own && v+"_FILE" != own {
+				t.Errorf("--%s names %s, a setting, by its variable and not by its flag:\n%s", name, v, text)
+			}
+		}
+	}
+	if checked < 20 {
+		t.Fatalf("parsed only %d setting flags from --help:\n%s", checked, out)
 	}
 }
