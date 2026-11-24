@@ -1271,6 +1271,16 @@ export interface components {
              * @example true
              */
             swagger_ui: boolean;
+            /**
+             * @description The Grafana dashboard of the activity view (GOLDIE_GRAFANA_URL, an http or https URL). Sent to the operator role only, and omitted when unset.
+             * @example https://grafana.example.com/d/goldie
+             */
+            grafana_url?: string;
+            /**
+             * @description The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset.
+             * @example https://tempo.example.com/trace/{trace_id}
+             */
+            trace_url_template?: string;
         };
         /** @description How the last content load went, for operators. */
         SyncStatus: {

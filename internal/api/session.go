@@ -248,6 +248,23 @@ func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.toke
 // serves Swagger UI, so the web UI links to it only when it is there.
 func WithSwaggerUI(on bool) ServerOption { return func(s *Server) { s.swaggerUI = on } }
 
+// WithObservabilityLinks sets the grafana_url and trace_url_template of the
+// session (#807): the links of the activity view. Only an operator's session
+// carries them, and an empty one is omitted. The configuration has validated
+// both.
+func WithObservabilityLinks(grafanaURL, traceURLTemplate string) ServerOption {
+	return func(s *Server) { s.grafana, s.traceTmpl = grafanaURL, traceURLTemplate }
+}
+
+// link is v as the optional string of a session of role, nil when the role is
+// not the operator's or v is unset.
+func link(role Role, v string) *string {
+	if role != RoleOperator || v == "" {
+		return nil
+	}
+	return &v
+}
+
 // Sign-in and sign-out take no token, so neither reaches the per-token rate
 // limiter or the version gate (ADR 0027); failed sign-ins are capped per
 // remote address by SignInLimiter.
@@ -269,7 +286,8 @@ func (s *Server) PostSession(ctx context.Context, req contract.PostSessionReques
 		return contract.PostSession401JSONResponse(unauthorizedSignIn), nil
 	}
 	e := s.tokens.entries[match]
-	return contract.PostSession200JSONResponse{Name: e.name, Role: contract.SessionRole(e.role.String()), SwaggerUi: s.swaggerUI}, nil
+	return contract.PostSession200JSONResponse{Name: e.name, Role: contract.SessionRole(e.role.String()), SwaggerUi: s.swaggerUI,
+		GrafanaUrl: link(e.role, s.grafana), TraceUrlTemplate: link(e.role, s.traceTmpl)}, nil
 }
 
 func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObject) (contract.GetSessionResponseObject, error) {
@@ -281,7 +299,8 @@ func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObj
 	if !ok || !ok2 {
 		return contract.GetSession401JSONResponse(unauthorizedSession), nil
 	}
-	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String()), SwaggerUi: s.swaggerUI}, nil
+	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String()), SwaggerUi: s.swaggerUI,
+		GrafanaUrl: link(role, s.grafana), TraceUrlTemplate: link(role, s.traceTmpl)}, nil
 }
 
 func (s *Server) DeleteSession(context.Context, contract.DeleteSessionRequestObject) (contract.DeleteSessionResponseObject, error) {

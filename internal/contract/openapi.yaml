@@ -2432,6 +2432,16 @@ components:
           description: True when the server serves Swagger UI at /swagger-ui, so a client may link to it.
           examples:
             - true
+        grafana_url:
+          type: string
+          description: The Grafana dashboard of the activity view (GOLDIE_GRAFANA_URL, an http or https URL). Sent to the operator role only, and omitted when unset.
+          examples:
+            - https://grafana.example.com/d/goldie
+        trace_url_template:
+          type: string
+          description: The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset.
+          examples:
+            - https://tempo.example.com/trace/{trace_id}
     SyncStatus:
       type: object
       description: How the last content load went, for operators.

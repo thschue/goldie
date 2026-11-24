@@ -141,6 +141,8 @@ type Server struct {
 	sync      SyncControl               // see WithSync, nil lists no Source
 	tokens    *Tokens                   // see WithSessions, nil: no sign-in
 	swaggerUI bool                      // see WithSwaggerUI
+	grafana   string                    // see WithObservabilityLinks
+	traceTmpl string
 
 	instructionVars engine.InstructionVars // see WithInstructionVars
 

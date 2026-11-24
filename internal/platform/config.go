@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // FirstRunHint is the next step for someone who ran a goldie command with
@@ -42,6 +43,10 @@ const (
 	// Federated activity (ADR 0022).
 	EnvActivityPeers         = "GOLDIE_ACTIVITY_PEERS"
 	EnvActivityReorderWindow = "GOLDIE_ACTIVITY_REORDER_WINDOW"
+
+	// The links the activity view opens, sent to operator sessions (#807).
+	EnvGrafanaURL       = "GOLDIE_GRAFANA_URL"
+	EnvTraceURLTemplate = "GOLDIE_TRACE_URL_TEMPLATE"
 
 	// The git Source (#96). Its URL is operator-trusted (ADR-0023).
 	EnvGitURL           = "GOLDIE_GIT_URL" // logged with userinfo, query and fragment redacted
@@ -155,6 +160,9 @@ type Config struct {
 	ActivityReorderWindow     time.Duration // the merged activity stream's reorder window, default applied
 	activityReorderWindowText string        // ActivityReorderWindow as written, for the startup report
 
+	GrafanaURL       string // the Grafana link of the activity view; "" for none, validated by checkLinkURL
+	TraceURLTemplate string // the trace link of the activity view, holding {trace_id}; "" for none
+
 	// SetupTelemetry owns GOLDIE_TELEMETRY_CLIENT_INFO and fails startup on a
 	// bad value; this copy is only for the startup report.
 	telemetryClientInfo bool
@@ -264,6 +272,16 @@ func LoadConfig(lookup Lookup) (Config, error) {
 	} else {
 		cfg.ActivityReorderWindow = d
 	}
+	cfg.GrafanaURL = str(EnvGrafanaURL, def(EnvGrafanaURL))
+	if err := checkLinkURL(EnvGrafanaURL, cfg.GrafanaURL, ""); err != nil {
+		errs = append(errs, err)
+		cfg.GrafanaURL = ""
+	}
+	cfg.TraceURLTemplate = str(EnvTraceURLTemplate, def(EnvTraceURLTemplate))
+	if err := checkLinkURL(EnvTraceURLTemplate, cfg.TraceURLTemplate, TraceIDPlaceholder); err != nil {
+		errs = append(errs, err)
+		cfg.TraceURLTemplate = ""
+	}
 	cfg.MCPName = str(EnvMCPName, def(EnvMCPName))
 	if !validMCPName(cfg.MCPName) {
 		// The value is never echoed: it ends up in text agents read.
@@ -367,6 +385,37 @@ func checkModeSettings(cfg *Config, str func(name, def string) string, lookup Lo
 		}
 	}
 	return errs
+}
+
+// TraceIDPlaceholder is what GOLDIE_TRACE_URL_TEMPLATE must contain: the UI
+// replaces it with the trace's ID.
+const TraceIDPlaceholder = "{trace_id}"
+
+// checkLinkURL refuses an observability link (#807) that is not an http or
+// https URL with a host, that holds userinfo, a backslash, whitespace, a
+// control or a format (bidi) character, or that lacks the placeholder when one
+// is required. The browser opens it, so a lax value would be a script or
+// phishing link. Empty is fine: the link is optional. Errors name env and
+// never the value.
+func checkLinkURL(env, raw, placeholder string) error {
+	if raw == "" {
+		return nil
+	}
+	for _, r := range raw {
+		if r == '\\' || unicode.IsSpace(r) || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return fmt.Errorf("%s: must not contain backslashes, whitespace or control characters", env)
+		}
+	}
+	u, err := url.Parse(raw)
+	switch {
+	case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
+		return fmt.Errorf("%s: must be an http or https URL with a host", env)
+	case u.User != nil:
+		return fmt.Errorf("%s must not hold credentials", env)
+	case placeholder != "" && !strings.Contains(raw, placeholder):
+		return fmt.Errorf("%s: must contain the placeholder %s", env, placeholder)
+	}
+	return nil
 }
 
 // CheckServerURL is the one rule for the address of another goldie server (the

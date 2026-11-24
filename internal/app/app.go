@@ -621,7 +621,7 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 // instruction variables from the configuration, the activity federation, then
 // the caller's.
 func serverOptions(cfg platform.Config, logger *slog.Logger, opts []api.ServerOption) []api.ServerOption {
-	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"}), api.WithSwaggerUI(cfg.SwaggerUIEnabled)}
+	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"}), api.WithSwaggerUI(cfg.SwaggerUIEnabled), api.WithObservabilityLinks(cfg.GrafanaURL, cfg.TraceURLTemplate)}
 	out = append(out, activityFederation(cfg, logger)...)
 	return append(out, opts...)
 }
