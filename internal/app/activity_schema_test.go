@@ -41,8 +41,9 @@ var (
 	activityEventFields   = []string{"client_version", "id", "kind", "late", "miss", "project", "query", "replica", "time", "token", "trace_id", "via"}
 	activityDroppedFields = []string{"dropped"}
 	// optionalFields are declared by a component but not required: #806's
-	// served and latency_us on an event, absent when there is nothing to say.
-	optionalFields = map[string][]string{"ActivityEvent": {"latency_us", "served"}}
+	// served and latency_us on an event, and #813's nearest, absent when there
+	// is nothing to say.
+	optionalFields = map[string][]string{"ActivityEvent": {"latency_us", "nearest", "served"}}
 )
 
 // componentSchema compiles components/schemas/<name> of the spec and checks
