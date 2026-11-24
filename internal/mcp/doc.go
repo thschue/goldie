@@ -1,12 +1,16 @@
 // Package mcp is the MCP component. It reaches the API only through the
 // contract client, never through the engine or api packages.
 //
-// New returns a server with four tools: search_knowledge and get_article,
-// which take an optional project (an ASCII ProjectId, lower-cased and checked
-// before any request), list_projects, and current_context, which reports the
+// New returns a server with ten tools. Each takes an optional project (an
+// ASCII ProjectId, lower-cased and checked before any request) except
+// list_projects and current_context, which take nothing. search_knowledge
+// takes a query and get_article a name. find_skills takes a query, get_skill a
+// name and an optional file of the bundle, and list_skills and list_agents
+// only the project. list_loops takes only the project and get_loop a loop
+// name. list_projects lists the Projects, and current_context reports the
 // default Project set with WithProject, the problem set with
-// WithProjectProblem, or that there is none. An omitted or empty project
-// takes the default, or fails with the problem before any request. The
+// WithProjectProblem, or that there is none. An omitted or empty project takes
+// the default, or fails with the problem before any request. The
 // contract client it is given carries the caller's credential (the static API
 // token today) and sends it on every call. API errors become tool errors with
 // the envelope's message and hint, and a rate-limited call says how many
