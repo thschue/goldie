@@ -222,7 +222,7 @@ func TestACSRFTokenIsBoundToItsOwnSession(t *testing.T) {
 	assertStatus(t, "token with a cleared cookie", resp, body, http.StatusUnauthorized)
 
 	// A token from the same sign-in cannot be used with a forged cookie.
-	forged := &http.Cookie{Name: opCookie.Name, Value: opCookie.Value[:len(opCookie.Value)-2] + "xx"}
+	forged := forgedCookie(opCookie)
 	resp, body = postTrigger(t, h, withCookie(forged), withCSRF(opTok))
 	assertStatus(t, "token with a forged cookie", resp, body, http.StatusUnauthorized)
 }
