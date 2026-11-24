@@ -78,12 +78,7 @@ describe('AppShell', () => {
     expect(nav).not.toContain('/ops/');
   });
 
-  // #812: Articles sits between Home and Decisions, and carries the Project like every entry.
-  it('has an Articles entry between Home and Decisions that links to /articles', async () => {
-    const { links } = await render({});
-    expect(links.slice(0, 3)).toEqual(['Home /', 'Articles /articles', 'Decisions /decisions']);
-  });
-
+  // #812: Articles sits between Home and Decisions (readerLinks above), and carries the Project like every entry.
   it('keeps the selected Project on the Articles entry', async () => {
     const shop = 'github.com/acme/shop';
     const { links } = await render({}, `/?project=${encodeURIComponent(shop)}`);
