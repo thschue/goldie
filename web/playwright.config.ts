@@ -17,6 +17,10 @@ if (!state) {
   throw new Error('GOLDIE_UX_STATE is not set: run the specs with ./run ux, which keeps the session state in its own temporary directory');
 }
 export const statePath = state;
+// The operator's session, saved by the same setup project for the `operator` state.
+export const operatorStatePath = `${state}.operator`;
+// The spec that runs once per auth state (#750), in the projects of that name.
+const byState = /journeys\/by-state\.spec\.ts/;
 
 export default defineConfig({
   testDir: './e2e',
@@ -33,6 +37,10 @@ export default defineConfig({
   },
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
-    { name: 'chromium', testIgnore: /auth\.setup\.ts/, dependencies: ['setup'], use: { storageState: statePath } },
+    { name: 'chromium', testIgnore: [/auth\.setup\.ts/, byState], dependencies: ['setup'], use: { storageState: statePath } },
+    // The journey steps once per auth state, on the one shared server.
+    { name: 'anonymous', testMatch: byState, use: { storageState: { cookies: [], origins: [] } } },
+    { name: 'reader', testMatch: byState, dependencies: ['setup'], use: { storageState: statePath } },
+    { name: 'operator', testMatch: byState, dependencies: ['setup'], use: { storageState: operatorStatePath } },
   ],
 });

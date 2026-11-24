@@ -595,7 +595,8 @@ cmd_ui() {
 # ux: the screenshot and axe evidence for the UX review (handoff §7, §12). It
 # builds the UI and the binary, serves examples/knowledge on loopback with a
 # throwaway token and free ports, and runs the Playwright specs in web/e2e
-# against it. Everything lands in ux/ (screenshots, report, server log), which
+# against it. Everything lands in ux/ (screenshots, ux/<state>/ per auth state
+# with ux/index.md, report, server log), which
 # the CI job uploads as the ux artifact. A reviewer tool like red-check, not
 # part of check: it needs Node and a browser. The exit trap (cleanup) always stops the server.
 UX_DIR=ux
@@ -660,8 +661,41 @@ cmd_ux() {
 	(cd web && GOLDIE_UX_URL="http://$app" UX_DIR="$ROOT/$UX_DIR" GOLDIE_UX_TOKEN="$(cat "$ux_tmp/token")" \
 		GOLDIE_UX_OPERATOR_TOKEN="$(cat "$ux_tmp/operator-token")" GOLDIE_UX_DEMO_URL="$demo_url" GOLDIE_UX_DEMO_TOKEN="$demo_token" \
 		GOLDIE_UX_STATE="$ux_tmp/state.json" npx --no playwright test) || status=$?
+	ux_index
 	[ "$status" = 0 ] || die "ux: the Playwright specs failed; the report is in $UX_DIR/"
 	say "ux: screenshots and report in $UX_DIR/"
+}
+
+# ux_index: writes ux/index.md, a table of every shot of the per-auth-state
+# journey steps (#750) from the files in ux/<state>/, named
+# <journey>-<step>-<width>-<theme>.png, so a reviewer can tick "evidence per
+# auth state" from the artifact alone. A state with no shots gets no rows.
+ux_index() {
+	{
+		printf '# UX evidence per auth state\n\n'
+		printf 'Shots of the journey steps as an anonymous visitor, a reader and an operator.\n'
+		printf 'A step a state cannot reach shows what it gets instead: the sign-in page for an\n'
+		printf 'anonymous visitor on a protected page, "This page is for operators." for a reader.\n\n'
+		printf '| State | Journey | Step | Width (px) | Theme | File |\n|---|---|---|---|---|---|\n'
+		for state in anonymous reader operator; do
+			[ -d "$UX_DIR/$state" ] || continue
+			# One group per journey step, its shots by width then theme.
+			for f in "$UX_DIR/$state"/*-375-light.png; do
+				[ -e "$f" ] || continue
+				name=$(basename "$f" -375-light.png)
+				journey=${name%%-*}
+				step=${name#*-}
+				for width in 375 768 1280; do
+					for theme in light dark; do
+						file=$name-$width-$theme
+						[ -e "$UX_DIR/$state/$file.png" ] || continue
+						printf '| %s | %s | %s | %s | %s | [%s/%s.png](%s/%s.png) |\n' \
+							"$state" "$journey" "$step" "$width" "$theme" "$state" "$file" "$state" "$file"
+					done
+				done
+			done
+		done
+	} >"$UX_DIR/index.md"
 }
 
 # ux_goldie <admin-addr> <args>: exec the built binary with only the
