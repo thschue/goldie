@@ -150,6 +150,12 @@ func (l Local) Start(ctx context.Context) (addr, token string, wait func() error
 		return "", "", nil, err
 	}
 	cfg := LocalConfig(l.Config, l.Config.ContentDir) // loopback whatever the caller passed
+	if l.Git {
+		var err error
+		if cfg, err = withDevGit(cfg); err != nil {
+			return "", "", nil, err
+		}
+	}
 	if err := checkRateLimit(cfg.RateLimit); err != nil {
 		return "", "", nil, err
 	}

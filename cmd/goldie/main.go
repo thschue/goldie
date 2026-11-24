@@ -152,9 +152,6 @@ func runDev(args []string, out io.Writer, git bool) error {
 	}
 	if git {
 		dir = ""
-		if cfg.GitURL == "" {
-			cfg.GitURL, cfg.GitRef, cfg.GitPath = cli.DevGit()
-		}
 	}
 	cfg = app.LocalConfig(cfg, dir)
 	if !isSet(lookup, platform.EnvDrainSeconds) {

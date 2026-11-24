@@ -28,7 +28,7 @@ tells its agents to ask goldie first. The vocabulary is in [CONTEXT.md](CONTEXT.
 
 ## Try it in 5 minutes
 
-You need Go and, for the web UI, Node. Goldie ships with example content, so no Source is needed.
+You need Go and, for the web UI, Node. Goldie ships with example content, so no Source is needed to run it; step 2 clones the demo content from GitHub and needs network access (`goldie server --dev` alone works offline).
 
 **1. Build it.** From a clone of this repository:
 
@@ -42,8 +42,9 @@ github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH for good
 UI: `/` then shows a "goldie (UI not built)" placeholder. The CLI and MCP work either way.
 
 **2. Start a server** from an empty directory. This serves the demo content of this repository from
-git, at the release tag of your `goldie`, and says which repository and path it serves. It runs in a
-subshell, so you stay in the clone:
+git, at the release tag of your `goldie` (`main` for a build from a clone, which has no release), and
+says which repository and path it serves. The first clone takes a second or two, and a search gets a
+503 until it is ready. It runs in a subshell, so you stay in the clone:
 
 ```sh
 mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev --git)
