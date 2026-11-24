@@ -708,3 +708,114 @@ func swaggerUIOf(t *testing.T, body []byte) bool {
 	}
 	return v
 }
+
+// The session carries the Grafana and trace links of the activity view (#807)
+// for the operator role only: both PostSession and GetSession fill
+// grafana_url and trace_url_template from GOLDIE_GRAFANA_URL and
+// GOLDIE_TRACE_URL_TEMPLATE, omit them for a reader, and omit each that is
+// unset.
+const (
+	linksGrafana = "https://grafana.example.com/d/goldie?orgId=1"
+	linksTrace   = "https://tempo.example.com/trace/{trace_id}"
+)
+
+// sessionKeys is the decoded body of a session response.
+func sessionKeys(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("body is not JSON: %v: %s", err, body)
+	}
+	return raw
+}
+
+func TestSessionCarriesObservabilityLinksForTheOperatorOnly(t *testing.T) {
+	h, err := PublicHandler(sessionConfig(t, namedTokenLines(), map[string]string{
+		"GOLDIE_SESSION_KEY":        sessionKey,
+		"GOLDIE_GRAFANA_URL":        linksGrafana,
+		"GOLDIE_TRACE_URL_TEMPLATE": linksTrace,
+	}), nil)
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	for _, c := range []struct {
+		who, token string
+		want       bool
+	}{{"operator", operatorToken, true}, {"reader", readerToken, false}} {
+		resp, post := signIn(t, h, secureBase, c.token)
+		assertStatus(t, c.who+": sign-in", resp, post, http.StatusOK)
+		resp, get := send(t, h, http.MethodGet, secureBase+sessionPath, withCookie(theCookie(t, resp)))
+		assertStatus(t, c.who+": GET session", resp, get, http.StatusOK)
+		for op, body := range map[string][]byte{"POST": post, "GET": get} {
+			raw := sessionKeys(t, body)
+			g, hasG := raw["grafana_url"]
+			tr, hasT := raw["trace_url_template"]
+			if c.want {
+				if g != linksGrafana || tr != linksTrace {
+					t.Errorf("%s %s session: grafana_url=%v trace_url_template=%v, want both as configured: %s", c.who, op, g, tr, body)
+				}
+			} else if hasG || hasT {
+				t.Errorf("%s %s session carries a link (grafana_url %v, trace_url_template %v), want neither: %s", c.who, op, hasG, hasT, body)
+			}
+		}
+	}
+}
+
+// Each link is omitted, not empty, when its setting is unset; the other is
+// still sent. With neither set the body is the three-key session.
+func TestSessionOmitsAnUnsetObservabilityLink(t *testing.T) {
+	for name, c := range map[string]struct {
+		extra        map[string]string
+		wantG, wantT string
+	}{
+		"neither":      {nil, "", ""},
+		"grafana only": {map[string]string{"GOLDIE_GRAFANA_URL": linksGrafana}, linksGrafana, ""},
+		"trace only":   {map[string]string{"GOLDIE_TRACE_URL_TEMPLATE": linksTrace}, "", linksTrace},
+	} {
+		extra := map[string]string{"GOLDIE_SESSION_KEY": sessionKey}
+		for k, v := range c.extra {
+			extra[k] = v
+		}
+		h, err := PublicHandler(sessionConfig(t, namedTokenLines(), extra), nil)
+		if err != nil {
+			t.Fatalf("PublicHandler: %v", err)
+		}
+		resp, post := signIn(t, h, secureBase, operatorToken)
+		assertStatus(t, name+": sign-in", resp, post, http.StatusOK)
+		resp, get := send(t, h, http.MethodGet, secureBase+sessionPath, withCookie(theCookie(t, resp)))
+		assertStatus(t, name+": GET session", resp, get, http.StatusOK)
+		for op, body := range map[string][]byte{"POST": post, "GET": get} {
+			raw := sessionKeys(t, body)
+			for key, want := range map[string]string{"grafana_url": c.wantG, "trace_url_template": c.wantT} {
+				got, has := raw[key]
+				switch {
+				case want == "" && has:
+					t.Errorf("%s %s: %s = %v, want it omitted: %s", name, op, key, got, body)
+				case want != "" && got != want:
+					t.Errorf("%s %s: %s = %v, want %q: %s", name, op, key, got, want, body)
+				}
+			}
+		}
+	}
+}
+
+// The contract change is additive: both properties are in the Session schema
+// of the reference as optional strings, and name, role and swagger_ui stay
+// required.
+func TestSessionLinksAreOptionalStringsInTheAPIReference(t *testing.T) {
+	b, err := os.ReadFile("../../docs/reference/api.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := string(b)
+	for _, row := range []string{"| `grafana_url` | `string` | no | ", "| `trace_url_template` | `string` | no | "} {
+		if !strings.Contains(ref, row) {
+			t.Errorf("docs/reference/api.md Session has no row %q (run: ./run regen)", row)
+		}
+	}
+	for _, row := range []string{"| `name` | `string` | yes | ", "| `role` | `string` | yes | ", "| `swagger_ui` | `boolean` | yes | "} {
+		if !strings.Contains(ref, row) {
+			t.Errorf("docs/reference/api.md Session lost the required row %q", row)
+		}
+	}
+}
