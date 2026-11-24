@@ -9,6 +9,7 @@ import { installAuthGuard } from './auth/guard';
 import SignInView from './auth/SignInView.vue';
 import ProjectHome from './projects/ProjectHome.vue';
 import { projectOf } from './projects/api';
+import { queryOf } from './search/api';
 import HomeView from './search/HomeView.vue';
 import SourcesView from './sources/SourcesView.vue';
 import EmptyView from './views/EmptyView.vue';
@@ -22,11 +23,11 @@ const pages: [path: string, title: string][] = [
   ['/items/:kind/:name', 'Item'],
 ];
 
-// Home is one address: with a Project (`/?project=`) it lists that Project's Items,
-// otherwise it is the search (`/`, `/?q=`).
+// Home is one address: with a Project and no query (`/?project=`) it lists that Project's Items
+// under the search field, otherwise it is the search (`/`, `/?q=`, `/?q=&project=`).
 const Home = defineComponent(() => {
   const route = useRoute();
-  return () => h(projectOf(route.query) ? ProjectHome : HomeView);
+  return () => h(projectOf(route.query) && !queryOf(route.query) ? ProjectHome : HomeView);
 });
 
 export const routes: RouteRecordRaw[] = [
