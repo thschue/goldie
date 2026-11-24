@@ -17,7 +17,7 @@ const router = useRouter();
 const project = computed(() => projectOf(route.query));
 const target = computed(() => targetOf(route.query.target));
 // One key per (target, Project): a change aborts the older load, so a stale answer never lands.
-const key = computed(() => (project.value ? `${target.value}|${project.value}` : ''));
+const key = computed(() => `${target.value}|${project.value}`);
 const { state, data, failure, wait, skeleton, limited, retry } = useLoad(key, (k, signal) => {
   const i = k.indexOf('|');
   return getInstructions(targetOf(k.slice(0, i)), k.slice(i + 1), signal);

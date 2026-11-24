@@ -20,7 +20,10 @@ export type InstructionTarget = (typeof instructionTargets)[number]['target'];
 export const targetOf = (v: unknown): InstructionTarget => (v === 'agents' ? 'agents' : 'claude');
 
 export const getInstructions = (target: InstructionTarget, project: string, signal?: AbortSignal) =>
-  get<InstructionBlock>(`/api/v1/instructions?target=${target}&project=${encodeURIComponent(project)}`, signal);
+  get<InstructionBlock>(
+    `/api/v1/instructions?target=${target}${project ? `&project=${encodeURIComponent(project)}` : ''}`,
+    signal,
+  );
 
 // Sorted by name, ascending, whatever order the API answers in. Code-point order, as the server sorts.
 const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
