@@ -1,3 +1,5 @@
+// #733: each Source is a card with its name, order, origin, copyable revision, shadowed Items count
+// and its own Resync (POST /api/v1/sync?source=<name>), in both themes.
 // The Sources page /ops/sources (#633, handoff §3, §5.3): a row per Source
 // from GET /api/v1/sync, failing ones first, and the nav count of failing
 // Sources. Read-only. The API is stubbed per test (page.route) so every state
@@ -9,7 +11,16 @@ import { eachViewport, evidence, expectFocusRing, sideNav, withNav } from './ux'
 
 const apiSync = /\/api\/v1\/sync$/;
 
-type Source = { revision?: string; last_poll?: string; last_success?: string; last_error?: string };
+type Shadowed = { kind: string; id: string; scope: string; shadowed_by: { source: string; scope: string } };
+type Source = {
+  name?: string;
+  preference?: number;
+  shadowed?: Shadowed[];
+  revision?: string;
+  last_poll?: string;
+  last_success?: string;
+  last_error?: string;
+};
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -78,6 +89,20 @@ const failing: Source = {
 };
 const unpolled: Source = { revision: '3333333333333333333333333333333333333333' };
 
+const shadow = (id: string, by: string): Shadowed => ({
+  kind: 'article',
+  id,
+  scope: 'global',
+  shadowed_by: { source: by, scope: 'global' },
+});
+const cards: Source[] = [
+  { ...healthy, name: 'platform', preference: 1, shadowed: [] },
+  { ...failing, name: 'team', preference: 2, shadowed: [shadow('style', 'platform'), shadow('deploy', 'platform')] },
+  { ...unpolled, name: 'secret:ops/extra-docs', preference: 3, shadowed: [] },
+];
+const card = (page: Page, name: string) => rows(page).filter({ hasText: name });
+const anySync = /\/api\/v1\/sync(\?.*)?$/;
+
 eachViewport((width, theme) => {
   test('the Sources page with a healthy, a failing and an unpolled Source is captured and axe-clean', async ({
     page,
@@ -87,6 +112,14 @@ eachViewport((width, theme) => {
     await page.goto('/ops/sources');
     await expect(rows(page)).toHaveCount(3);
     await evidence(page, width, theme, '', 'sources');
+  });
+
+  test('the Sources page with one card per named Source is captured and axe-clean', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    await evidence(page, width, theme, '-cards', 'sources');
   });
 
   test('the Sources page empty state is captured and axe-clean', async ({ page }) => {
@@ -407,5 +440,135 @@ test.describe('the Resync error: message then hint (#783)', () => {
     const alert = await refuse(page, 'A sync is already running', '');
     await expect(alert).toBeVisible();
     expect(norm(await alert.innerText())).toBe('A sync is already running');
+  });
+});
+
+// #733: a card per Source. The names, orders and statuses come from GET /api/v1/sync (#449).
+test.describe('the Sources page: one card per Source (#733)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('each card has the Source name as its title, its order, last poll, last success and last error', async ({
+    page,
+  }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    const team = card(page, 'team');
+    await expect(team.getByRole('heading', { name: 'team', exact: true })).toBeVisible();
+    await expect(team).toContainText(/\b2\b/);
+    await expect(team).toContainText(/last poll/i);
+    await expect(team).toContainText(/last success/i);
+    await expect(team).toContainText(failing.last_error!);
+    await expect(card(page, 'platform')).toContainText(/\b1\b/);
+  });
+
+  test('a Source without a revision is titled by its name, not "no revision"', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, [{ name: 'docs', preference: 1, shadowed: [], last_poll: healthy.last_poll }]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rows(page).first().getByRole('heading', { name: 'docs', exact: true })).toBeVisible();
+    await expect(rows(page).first()).not.toContainText(/no revision/i);
+  });
+
+  test('puts failing cards first, whatever order the API answers in', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, [cards[0], cards[2], cards[1]]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(rows(page).first().getByRole('heading', { name: 'team', exact: true })).toBeVisible();
+    await expect(rows(page).first()).toContainText(/failing|failed/i);
+  });
+
+  test('a configured Source shows the env origin, a Secret Source its namespace and name', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(card(page, 'platform')).toContainText('env GOLDIE_SOURCES');
+    await expect(card(page, 'extra-docs')).toContainText('Secret ops/extra-docs');
+    await expect(card(page, 'extra-docs')).not.toContainText('env GOLDIE_SOURCES');
+  });
+
+  test('the revision is shown shortened and its copy button puts the full revision on the clipboard', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await asRole(page, 'operator');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    const team = card(page, 'team');
+    await expect(team).toContainText('2222222');
+    await expect(team).not.toContainText(failing.revision!);
+    await team.getByRole('button', { name: /copy revision/i }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(failing.revision);
+  });
+
+  test('each card shows how many Items it has that an earlier Source hides', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    await expect(card(page, 'team')).toContainText(/\b2 shadowed Items\b/i);
+    await expect(card(page, 'platform')).toContainText(/\b0 shadowed Items\b/i);
+  });
+
+  test('a card Resync triggers that Source only, with the CSRF token, and refreshes the cards', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const posts: Request[] = [];
+    let done = false;
+    await page.route(anySync, (route) => {
+      if (route.request().method() === 'POST') {
+        posts.push(route.request());
+        done = true;
+        return json(route, 202, { hint: 'Read the outcome from GET /api/v1/sync.' });
+      }
+      return json(route, 200, {
+        sources: done
+          ? [cards[0], { ...cards[1], revision: '5555555555555555555555555555555555555555', last_poll: '2026-11-23T11:00:00Z', last_error: undefined }, cards[2]]
+          : cards,
+        warnings: [],
+      });
+    });
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    await card(page, 'team').getByRole('button', { name: /^resync/i }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    const url = new URL(posts[0].url());
+    expect(url.pathname).toBe('/api/v1/sync');
+    expect(url.searchParams.getAll('source')).toEqual(['team']);
+    expect(await posts[0].headerValue('x-goldie-csrf')).toBe(csrf);
+    await expect(card(page, 'team')).toContainText('5555555');
+    await expect(card(page, 'team')).not.toContainText(failing.last_error!);
+    expect(posts, 'only that Source was triggered').toHaveLength(1);
+  });
+
+  test('a Source name is sent as one encoded query value, never as extra parameters', async ({ page }) => {
+    await asOperatorWithCsrf(page);
+    const posts: Request[] = [];
+    await page.route(anySync, (route) => {
+      if (route.request().method() === 'POST') {
+        posts.push(route.request());
+        return json(route, 404, envelope('not_found', 'No such Source.', 'Read the names from the sync status.'));
+      }
+      return json(route, 200, { sources: [{ ...healthy, name: 'a&source=b#c', preference: 1, shadowed: [] }], warnings: [] });
+    });
+    await page.goto('/ops/sources');
+    await rows(page).first().getByRole('button', { name: /^resync/i }).click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(new URL(posts[0].url()).searchParams.getAll('source')).toEqual(['a&source=b#c']);
+    await expect(main(page).getByRole('alert')).toContainText('Read the names from the sync status.');
+  });
+
+  test('a reader sees no card and no Resync even when the API would answer', async ({ page }) => {
+    await asRole(page, 'reader');
+    await stubSync(page, cards);
+    await page.goto('/ops/sources');
+    await expect(main(page)).toContainText('This page is for operators.');
+    await expect(rows(page)).toHaveCount(0);
+    await expect(main(page)).not.toContainText('team');
+    await expect(page.getByRole('button', { name: /resync|syncing|copy revision/i })).toHaveCount(0);
   });
 });
