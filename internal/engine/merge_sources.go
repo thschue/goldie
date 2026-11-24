@@ -160,15 +160,6 @@ func (s *SourceSet) Trigger(ctx context.Context, name string, onPoll func(SyncSt
 	return true, true
 }
 
-// Names lists the Sources in preference order.
-func (s *SourceSet) Names() []string {
-	names := make([]string, len(s.entries))
-	for i, e := range s.entries {
-		names[i] = e.name
-	}
-	return names
-}
-
 // Run polls the named Source once at once, then on every tick of interval,
 // and returns when ctx ends, as Syncer.Run does. onPoll, when not nil, gets
 // the Source's status after each poll. A name that is no Source returns at
