@@ -30,7 +30,10 @@ and dark (`shell-<width>-<theme>[-drawer].png`), axe with zero violations, no ho
 targets of at least 44 px. The target check exempts only controls that are not rendered or are visually
 hidden (1 px or less, such as a skip link until it is focused) and `display: inline` links inside a
 paragraph (`<p>`), the inline exception of WCAG 2.5.5; every other control must measure 44 px both
-ways. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
+ways. The journey steps (`web/e2e/journeys/by-state.spec.ts`) are shot once per auth state on the
+same server, as `ux/<state>/<journey>-<step>-<width>-<theme>.png` for `anonymous`, `reader` and
+`operator`; a step a state can't reach asserts what it gets (the sign-in redirect, or "This page is for
+operators.") and `ux/index.md` lists every state, journey, step and file. The output lands in `ux/`. CI runs the same in the `ux` job and uploads
 `ux/` as the `ux` artifact. The screenshots stay artifacts: never commit them to
 `docs/design/screenshots/`, which holds the design references.
 
