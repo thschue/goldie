@@ -45,7 +45,9 @@ Every loop comment ends with exactly one marker, as its final line. A marker cou
 Triage labels are in [triage-labels.md](./triage-labels.md). Flow labels:
 - `in-progress` + assignee: display only. `scripts/claim` sets both; delivery removes both when the
   PR merges or closes. The frontier skips any assigned issue, so a leftover assignee hides it.
-- `needs-maintainer` on a PR: the gate holds it; the maintainer approves by merging.
+- `needs-maintainer` on a PR: the gate holds it; the maintainer approves by merging. The PR is
+  **ready for review, never a draft**: a draft means its stream is still working. `scripts/merge-pr`
+  marks it ready once the review is clean and the test lock passes, before the gate decides.
 - `needs-info` with a `reason=`:
   - `spec`, `product`, `decision`: owned by the product session;
   - `round-cap`, `security`, `human-check`, `credential`: owned by the maintainer.
@@ -55,6 +57,14 @@ Triage labels are in [triage-labels.md](./triage-labels.md). Flow labels:
 A loop never adds a label it doesn't own here. Re-read labels right before every write.
 
 ## Order of work
+
+**The milestone is the only input** ([ADR 0029](../adr/0029-milestone-subtraction-and-growth.md)).
+An issue is claimable only when it is in the **current milestone**, the open one with the lowest
+number, or labelled `security`. Without a milestone it is inert whatever its labels: a follow-up
+the loops file waits for the maintainer to pull it in. Only the maintainer creates, edits or closes
+a milestone (`scripts/loop-guard`); the product session adds an issue to the current one only as a
+`bug` in behaviour already shipped. With no open
+milestone, the loops idle.
 
 **Finish before starting:** resumed streams before new claims, and the started epic before a new
 one. `scripts/frontier` ranks the claimable issues (never re-rank them) by priority level first
@@ -101,7 +111,8 @@ The reviewer verifies each claim.
 
 Tests are the spec. An implementer may add test files and lines, and change its own lines, but may
 not modify, move or delete a test-file line (`*_test.go`, `testdata/**`, `*.test.ts`, `*.spec.ts`,
-`web/e2e/**`) from `main` or the `test-author`, in any commit, merges included.
+`web/e2e/**`) from `main` or the `test-author`, in any commit, merges included. Only the
+`test-author` deletes a test line, in its prune pass before review (an approved commit).
 
 To change one, it files a `test_change_request` (file, reason, proposed diff). The `test-author`
 approves (making the change itself) or rejects. When the criterion itself is in doubt, the request
@@ -130,16 +141,17 @@ Reproduce it on `origin/main` first; a bug only claimed in text that doesn't rep
 
 ## Humans decide
 
-The maintainer decides only: product direction beyond the record; security posture, secrets and
-credentials; **the harness** (this directory, `.claude/`, `scripts/`, CI); releases; licensing, cost
-and external commitments; deleting user data or a feature; closing an external contributor's PR.
+The maintainer decides only: product direction beyond the record, and **the milestones** (goal and
+which issues are in); security posture, secrets and credentials; **the harness** (this
+directory, `.claude/`, `scripts/`, CI); releases; licensing, cost and external commitments;
+deleting user data or a feature; closing an external contributor's PR.
 
 Everything else, the loops decide and record. A question goes to the maintainer as one concrete
 either/or with a recommendation, through the product session's `Maintainer inbox`.
 
 **Harness feedback.** When a rule is missing, wrong or slows the flow, append one comment to the
-pinned `Harness feedback` issue: what happened, its cost in time, the evidence, and a proposed rule.
-Never open a harness PR; the maintainer ships a batch weekly. The host is fixed: on low disk,
+pinned `Harness feedback` issue: what happened, its cost in time, the evidence, and the rule to
+remove or the script to simplify (a rule to add only when nothing can go). Never open a harness PR; the maintainer ships a batch weekly. The host is fixed: on low disk,
 remove finished worktrees and their `node_modules` and run `go clean -testcache`, unreported. A
 host problem that still blocks work goes to the user once in the session report, never in an issue.
 
@@ -147,7 +159,7 @@ host problem that still blocks work goes to the user once in the session report,
 
 - `scripts/loop-guard` (`PreToolUse` hook) blocks pushes to `main`, force-pushes without a lease,
   remote branch deletion, any merge other than `scripts/merge-pr` (and `--admin`), API merges, ref
-  writes, statuses, settings, labels, secrets, containers and cloud CLIs. Cases are in
+  writes, statuses, settings, labels, milestones, secrets, containers and cloud CLIs. Cases are in
   `testdata/loop-guard/cases.tsv`. It matches command text, so post every comment and PR body
   with `--body-file`, and never `go clean -cache` (the cache is shared between sessions).
 - With the allowlist in `.claude/settings.json`, a permission prompt in a loop is harness feedback.

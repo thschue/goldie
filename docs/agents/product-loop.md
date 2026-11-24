@@ -1,6 +1,6 @@
 # Product loop
 
-The product session keeps the delivery sessions fed with small, clear, valuable issues, makes the
+The product session turns the current milestone into small, clear, valuable issues, makes the
 product calls the record allows, audits what merged, and keeps the **Maintainer inbox**, the one
 place the maintainer reads. **It writes no code, pushes nothing and merges nothing.** Shared rules
 are in the [README](./README.md).
@@ -21,9 +21,9 @@ are in the [README](./README.md).
   it to a freshly fetched `origin/main`. It is read-only.
 - **Ledger:** `product-ledger.md` in the session scratchpad, append-only, read first. If it's lost,
   re-audit once.
-- `scripts/loop-poll product` prints `triage=`, `decisions=`, `buffer=`, `wip=` and `fingerprint=`.
-  If the fingerprint equals the last ledger entry, and the buffer is at target, report "no change"
-  and stop.
+- `scripts/loop-poll product` prints `triage=`, `decisions=`, `buffer=` (claimable, in the
+  milestone), `outside=` (claimable but for a milestone), `wip=` and `fingerprint=`. If the
+  fingerprint equals the last ledger entry, report "no change" and stop.
 
 ## Tick: refinement first
 
@@ -50,9 +50,11 @@ Each step runs only after the steps before it are done.
    | `wontfix` | cite the decision (product grounds: tier 2) |
    | `question` | the critical list; ask the maintainer |
 
-3. **Refine until the buffer holds:** at least **2 × WIP** claimable issues (WIP = 2 streams × the
-   number of delivery sessions). The started epic comes first: keep at least 2 of its slices
-   claimable so both streams can finish it; then the next epic by the order of work.
+3. **Refine the current milestone** ([order of work](./README.md#order-of-work)): its open
+   issues become claimable steps, the started epic first, then the next epic by the order of work.
+   Never create demand: a follow-up, sweep candidate or idea is filed without a milestone and
+   listed in the inbox. An issue enters the milestone only as a `bug` in behaviour already shipped
+     (tier 1); the maintainer pulls in the rest. The milestone's text is a goal for humans.
    - **Slice** epics and large issues into sub-issues chained by `blocked_by`, so the first slice
      needs nothing open. An issue labelled `ready-for-agent` that fails the size check is sliced in
      this tick.
@@ -72,7 +74,8 @@ Each step runs only after the steps before it are done.
      lane and the priority level, and attach slices and follow-ups to their epic as sub-issues.
 
    **Readiness gate** (all must pass):
-   - it changes one Go package or Vue feature folder, within about 400 lines;
+   - it is one step a user can exercise on merge, within about 400 lines;
+     a package nothing imports is not ready;
    - nothing merged or decided supersedes it, and no other unblocked issue rewrites its files;
    - measured claims carry their probe;
    - every acceptance criterion is testable at a named seam and needed by this slice's user;
@@ -86,13 +89,19 @@ Each step runs only after the steps before it are done.
 
    Release `in-progress` claims older than 24 h that have no PR, and remove an assignee left on an
    open issue without `in-progress` and without an open PR.
-5. **Audit** (only when the buffer is full). Each day, sample about 1 in 5 merged PRs that no gate
-   held, with the `reviewer` in audit mode on the merged diff. File each finding as a follow-up; a
-   bug becomes a found-fix issue with `bug`, and a security finding takes the disclosure path.
-6. **Sweeps** (buffer full), every 10 merges or 7 days: the `architect` sweeps the audit worktree
-   (at most 3 candidates: files, pattern, ADR); the `ux-designer` walks the first run (CLI and agent
-   bar §2.4) on `main`, also after a CLI or MCP change. Each dead end is a P1 `bug`.
-7. **Inbox and metrics.** Rewrite the inbox, then append to the ledger.
+5. **Audit.** Each day, sample about 1 in 5 merged PRs that no gate held, the highest `ratio`
+   lines (`./run size`, in the PR body) first, with the `reviewer` in audit mode on the merged diff.
+   File each finding as a follow-up without a milestone; a bug in shipped behaviour becomes a
+     found-fix issue with `bug` in the milestone, and a security finding takes the disclosure path.
+6. **Sweeps,** every 10 merges or 7 days: the `architect` sweeps the audit worktree for deletion
+   candidates (at most 3: files, lines removed, ADR), each filed as a `shrink:` issue without a
+   milestone; the `ux-designer` walks the app on `main` from a first visit, also after a UI,
+   CLI or MCP change. Each dead end is a P1 `bug` in the milestone.
+7. **Milestone state.** When the milestone has no open issue: run `./run ux` (the e2e journeys on
+   the built binary, `web/e2e/journeys/`) in the audit worktree. Green: "RC for <milestone>" goes
+   under Decide, and the loops idle until the maintainer closes it and opens the next. Red: each
+   red journey is a P1 `bug` in the milestone.
+8. **Inbox and metrics.** Rewrite the inbox, then append to the ledger.
 
 ## Decision rights
 
@@ -113,33 +122,38 @@ pattern it follows, by file.
 One pinned issue, `Maintainer inbox`. Its body is rewritten every tick; never comment on it. Each
 entry is 2 to 3 lines with a link: what, why it needs the maintainer, the recommended action. The
 sections, in order:
-1. **Stop the line:** red `main`, a buffer below target (claimable vs target, and the one blocker
-   to clear), `needs-triage` older than one tick.
+1. **Stop the line:** red `main`, a red journey, no claimable issue while the milestone has open
+   ones (the one blocker to clear), `needs-triage` older than one tick.
 2. **Merge to approve:** `needs-maintainer` PRs with their gate reasons.
 3. **Decide:** tier-3 questions and PRs labelled `question` for the maintainer, `grilling-needed`,
-   maintainer-owned `needs-info`.
+   maintainer-owned `needs-info`, "RC for <milestone>".
 4. **Windows closing:** tier-2 decisions, with their UTC deadline.
-5. **Harness feedback:** the top 5 open items from the pinned `Harness feedback` issue, ranked by
+5. **Outside the milestone:** `<milestone>`: open n, claimable n, outside n. The outside issues
+   that are claimable but for the milestone, each with one line: pull in or close.
+6. **Harness feedback:** the top 5 open items from the pinned `Harness feedback` issue, ranked by
    occurrences and time lost, for the weekly batch. Close items unconfirmed for 3 weeks.
-6. **Merged on judgement:** PRs merged in the last 24 h whose marker judged a `review:` reason not
+7. **Merged on judgement:** PRs merged in the last 24 h whose marker judged a `review:` reason not
    significant. The maintainer vetoes by commenting.
-7. **Advisories:** ids only.
+8. **Advisories:** ids only.
 
 When a new entry appears in sections 1 to 3, send a push notification when the session can.
 
 ## Metrics
 
-Each tick, append a ledger line. Daily, put `scripts/loop-metrics 1` in the inbox under "Stop the
-line" when a target is missed:
+Each tick, append a ledger line. Outcomes come first, in the inbox header every day:
+- `./run ux` green on `main`, and days since the last release;
+- net hand-written lines merged this week and the week's median test:code ratio (the `net` and
+  `ratio` lines of `./run size` in each PR body); the top 3 ratios are audited first.
+
+Flow, with `scripts/loop-metrics 1` under "Stop the line" when a target is missed:
 - median claim-to-merge under 45 min for PRs no gate held;
 - at most 1 fix round on average;
 - harness PRs under 10 % of merged PRs over 7 days;
 - test-change approval rate between 50 % and 90 %.
 
-Name the worst bottleneck. When the buffer stays below target for 2 days, propose in the inbox to
-split the audit into its own session (a harness decision).
+Name the worst bottleneck.
 
 ## Pacing
 
 Start with `claude --model opus` (never a 1M context) and run `/loop /product`. Wake in 30 min
-while the buffer is below target, and 60 min when it's full.
+when something changed, and 60 min otherwise.

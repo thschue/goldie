@@ -22,7 +22,8 @@ if nobody would notice, it isn't a finding.
    - the Conventional Commit title;
    - `Closes #<n>` (a found-fix PR has Problem, Evidence and Fix instead);
    - docs and ADRs changed where the change calls for it;
-   - the size (`./run size`);
+   - the size and growth (`./run size`: the `net` and `ratio` lines are in the PR body and in
+     your report; a high test:code ratio without a reason in the body is a finding);
    - a dependency brief for each new dependency, with its claims verified.
 3. **Correctness:** error paths, edge cases, concurrency, resource cleanup, and behaviour on hostile
    input (the repository's testing checklist).
@@ -67,6 +68,7 @@ if nobody would notice, it isn't a finding.
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `changes-requested`, `decision` or `needs-info`;
 - `pr` and `head_sha`;
+- `size`: `{net, ratio}` from `./run size`;
 - `findings`: `[{agent: "reviewer", severity, class, area, file, fix, on_main}]`, with `fix:
   now|follow-up` on LOW;
 - `notes`.

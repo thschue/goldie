@@ -65,10 +65,12 @@ imports across modules. You get the PR number, the head SHA, the issue and the r
 
 ## Sweep (product session)
 
-Every 10 merges or 7 days, on a read-only worktree at `origin/main`: look for deepening
-opportunities in the files changed most since the last sweep (`git log --since`): shallow
-modules, leaked internals, duplicated helpers, seams that don't match the tests. Return at most 3
-candidates, each with files, the value it buys, the pattern to follow and any ADR it touches.
+Every 10 merges or 7 days, on a read-only worktree at `origin/main`: look for what can be deleted
+in the files changed most since the last sweep (`git log --since`): interfaces with one
+implementation, options and caps nothing sets outside tests, packages nothing imports, duplicated
+helpers, seams that don't match the tests. Return at most 3 candidates, each with files, the lines
+it removes, the pattern that remains and any ADR it touches. Each becomes a `shrink:` issue whose
+PR is net-negative by `./run size` and adds no test.
 
 Report in prose, then one fenced `json` block:
 - `outcome`: `clean`, `changes-requested` or `needs-info` (review), `refined` (refine), or

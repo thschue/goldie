@@ -1,0 +1,16 @@
+[
+  {"name": "only the current milestone is in scope; security never waits for one",
+   "current": "MVP",
+   "issues": [
+     {"number": 1, "labels": ["ready-for-agent"], "milestone": {"title": "MVP"}},
+     {"number": 2, "labels": ["ready-for-agent"], "milestone": null},
+     {"number": 3, "labels": ["ready-for-agent", "priority:P1"], "milestone": {"title": "Later"}},
+     {"number": 4, "labels": ["security"], "milestone": null}],
+   "want": [1, 4]},
+  {"name": "no open milestone: only security work is in scope",
+   "current": "",
+   "issues": [
+     {"number": 5, "labels": ["bug"], "milestone": null},
+     {"number": 6, "labels": ["security"], "milestone": {"title": "Closed one"}}],
+   "want": [6]}
+]

@@ -45,7 +45,9 @@ The **frontier** is the set of issues an agent may start now. An issue is on the
 2. it is not an `epic`;
 3. it has no `in-progress` label and no assignee;
 4. every native `blocked_by` dependency is closed;
-5. no remote branch `*/issue-<n>-*` exists (`scripts/claim` checks this).
+5. no remote branch `*/issue-<n>-*` exists (`scripts/claim` checks this);
+6. it is in the current milestone (the open one with the lowest number) or labelled `security`
+   ([order of work](./README.md#order-of-work)).
 
 `scripts/frontier` prints it ranked by the [order of work](./README.md#order-of-work). An epic's
 slices must be its native sub-issues, or they rank as standalone work.

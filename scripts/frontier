@@ -8,9 +8,12 @@
 # level the oldest started epic's issues, then standalone issues, then new
 # epics; oldest first within each. Claimable means
 # open, ready-for-agent, not an epic, unassigned, not in progress and not
-# blocked. An issue's epic is its nearest ancestor labelled `epic`, except the
-# spec of record (#1, CLAUDE.md); an epic has started when a sub-issue is
-# closed or in progress. The ranking is scripts/lib/frontier.jq. Read-only.
+# blocked, and in scope: in the current milestone (the open one with the
+# lowest number) or labelled `security` (ADR 0029). With no open milestone
+# only security work is claimable. An issue's epic is its nearest ancestor
+# labelled `epic`, except the spec of record (#1, CLAUDE.md); an epic has
+# started when a sub-issue is closed or in progress. Scope and ranking are
+# in scripts/lib/frontier.jq. Read-only.
 set -eu
 
 die() { printf 'frontier: %s\n' "$*" >&2; exit 2; }
@@ -36,6 +39,8 @@ epic_of() {
 	echo null
 }
 
+current=$(gh api 'repos/{owner}/{repo}/milestones?state=open&per_page=100' --jq 'min_by(.number).title // ""') ||
+	die "cannot read the milestones"
 gh issue list --state open --label in-progress --limit 500 --json number --jq '.[].number' >"$tmp/wip" ||
 	die "cannot list issues in progress"
 : >"$tmp/started"
@@ -43,7 +48,8 @@ while read -r n; do epic_of "$n" | jq -r '.number? // empty' >>"$tmp/started"; d
 
 gh issue list --state open --label ready-for-agent --limit 500 \
 	--search 'no:assignee -label:in-progress -label:epic -is:blocked sort:created-asc' \
-	--json number,title,createdAt,labels --jq '.[] | {number, title, createdAt, labels: [.labels[].name]} | @json' |
+	--json number,title,createdAt,labels,milestone --jq '.[] | {number, title, createdAt, milestone, labels: [.labels[].name]} | @json' |
+	jq -c -L "$lib" --arg current "$current" 'include "frontier"; select(in_scope($current))' |
 	while IFS= read -r issue; do
 		n=$(printf '%s' "$issue" | jq -r .number)
 		printf '%s' "$issue" | jq -c --argjson e "$(epic_of "$n")" --rawfile started "$tmp/started" \

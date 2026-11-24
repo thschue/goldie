@@ -26,3 +26,12 @@ def rank:
   sort_by([level, class,
            (if class == 1 or class == 3 then .epic.createdAt else "" end),
            .createdAt, .number]);
+
+# in_scope($current): whether the loop may work an issue at all (ADR 0029).
+# Input: one issue with labels and milestone ({title} or null). True when the
+# issue is in the current milestone, or carries `security`, which never waits
+# for a milestone. With no open milestone, $current is "" and only security
+# work is in scope: the loop idles until the maintainer opens the next one.
+def in_scope($current):
+  ($current != "" and .milestone != null and .milestone.title == $current)
+  or (.labels | index("security") != null);

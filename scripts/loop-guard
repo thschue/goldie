@@ -80,8 +80,8 @@ check_api() { # check_api <segment starting with "gh api">
 	if has "$seg" "${repo}/(statuses|check-runs|check-suites)"; then
 		deny "never write commit statuses or check runs"
 	fi
-	if has "$seg" "${repo}/(rulesets|branches/[^[:space:]]+/protection|collaborators|hooks|actions/secrets|actions/permissions|environments|keys|labels)"; then
-		deny "repository settings, rulesets, secrets, webhooks and labels are the maintainer's"
+	if has "$seg" "${repo}/(rulesets|branches/[^[:space:]]+/protection|collaborators|hooks|actions/secrets|actions/permissions|environments|keys|labels|milestones)"; then
+		deny "repository settings, rulesets, secrets, webhooks, labels and milestones are the maintainer's"
 	fi
 	if has "$seg" "${repo}/?['\"]?${end}"; then
 		deny "repository settings are the maintainer's"

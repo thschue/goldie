@@ -13,7 +13,8 @@
 #   ./run contract-compat <old> <new>  fail on a breaking change between two specs
 #   ./run gate <base> <head>  reasons a change needs the maintainer (ADR 0012)
 #   ./run red-check [base]  the PR's new tests must fail on <base> (origin/main)
-#   ./run size [base]  changed lines without tests and generated code (about 400; over 600 fails)
+#   ./run size [base]  changed lines without tests and generated code (about 400; over 600 fails),
+#                      the net hand-written lines and the test:code ratio
 #   ./run vuln       govulncheck on the module
 #   ./run sync-agents  copy example agent Items to .claude/agents
 #   ./run regen      regenerate generated code (OpenAPI Go types, strict server, endpoint and configuration reference docs,
@@ -338,13 +339,20 @@ cmd_test_lock_fixture() {
 
 # testdata/frontier/cases.json: each case's issues, ranked by
 # scripts/lib/frontier.jq, must come out in the case's order.
+# testdata/frontier/scope.json: the issues in scope for the case's current
+# milestone must be exactly the case's want (ADR 0029).
 cmd_frontier_fixture() {
-	say "frontier fixture (claim order: P level, then started epic, standalone, new epic)"
+	say "frontier fixture (scope: the current milestone or security; claim order: P level, then started epic, standalone, new epic)"
 	out=$(jq -L scripts/lib -r 'include "frontier";
 		.[] | (.issues | rank | map(.number)) as $got
 		| select($got != .want) | "\(.name): want \(.want), got \($got)"' testdata/frontier/cases.json) ||
 		die "cannot run the frontier cases"
 	[ -z "$out" ] || die "frontier case failed: $out"
+	out=$(jq -L scripts/lib -r 'include "frontier";
+		.[] | .current as $c | (.issues | map(select(in_scope($c)) | .number)) as $got
+		| select($got != .want) | "\(.name): want \(.want), got \($got)"' testdata/frontier/scope.json) ||
+		die "cannot run the frontier scope cases"
+	[ -z "$out" ] || die "frontier scope case failed: $out"
 }
 
 # testdata/stream-state/cases.json: each case's PR must get the case's state
@@ -417,17 +425,30 @@ cmd_harness_budget() {
 
 # size [base]: changed lines against the merge base with <base> (default
 # origin/main), not counting tests (Go and web/e2e), testdata, generated code,
-# lockfiles, fonts and attributions.
-# About 400 is the budget; over 600 fails, and the PR is sliced.
+# lockfiles, fonts and attributions. About 400 is the budget; over 600 fails,
+# and the PR is sliced. It also prints the net hand-written lines (added minus
+# deleted, tests included, generated code excluded) and the test:code ratio of
+# the changed lines, which go into the PR body (ADR 0029): growth is reviewed.
 cmd_size() {
 	base=${1:-origin/main}
 	mb=$(git merge-base "$base" HEAD) || die "no merge base with $base"
-	n=$(git diff --numstat --no-renames "$mb" -- . ':(exclude)*_test.go' ':(exclude)testdata' \
-		':(exclude)**/testdata/**' ':(exclude)go.sum' ":(exclude)$CONTRACT_GEN" \
-		':(exclude)web/e2e' ':(exclude)*.spec.ts' ':(exclude)*package-lock.json' ":(exclude)$TS_SCHEMA" ':(exclude)*.woff2' \
-		':(exclude)NOTICE' ':(exclude)*VENDORED.md' \
-		":(exclude)$CONTRACT_DOCS" ":(exclude)$CONFIG_DOCS" | awk '$1 != "-" { s += $1 + $2 } END { print s + 0 }')
+	size_stat() {
+		git diff --numstat --no-renames "$mb" -- . ':(exclude)go.sum' ":(exclude)$CONTRACT_GEN" \
+			':(exclude)*package-lock.json' ":(exclude)$TS_SCHEMA" ':(exclude)*.woff2' \
+			':(exclude)NOTICE' ':(exclude)*VENDORED.md' ":(exclude)$CONTRACT_DOCS" ":(exclude)$CONFIG_DOCS" "$@" |
+			awk '$1 != "-" { a += $1; d += $2 } END { print a + 0, d + 0 }'
+	}
+	tests='*_test.go testdata **/testdata/** web/e2e *.spec.ts *.test.ts'
+	# shellcheck disable=SC2086 # the test globs are split on purpose; -f keeps them literal
+	set -f
+	code=$(size_stat $(for t in $tests; do printf ' :(exclude)%s' "$t"; done))
+	set +f
+	all=$(size_stat)
+	n=$(( ${code% *} + ${code#* } ))
+	t=$(( ${all% *} - ${code% *} + ${all#* } - ${code#* } ))
 	say "size: $n changed lines (budget about 400)"
+	say "net: $(( ${all% *} - ${all#* } )) hand-written lines"
+	say "ratio: $(awk -v t="$t" -v c="$n" 'BEGIN { printf (c > 0 ? "%.1f:1" : "%d:0"), (c > 0 ? t / c : t) }') tests to code"
 	[ "$n" -le 600 ] || die "size: $n changed lines is over 600; slice the change"
 }
 
