@@ -185,7 +185,7 @@ eachViewport((width, theme) => {
   });
 
   test('the reader state is captured and axe-clean', async ({ page }) => {
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 403, envelope('forbidden', 'this token cannot do that', 'Use an operator token.')),
     );
     await page.goto('/ops/activity');
@@ -195,7 +195,7 @@ eachViewport((width, theme) => {
 
   test('the too-many-streams state is captured and axe-clean', async ({ page }) => {
     await operator(page);
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 503, envelope('too_many_streams', 'too many activity streams are open', 'Close another stream, or retry in a minute.')),
     );
     await page.goto('/ops/activity');
@@ -415,7 +415,7 @@ test.describe('who may see it', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('a reader (403) sees that the page is for operators, and no table or raw envelope', async ({ page }) => {
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 403, envelope('forbidden', 'this token cannot do that', 'Use an operator token.')),
     );
     await page.goto('/ops/activity');
@@ -427,7 +427,7 @@ test.describe('who may see it', () => {
 
   test('a 401 ends the session visibly and the page stays', async ({ page }) => {
     await operator(page);
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 401, envelope('unauthorized', 'missing or invalid API token', 'Send a configured API token.')),
     );
     await page.goto('/ops/activity');
@@ -440,7 +440,7 @@ test.describe('who may see it', () => {
   test('a 503 too_many_streams shows its hint, not the raw envelope or the code', async ({ page }) => {
     await operator(page);
     const hint = 'Close another stream, or retry in a minute.';
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 503, envelope('too_many_streams', 'too many activity streams are open', hint)),
     );
     await page.goto('/ops/activity');
