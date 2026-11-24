@@ -33,7 +33,7 @@ async function render(path = '/') {
 
 // The links of a rendered page whose path is `pathname`, as URLs.
 const links = (html: string, pathname: string) =>
-  [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => new URL(m[1].replace(/&amp;/g, '&'), 'http://x')).filter((u) => u.pathname === pathname);
+  [...html.matchAll(/<a [^>]*href="([^"]*)"/g)].map((m) => new URL(m[1].replace(/&amp;/g, '&'), 'file:///')).filter((u) => u.pathname === pathname);
 
 const shop = 'github.com/acme/shop';
 
