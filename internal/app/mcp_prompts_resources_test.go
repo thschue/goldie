@@ -212,7 +212,7 @@ func TestMCPResourceTemplatesAreAdvertised(t *testing.T) {
 		}
 	}
 	slices.Sort(got)
-	if want := []string{"goldie://agents/{name}", "goldie://skills/{name}/{+path}"}; !slices.Equal(got, want) {
+	if want := []string{"goldie://agents/{name}", "goldie://decisions/{name}", "goldie://skills/{name}/{+path}"}; !slices.Equal(got, want) {
 		t.Errorf("resource templates = %v, want %v", got, want)
 	}
 	// resources/list answers; whatever it lists lies under the two roots,
@@ -222,8 +222,8 @@ func TestMCPResourceTemplatesAreAdvertised(t *testing.T) {
 		t.Fatalf("resources/list: %v", err)
 	}
 	for _, r := range list.Resources {
-		if r.URI != "goldie://instructions" && !strings.HasPrefix(r.URI, "goldie://skills/") && !strings.HasPrefix(r.URI, "goldie://agents/") {
-			t.Errorf("resources/list names %q, outside goldie://skills/, goldie://agents/ and goldie://instructions", r.URI)
+		if r.URI != "goldie://instructions" && !strings.HasPrefix(r.URI, "goldie://skills/") && !strings.HasPrefix(r.URI, "goldie://agents/") && !strings.HasPrefix(r.URI, "goldie://decisions/") {
+			t.Errorf("resources/list names %q, outside goldie://skills/, goldie://agents/, goldie://decisions/ and goldie://instructions", r.URI)
 		}
 	}
 }
