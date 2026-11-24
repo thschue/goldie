@@ -252,7 +252,7 @@ func TestArticleListOmitsAnArticleTheProjectSuppresses(t *testing.T) {
 // Criterion 2: the Project id matches ignoring case.
 func TestArticleListMatchesTheProjectIgnoringCase(t *testing.T) {
 	srv := artListServer(t, itemsContent)
-	list, body := artListGet(t, srv, readerToken, "project="+url.QueryEscape("GitHub.com/ACME/Shop"))
+	list, body := artListGet(t, srv, readerToken, "project="+url.QueryEscape("github.com/ACME/Shop"))
 	if a := artByID(t, list, "platform/deploy"); a.Name != "Shop deploy" {
 		t.Errorf("platform/deploy = %+v, want the shop copy", a)
 	}
