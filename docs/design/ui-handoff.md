@@ -259,7 +259,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 | State | Where | Treatment | |
 |---|---|---|---|
 | Empty search (Miss) | Results | Gold dashed panel, no-match copy (§8), suggestion chips. | C |
-| Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet." | D |
+| Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet."; without a Project: "No `<kind>`s yet." | D |
 | Unregistered Project | Project selector + Home | `unregistered` chip; Home shows a hint: "Global and local guidance only. **How to register this project**". | D |
 | Draft | Card, detail | Dashed outline + "draft · hidden from agents"; detail banner (dashed). Operators only; readers never see drafts. | C |
 | Deprecated | Card, detail | Gold badge "deprecated → `replaced_by`"; detail banner with a link to the replacement. | C |
