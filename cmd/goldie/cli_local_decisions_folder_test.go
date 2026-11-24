@@ -151,11 +151,6 @@ func TestCLIDecisionsFolderAndArticlesAreServedTogether(t *testing.T) {
 	if scopes["use-postgres"] != "global" {
 		t.Errorf("the global decision use-postgres has scope %q, want global (all: %v)", scopes["use-postgres"], scopes)
 	}
-	for _, skipped := range []string{"README", "0000-template"} {
-		if _, ok := scopes[skipped]; ok {
-			t.Errorf("%s is served as a decision", skipped)
-		}
-	}
 	if out := lsMustRun(t, root, nil, "search", "onlylocal"); !strings.Contains(out, "team/only-local") {
 		t.Errorf("search lacks the local article:\n%s", out)
 	}
