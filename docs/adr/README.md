@@ -34,3 +34,4 @@ Consequences.
 - [0028. A session cookie authenticates unsafe methods only with a CSRF token](0028-a-session-cookie-authenticates-unsafe-methods-only-with-a-csrf-token.md)
 - [0029. The milestone is the loop's only input; one stage may subtract; growth is counted](0029-milestone-subtraction-and-growth.md)
 - [0030. A conflict on an enforced Item rejects the Snapshot that just loaded](0030-a-conflict-on-an-enforced-item-rejects-the-snapshot-that-just-loaded.md)
+- [0031. The server is configured by flags, the environment or a config file](0031-the-server-is-configured-by-flags-the-environment-or-a-config-file.md)

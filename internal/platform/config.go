@@ -18,6 +18,10 @@ const FirstRunHint = "To try goldie on this machine: goldie server --dev"
 
 // Environment variable names. The GOLDIE_ prefix is mandatory (PC-04).
 const (
+	// The YAML config file the other settings may come from (#846). Not a
+	// Settings row: Layers reads it, LoadConfig never sees it.
+	EnvConfig = "GOLDIE_CONFIG"
+
 	EnvAddr         = "GOLDIE_ADDR"
 	EnvAdminAddr    = "GOLDIE_ADMIN_ADDR"
 	EnvLogLevel     = "GOLDIE_LOG_LEVEL"
@@ -562,7 +566,13 @@ func Setting(lookup Lookup, readFile func(string) ([]byte, error), name string) 
 // Settings row, in registry order, with the value its Value accessor reads
 // from c. A row marked Secret is redacted by that flag alone: only whether it
 // is set is logged.
-func (c Config) Report(l *slog.Logger) {
+func (c Config) Report(l *slog.Logger) { c.ReportWithSources(l, nil) }
+
+// ReportWithSources is Report with each value beside the layer it came from
+// (flag, environment, file or default), as source gives it: Layers.Source, in a
+// trailing "source" group keyed by variable name, so every value keeps its
+// place and shape. A nil source logs the values alone.
+func (c Config) ReportWithSources(l *slog.Logger, source func(name string) string) {
 	args := make([]any, 0, 2*len(Settings))
 	for _, s := range Settings {
 		if s.Value == nil {
@@ -573,6 +583,13 @@ func (c Config) Report(l *slog.Logger) {
 			v = redacted(v)
 		}
 		args = append(args, s.Name, v)
+	}
+	if source != nil {
+		from := make([]any, 0, 2*len(Settings))
+		for _, s := range Settings {
+			from = append(from, s.Name, source(s.Name))
+		}
+		args = append(args, slog.Group("source", from...))
 	}
 	l.Info("config", args...)
 }

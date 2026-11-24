@@ -25,8 +25,8 @@ issue #1 on `thschue/goldie`; its vocabulary is in [CONTEXT.md](CONTEXT.md). Use
 - Go module `github.com/thschue/goldie` on Go 1.27.4. Never hand-edit `go.sum` or a lockfile. Add a
   dependency or a pinned tool only when the issue needs it, with a
   [dependency brief](docs/agents/README.md#dependency-brief).
-- No secrets, `.env` files or credentials in the repo. Configuration is environment only, with
-  `GOLDIE_`-prefixed variables and `_FILE` for secrets (PC-04, PC-05).
+- No secrets, `.env` files or credentials in the repo. The server is configured by flags, `GOLDIE_`-prefixed
+  variables or a config file, and a secret only by `_FILE` (PC-04, PC-05).
 - Errors returned to API clients use the envelope `{"error":{code,message,details}}` and never contain
   addresses, paths or stack traces.
 - Markdown from Sources is untrusted: render it without raw HTML, sanitised.

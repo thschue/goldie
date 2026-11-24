@@ -195,7 +195,8 @@ func serverCmd(out io.Writer) *cobra.Command {
 		Use:     "server [--dev [--git | dir]]",
 		Short:   "Serve the API, UI and MCP over HTTP",
 		GroupID: groupRun,
-		Long: "Run the goldie server, configured by GOLDIE_* variables (docs/reference/configuration.md).\n" +
+		Long: "Run the goldie server, configured by flags, GOLDIE_* variables or a YAML config file (--config), in that\n" +
+			"order of precedence (docs/reference/configuration.md). A secret is never a flag: use --x-file.\n" +
 			"With --dev it serves dir (else " + platform.EnvContentDir + ", else the working directory)\n" +
 			"on 127.0.0.1 with a random token and prints the export line for the client commands.\n" +
 			"It ignores " + platform.EnvAddr + ", " + platform.EnvAdminAddr + " and the API token variables.\n" +
@@ -217,13 +218,18 @@ func serverCmd(out io.Writer) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if dev {
-				return misuse(runDev(args, out, git))
+			layers, err := platform.NewLayers(cmd.Flags(), os.LookupEnv, os.ReadFile)
+			if err != nil {
+				return fmt.Errorf("invalid configuration:\n%w", err)
 			}
-			return runServer(out)
+			if dev {
+				return misuse(runDev(args, out, layers, git))
+			}
+			return runServer(out, layers)
 		},
 	}
 	cmd.Flags().BoolVar(&dev, "dev", false, "serve a directory on loopback with a random token")
+	platform.AddConfigFlags(cmd.Flags())
 	cmd.Flags().BoolVar(&git, "git", false, "with --dev, serve a git Source (GOLDIE_GIT_URL, else the goldie demo content)")
 	return cmd
 }

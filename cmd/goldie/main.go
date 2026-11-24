@@ -107,13 +107,13 @@ func clientEnv(out io.Writer, role string) (env cli.Env, flush func(), err error
 
 // runServer starts the server and blocks until it stops. The first SIGTERM or
 // SIGINT starts the drain; a second one exits immediately (PC-08).
-func runServer(out io.Writer) error {
-	cfg, logger, tel, err := serverSetup(os.LookupEnv, out)
+func runServer(out io.Writer, layers *platform.Layers) error {
+	cfg, logger, tel, err := serverSetup(layers.Lookup(), layers.Annotate, out)
 	if err != nil {
 		return err
 	}
 	defer flushTelemetry(tel, serverFlush)
-	cfg.Report(logger)
+	cfg.ReportWithSources(logger, layers.Source)
 	tel.Report(logger)
 	ctx, force, stop := stopSignals(logger)
 	defer stop()
@@ -136,9 +136,9 @@ func runServer(out io.Writer) error {
 // logger, so it never reaches a log line or the OTLP log bridge. Log records
 // go to stderr, so stdout carries only the export line and is safe to eval
 // (PC-07).
-func runDev(args []string, out io.Writer, git bool) error {
-	lookup, ignored := app.DevLookup(os.LookupEnv)
-	cfg, logger, tel, err := serverSetup(lookup, os.Stderr)
+func runDev(args []string, out io.Writer, layers *platform.Layers, git bool) error {
+	lookup, ignored := app.DevLookup(layers.Lookup())
+	cfg, logger, tel, err := serverSetup(lookup, layers.Annotate, os.Stderr)
 	if err != nil {
 		return err
 	}
@@ -204,17 +204,18 @@ func isSet(lookup platform.Lookup, name string) bool {
 }
 
 // serverSetup loads the configuration through lookup and builds the server's
-// logger, writing to logOut, and telemetry. The caller defers flushTelemetry.
-func serverSetup(lookup platform.Lookup, logOut io.Writer) (platform.Config, *slog.Logger, *platform.Telemetry, error) {
+// logger, writing to logOut, and telemetry. annotate adds where each value
+// the errors name came from. The caller defers flushTelemetry.
+func serverSetup(lookup platform.Lookup, annotate func(error) error, logOut io.Writer) (platform.Config, *slog.Logger, *platform.Telemetry, error) {
 	cfg, err := platform.LoadConfig(lookup)
 	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
+		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", annotate(err))
 	}
 	level, _ := platform.ParseLevel(cfg.LogLevel) // validated by LoadConfig
 	logger := platform.NewLogger(logOut, level, "server")
-	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv, platform.WithSpanPath(app.SpanPath))
+	tel, err := platform.SetupTelemetry(context.Background(), lookup, platform.WithSpanPath(app.SpanPath))
 	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
+		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", annotate(err))
 	}
 	return cfg, tel.WrapLogger(logger, "server"), tel, nil
 }
