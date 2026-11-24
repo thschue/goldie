@@ -3,7 +3,7 @@ import { useCopy } from './useCopy';
 
 // CommandSnippet, inline (handoff §4): a command on the code surface with a
 // copy button. The button's name is fixed ("Copy command"); the result is
-// announced through a polite status, never by renaming the button.
+// announced through a polite live region (not role=status, so an empty one is no extra status on the page), never by renaming the button.
 const props = defineProps<{ command: string }>();
 
 const { status, copy: write } = useCopy('command');
@@ -15,7 +15,7 @@ const copy = () => write(props.command);
     <code>{{ command }}</code>
     {{ ' ' }}
     <button type="button" aria-label="Copy command" @click="copy">Copy</button>
-    <span role="status" class="status">{{ status }}</span>
+    <span aria-live="polite" class="status">{{ status }}</span>
   </div>
 </template>
 
