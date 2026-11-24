@@ -2,6 +2,7 @@ package cli
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,7 +19,8 @@ import (
 )
 
 // stampName is the digest stamp, in .claude beside the namespace: the digest of
-// the set last pulled, one line.
+// the set last pulled on the first line, and on the second "ns=" and the hash of
+// the namespace as that pull wrote it, so a damaged namespace is noticed.
 const stampName = "goldie-pull.digest"
 
 // namespaceDirs are the directories under .claude that hold namespace entries.
@@ -44,29 +46,94 @@ func plainDir(root *os.Root, name string) (exists bool, err error) {
 	return true, nil
 }
 
-// readStamp returns the digest the last pull stamped, or "" when there is no
-// usable stamp (never pulled, unreadable, or not a digest).
-func readStamp(root *os.Root) string {
+// stampData is what the last pull stamped: the digest of the set and the hash
+// of the namespace as written. Either is "" when absent or unusable.
+type stampData struct{ digest, namespace string }
+
+// readStamp returns what the last pull stamped, the zero value when there is no
+// usable stamp (never pulled, unreadable, or not a digest). A stamp without a
+// namespace hash (an older pull) has an empty namespace.
+func readStamp(root *os.Root) stampData {
 	if ok, err := plainDir(root, ".claude"); !ok || err != nil {
-		return ""
+		return stampData{}
 	}
 	name := ".claude/" + stampName
 	if fi, err := root.Lstat(name); err != nil || !fi.Mode().IsRegular() || fi.Size() > 256 {
-		return ""
+		return stampData{}
 	}
 	f, err := root.Open(name)
 	if err != nil {
-		return ""
+		return stampData{}
 	}
 	defer func() { _ = f.Close() }()
 	b, err := io.ReadAll(io.LimitReader(f, 257))
 	if err != nil {
-		return ""
+		return stampData{}
 	}
-	if d := strings.TrimSpace(string(b)); digestRE.MatchString(d) {
-		return d
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if !digestRE.MatchString(strings.TrimSpace(lines[0])) {
+		return stampData{}
 	}
-	return ""
+	st := stampData{digest: strings.TrimSpace(lines[0])}
+	if len(lines) == 2 {
+		if h, ok := strings.CutPrefix(strings.TrimSpace(lines[1]), "ns="); ok && digestRE.MatchString(h) {
+			st.namespace = h
+		}
+	}
+	return st
+}
+
+// namespaceHash hashes the Goldie namespace as it sits under root: each entry's
+// path, kind, executable bit and content, in path order. A symlink is hashed as
+// a link and never followed. A change, an addition or a removal under a
+// namespace entry changes the hash; files outside the namespace do not.
+func namespaceHash(root *os.Root) (string, error) {
+	entries, err := checkedNamespaceEntries(root)
+	if err != nil {
+		return "", err
+	}
+	slices.Sort(entries)
+	h := sha256.New()
+	fsys := root.FS()
+	for _, e := range entries {
+		err := fs.WalkDir(fsys, e, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintf(h, "%q %o %c\n", p, info.Mode().Perm()&0o111, kindOf(info.Mode()))
+			if !info.Mode().IsRegular() {
+				return nil
+			}
+			f, err := fsys.Open(p)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = f.Close() }()
+			if _, err := io.Copy(h, f); err != nil {
+				return err
+			}
+			_, err = h.Write([]byte{0})
+			return err
+		})
+		if err != nil {
+			return "", errors.New("cannot read " + contract.CleanLine(e))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func kindOf(m fs.FileMode) rune {
+	switch {
+	case m.IsDir():
+		return 'd'
+	case m.IsRegular():
+		return 'f'
+	}
+	return 'o'
 }
 
 // namespaceEntries lists the entries of the Goldie namespace that exist under
@@ -179,7 +246,12 @@ func applyPull(root *os.Root, files []pulledFile, digest string) (err error) {
 		return errors.New("cannot write in .claude")
 	}
 	defer func() { _ = sub.Close() }()
-	if err := writeInstructionFile(sub, stampName, []byte(digest+"\n"), 0o644); err != nil {
+	ns, err := namespaceHash(root)
+	if err != nil {
+		undo()
+		return err
+	}
+	if err := writeInstructionFile(sub, stampName, []byte(digest+"\nns="+ns+"\n"), 0o644); err != nil {
 		undo()
 		return errors.New("cannot write .claude/" + stampName)
 	}

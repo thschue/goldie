@@ -67,12 +67,21 @@ func (c *commander) pull(ctx context.Context) error {
 	}
 	defer func() { _ = root.Close() }()
 
-	stamp := readStamp(root)
+	st := readStamp(root)
+	stamp := st.digest
+	// The stamp only vouches for the set while the namespace on disk is what
+	// that pull wrote; otherwise ask without it, so the server sends the archive.
+	intact := false
+	if stamp != "" && st.namespace != "" {
+		if h, err := namespaceHash(root); err == nil && h == st.namespace {
+			intact = true
+		}
+	}
 	if c.s.check && stamp == "" {
 		return errors.New("the Goldie namespace was never pulled; run: goldie pull")
 	}
 	params := &contract.GetBundleParams{Target: c.s.target, Project: projectParam(proj)}
-	if stamp != "" {
+	if intact {
 		inm := `"` + stamp + `"`
 		params.IfNoneMatch = &inm
 	}
@@ -93,10 +102,13 @@ func (c *commander) pull(ctx context.Context) error {
 	if res.digest == "" {
 		return errors.New("the server's bundle has no usable ETag; nothing was written")
 	}
-	if res.digest == stamp {
+	if intact && res.digest == stamp {
 		return c.say("The Goldie namespace is already up to date.")
 	}
 	if c.s.check {
+		if res.digest == stamp {
+			return errors.New("the Goldie namespace was changed since the last pull; run: goldie pull")
+		}
 		return errors.New("the Goldie namespace is stale; run: goldie pull")
 	}
 	files, err := extractBundle(res.archive)
