@@ -484,6 +484,54 @@ test.describe('Projects registered, none selected', () => {
   }
 });
 
+// The Projects lookup is optional (#788): it decides only whether the note shows, never whether the list does.
+test.describe('the global list does not wait on the Projects lookup', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const json = (route: Route, body: unknown) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  const skills = { skills: [{ name: 'deploy', scope: 'global', files: [{ path: 'SKILL.md', size: 16 }] }] };
+  const deploy = (page: Page) => page.getByRole('tabpanel').getByRole('heading', { level: 2, name: 'deploy', exact: true });
+
+  test('/assets/skills shows the global skills while GET /api/v1/projects never answers', async ({ page }) => {
+    await page.route(/\/api\/v1\/projects$/, () => new Promise<void>(() => {}));
+    await page.route(/\/api\/v1\/skills(\?.*)?$/, (route) => json(route, skills));
+    await page.goto('/assets/skills');
+    await expect(deploy(page)).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(pick);
+  });
+
+  test('choosing no Project again after a failed lookup shows the global list while the retry is pending', async ({ page }) => {
+    let failing = true;
+    await page.route(/\/api\/v1\/projects$/, (route) => {
+      if (failing) {
+        return route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'internal', message: 'Something went wrong.', details: {} } }),
+        });
+      }
+      return new Promise<void>(() => {});
+    });
+    await page.route(/\/api\/v1\/skills(\?.*)?$/, (route) => {
+      const project = new URL(route.request().url()).searchParams.get('project');
+      return json(route, project ? { skills: [{ name: 'shop-only', scope: 'project', files: [{ path: 'SKILL.md', size: 16 }] }] } : skills);
+    });
+    await page.goto('/assets/skills');
+    await expect(deploy(page)).toBeVisible();
+    await page.evaluate(() => {
+      history.pushState({}, '', '/assets/skills?project=github.com%2Facme%2Fshop');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.getByRole('tabpanel').getByRole('heading', { level: 2, name: 'shop-only', exact: true })).toBeVisible();
+    await expect(deploy(page)).toHaveCount(0);
+    failing = false;
+    await page.goBack();
+    await expect(deploy(page)).toBeVisible();
+    await expect(page.getByRole('main')).not.toContainText(pick);
+  });
+});
+
 // The tab stays mounted when only ?project= changes: Back to the unselected view still shows the note.
 test('Back from a selected Project to none shows the note to pick a Project', async ({ page }) => {
   await page.route(/\/api\/v1\/projects$/, (route) =>
