@@ -334,3 +334,33 @@ test.describe('the Decisions page', () => {
     await expect(main(page).getByRole('alert')).toHaveCount(0);
   });
 });
+
+// #783: an error box closes a message lacking . ? or ! before its hint (handoff §8), as the
+// article page does (#759).
+test.describe('the Decisions list error: message then hint (#783)', () => {
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const fail = async (page: Page, message: string, hint: string) => {
+    await stubProjects(page);
+    await page.route(apiDecisions, (route) => json(route, 503, envelope('not_ready', message, hint)));
+    await open(page);
+    return main(page).getByRole('alert');
+  };
+
+  test('a message without a closing period gets one before the hint', async ({ page }) => {
+    const alert = await fail(page, 'The decision store is unavailable', 'Try again in a moment.');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.locator('p').first().innerText())).toBe('The decision store is unavailable. Try again in a moment.');
+  });
+
+  test('a message already ending in a question mark gets nothing extra before the hint', async ({ page }) => {
+    const alert = await fail(page, 'Is the decision store down?', 'Try again in a moment.');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.locator('p').first().innerText())).toBe('Is the decision store down? Try again in a moment.');
+  });
+
+  test('a message without a period and without a hint is rendered unchanged', async ({ page }) => {
+    const alert = await fail(page, 'The decision store is unavailable', '');
+    await expect(alert).toBeVisible();
+    expect(norm(await alert.locator('p').first().innerText())).toBe('The decision store is unavailable');
+  });
+});
