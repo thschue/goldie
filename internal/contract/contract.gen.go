@@ -1166,7 +1166,8 @@ type SourceSyncStatus struct {
 
 	// Name The Source's name as configured in `GOLDIE_SOURCES`; `dir` or `git`
 	// for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`;
-	// `source` for a local-mode upstream that has no name.
+	// `source` in local mode when the Source has no name, such as a local
+	// content directory or an upstream.
 	//
 	//
 	// Examples: team

@@ -1087,7 +1087,7 @@ before they were added still accepts a status without them.
 | `last_error` | `string` | no | Why the last poll failed, absent when it succeeded. It names a file relative to the Source root and never a host path, URL or credential. The served content stays the last good one. |
 | `last_poll` | `string` | no | When the last poll ended, whether it succeeded or not. Absent before the first poll ends. |
 | `last_success` | `string` | no | When the last poll that loaded the content ended. Absent before the first one. |
-| `name` | `string` | no | The Source's name as configured in 'GOLDIE_SOURCES'; 'dir' or 'git' for the one Source of 'GOLDIE_CONTENT_DIR' or 'GOLDIE_GIT_URL'; 'source' for a local-mode upstream that has no name. |
+| `name` | `string` | no | The Source's name as configured in 'GOLDIE_SOURCES'; 'dir' or 'git' for the one Source of 'GOLDIE_CONTENT_DIR' or 'GOLDIE_GIT_URL'; 'source' in local mode when the Source has no name, such as a local content directory or an upstream. |
 | `preference` | `integer` | no | Where the Source stands in the list, 1 for the first listed. An earlier Source wins an Item both have in the same Scope. |
 | `revision` | `string` | no | The commit the served content comes from. Absent for a Source without revisions, such as a directory. |
 | `shadowed` | `array` | no | Items this Source has that an earlier Source's copy in the same Scope hides, at most the first 100 in load order. Empty for the first Source. |

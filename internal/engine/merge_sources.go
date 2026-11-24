@@ -152,10 +152,7 @@ func (s *SourceSet) Trigger(ctx context.Context, name string, onPoll func(SyncSt
 	}
 	go func() {
 		defer e.pollMu.Unlock()
-		_ = s.pollLocked(ctx, e)
-		if onPoll != nil {
-			onPoll(s.Status(name))
-		}
+		s.pollReport(ctx, name, e, onPoll)
 	}()
 	return true, true
 }
@@ -165,20 +162,27 @@ func (s *SourceSet) Trigger(ctx context.Context, name string, onPoll func(SyncSt
 // the Source's status after each poll. A name that is no Source returns at
 // once.
 func (s *SourceSet) Run(ctx context.Context, name string, interval time.Duration, onPoll func(SyncStatus)) {
-	if s.entry(name) == nil {
+	e := s.entry(name)
+	if e == nil {
 		return
 	}
-	e := s.entry(name)
 	runLoop(ctx, interval, realTicker, func() {
 		// pollMu is held through onPoll, as Trigger holds it, so onPoll never
 		// runs concurrently with itself.
 		e.pollMu.Lock()
 		defer e.pollMu.Unlock()
-		_ = s.pollLocked(ctx, e)
-		if onPoll != nil {
-			onPoll(s.Status(name))
-		}
+		s.pollReport(ctx, name, e, onPoll)
 	})
+}
+
+// pollReport polls the Source and hands its Status to onPoll, when not nil.
+// The caller holds e.pollMu, so onPoll never runs concurrently with itself,
+// whether the poll is Run's or a Trigger's.
+func (s *SourceSet) pollReport(ctx context.Context, name string, e *sourceEntry, onPoll func(SyncStatus)) {
+	_ = s.pollLocked(ctx, e)
+	if onPoll != nil {
+		onPoll(s.Status(name))
+	}
 }
 
 // loaded lists the Sources that hold a Snapshot, in preference order. The
