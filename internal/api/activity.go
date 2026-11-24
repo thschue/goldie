@@ -26,7 +26,7 @@ const (
 	ActivitySubscriberBuffer = 64
 	// MaxActivityCapacity is the most events one Activity keeps; NewActivity
 	// clamps a larger capacity to it. Every bounded string field of an Event
-	// (Kind, Query, Token, ClientVersion, Project, TraceID, Via) is cut to
+	// (Kind, Query, Token, ClientVersion, Project, TraceID, Via, Served) is cut to
 	// maxQueryBytes (1,024), so a full ring of events with 1,024-byte queries
 	// is a worst case of about 12 to 15 MiB (10,000 events of 1.2 to 1.5 KiB).
 	// That figure assumes the other fields stay short, as a token name, a
@@ -62,6 +62,11 @@ type Event struct {
 	// Via is the surface that asked: "mcp", "cli", "ui" or "other"; "" when
 	// unknown (a peer that does not send it).
 	Via string
+	// Served is the Reference of the Item served: the top result of a search,
+	// or the Item of a lookup or get. "" on a miss.
+	Served string
+	// LatencyUS is the handler time in microseconds, never negative.
+	LatencyUS int64
 	// Miss is a search with zero results, or a lookup answering 404.
 	Miss bool
 	// Late is set only by the Merger: the event reached it after its reorder
@@ -187,9 +192,9 @@ func (a *Activity) Dropped() uint64 {
 }
 
 // boundEvent is the one normalise step for the string fields of an Event: it
-// cuts Kind, Query, Token, ClientVersion, Project, TraceID and Via to a whole-rune
-// prefix of at most maxQueryBytes. Replica is left alone: the Merger requires
-// it to equal its input's name.
+// cuts Kind, Query, Token, ClientVersion, Project, TraceID, Via and Served to a
+// whole-rune prefix of at most maxQueryBytes, and clamps LatencyUS to zero or
+// more. Replica is left alone: the Merger requires it to equal its input's name.
 func boundEvent(e Event) Event {
 	e.Kind = EventKind(truncateQuery(string(e.Kind)))
 	e.Query = truncateQuery(e.Query)
@@ -198,6 +203,8 @@ func boundEvent(e Event) Event {
 	e.Project = truncateQuery(e.Project)
 	e.TraceID = truncateQuery(e.TraceID)
 	e.Via = truncateQuery(e.Via)
+	e.Served = truncateQuery(e.Served)
+	e.LatencyUS = max(e.LatencyUS, 0)
 	return e
 }
 
