@@ -1,7 +1,7 @@
 // Package mcp is the MCP component. It reaches the API only through the
 // contract client, never through the engine or api packages.
 //
-// New returns a server with ten tools. Each takes an optional project (an
+// New returns a server with eleven tools. Each takes an optional project (an
 // ASCII ProjectId, lower-cased and checked before any request) except
 // list_projects and current_context, which take nothing:
 //
@@ -13,6 +13,7 @@
 //	list_agents:      only the project
 //	list_loops:       only the project
 //	get_loop:         a loop name
+//	find_decisions:   a query; accepted decisions only
 //	list_projects:    nothing
 //	current_context:  nothing
 //
@@ -44,7 +45,8 @@
 // A resource is a goldie://<kind>/{name}[/{path}] template: goldie://skills/
 // {name}/{+path} (reserved expansion, so the path keeps its slashes) for a
 // file of a bundle (quoted like get_skill) and
-// goldie://agents/{name} for an agent. A URI is parsed before any request and
+// goldie://agents/{name} for an agent and goldie://decisions/{name} for an accepted
+// decision (title, status and body quoted like get_loop; any other status is the miss). A URI is parsed before any request and
 // never selects a Project; a miss is the protocol's resource-not-found error,
 // which names no address, path or token. A later Kind adds its template and
 // its handler the same way. The server sends no list_changed notification

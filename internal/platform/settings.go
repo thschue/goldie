@@ -199,7 +199,7 @@ func ConfigReference(settings []SettingSpec) []byte {
 	b.WriteString("| `goldie.skill.gets` | `{request}` | `name`: the skill; `scope`: `global` or `project`; `via`: `cli`, `mcp` or `other` | Skill gets that found the skill. |\n")
 	b.WriteString("| `goldie.syncs` | `{poll}` | `source`: `git` or `dir`; `result`: `ok` or `error` | Finished polls of the configured Source; error when the poll recorded a Source error. |\n")
 	b.WriteString("| `goldie.sync.duration` | `s` | `source`: `git` or `dir`; `result`: `ok` or `error` | Histogram of how long each Source poll took, in seconds (buckets 0.05 to 60); a failed poll is recorded with `error`. |\n")
-	b.WriteString("| `goldie.mcp.tool.calls` | `{call}` | `tool`: one of the ten tool names or `other`; `result`: `ok` or `error` | MCP tool calls answered by the server; error when the tool result is an error, rate-limited calls included. |\n")
+	b.WriteString("| `goldie.mcp.tool.calls` | `{call}` | `tool`: one of the eleven tool names or `other`; `result`: `ok` or `error` | MCP tool calls answered by the server; error when the tool result is an error, rate-limited calls included. |\n")
 	b.WriteString("\nA skill get that answers 404 is not counted, so a name a caller makes up never becomes a `name` label; `name` is the skill's own spelling, whatever case the caller used.\n")
 	b.WriteString("`scope` is `global` for a skill every Project gets and `project` for a skill one Project defines; a skill from the local `.goldie/` Scope counts as `project`.\n")
 	b.WriteString("`via` is `cli` for the goldie CLI (dev builds included), `mcp` for an agent through `goldie mcp` or the server's `/mcp`, and `other` for curl, the web UI, any other client or no header.\n")

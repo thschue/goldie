@@ -22,12 +22,12 @@ const (
 	agentTemplate     = "goldie://agents/{name}"
 )
 
-// addResources registers the two goldie:// resource templates, and answers
+// addResources registers the goldie:// resource templates, and answers
 // every resources/read itself. A read that fell through to the SDK would have
 // the client's URI echoed in the error data, quoted so that a control
 // character makes invalid JSON, so nothing falls through: a URI under
 // goldie://skills/ is a skill file read, under goldie://agents/ an agent read,
-// anything else is resource not found. Only goldie://instructions, a fixed URI
+// under goldie://decisions/ a decision read, anything else is resource not found. Only goldie://instructions, a fixed URI
 // with no client text in it, goes on to the SDK.
 func addResources(s *sdk.Server, t *tools) {
 	s.AddResourceTemplate(&sdk.ResourceTemplate{
@@ -44,6 +44,13 @@ func addResources(s *sdk.Server, t *tools) {
 		URITemplate: agentTemplate,
 		MIMEType:    "text/plain",
 	}, t.readAgent)
+	s.AddResourceTemplate(&sdk.ResourceTemplate{
+		Name:        "decision",
+		Title:       "An accepted decision",
+		Description: "The title, status and body of an accepted decision, by name, as find_decisions gives it. The session's default Project picks the view.",
+		URITemplate: decisionsTemplate,
+		MIMEType:    "text/plain",
+	}, t.readDecision)
 	s.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
 		return func(ctx context.Context, method string, req sdk.Request) (sdk.Result, error) {
 			rr, ok := req.(*sdk.ReadResourceRequest)
@@ -61,6 +68,8 @@ func addResources(s *sdk.Server, t *tools) {
 				return t.readSkillFile(ctx, rr)
 			case strings.HasPrefix(uri, "goldie://agents/"):
 				return t.readAgent(ctx, rr)
+			case strings.HasPrefix(uri, "goldie://decisions/"):
+				return t.readDecision(ctx, rr)
 			}
 			return nil, notFound()
 		}
@@ -83,7 +92,7 @@ func resourcePath(uri, kind string) (name, path string, ok bool) {
 			return "", "", false
 		}
 	}
-	if kind == "agents" && len(parts) != 1 || kind == "skills" && len(parts) < 2 {
+	if (kind == "agents" || kind == "decisions") && len(parts) != 1 || kind == "skills" && len(parts) < 2 {
 		return "", "", false
 	}
 	return parts[0], strings.Join(parts[1:], "/"), true

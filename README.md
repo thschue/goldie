@@ -209,7 +209,7 @@ load: <reason>` line on stderr when it does not. It needs no token or address. S
 
 `goldie mcp --transport stdio` is an MCP server on stdin and stdout, with the tools
 `search_knowledge`, `get_article`, `list_projects`, `current_context`, `find_skills`, `get_skill`,
-`list_skills`, `list_agents`, `list_loops` and `get_loop`. `search_knowledge` and `get_article` take an optional `project`
+`list_skills`, `list_agents`, `list_loops`, `get_loop` and `find_decisions`. `search_knowledge` and `get_article` take an optional `project`
 (`host/org/repo`, as `list_projects` names it; case is ignored) that puts that Project's articles
 first; a value that isn't a Project id, or has any non-ASCII character, is refused before any
 request. For a Project that isn't registered, the answer is global and carries the server's hint. At
@@ -238,6 +238,11 @@ that it is dynamic) and its stop sentence; no loop is an answer, not an error. `
 loop: its fields, the agents and skills it needs with the Scope that answered, the digest the API
 serves (to compare with a pulled copy), and the iteration prompt quoted with `| `. A miss is a tool
 error that points to `list_loops`.
+
+`find_decisions` takes a query and the same optional `project` and answers the accepted decisions
+that match, each with its name, title and Scope; no match is an answer, not an error. The resource
+`goldie://decisions/{name}` reads one accepted decision: title, status, Scope, date and the body quoted
+with `| `. A decision that is unknown, or not accepted, is resource-not-found naming `find_decisions`.
 
 The server has a resource, `goldie://instructions` (`resources/list`, `resources/read`): the
 instruction block the API renders for the default Project, or the global block without one, with
