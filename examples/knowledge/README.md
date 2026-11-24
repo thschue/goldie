@@ -1,6 +1,8 @@
 # Example knowledge
 
-Original example content for goldie, used by tests, local development and demos.
+Original example content for goldie, used by tests, local development and `./run sync-agents`.
+It is goldie's own process and is not embedded in the binary: the built-in examples are
+`examples/demo`. Serve this set with `goldie server --dev examples/knowledge`.
 
 `global/` currently holds goldie's own agent loops as dogfooded Items:
 - the `agent-loops` article;
