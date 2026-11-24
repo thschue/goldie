@@ -36,19 +36,24 @@ You need Go and, for the web UI, Node. Goldie ships with example content, so no 
 ./run ui && go build ./cmd/goldie && export PATH="$PWD:$PATH"
 ```
 
-This leaves `goldie` in the clone and on your PATH for this shell. `go install
-github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH too, but without the web UI;
-the CLI and MCP work either way.
+This leaves `goldie` in the clone and on your PATH for this terminal only. Every new terminal needs
+`export PATH=/path/to/clone:$PATH` (the clone's absolute path). `go install
+github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH for good, but without the web
+UI: `/` then shows a "goldie (UI not built)" placeholder. The CLI and MCP work either way.
 
-**2. Start a server** in an empty directory. It serves the built-in examples and says so:
+**2. Start a server** from an empty directory. It serves the built-in examples and says so. This runs
+it in a subshell, so you stay in the clone:
 
 ```sh
-mkdir /tmp/goldie-try && cd /tmp/goldie-try && goldie server --dev
+mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev)
 ```
 
+The server keeps running in this terminal, and Ctrl-C stops it. Open a second terminal for the steps
+below, in the clone, with `goldie` on its PATH as in step 1.
+
 It prints an `export GOLDIE_ADDR=… GOLDIE_TOKEN=…` line with a token made for this run. To serve a
-directory of content instead, pass it. In the clone, `examples/knowledge` holds goldie's own agents
-and loops:
+directory of content instead, pass it. From the clone, `examples/knowledge` holds goldie's own
+agents and loops:
 
 ```sh
 goldie server --dev examples/knowledge
@@ -60,7 +65,8 @@ step 5 reads. A plain
 `goldie server` with nothing set suggests this command: `To try goldie on this machine: goldie server --dev`.
 More in the [CLI reference](docs/reference/cli.md#run-a-server-over-your-own-content).
 
-**3. Open the UI.** Go to the address in that line and sign in with the token.
+**3. Open the UI.** Go to the address in that line and sign in with the token. A binary built without
+`./run ui` shows only the "goldie (UI not built)" placeholder; the CLI and MCP still work.
 
 **4. Search** from the shell where you pasted the line:
 
