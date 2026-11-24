@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { carried } from '../projects/api';
 import { getArticle, type Article, ArticleError } from './api';
@@ -41,15 +41,28 @@ const replacement = computed(() => {
 
 const overrides = computed(() => article.value?.overrides ?? []);
 
-onMounted(async () => {
-  try {
-    article.value = await getArticle(String(route.params.name), String(route.query.project ?? ''));
-    document.title = `${article.value.name} · goldie`;
-  } catch (e) {
-    error.value =
-      e instanceof ArticleError ? { message: e.message, hint: e.hint } : { message: "Couldn't load this article. Try again in a moment.", hint: '' };
-  }
-});
+// Fetch on mount and again when the Project changes (#844), as HomeView does. The previous
+// copy and error are cleared first, and a response that lands after a newer fetch began is dropped.
+let latest = 0;
+watch(
+  () => route.query.project,
+  async (project) => {
+    const mine = ++latest;
+    article.value = null;
+    error.value = null;
+    try {
+      const got = await getArticle(String(route.params.name), String(project ?? ''));
+      if (mine !== latest) return;
+      article.value = got;
+      document.title = `${got.name} · goldie`;
+    } catch (e) {
+      if (mine !== latest) return;
+      error.value =
+        e instanceof ArticleError ? { message: e.message, hint: e.hint } : { message: "Couldn't load this article. Try again in a moment.", hint: '' };
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
