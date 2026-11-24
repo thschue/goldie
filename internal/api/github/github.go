@@ -18,6 +18,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/thschue/goldie/internal/platform"
 )
 
 const (
@@ -40,30 +42,17 @@ var errNotFound = errors.New("github: not found")
 // Users logins carry an underscore). Nothing here can steer a request path.
 var segment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
 
-// Role is what a GitHub login is allowed to do in goldie. The zero value is no Role.
-type Role int
-
-// The Roles a GitHub membership can earn.
+// The Roles a GitHub membership can earn, by the names authorization parses.
 const (
-	RoleReader Role = iota + 1
-	RoleOperator
+	roleReader   = "reader"
+	roleOperator = "operator"
 )
 
-// String returns the Role name used by goldie's authorization.
-func (r Role) String() string {
-	switch r {
-	case RoleReader:
-		return "reader"
-	case RoleOperator:
-		return "operator"
-	}
-	return ""
-}
-
-// Identity is a verified GitHub login and the Role it earned. It holds no token.
+// Identity is a verified GitHub login and the Role it earned ("reader" or
+// "operator"). It holds no token.
 type Identity struct {
 	Login string
-	Role  Role
+	Role  string
 }
 
 // Options configures a Client.
@@ -104,6 +93,9 @@ func New(opts Options) (*Client, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return nil, errors.New("github: base URL must be an http(s) URL without credentials, query or fragment")
+	}
+	if u.Scheme != "https" && !platform.IsLoopbackHost(u.Hostname()) {
+		return nil, errors.New("github: base URL must use https unless its host is loopback")
 	}
 	root := strings.TrimRight(u.String(), "/")
 	api := root + "/api/v3"
@@ -176,27 +168,27 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, redirectURI strin
 	return Identity{Login: user.Login, Role: role}, nil
 }
 
-func (c *Client) role(ctx context.Context, token, login string) (Role, error) {
+func (c *Client) role(ctx context.Context, token, login string) (string, error) {
 	for _, t := range c.teams {
 		p := "/orgs/" + url.PathEscape(t.org) + "/teams/" + url.PathEscape(t.slug) + "/memberships/" + url.PathEscape(login)
 		active, err := c.active(ctx, token, p)
 		if err != nil {
-			return 0, err
+			return "", err
 		}
 		if active {
-			return RoleOperator, nil
+			return roleOperator, nil
 		}
 	}
 	for _, o := range c.orgs {
 		active, err := c.active(ctx, token, "/user/memberships/orgs/"+url.PathEscape(o))
 		if err != nil {
-			return 0, err
+			return "", err
 		}
 		if active {
-			return RoleReader, nil
+			return roleReader, nil
 		}
 	}
-	return 0, ErrNotMember
+	return "", ErrNotMember
 }
 
 // active reports whether a membership endpoint answers an active membership.
