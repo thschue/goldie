@@ -88,7 +88,7 @@ describe('AppShell', () => {
     const shop = 'github.com/acme/shop';
     const { links } = await render({}, `/?project=${encodeURIComponent(shop)}`);
     const href = links.find((l) => l.startsWith('Articles '))?.slice('Articles '.length) ?? '';
-    const u = new URL(href, 'http://x');
+    const u = new URL(href, import.meta.url);
     expect(u.pathname).toBe('/articles');
     expect(u.searchParams.get('project')).toBe(shop);
   });
