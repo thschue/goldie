@@ -23,3 +23,10 @@ export function listDecisions(status: StatusFilter, project: string, signal?: Ab
   if (project) q.set('project', project);
   return get<DecisionList>(`/api/v1/decisions?${q}`, signal);
 }
+
+// One decision of any status, with its Markdown `content` and supersession `chain` (#737). The name is one
+// path segment (ADR 0016); an empty Project is no `project` parameter.
+export function getDecision(name: string, project: string, signal?: AbortSignal) {
+  const q = project ? `?${new URLSearchParams({ project })}` : '';
+  return get<Decision>(`/api/v1/decisions/${encodeURIComponent(name)}${q}`, signal);
+}
