@@ -116,7 +116,13 @@ func devEnv(extra ...string) []string {
 // not wait for anything.
 func launchDev(t *testing.T, dir string, env []string, args ...string) *devProc {
 	t.Helper()
-	cmd := exec.Command(goldieBinary(t), args...)
+	return launchDevBin(t, goldieBinary(t), dir, env, args...)
+}
+
+// launchDevBin is launchDev for the binary bin.
+func launchDevBin(t *testing.T, bin, dir string, env []string, args ...string) *devProc {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
 	cmd.Env = env
 	cmd.Dir = dir
 	stdout, err := cmd.StdoutPipe()
@@ -153,7 +159,13 @@ func startDev(t *testing.T, env []string, args ...string) *devProc {
 
 func startDevIn(t *testing.T, dir string, env []string, args ...string) *devProc {
 	t.Helper()
-	p := launchDev(t, dir, env, append([]string{"server", "--dev"}, args...)...)
+	return startDevBin(t, goldieBinary(t), dir, env, args...)
+}
+
+// startDevBin is startDevIn for the binary bin.
+func startDevBin(t *testing.T, bin, dir string, env []string, args ...string) *devProc {
+	t.Helper()
+	p := launchDevBin(t, bin, dir, env, append([]string{"server", "--dev"}, args...)...)
 	deadline := time.After(10 * time.Second)
 	for {
 		p.scan()

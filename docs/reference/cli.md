@@ -234,6 +234,19 @@ output on stderr: stdout stays the export line alone, so `eval "$(goldie server 
 Ctrl-D writes nothing, and the server keeps serving. Ctrl-C at the question stops the server as usual.
 Elsewhere (a pipe, CI, no repository) nothing is asked.
 
+`goldie server --dev --git` serves a git Source instead of a directory, on the same loopback address with
+the same random token. With `GOLDIE_GIT_URL` set (and `GOLDIE_GIT_REF` and `GOLDIE_GIT_PATH`, both
+optional) it serves that repository. Without it, it serves `examples/demo` of
+`https://github.com/thschue/goldie.git` at the tag `v<version>` of the binary, so the content matches
+it; a build without a release version uses `main`. It says once on stderr which repository and path it
+serves. Like `goldie server`, a failed first clone keeps the server running and not ready, and one
+stderr line gives the reason, without credentials, and the hint to run `goldie server --dev` without
+`--git` to try the built-in examples offline. The built-in repository takes no credentials: with
+`GOLDIE_GIT_URL` unset, a set `GOLDIE_GIT_TOKEN` (or `_FILE`), `GOLDIE_GIT_SSH_KEY`,
+`GOLDIE_GIT_SSH_KNOWN_HOSTS` or `GOLDIE_GIT_CA_BUNDLE` is refused with a usage error naming the
+variable. `--git` takes no directory and needs `--dev`. Without `--git`, `--dev` ignores
+`GOLDIE_GIT_URL`.
+
 A directory with no content serves the example content built into the binary, and says so on
 stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo
 platform: four articles, a skill, an agent and a loop. Try `goldie search database`, then
