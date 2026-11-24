@@ -53,8 +53,8 @@ Each step runs only after the steps before it are done.
 3. **Refine the current milestone** ([order of work](./README.md#order-of-work)): its open
    issues become claimable steps, the started epic first, then the next epic by the order of work.
    Never create demand: a follow-up, sweep candidate or idea is filed without a milestone and
-   listed in the inbox. An issue enters the milestone only as a step of a journey its description
-   names, or as a `bug` in a journey already shipped (tier 1); the maintainer pulls in the rest.
+   listed in the inbox. An issue enters the milestone only as a `bug` in behaviour already shipped
+     (tier 1); the maintainer pulls in the rest. The milestone's text is a goal for humans.
    - **Slice** epics and large issues into sub-issues chained by `blocked_by`, so the first slice
      needs nothing open. An issue labelled `ready-for-agent` that fails the size check is sliced in
      this tick.
@@ -74,7 +74,7 @@ Each step runs only after the steps before it are done.
      lane and the priority level, and attach slices and follow-ups to their epic as sub-issues.
 
    **Readiness gate** (all must pass):
-   - it is one step of a milestone journey a user can exercise on merge, within about 400 lines;
+   - it is one step a user can exercise on merge, within about 400 lines;
      a package nothing imports is not ready;
    - nothing merged or decided supersedes it, and no other unblocked issue rewrites its files;
    - measured claims carry their probe;
@@ -91,14 +91,14 @@ Each step runs only after the steps before it are done.
    open issue without `in-progress` and without an open PR.
 5. **Audit.** Each day, sample about 1 in 5 merged PRs that no gate held, the highest `ratio`
    lines (`./run size`, in the PR body) first, with the `reviewer` in audit mode on the merged diff.
-   File each finding as a follow-up without a milestone; a bug in a shipped journey becomes a
-   found-fix issue with `bug` in the milestone, and a security finding takes the disclosure path.
+   File each finding as a follow-up without a milestone; a bug in shipped behaviour becomes a
+     found-fix issue with `bug` in the milestone, and a security finding takes the disclosure path.
 6. **Sweeps,** every 10 merges or 7 days: the `architect` sweeps the audit worktree for deletion
    candidates (at most 3: files, lines removed, ADR), each filed as a `shrink:` issue without a
-   milestone; the `ux-designer` walks the journeys the milestone names on `main`, also after a UI,
+   milestone; the `ux-designer` walks the app on `main` from a first visit, also after a UI,
    CLI or MCP change. Each dead end is a P1 `bug` in the milestone.
-7. **Milestone state.** When the milestone has no open issue: run the journeys' specs
-   (`web/e2e/journeys/`, via `./run ux`) in the audit worktree. Green: "RC for <milestone>" goes
+7. **Milestone state.** When the milestone has no open issue: run `./run ux` (the e2e journeys on
+   the built binary, `web/e2e/journeys/`) in the audit worktree. Green: "RC for <milestone>" goes
    under Decide, and the loops idle until the maintainer closes it and opens the next. Red: each
    red journey is a P1 `bug` in the milestone.
 8. **Inbox and metrics.** Rewrite the inbox, then append to the ledger.
@@ -129,7 +129,7 @@ sections, in order:
    maintainer-owned `needs-info`, "RC for <milestone>".
 4. **Windows closing:** tier-2 decisions, with their UTC deadline.
 5. **Outside the milestone:** `<milestone>`: open n, claimable n, outside n. The outside issues
-   that are claimable but for the milestone, each with one line: pull in (which journey) or close.
+   that are claimable but for the milestone, each with one line: pull in or close.
 6. **Harness feedback:** the top 5 open items from the pinned `Harness feedback` issue, ranked by
    occurrences and time lost, for the weekly batch. Close items unconfirmed for 3 weeks.
 7. **Merged on judgement:** PRs merged in the last 24 h whose marker judged a `review:` reason not
@@ -141,7 +141,7 @@ When a new entry appears in sections 1 to 3, send a push notification when the s
 ## Metrics
 
 Each tick, append a ledger line. Outcomes come first, in the inbox header every day:
-- journeys green on `main`, and days since the last release;
+- `./run ux` green on `main`, and days since the last release;
 - net hand-written lines merged this week and the week's median test:code ratio (the `net` and
   `ratio` lines of `./run size` in each PR body); the top 3 ratios are audited first.
 
