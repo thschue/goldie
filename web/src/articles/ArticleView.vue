@@ -13,9 +13,9 @@ import MarkdownBody from './MarkdownBody.vue';
 const route = useRoute();
 
 // The way back (#729): the search this Item came from, with its Project; without a search it is
-// Home with the Project, and the text says so (#754).
+// Home with the Project. The text comes from the same carried query as the target, so they agree (#754).
 const back = computed(() => ({ path: '/', query: carried(route.query, ['q', 'kind', 'project']) }));
-const backText = computed(() => (route.query.q ? '← Back to search' : '← Back to home'));
+const backText = computed(() => (back.value.query.q ? '← Back to search' : '← Back to home'));
 const article = ref<Article | null>(null);
 const error = ref<{ message: string; hint: string } | null>(null);
 

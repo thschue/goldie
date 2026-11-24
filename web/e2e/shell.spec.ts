@@ -495,4 +495,16 @@ test.describe('the selected Project follows the user across pages', () => {
     expect(u.pathname).toBe('/');
     expect(u.searchParams.get('project')).toBe('../x');
   });
+
+  test("an Item's back link text agrees with its target for an empty, repeated or blank q", async ({ page }) => {
+    await stubItemApis(page);
+    // The first q is empty, so no search is carried and the link says Home.
+    await page.goto('/items/article/platform%2Fdeploy?q=&q=deploy');
+    await expect(backHome(page)).toHaveCount(1);
+    expect(parsed((await backHome(page).getAttribute('href'))!).searchParams.has('q')).toBe(false);
+    // A blank q is carried as it is, so the link says search.
+    await page.goto('/items/article/platform%2Fdeploy?q=%20');
+    await expect(back(page)).toHaveCount(1);
+    expect(parsed((await back(page).getAttribute('href'))!).searchParams.get('q')).toBe(' ');
+  });
 });
