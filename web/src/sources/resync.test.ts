@@ -20,6 +20,16 @@ describe('resync', () => {
   });
 });
 
+describe('resync of one Source', () => {
+  it('sends the name as one encoded query value', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await resync('a&source=b#c');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/sync?source=a%26source%3Db%23c');
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('waitForSync', () => {
   const answer = (last_poll: string) => new Response(JSON.stringify({ sources: [{ last_poll }], warnings: [] }));
 

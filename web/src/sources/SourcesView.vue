@@ -5,10 +5,10 @@ import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
 import { plain } from '../assets/api';
 import { ApiError, fallback } from '../api/client';
-import { isFailing, loadSources, resync, waitForSync, when, type SourceStatus } from './api';
+import { isFailing, loadSources, origin, resync, waitForSync, when, type SourceStatus } from './api';
 
-// The Sources page (#633, handoff §3.7, §5.3): a row per Source from GET /api/v1/sync, failing
-// ones first. Read-only. A reader gets the operators-only message and no request. The h1 renders
+// The Sources page (#633, #733, handoff §3.7, §5.3): a card per Source from GET /api/v1/sync,
+// failing ones first, each with its own Resync (POST ?source=<name>). A reader gets the operators-only message and no request. The h1 renders
 // at once so the focus the shell moves to it after navigation finds it.
 const operator = computed(() => role() === 'operator');
 const key = computed(() => (operator.value ? 'sync' : ''));
@@ -20,6 +20,7 @@ const forbidden = computed(() => !operator.value || (state.value === 'error' && 
 // The button stays focusable (aria-disabled, not disabled) so focus is not lost.
 const rows = ref<SourceStatus[]>();
 const syncing = ref(false);
+const syncingName = ref<string>();
 const syncError = ref('');
 const note = ref('');
 const stillRunning = ref(false);
@@ -31,9 +32,10 @@ watch(data, (v) => {
   rows.value = v;
   syncError.value = '';
 });
-async function startSync() {
+async function startSync(name?: string) {
   if (syncing.value) return;
   syncing.value = true;
+  syncingName.value = name;
   syncError.value = '';
   stillRunning.value = false;
   note.value = '';
@@ -41,7 +43,7 @@ async function startSync() {
   note.value = 'Sync started. Waiting for it to end.';
   try {
     const before = rows.value ?? [];
-    await resync();
+    await resync(name);
     const done = await waitForSync(before, stop.signal);
     if (done.rows) rows.value = done.rows;
     stillRunning.value = !done.ended;
@@ -54,6 +56,14 @@ async function startSync() {
     if (!stop.signal.aborted) syncing.value = false;
   }
 }
+async function copy(revision: string) {
+  try {
+    await navigator.clipboard.writeText(revision);
+    note.value = 'Revision copied.';
+  } catch {
+    note.value = "Couldn't copy the revision.";
+  }
+}
 function syncMessage(e: unknown) {
   if (!(e instanceof ApiError)) return "Couldn't start a sync. Try again in a moment.";
   if (e.message === fallback) return "Couldn't start a sync. Try again in a moment.";
@@ -64,10 +74,7 @@ function syncMessage(e: unknown) {
 <template>
   <h1>Sources</h1>
   <p v-if="!forbidden" class="intro">Failing Sources first. A failing Source keeps serving its last good Snapshot.</p>
-  <div v-if="!forbidden" class="actions">
-    <button type="button" class="sync" :aria-disabled="syncing" @click="startSync">{{ syncing ? 'Syncing…' : 'Resync' }}</button>
-    <span aria-live="polite" aria-atomic="true" class="sr-only">{{ note }}</span>
-  </div>
+  <span v-if="!forbidden" aria-live="polite" aria-atomic="true" class="sr-only">{{ note }}</span>
   <p v-if="stillRunning" class="intro" aria-hidden="true">{{ running }}</p>
   <div v-if="syncError" role="alert" class="box danger sync-error"><p>{{ syncError }}</p></div>
   <div v-if="forbidden" role="status" class="box"><p>This page is for operators.</p></div>
@@ -93,10 +100,17 @@ function syncMessage(e: unknown) {
   <template v-else-if="state === 'ready'">
     <div v-if="!rows?.length" role="status" class="box"><p>No Source is configured.</p></div>
     <ul v-else class="list">
-      <li v-for="(s, i) in rows" :key="i" class="row" :class="{ bad: isFailing(s) }">
-        <p class="head">
-          <code>{{ s.revision ? plain(s.revision).slice(0, 7) : 'no revision' }}</code>
+      <li v-for="(s, i) in rows" :key="s.name ?? i" class="row" :class="{ bad: isFailing(s) }">
+        <div class="head">
+          <h2>{{ s.name ? plain(s.name) : 'Source' }}</h2>
           <strong v-if="isFailing(s)" class="badge">Failing</strong>
+          <span class="chip">{{ origin(s.name) }}</span>{{ " " }}
+          <span v-if="s.preference" class="chip">Order {{ s.preference }}</span>{{ " " }}
+          <span class="chip">{{ s.shadowed?.length ?? 0 }} shadowed Items</span>{{ " " }}
+        </div>
+        <p v-if="s.revision" class="rev">
+          <code>{{ plain(s.revision).slice(0, 7) }}</code>
+          <button type="button" :aria-label="`Copy revision${s.name ? ' of ' + plain(s.name) : ''}`" @click="copy(s.revision)">Copy</button>
         </p>
         <dl>
           <dt>Last poll</dt>
@@ -106,6 +120,13 @@ function syncMessage(e: unknown) {
           <dt>Last error</dt>
           <dd class="err">{{ s.last_error ? plain(s.last_error) : 'None' }}</dd>
         </dl>
+        <button
+          type="button"
+          class="sync"
+          :aria-disabled="syncing"
+          :aria-label="`${syncing && syncingName === s.name ? 'Syncing' : 'Resync'}${s.name ? ' ' + plain(s.name) : ''}`"
+          @click="startSync(s.name)"
+        >{{ syncing && syncingName === s.name ? 'Syncing…' : 'Resync' }}</button>
       </li>
     </ul>
   </template>
@@ -203,9 +224,24 @@ dd {
   background: var(--miss-bg);
   color: var(--miss-ink);
 }
-.actions {
-  max-width: 940px;
-  margin: 0 0 var(--space-4);
+h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+.chip {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+.rev {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+.sync {
+  margin-top: var(--space-3);
 }
 .sync-error {
   margin: 0 0 var(--space-4);
