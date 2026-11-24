@@ -195,7 +195,7 @@ From top to bottom:
 - **Accepted decisions are visually distinct** (#23): solid blue status badge and a binding badge with a shield. Proposed decisions get a dashed card, superseded ones a struck-through muted title, rejected ones a muted title. This follows the lifecycle language in §4.
 - Search results (`/?q=`) include `kind=decision`, with an "accepted · binding for agents" badge. The Home page gets a **Decisions** Kind tile.
 
-**Built so far (#736):** the header line and the Status filter (`role=group`, one `aria-pressed` button per lifecycle, accepted by default) over a list of cards with status, a binding badge on accepted decisions, Scope, date, title and one supersession line. A press requests `status=<value>` (All is `status=all`); the URL's `project` rides on every request. Loading skeletons, the empty status and the error alert (the envelope message) follow §5. Counts on the pills, the Scope switch and the selected-decision panel come later.
+**Built so far (#736):** the header line and the Status filter (`role=group`, one `aria-pressed` button per lifecycle, accepted by default) over a list of cards with status, a binding badge on accepted decisions, Scope, date, title and one supersession line. A press requests `status=<value>` (All is `status=all`); the URL's `project` rides on every request. Loading skeletons, the empty status and the error alert (the envelope message) follow §5. The `goldie decisions list` snippet in the header, the shield on the binding badge, the decision number on the card (the card shows the title only), counts on the pills, the Scope switch and the selected-decision panel come later.
 
 ---
 

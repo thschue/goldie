@@ -20,7 +20,6 @@ const { state, data, failure, wait, skeleton, limited, retry } = useLoad(key, (k
   return listDecisions(s as StatusFilter, p, signal);
 });
 const decisions = computed(() => data.value?.decisions ?? []);
-const noun = computed(() => (status.value === 'all' ? 'decisions' : `${status.value} decisions`));
 const supersession = (d: (typeof decisions.value)[number]) => [
   ...(d.superseded_by ? [`Superseded by ${plain(d.superseded_by)}`] : []),
   ...(d.supersedes.length ? [`Supersedes ${d.supersedes.map(plain).join(', ')}`] : []),
@@ -64,7 +63,10 @@ const supersession = (d: (typeof decisions.value)[number]) => [
   <template v-else-if="state === 'ready'">
     <p v-if="data?.hint" class="note">{{ plain(data.hint) }}</p>
     <div v-if="!decisions.length" role="status" class="box">
-      <p>No {{ noun }} yet.</p>
+      <p>
+        No decisions with this status and Scope. Proposed and rejected decisions are only shown when you ask for them — agents
+        never see them.
+      </p>
     </div>
     <ul v-else class="list">
       <li v-for="d in decisions" :key="d.name">
