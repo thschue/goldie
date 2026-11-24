@@ -179,7 +179,9 @@ func writeInstructionFile(root *os.Root, name string, data []byte, mode os.FileM
 }
 
 var (
-	fenceRE   = regexp.MustCompile("^\\s*(```|~~~)")
+	// fenceRE matches a fence line as CommonMark does: at most three spaces of
+	// indent, a run of three or more backticks or tildes, then the rest.
+	fenceRE   = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
 	htmlRE    = regexp.MustCompile(`^\s*<[A-Za-z/!?]`)
 	linkDefRE = regexp.MustCompile(`^\s{0,3}\[[^\]]+\]:`)
 )
@@ -189,16 +191,21 @@ var (
 // comment, or a link reference definition (which applies to the whole file).
 // Markers are refused by ReplaceBlock. The block is untrusted Source content.
 func checkBlockContent(block []byte) error {
-	var fence string // the open fence's marker, "" outside one
+	var fence string // the open fence's run of markers, "" outside one
 	for _, line := range strings.Split(string(block), "\n") {
 		if m := fenceRE.FindStringSubmatch(line); m != nil {
-			switch fence {
-			case "":
-				fence = m[1]
-			case m[1]:
+			run, rest := m[1], m[2]
+			switch {
+			case fence == "":
+				// A backtick fence's info string holds no backtick.
+				if run[0] != '`' || !strings.Contains(rest, "`") {
+					fence = run
+					continue
+				}
+			case run[0] == fence[0] && len(run) >= len(fence) && strings.TrimSpace(rest) == "":
 				fence = ""
+				continue
 			}
-			continue
 		}
 		switch {
 		case fence != "":
