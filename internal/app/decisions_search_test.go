@@ -161,3 +161,42 @@ func TestSearchUnknownKindIsStill400WithHint(t *testing.T) {
 		}
 	}
 }
+
+// A superseded_by reference is read as everywhere else: the name matches
+// ignoring case (ADR 0021).
+func TestSearchSupersededByMixedCaseReferenceReachesSuccessor(t *testing.T) {
+	edits := searchDecisionEdits()
+	edits["global/decisions/quokka-1.md"] = decisionFile("Quokka store", "superseded", "2021-01-01", "keywords: [quokka]", "superseded_by: decision:Quokka-2")
+	srv, _ := decisionServer(t, edits)
+	if got := hitIDs(searchHits(t, srv, readerToken, "q=quokka&kind=decision")); !slices.Equal(got, []string{"quokka-3"}) {
+		t.Errorf("hits %v, want [quokka-3]", got)
+	}
+}
+
+// A hit's id resolves to an accepted decision: a Project's non-accepted copy of
+// a global accepted name does not hide the global one from search.
+func TestSearchDecisionHitSurvivesProjectNonAcceptedCopy(t *testing.T) {
+	edits := searchDecisionEdits()
+	edits["projects/"+decisionsShop+"/decisions/alpha.md"] = decisionFile("Shop Alpha", "proposed", "2023-07-02")
+	srv, _ := decisionServer(t, edits)
+	hits := searchHits(t, srv, readerToken, "q=queue&kind=decision&project="+decisionsShop)
+	if len(hits) != 1 || hits[0].ID != "alpha" || hits[0].Scope != "global" {
+		t.Errorf("hits %+v, want the global accepted alpha", hits)
+	}
+}
+
+// With drafts allowed every status is served as stored, a superseded record
+// under its own id.
+func TestSearchDecisionsWithDraftsServesEveryStatusAsStored(t *testing.T) {
+	srv, _ := decisionServer(t, searchDecisionEdits())
+	got := hitIDs(searchHits(t, srv, operatorToken, "q=marmot&kind=decision&drafts=true"))
+	slices.Sort(got)
+	if want := []string{"marmot", "marmot-new", "marmot-no", "marmot-old"}; !slices.Equal(got, want) {
+		t.Errorf("drafts q=marmot hits %v, want %v", got, want)
+	}
+	got = hitIDs(searchHits(t, srv, operatorToken, "q=quokka&kind=decision&drafts=true"))
+	slices.Sort(got)
+	if want := []string{"quokka-1", "quokka-2"}; !slices.Equal(got, want) {
+		t.Errorf("drafts q=quokka hits %v, want %v", got, want)
+	}
+}

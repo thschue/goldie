@@ -124,41 +124,57 @@ func (s *Snapshot) searchSkills(proj string, words []string, o ReadOptions) []Hi
 	return hits
 }
 
-// searchDecisions scores the decisions that answer in proj's view. Only an
-// accepted decision is a hit by default: a superseded match stands for the
-// accepted decision at the end of its superseded_by chain, and is dropped when
-// there is none. The best score of a name wins. Drafts (o) serve every status
-// as it is.
+// searchDecisions scores the decisions that answer in proj's view. By default
+// only an accepted decision is a hit, taken from the default view so that its
+// id resolves through DecisionIn. A superseded match stands for the accepted
+// decision at the end of its superseded_by chain, which is walked in the
+// drafts view (history) and dropped when it ends anywhere else. The best score
+// of a name wins. Drafts (o) serve every status as stored.
 func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) []Hit {
 	all := s.Decisions(proj, ReadOptions{Drafts: true})
-	byName := make(map[string]Decision, len(all))
-	for _, d := range all {
-		byName[d.Name] = d
-	}
 	best := map[string]Hit{}
 	var order []string
-	for _, d := range all {
-		h := decisionHit(d)
-		scoreWords(&h, d.Title, d.Keywords, words)
-		if h.Score == 0 {
-			continue
-		}
-		if !o.Drafts {
-			succ, ok := acceptedSuccessor(d, byName)
-			if !ok {
-				continue
-			}
-			if succ.Name != d.Name {
-				score, matched := h.Score, h.Matched
-				h = decisionHit(succ)
-				h.Score, h.Matched = score, matched
-			}
-		}
+	add := func(h Hit) {
 		if prev, seen := best[h.ID]; !seen {
 			order = append(order, h.ID)
 			best[h.ID] = h
 		} else if h.Score > prev.Score {
 			best[h.ID] = h
+		}
+	}
+	if o.Drafts {
+		for _, d := range all {
+			if h := scoredDecision(d, d, words); h.Score > 0 {
+				add(h)
+			}
+		}
+	} else {
+		published := map[string]Decision{}
+		for _, d := range s.Decisions(proj) {
+			published[strings.ToLower(d.Name)] = d
+			if d.Status != StatusAccepted {
+				continue
+			}
+			if h := scoredDecision(d, d, words); h.Score > 0 {
+				add(h)
+			}
+		}
+		byName := make(map[string]Decision, len(all))
+		for _, d := range all {
+			byName[strings.ToLower(d.Name)] = d
+		}
+		for _, d := range all {
+			if d.Status != StatusSuperseded {
+				continue
+			}
+			end, ok := chainEnd(d, byName)
+			succ, served := published[strings.ToLower(end.Name)]
+			if !ok || !served || succ.Status != StatusAccepted {
+				continue
+			}
+			if h := scoredDecision(d, succ, words); h.Score > 0 {
+				add(h)
+			}
 		}
 	}
 	hits := make([]Hit, 0, len(order))
@@ -168,23 +184,37 @@ func (s *Snapshot) searchDecisions(proj string, words []string, o ReadOptions) [
 	return hits
 }
 
-func decisionHit(d Decision) Hit {
-	return Hit{ID: d.Name, Name: d.Title, Kind: KindDecision, Scope: d.Scope, Keywords: append([]string(nil), d.Keywords...), Status: d.Status, Enforced: d.Enforced}
+// scoredDecision is the hit for shown, scored on the title and keywords of
+// matched (the same decision, or a superseded one that shown replaces).
+func scoredDecision(matched, shown Decision, words []string) Hit {
+	h := Hit{ID: shown.Name, Name: shown.Title, Kind: KindDecision, Scope: shown.Scope, Keywords: append([]string(nil), shown.Keywords...), Status: shown.Status, Enforced: shown.Enforced}
+	scoreWords(&h, matched.Title, matched.Keywords, words)
+	return h
 }
 
-// acceptedSuccessor returns d when it is accepted, or the accepted decision
-// that its superseded_by chain ends in. The bool is false for any other end.
-func acceptedSuccessor(d Decision, byName map[string]Decision) (Decision, bool) {
+// chainEnd follows superseded_by from d to the first decision that is not
+// superseded. The bool is false at a missing link, an unreadable reference or
+// a cycle. References parse as everywhere (parseRef) and names match ignoring
+// case (keyOf).
+func chainEnd(d Decision, byName map[string]Decision) (Decision, bool) {
 	seen := map[string]bool{}
-	for d.Status == StatusSuperseded && !seen[d.Name] {
-		seen[d.Name] = true
-		next, ok := byName[strings.TrimPrefix(d.SupersededBy, "decision:")]
+	for d.Status == StatusSuperseded {
+		key := strings.ToLower(d.Name)
+		if seen[key] {
+			return Decision{}, false
+		}
+		seen[key] = true
+		ref, err := parseRef(d.SupersededBy)
+		if err != nil || ref.kind != KindDecision {
+			return Decision{}, false
+		}
+		next, ok := byName[ref.name]
 		if !ok {
 			return Decision{}, false
 		}
 		d = next
 	}
-	return d, d.Status == StatusAccepted
+	return d, true
 }
 
 // searchItems scores the articles or agents that answer in proj's view.

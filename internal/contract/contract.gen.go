@@ -801,7 +801,7 @@ type SearchHit struct {
 	// Examples: false
 	Enforced *bool `json:"enforced,omitempty"`
 
-	// Id The Item's id, an article id for a lookup or a skill or agent name.
+	// Id The Item's id: an article id for a lookup, or a skill's, agent's or decision's name.
 	//
 	// Examples: platform/deploy
 	Id string `json:"id"`
@@ -816,13 +816,13 @@ type SearchHit struct {
 	// Examples: article
 	Kind string `json:"kind"`
 
-	// Matched What matched, in order of first match - keywords, and `name` when the name matched.
+	// Matched What matched, in order of first match - keywords, and `name` when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record.
 	//
 	// Examples: ["kubernetes","name"]
 	Matched []string `json:"matched"`
 
-	// Name The display title from the frontmatter of an article. A skill's or
-	// agent's name is its id.
+	// Name The display title from the frontmatter of an article, or a decision's
+	// title. A skill's or agent's name is its id.
 	//
 	//
 	// Examples: Deploying to Kubernetes

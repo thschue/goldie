@@ -1262,13 +1262,13 @@ export interface components {
          */
         SearchHit: {
             /**
-             * @description The Item's id, an article id for a lookup or a skill or agent name.
+             * @description The Item's id: an article id for a lookup, or a skill's, agent's or decision's name.
              * @example platform/deploy
              */
             id: string;
             /**
-             * @description The display title from the frontmatter of an article. A skill's or
-             *     agent's name is its id.
+             * @description The display title from the frontmatter of an article, or a decision's
+             *     title. A skill's or agent's name is its id.
              * @example Deploying to Kubernetes
              */
             name: string;
@@ -1296,7 +1296,7 @@ export interface components {
              */
             score: number;
             /**
-             * @description What matched, in order of first match - keywords, and `name` when the name matched.
+             * @description What matched, in order of first match - keywords, and `name` when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record.
              * @example [
              *       "kubernetes",
              *       "name"

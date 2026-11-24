@@ -909,11 +909,11 @@ One Item that matched a search.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `enforced` | `boolean` | no | Whether the hit is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. Always sent by this server; absent from an older server, where it means unknown, not false. |
-| `id` | `string` | yes | The Item's id, an article id for a lookup or a skill or agent name. |
+| `id` | `string` | yes | The Item's id: an article id for a lookup, or a skill's, agent's or decision's name. |
 | `keywords` | `array` | yes | The Item's keywords, lower case. |
 | `kind` | `string` | yes | The Kind of the Item, such as 'article' (ADR 0005). |
-| `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. |
-| `name` | `string` | yes | The display title from the frontmatter of an article. A skill's or agent's name is its id. |
+| `matched` | `array` | yes | What matched, in order of first match - keywords, and 'name' when the name matched. For a decision hit that replaces a superseded match, it is what matched on the superseded record. |
+| `name` | `string` | yes | The display title from the frontmatter of an article, or a decision's title. A skill's or agent's name is its id. |
 | `overrides` | `array` | no | The Scopes this hit shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this one, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the Item is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted. |
 | `scope` | `string` | yes | Where the Item applies: 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won (ADR 0005). |
