@@ -112,6 +112,34 @@ func (s *Server) ListAgents(ctx context.Context, req contract.ListAgentsRequestO
 	return res, nil
 }
 
+// ListArticles answers GET /api/v1/articles: the view's winners without
+// content, as ListAgents answers the agents.
+func (s *Server) ListArticles(ctx context.Context, req contract.ListArticlesRequestObject) (contract.ListArticlesResponseObject, error) {
+	opts, allowed := readOptions(ctx, req.Params.Drafts)
+	if !allowed {
+		return contract.ListArticles403JSONResponse(forbiddenDrafts), nil
+	}
+	project, ok := validProject(req.Params.Project)
+	if !ok {
+		return contract.ListArticles400JSONResponse(badProject), nil
+	}
+	snap := s.provider()
+	if snap == nil {
+		return contract.ListArticles503JSONResponse{NotReadyJSONResponse: contract.NotReadyJSONResponse(notReady)}, nil
+	}
+	proj, hint := scopeHint(snap, project)
+	res := contract.ListArticles200JSONResponse{Articles: []contract.ArticleSummary{}, Hint: hint}
+	for _, a := range snap.ArticlesIn(proj, opts) {
+		sum := contract.ArticleSummary{
+			Id: a.ID, Name: a.Name, Keywords: list(a.Keywords), Scope: a.Scope,
+			Overrides: list(a.Overrides), Enforced: a.Enforced,
+		}
+		sum.Status, _ = lifecycle(a.Status, "")
+		res.Articles = append(res.Articles, sum)
+	}
+	return res, nil
+}
+
 // GetAgent answers GET /api/v1/agents/{name}.
 func (s *Server) GetAgent(ctx context.Context, req contract.GetAgentRequestObject) (contract.GetAgentResponseObject, error) {
 	opts, allowed := readOptions(ctx, req.Params.Drafts)

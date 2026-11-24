@@ -427,6 +427,67 @@ type Article struct {
 	Status *ItemStatus `json:"status,omitempty"`
 }
 
+// ArticleList The articles that win in a view, without their content.
+type ArticleList struct {
+	// Articles The articles, sorted by id.
+	//
+	// Examples: [{"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"name":"Deploying to Kubernetes","overrides":[],"scope":"global"}]
+	Articles []ArticleSummary `json:"articles"`
+
+	// Hint Present when the request named a Project that is not registered: the
+	// list is the global one, and this says what to do next.
+	//
+	//
+	// Examples: The Project github.com/acme/none is not registered on this server, so this is global guidance only. To register it, add a projects/github.com/acme/none/ directory to one of goldie's Sources, usually through the platform team.
+	Hint *string `json:"hint,omitempty"`
+}
+
+// ArticleSummary One article of a view, without its content.
+//
+// Examples: {"enforced":false,"id":"platform/deploy","keywords":["kubernetes","deploy"],"name":"Deploying to Kubernetes","overrides":[],"scope":"global"}
+type ArticleSummary struct {
+	// Enforced Whether the article is enforced (frontmatter `enforced: true`), so no narrower Scope can shadow it.
+	//
+	// Examples: false
+	Enforced bool `json:"enforced"`
+
+	// Id The article id.
+	//
+	// Examples: platform/deploy
+	Id string `json:"id"`
+
+	// Keywords The article's keywords, lower case.
+	//
+	// Examples: ["kubernetes","deploy"]
+	Keywords []string `json:"keywords"`
+
+	// Name The display title from the frontmatter.
+	//
+	// Examples: Deploying to Kubernetes
+	Name string `json:"name"`
+
+	// Overrides The Scopes this article shadows in the requested view, nearest
+	// first; `[]` when it shadows nothing. Never null.
+	//
+	//
+	// Examples: ["global"]
+	Overrides []string `json:"overrides"`
+
+	// Scope Where the article applies: `global`, `local`, or the Project (`host/org/repo`) whose copy won (ADR 0005).
+	//
+	// Examples: global
+	Scope string `json:"scope"`
+
+	// Status An Item's lifecycle when it is not published: `deprecated` (still
+	// served; read `replaced_by` instead when present) or `draft` (only with
+	// `drafts=true`, for operators). Absent for a published Item. Clients
+	// ignore values they do not know.
+	//
+	//
+	// Examples: deprecated
+	Status *ItemStatus `json:"status,omitempty"`
+}
+
 // ContentWarning One finding of a content load that did not fail it, such as a `suppress`
 // reference that names nothing. It shows what a Source wrote, escaped to
 // printable ASCII and cut, which is why only operators read it.
@@ -1099,6 +1160,23 @@ type GetAgentParams struct {
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
+// ListArticlesParams defines parameters for ListArticles.
+type ListArticlesParams struct {
+	// Project Resolve the list for this Project (ADR 0020): its own article wins over the
+	// global one with the same id. Matched ignoring case. An
+	// unregistered Project answers the global view with a `hint`; a value
+	// that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+
+	// Drafts `true` includes draft Items too, marked `status: draft`; for operator
+	// tokens only, and a reader token asking for drafts is a 403. Without
+	// it a draft is left out for every token and never shadows, so the
+	// published Item answers. Even with drafts, a draft Project article
+	// never shadows an enforced global Item (ADR 0021). MCP never asks
+	// for drafts.
+	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
 // GetArticleParams defines parameters for GetArticle.
 type GetArticleParams struct {
 	// Project Look the article up for this Project (ADR 0020): its own article
@@ -1433,6 +1511,18 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/agents/{name} (the `GetAgent` operationId).
 	GetAgent(ctx context.Context, name string, params *GetAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListArticles List the articles of a view
+	//
+	// Returns the articles that win in the Project's view, one per id, sorted
+	// by id, without their content. Each carries its `scope`, the Scopes it
+	// `overrides` and whether it is `enforced`; `status` is present only when
+	// the article is not published. A draft is listed only with `drafts=true`
+	// and the operator role. For the content, read one article with
+	// `GET /api/v1/articles/{id}`.
+	//
+	// Corresponds with GET /api/v1/articles (the `ListArticles` operationId).
+	ListArticles(ctx context.Context, params *ListArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetArticle Look up one article
 	//
@@ -1835,6 +1925,28 @@ func (c *Client) ListAgents(ctx context.Context, params *ListAgentsParams, reqEd
 // Corresponds with GET /api/v1/agents/{name} (the `GetAgent` operationId).
 func (c *Client) GetAgent(ctx context.Context, name string, params *GetAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAgentRequest(c.Server, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListArticles List the articles of a view
+//
+// Returns the articles that win in the Project's view, one per id, sorted
+// by id, without their content. Each carries its `scope`, the Scopes it
+// `overrides` and whether it is `enforced`; `status` is present only when
+// the article is not published. A draft is listed only with `drafts=true`
+// and the operator role. For the content, read one article with
+// `GET /api/v1/articles/{id}`.
+//
+// Corresponds with GET /api/v1/articles (the `ListArticles` operationId).
+func (c *Client) ListArticles(ctx context.Context, params *ListArticlesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListArticlesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2509,6 +2621,72 @@ func NewGetAgentRequest(server string, name string, params *GetAgentParams) (*ht
 	}
 
 	operationPath := "/api/v1/agents/" + pathParam0
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Drafts != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListArticlesRequest constructs an http.Request for the ListArticles method
+func NewListArticlesRequest(server string, params *ListArticlesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/articles"
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -3768,6 +3946,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/agents/{name} (the `GetAgent` operationId).
 	GetAgentWithResponse(ctx context.Context, name string, params *GetAgentParams, reqEditors ...RequestEditorFn) (*GetAgentResponse, error)
 
+	// ListArticlesWithResponse List the articles of a view
+	//
+	// Returns the articles that win in the Project's view, one per id, sorted
+	// by id, without their content. Each carries its `scope`, the Scopes it
+	// `overrides` and whether it is `enforced`; `status` is present only when
+	// the article is not published. A draft is listed only with `drafts=true`
+	// and the operator role. For the content, read one article with
+	// `GET /api/v1/articles/{id}`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/articles (the `ListArticles` operationId).
+	ListArticlesWithResponse(ctx context.Context, params *ListArticlesParams, reqEditors ...RequestEditorFn) (*ListArticlesResponse, error)
+
 	// GetArticleWithResponse Look up one article
 	//
 	// Returns one article by its id. Ids compare ignoring case. A miss is a
@@ -4401,6 +4593,103 @@ func (r GetAgentResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetAgentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListArticlesResponse429Headers the declared response headers of an HTTP 429 response for ListArticles
+type ListArticlesResponse429Headers struct {
+	RetryAfter *int
+}
+
+type ListArticlesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ArticleList
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *ListArticlesResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListArticlesResponse) GetJSON200() *ArticleList {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListArticlesResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListArticlesResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListArticlesResponse) GetJSON403() *ErrorEnvelope {
+	return r.JSON403
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r ListArticlesResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r ListArticlesResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListArticlesResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListArticlesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListArticlesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListArticlesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListArticlesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListArticlesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6345,6 +6634,26 @@ func (c *ClientWithResponses) GetAgentWithResponse(ctx context.Context, name str
 	return ParseGetAgentResponse(rsp)
 }
 
+// ListArticlesWithResponse List the articles of a view
+//
+// Returns the articles that win in the Project's view, one per id, sorted
+// by id, without their content. Each carries its `scope`, the Scopes it
+// `overrides` and whether it is `enforced`; `status` is present only when
+// the article is not published. A draft is listed only with `drafts=true`
+// and the operator role. For the content, read one article with
+// `GET /api/v1/articles/{id}`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/articles (the `ListArticles` operationId).
+func (c *ClientWithResponses) ListArticlesWithResponse(ctx context.Context, params *ListArticlesParams, reqEditors ...RequestEditorFn) (*ListArticlesResponse, error) {
+	rsp, err := c.ListArticles(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListArticlesResponse(rsp)
+}
+
 // GetArticleWithResponse Look up one article
 //
 // Returns one article by its id. Ids compare ignoring case. A miss is a
@@ -7075,6 +7384,94 @@ func ParseGetAgentResponse(rsp *http.Response) (*GetAgentResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetAgentResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseListArticlesResponse parses an HTTP response from a ListArticlesWithResponse call
+func ParseListArticlesResponse(rsp *http.Response) (*ListArticlesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListArticlesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ArticleList
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers ListArticlesResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -8745,6 +9142,9 @@ type ServerInterface interface {
 	// GetAgent Read one agent
 	// (GET /api/v1/agents/{name})
 	GetAgent(w http.ResponseWriter, r *http.Request, name string, params GetAgentParams)
+	// ListArticles List the articles of a view
+	// (GET /api/v1/articles)
+	ListArticles(w http.ResponseWriter, r *http.Request, params ListArticlesParams)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
@@ -8944,6 +9344,52 @@ func (siw *ServerInterfaceWrapper) GetAgent(w http.ResponseWriter, r *http.Reque
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAgent(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListArticles operation middleware
+func (siw *ServerInterfaceWrapper) ListArticles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListArticlesParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "drafts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "drafts", r.URL.Query(), &params.Drafts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "drafts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "drafts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListArticles(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9832,6 +10278,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/search", wrapper.SearchArticles)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles", wrapper.ListArticles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}", wrapper.GetArticle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills", wrapper.ListSkills)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}", wrapper.GetSkill)
@@ -10303,6 +10750,138 @@ type GetAgentdefaultJSONResponse struct {
 }
 
 func (response GetAgentdefaultJSONResponse) VisitGetAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticlesRequestObject struct {
+	Params ListArticlesParams
+}
+
+type ListArticlesResponseObject interface {
+	VisitListArticlesResponse(w http.ResponseWriter) error
+}
+
+type ListArticles200JSONResponse ArticleList
+
+func (response ListArticles200JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles400JSONResponse ErrorEnvelope
+
+func (response ListArticles400JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles401JSONResponse ErrorEnvelope
+
+func (response ListArticles401JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles403JSONResponse ErrorEnvelope
+
+func (response ListArticles403JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response ListArticles426JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response ListArticles429JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticles503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response ListArticles503JSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListArticlesdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response ListArticlesdefaultJSONResponse) VisitListArticlesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -12791,6 +13370,9 @@ type StrictServerInterface interface {
 	// GetAgent Read one agent
 	// (GET /api/v1/agents/{name})
 	GetAgent(ctx context.Context, request GetAgentRequestObject) (GetAgentResponseObject, error)
+	// ListArticles List the articles of a view
+	// (GET /api/v1/articles)
+	ListArticles(ctx context.Context, request ListArticlesRequestObject) (ListArticlesResponseObject, error)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
@@ -12970,6 +13552,32 @@ func (sh *strictHandler) GetAgent(w http.ResponseWriter, r *http.Request, name s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAgentResponseObject); ok {
 		if err := validResponse.VisitGetAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListArticles operation middleware
+func (sh *strictHandler) ListArticles(w http.ResponseWriter, r *http.Request, params ListArticlesParams) {
+	var request ListArticlesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListArticles(ctx, request.(ListArticlesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListArticles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListArticlesResponseObject); ok {
+		if err := validResponse.VisitListArticlesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

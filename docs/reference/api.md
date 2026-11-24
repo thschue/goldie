@@ -124,6 +124,30 @@ Operation ID: `getAgent`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/articles`
+
+List the articles of a view
+
+Returns the articles that win in the Project's view, one per id, sorted
+by id, without their content. Each carries its `scope`, the Scopes it
+`overrides` and whether it is `enforced`; `status` is present only when
+the article is not published. A draft is listed only with `drafts=true`
+and the operator role. For the content, read one article with
+`GET /api/v1/articles/{id}`.
+
+Operation ID: `listArticles`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The articles. | `application/json` (`ArticleList`) |
+| `400` | For the article list, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the article list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the article list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/articles/{id}`
 
 Look up one article
@@ -707,6 +731,29 @@ One article.
 | `overrides` | `array` | no | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. Always sent by this server; absent from an older server, where it means unknown, not empty. |
 | `replaced_by` | `string` | no | The reference to the Item that replaces this article, as written in its frontmatter, '&lt;kind&gt;:&lt;name&gt;' (ADR 0021). Present only when the article is not published (deprecated or draft) and names a replacement. It comes from a Source and is untrusted: clean it before printing it. |
 | `scope` | `string` | no | 'global', 'local' (the repository's own '.goldie/'), or the Project ('host/org/repo') whose copy won in the requested view. Absent from an older server, where it means unknown, not global. |
+| `status` | `ItemStatus` | no |  |
+
+### `ArticleList`
+
+The articles that win in a view, without their content.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `articles` | `array` | yes | The articles, sorted by id. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the list is the global one, and this says what to do next. |
+
+### `ArticleSummary`
+
+One article of a view, without its content.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `enforced` | `boolean` | yes | Whether the article is enforced (frontmatter 'enforced: true'), so no narrower Scope can shadow it. |
+| `id` | `string` | yes | The article id. |
+| `keywords` | `array` | yes | The article's keywords, lower case. |
+| `name` | `string` | yes | The display title from the frontmatter. |
+| `overrides` | `array` | yes | The Scopes this article shadows in the requested view, nearest first; '[]' when it shadows nothing. Never null. |
+| `scope` | `string` | yes | Where the article applies: 'global', 'local', or the Project ('host/org/repo') whose copy won (ADR 0005). |
 | `status` | `ItemStatus` | no |  |
 
 ### `ContentWarning`

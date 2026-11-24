@@ -42,6 +42,10 @@ func (stub) GetSkillFile(context.Context, GetSkillFileRequestObject) (GetSkillFi
 	return GetSkillFile200ApplicationoctetStreamResponse{}, nil
 }
 
+func (stub) ListArticles(context.Context, ListArticlesRequestObject) (ListArticlesResponseObject, error) {
+	return ListArticles200JSONResponse{}, nil
+}
+
 func (stub) ListAgents(context.Context, ListAgentsRequestObject) (ListAgentsResponseObject, error) {
 	return ListAgents200JSONResponse{}, nil
 }
