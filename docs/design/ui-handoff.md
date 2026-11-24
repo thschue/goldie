@@ -135,6 +135,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
   - **Details**: Source, revision, keywords, updated, and "View source in git ↗".
 - The same Usage card appears on skill, agent and loop detail views.
 - The lifecycle banner sits above the title (see §5).
+- **Built so far (#732):** the title with a mono Kind badge ("Article") beside it, the id and the Enforced chip, then the article; the aside holds **Use it** (`goldie lookup <id>` with the copy button, and the MCP tool `get_article`) and **Details** (Scope, keywords, and "Overrides `x` from global" only when the article shadows one). Scope shows as a label; its value appears once the Article API carries a `scope` (it shows "—" until then). The aside drops below the article under 1024 px. Loading shows the same layout as a skeleton, with no h1. The Resolution ladder, Usage and the Source, revision and updated lines come with their API.
 
 ### 3.5 Agent assets (`/assets/:tab`)
 

@@ -584,6 +584,98 @@ test.describe('a missing article', () => {
   });
 });
 
+// Item detail layout (#732, handoff §3.4): a Kind badge beside the name, and an aside
+// with "Use it" and "Details" next to the article, below it under 1024 px.
+// Contract: the aside is the one role=complementary in main; the badge is the text
+// "Article" beside the h1; the copy button is named "Copy command". The Scope value
+// is not covered: the Article the API returns has no `scope` field (see the header).
+test.describe('the item detail aside', () => {
+  const aside = (page: Page) => main(page).getByRole('complementary');
+  const body = (page: Page) => main(page).getByText('Use the platform chart.');
+  const box = async (l: ReturnType<Page['locator']>) => (await l.boundingBox())!;
+
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows the Kind badge next to the name', async ({ page }) => {
+    await stubArticle(page, article());
+    await open(page);
+    const badge = h1(page).locator('xpath=..').getByText('Article', { exact: true });
+    await expect(badge).toBeVisible();
+    const h = await box(h1(page));
+    const b = await box(badge);
+    expect(b.y + b.height / 2, 'the badge is on the line of the name').toBeGreaterThanOrEqual(h.y);
+    expect(b.y + b.height / 2, 'the badge is on the line of the name').toBeLessThanOrEqual(h.y + h.height);
+  });
+
+  test('Use it has the CLI command with a copy button and the MCP tool name', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stubArticle(page, article());
+    await open(page);
+    await expect(aside(page)).toHaveCount(1);
+    await expect(aside(page).getByText('Use it', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText('goldie lookup platform/deploy', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText('get_article')).toBeVisible();
+    await aside(page).getByRole('button', { name: 'Copy command', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('goldie lookup platform/deploy');
+    await expect(aside(page).locator('[aria-live="polite"]')).toHaveText('Copied');
+    await expect(aside(page).getByRole('status')).toHaveCount(0);
+  });
+
+  test('Details has the keywords, and the override only when the article shadows one', async ({ page }) => {
+    await stubArticle(page, article({ overrides: ['global'] }));
+    await open(page);
+    await expect(aside(page).getByText('Details', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText('Scope', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText('kubernetes', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText('deploy', { exact: true })).toBeVisible();
+    expect(norm(await aside(page).innerText())).toMatch(/Overrides .+ from global/);
+  });
+
+  test('without overrides the aside has no Overrides line', async ({ page }) => {
+    await stubArticle(page, article({ overrides: [] }));
+    await open(page);
+    await expect(aside(page).getByText('Details', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText(/Overrides/)).toHaveCount(0);
+  });
+
+  test('at 1280 px the aside sits beside the article, no wider than 360 px', async ({ page }) => {
+    await stubArticle(page, article());
+    await open(page);
+    await expect(aside(page)).toBeVisible();
+    const a = await box(aside(page));
+    const t = await box(body(page));
+    expect(a.width).toBeLessThanOrEqual(360);
+    expect(t.width).toBeLessThanOrEqual(760);
+    expect(a.x, 'the aside is right of the article').toBeGreaterThanOrEqual(t.x + t.width);
+    expect(a.y, 'the aside starts beside the article, not below it').toBeLessThan(t.y + t.height);
+  });
+
+  test('under 1024 px the aside drops below the article', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await stubArticle(page, article());
+    await open(page);
+    await expect(aside(page)).toBeVisible();
+    const a = await box(aside(page));
+    const t = await box(body(page));
+    expect(a.y, 'the aside is below the article').toBeGreaterThanOrEqual(t.y + t.height);
+  });
+
+  test('loading shows the layout as a skeleton and the h1 is never "Loading…"', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await page.route(apiArticle, async (route) => {
+      await gate;
+      await json(route, 200, article());
+    });
+    await open(page);
+    await expect(aside(page)).toBeVisible();
+    await expect(main(page).getByRole('heading', { level: 1 }).filter({ hasText: /Loading/ })).toHaveCount(0);
+    release();
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    await expect(main(page).getByRole('heading', { level: 1 }).filter({ hasText: /Loading/ })).toHaveCount(0);
+  });
+});
+
 test.describe('wide content at 375 px', () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
