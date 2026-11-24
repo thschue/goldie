@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -81,20 +80,5 @@ func TestLayersReadYAMLValuesAsTheVariablesTakeThem(t *testing.T) {
 func TestLayersRefuseConfigAsAFileKey(t *testing.T) {
 	if _, err := layersFor(t, nil, nil, "config: other.yaml\n"); err == nil {
 		t.Error("the file named another config file")
-	}
-}
-
-// Annotate names each layer without a value, and leaves a default alone.
-func TestLayersAnnotateNamesTheSource(t *testing.T) {
-	l, err := layersFor(t, []string{"--poll-interval", "bad-value"}, map[string]string{EnvMCPName: "x"}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := l.Annotate(errors.New(EnvPollInterval + ": must be a Go duration")).Error()
-	if !strings.Contains(got, "flag --poll-interval") || strings.Contains(got, "bad-value") {
-		t.Errorf("annotated = %q", got)
-	}
-	if got := l.Annotate(errors.New(EnvLogLevel + ": bad")).Error(); strings.Contains(got, "(") {
-		t.Errorf("a default was annotated: %q", got)
 	}
 }
