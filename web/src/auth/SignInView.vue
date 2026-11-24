@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { errorSentence } from '../api/errorSentence';
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { safeNext } from './next';
@@ -85,7 +86,7 @@ onBeforeUnmount(() => clearInterval(timer));
         />
         <p id="token-help" class="help">Exchanged once for a secure session. The token is never stored in your browser.</p>
         <div v-if="error" id="signin-error" role="alert" class="alert">
-          {{ error.message }} <span v-if="error.hint">{{ error.hint }}</span>
+          {{ errorSentence(error.message, error.hint) }} <span v-if="error.hint">{{ error.hint }}</span>
         </div>
         <div v-if="limited" role="status" class="limited">Too many requests — try again in {{ wait }} s.</div>
         <button type="submit" class="submit" :disabled="busy || limited">Sign in</button>

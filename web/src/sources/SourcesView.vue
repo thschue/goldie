@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { errorSentence } from '../api/errorSentence';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
@@ -56,7 +57,7 @@ async function startSync() {
 function syncMessage(e: unknown) {
   if (!(e instanceof ApiError)) return "Couldn't start a sync. Try again in a moment.";
   if (e.message === fallback) return "Couldn't start a sync. Try again in a moment.";
-  return e.hint ? `${e.message} ${e.hint}` : e.message;
+  return e.hint ? `${errorSentence(e.message, e.hint)} ${e.hint}` : e.message;
 }
 </script>
 
