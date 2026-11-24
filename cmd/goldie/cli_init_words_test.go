@@ -49,7 +49,7 @@ func TestCLIInitAgainstANonGoldieAnswerSaysNotChecked(t *testing.T) {
 }
 
 func TestReadmeInitParagraphSaysNotCheckedCoversAnUnreadableAnswer(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "docs", "reference", "cli.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

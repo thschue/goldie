@@ -220,7 +220,7 @@ func TestMCPOverHTTPAdvertisesToolsAndNotLogging(t *testing.T) {
 // capabilities and does not offer the SDK's default logging capability. The
 // README's MCP sections are the MCP docs.
 func TestMCPDocsSayLoggingIsNotOffered(t *testing.T) {
-	readme, err := os.ReadFile("../../README.md")
+	readme, err := os.ReadFile("../../docs/reference/mcp.md")
 	if err != nil {
 		t.Fatal(err)
 	}
