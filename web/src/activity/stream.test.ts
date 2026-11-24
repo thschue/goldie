@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { add, maxRows, msText, resultText, surfaceOf } from './rows';
+import { add, maxRows, resultText, surfaceOf } from './rows';
 import { split, type ActivityEvent } from './stream';
 
 const ev = (id: number, o: Partial<ActivityEvent> = {}): ActivityEvent => ({
@@ -52,7 +52,7 @@ describe('rows', () => {
 });
 
 // #810: rows.ts gives surfaceOf(event), the pill an event counts under: mcp, cli or ui as sent, and
-// other for any other value, and msText(microseconds), a latency in milliseconds with one decimal.
+// other for any other value.
 describe('surfaceOf', () => {
   it('is the surface the event came from, and other for a value it does not know', () => {
     expect(surfaceOf(ev(1, { via: 'mcp' }))).toBe('mcp');
@@ -60,13 +60,5 @@ describe('surfaceOf', () => {
     expect(surfaceOf(ev(1, { via: 'ui' }))).toBe('ui');
     expect(surfaceOf(ev(1, { via: 'other' }))).toBe('other');
     expect(surfaceOf(ev(1, { via: 'robot' }))).toBe('other');
-  });
-});
-
-describe('msText', () => {
-  it('shows microseconds as milliseconds with one decimal', () => {
-    expect(msText(850)).toMatch(/^0\.9\s?ms$/);
-    expect(msText(12_345)).toMatch(/^12\.3\s?ms$/);
-    expect(msText(51_000)).toMatch(/^51\.0\s?ms$/);
   });
 });
