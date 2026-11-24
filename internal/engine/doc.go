@@ -55,7 +55,9 @@
 // Items are left out, and a draft left out never shadows anything, so the
 // published Item with the same identity answers. ReadOptions{Drafts: true}
 // includes drafts, and a draft then shadows like any other Item, except that
-// no Project copy shadows an enforced global Item. Snapshot.winner is the one
+// no Project copy shadows an enforced global Item. A decision is the other
+// exception: its served (accepted) copy wins, and drafts fall back to a
+// non-accepted copy only when none is served (decisionWinner). Snapshot.winner is the one
 // rule for which copy answers; reads and load checks all go through it.
 // Snapshot.Articles lists every global Item, drafts included, and is not a
 // reader view.

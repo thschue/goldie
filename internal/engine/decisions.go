@@ -157,8 +157,9 @@ func toDecision(a Article) Decision {
 
 // DecisionIn resolves a decision for a Project ("host/org/repo", matched
 // case-insensitively), local then Project then global, by winner's rule. An
-// empty or unregistered Project resolves globally. Only an accepted decision is
-// served unless opts asks for drafts, which serves every status.
+// empty or unregistered Project resolves globally. The accepted copy in the view
+// wins; with drafts, a name with no accepted copy falls back to its nearest
+// copy of any status (decisionWinner).
 func (s *Snapshot) DecisionIn(proj, name string, opts ...ReadOptions) (Decision, bool) {
 	if a := s.decisionWinner(proj, keyOf(KindDecision, name), readOpts(opts)); a != nil {
 		return toDecision(*a), true
@@ -211,8 +212,10 @@ func (s *Snapshot) DecisionChain(proj, name string) ([]Decision, bool) {
 	for _, d := range all {
 		byName[nameKey(d.Name)] = d
 	}
+	// The start is the stored name, as the API and the chain entries show it;
+	// only the links between decisions match ignoring case.
 	start, ok := byName[nameKey(name)]
-	if !ok {
+	if !ok || start.Name != name {
 		return nil, false
 	}
 	// supersededBy is the key of the decision d names in superseded_by, or "".

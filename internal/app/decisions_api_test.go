@@ -383,3 +383,15 @@ func TestDecisionListAndGetAgreeOnAProjectNonAcceptedCopy(t *testing.T) {
 			got.Title, got.Status, got.Scope, got.Date, listed.Title, listed.Status, listed.Scope, listed.Date)
 	}
 }
+
+// #757 review: GET matches the stored name exactly, as it did before; a
+// differently-cased name is a 404 envelope, never a panic.
+func TestGetDecisionWithADifferentlyCasedNameIsNotFound(t *testing.T) {
+	srv, _ := decisionServer(t, nil)
+	for _, name := range []string{"ALPHA", "Zeta"} {
+		status, body := itemsGet(t, srv, readerToken, decisionsAPI+"/"+name)
+		if status != http.StatusNotFound {
+			t.Errorf("GET %s answers %d, want 404: %s", name, status, body)
+		}
+	}
+}
