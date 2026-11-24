@@ -254,3 +254,50 @@ func TestInstructionsDefaultBlockWithoutAProjectHasNoEmptyParentheses(t *testing
 		t.Errorf("unregistered Project answer %+v, want the block %q and a hint naming it", u, a.Block)
 	}
 }
+
+// bindingDecisionsSentence is the closing sentence of the built-in default
+// block (#716), exactly as the issue words it.
+const bindingDecisionsSentence = "Accepted decisions (global and project) are binding. If a change would contradict one, stop and say so, and propose a new decision instead of silently deviating."
+
+// Criterion (#716): the default block, served for a Project and target with no
+// resolving clause, ends with the binding-decisions sentence, exactly.
+func TestInstructionsDefaultBlockEndsWithTheBindingDecisionsSentence(t *testing.T) {
+	cfg := loadedConfig(t, nil)
+	cfg.ContentDir = t.TempDir()
+	cfg.APITokens = namedTokenLines()
+	cfg.RateLimit = roomyRateLimit
+	h, err := PublicHandler(cfg, nil)
+	if err != nil {
+		t.Fatalf("PublicHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	for _, q := range []string{
+		"?target=agents", "?target=claude",
+		"?target=claude&project=" + url.QueryEscape(itemsProject),
+	} {
+		a := instructionsGet(t, srv, q)
+		if !strings.HasSuffix(a.Block, bindingDecisionsSentence) {
+			t.Errorf("%s: default block %q does not end with %q", q, a.Block, bindingDecisionsSentence)
+		}
+		if n := strings.Count(a.Block, bindingDecisionsSentence); n != 1 {
+			t.Errorf("%s: the sentence appears %d times, want once", q, n)
+		}
+	}
+}
+
+// Criterion (#716): a Project with its own resolving clause gets that clause
+// unchanged; the sentence is never appended to it.
+func TestInstructionsResolvingClauseIsServedWithoutTheBindingDecisionsSentence(t *testing.T) {
+	srv := instructionsServer(t, "")
+	for _, q := range []string{
+		"?target=claude&project=" + url.QueryEscape(itemsProject),
+		"?target=agents&project=" + url.QueryEscape(itemsProject),
+		"?target=claude",
+	} {
+		a := instructionsGet(t, srv, q)
+		if strings.Contains(a.Block, "Accepted decisions") || strings.Contains(a.Block, "are binding") {
+			t.Errorf("%s: block %q carries the default clause's sentence", q, a.Block)
+		}
+	}
+}

@@ -464,3 +464,34 @@ func TestClauseBodyOfVisibleTextTabsAndLineBreaksLoadsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// --- #716: the default clause makes accepted decisions binding ---
+
+const bindingDecisions = "Accepted decisions (global and project) are binding. If a change would contradict one, stop and say so, and propose a new decision instead of silently deviating."
+
+func TestDefaultBlockEndsWithTheBindingDecisionsSentence(t *testing.T) {
+	for _, target := range []string{"claude", "agents"} {
+		for _, proj := range []string{"", govProject} {
+			got := defaultBlock(t, proj, target)
+			if !strings.HasSuffix(got, bindingDecisions) {
+				t.Errorf("default block (project %q, target %s) = %q, want it to end with %q", proj, target, got, bindingDecisions)
+			}
+		}
+	}
+}
+
+func TestResolvingClauseIsServedUnchangedWithoutTheBindingDecisionsSentence(t *testing.T) {
+	snap := load(t, map[string]string{
+		globalClauseFile("use"):  clause("use", 1, "claude", "MARK-GLOBAL"),
+		projectClauseFile("own"): clause("own", 2, "claude", "MARK-OWN"),
+	})
+	for proj, want := range map[string]string{
+		"":         "MARK-GLOBAL",
+		govProject: "MARK-GLOBAL\n\nMARK-OWN",
+	} {
+		got, _ := snap.Instructions(proj, "claude", testVars)
+		if got != want {
+			t.Errorf("block (project %q) = %q, want exactly %q: a clause is never appended to", proj, got, want)
+		}
+	}
+}

@@ -43,7 +43,8 @@ type InstructionVars struct {
 const defaultClause = "This repository ({{project}}) uses Goldie for its golden paths.\n" +
 	"Before you build, change or review something the team may have a standard for,\n" +
 	"ask Goldie first, through the {{mcp_name}} MCP server or with `{{cli}} lookup <id>`.\n" +
-	"Follow the golden path it returns; say so when you deviate from it."
+	"Follow the golden path it returns; say so when you deviate from it.\n" +
+	"Accepted decisions (global and project) are binding. If a change would contradict one, stop and say so, and propose a new decision instead of silently deviating."
 
 // parseClause parses one clause file. The name is the file's slug and the
 // frontmatter name must equal it. The body must hold no placeholder but the
