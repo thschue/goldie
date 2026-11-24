@@ -815,6 +815,6 @@ test.describe('an article when the Project changes', () => {
 
     await expect(alert(page)).toContainText('No article has the id platform/deploy.');
     await expect(main(page)).not.toContainText('Shop deploy copy');
-    await expect(h1(page)).toHaveCount(0);
+    await expect(h1(page)).toHaveText('Article not available');
   });
 });
