@@ -41,7 +41,7 @@ func (a Article) key() itemKey { return keyOf(a.Kind(), a.ID) }
 
 // knownKinds is the one table of Kinds an Item reference may name (ADR 0021).
 // A Kind joins it with its loader; until then a reference to it is rejected.
-var knownKinds = []string{KindArticle, KindAgent, KindLoop}
+var knownKinds = []string{KindArticle, KindAgent, KindLoop, KindDecision}
 
 func isKnownKind(kind string) bool {
 	for _, k := range knownKinds {
@@ -63,6 +63,17 @@ func knownKindsHint() string {
 // published reports whether the Item is served by default: every status but
 // draft. A deprecated Item is still served.
 func (a Article) published() bool { return a.Status != StatusDraft }
+
+// served reports whether the Item answers a default read and, when enforced,
+// enforces. It is published, except for a decision, which is served only once
+// accepted. published() stays the lifecycle test, so a superseded decision is a
+// valid replacement target and a chain of any length loads.
+func (a Article) served() bool {
+	if a.kind == KindDecision {
+		return a.Status == StatusAccepted
+	}
+	return a.published()
+}
 
 // lifecycleMeta is the governance part of an Item's frontmatter. The fields are
 // nodes, not typed values, because yaml.v3 decodes yes, on and "true" into a
@@ -280,7 +291,7 @@ func (s *Snapshot) checkReplacements(all []*Article) error {
 // shadows nothing. Identity ignores case (ADR 0015).
 func (s *Snapshot) checkEnforced() error {
 	for _, a := range s.allItems() {
-		if a.Scope == ScopeGlobal || !a.published() {
+		if a.Scope == ScopeGlobal || !a.served() {
 			continue
 		}
 		if key := a.key(); s.enforces(key) {
@@ -296,7 +307,7 @@ func (s *Snapshot) checkEnforced() error {
 // copy, which only the drafts view would otherwise let shadow it (#359).
 func (s *Snapshot) enforces(key itemKey) bool {
 	g := s.index[key]
-	return g != nil && g.Enforced && g.published()
+	return g != nil && g.Enforced && g.served()
 }
 
 // allArticles lists pointers to every Article in the Snapshot, global first,

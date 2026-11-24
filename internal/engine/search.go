@@ -63,7 +63,7 @@ func readOpts(opts []ReadOptions) ReadOptions {
 }
 
 // visible reports whether an Item takes part in a read under o.
-func (o ReadOptions) visible(a Article) bool { return o.Drafts || a.published() }
+func (o ReadOptions) visible(a Article) bool { return o.Drafts || a.served() }
 
 // Search scores every global article against each whitespace-separated,
 // lower-cased query word. Per word and keyword, an exact match scores +4 and a

@@ -10,10 +10,12 @@ import (
 // accepted; a Kind with no loader is not.
 func TestParseRefKnownKindsTable(t *testing.T) {
 	for ref, want := range map[string]itemKey{
-		"article:x": keyOf(KindArticle, "x"),
-		"agent:x":   keyOf("agent", "x"),
-		"agent:X":   keyOf("agent", "x"),
-		"loop:x":    keyOf("loop", "x"),
+		"article:x":  keyOf(KindArticle, "x"),
+		"agent:x":    keyOf("agent", "x"),
+		"agent:X":    keyOf("agent", "x"),
+		"loop:x":     keyOf("loop", "x"),
+		"decision:x": keyOf("decision", "x"),
+		"decision:X": keyOf("decision", "x"),
 	} {
 		if key, err := parseRef(ref); err != nil || key != want {
 			t.Fatalf("parseRef(%s) = %v, %v; want %v", ref, key, err, want)
