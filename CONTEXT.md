@@ -45,6 +45,8 @@ resolved in the referring Item's Resolution view (ADR 0021).
 
 **Decision**: an architecture decision (ADR) served as an Item. Its lifecycle is `proposed`,
 `accepted`, `rejected`, `deprecated` or `superseded`. Accepted Decisions are binding for agents.
+A decision file is goldie frontmatter plus a body, or an existing Nygard (`adr-tools`) or MADR 2.x file read
+as it is; frontmatter without a `title` takes the first H1 (MADR 3.x).
 
 **Catalog**: the compact list of available Items (and Decision titles) injected into an agent's
 session so it knows what it can ask goldie for.
