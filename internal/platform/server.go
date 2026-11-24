@@ -218,9 +218,12 @@ func (s *Server) Serve(ctx context.Context, force <-chan struct{}) error {
 	// so probes keep reporting "draining" rather than a refused connection.
 	// Connections without complete request headers are not in flight; close them
 	// so Shutdown does not wait for them (a request still sending headers is reset).
+	// The admin tracker closes only after the app listener is done, so a probe
+	// that dials during a slow app drain is still answered.
 	appNew.closeAll()
+	appErr := app.Shutdown(sctx)
 	adminNew.closeAll()
-	err = errors.Join(app.Shutdown(sctx), admin.Shutdown(sctx))
+	err = errors.Join(appErr, admin.Shutdown(sctx))
 	if err != nil {
 		closeAll()
 		select {

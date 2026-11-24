@@ -245,6 +245,53 @@ func TestBinaryExitsPromptlyWithSilentConnectionsOpen(t *testing.T) {
 	}
 }
 
+// While an app request is still in flight after the drain, the admin port
+// still answers: a probe that dials during a slow app shutdown gets /readyz
+// ("draining"), not a connection closed on arrival (#695). Connections that
+// never sent a request are still closed first (the #617 test above).
+func TestBinaryAdminPortAnswersWhileAnAppRequestIsInFlight(t *testing.T) {
+	p := startServer(t, "GOLDIE_DRAIN_SECONDS=0")
+	// An authenticated request whose body never completes: net/http counts the
+	// connection as active from the complete headers on, so Shutdown waits for it.
+	slow, err := net.DialTimeout("tcp", p.app, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial %s: %v", p.app, err)
+	}
+	defer func() { _ = slow.Close() }()
+	req := "POST /api/v1/sync HTTP/1.1\r\nHost: " + p.app + "\r\nAuthorization: Bearer " + testToken +
+		"\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"
+	if _, err := slow.Write([]byte(req)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // let the server read the headers
+
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(700 * time.Millisecond) // past the drain, into the shutdown wait
+	select {
+	case err := <-p.exited:
+		t.Fatalf("the server exited (%v) while a request was in flight, so the test proves nothing\n%s", err, p.logs())
+	default:
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	resp, err := client.Get("http://" + p.admin + "/readyz") //nolint:noctx // loopback test URL
+	if err != nil {
+		t.Fatalf("GET admin /readyz while an app request is in flight: %v, want an answer\n%s", err, p.logs())
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), "draining") {
+		t.Errorf("admin /readyz while draining = %d %s, want 503 draining", resp.StatusCode, body)
+	}
+
+	_ = slow.Close() // the request ends; the server finishes
+	if err := p.waitExit(t, 10*time.Second); err != nil {
+		t.Fatalf("exit: %v, want 0\n%s", err, p.logs())
+	}
+}
+
 // The OpenAPI document is served on the public listener only; the admin port
 // keeps to probes and version (PC-01).
 func TestBinaryServesOpenAPISpecOnPublicListener(t *testing.T) {
