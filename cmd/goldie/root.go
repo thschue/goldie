@@ -218,7 +218,7 @@ func serverCmd(out io.Writer) *cobra.Command {
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dev {
-				return runDev(args, out, git)
+				return misuse(runDev(args, out, git))
 			}
 			return runServer(out)
 		},

@@ -34,7 +34,7 @@ func withDevGit(cfg platform.Config) (platform.Config, error) {
 		{platform.EnvGitCABundle, cfg.GitCABundle},
 	} {
 		if c.value != "" {
-			return cfg, &cli.UsageError{Command: "server", Msg: fmt.Sprintf("%s is set without %s: the built-in demo repository takes no credentials", c.name, platform.EnvGitURL)}
+			return cfg, &cli.UsageError{Command: "server", Msg: fmt.Sprintf("%s is set without %s: the built-in demo repository takes no credentials; unset it, or set %s to use your own repository", c.name, platform.EnvGitURL, platform.EnvGitURL)}
 		}
 	}
 	cfg.GitURL, cfg.GitRef, cfg.GitPath = devGitURL, "main", devGitPath

@@ -243,8 +243,9 @@ serves. Like `goldie server`, a failed first clone keeps the server running and 
 stderr line gives the reason, without credentials, and the hint to run `goldie server --dev` without
 `--git` to try the built-in examples offline. The built-in repository takes no credentials: with
 `GOLDIE_GIT_URL` unset, a set `GOLDIE_GIT_TOKEN` (or `_FILE`), `GOLDIE_GIT_SSH_KEY`,
-`GOLDIE_GIT_SSH_KNOWN_HOSTS` or `GOLDIE_GIT_CA_BUNDLE` is refused with a usage error naming the variable. `--git` takes no directory and needs `--dev`. Without
-`--git`, `--dev` ignores `GOLDIE_GIT_URL`.
+`GOLDIE_GIT_SSH_KNOWN_HOSTS` or `GOLDIE_GIT_CA_BUNDLE` is refused with a usage error naming the
+variable. `--git` takes no directory and needs `--dev`. Without `--git`, `--dev` ignores
+`GOLDIE_GIT_URL`.
 
 A directory with no content serves the example content built into the binary, and says so on
 stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo
