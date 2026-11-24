@@ -314,7 +314,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
       <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
-      <button type="button" role="checkbox" class="control" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
+      <button type="button" role="checkbox" class="control miss-toggle" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
         <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
       </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
@@ -671,6 +671,13 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 .control[aria-pressed='true'],
 .control[aria-checked='true'] {
   border-width: 2px;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand-tint-ink);
+}
+/* Gold is for Miss (handoff §6.2 to §6.4): only "Misses only" is gold when checked. */
+.control.miss-toggle[aria-checked='true'] {
+  border-color: var(--miss-solid);
   background: var(--miss-solid);
   color: var(--miss-solid-ink);
 }

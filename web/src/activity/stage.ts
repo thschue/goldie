@@ -11,6 +11,8 @@ export const maxParticles = 100;
 export const travelMs = 3600;
 // The text for a screen reader changes at most this often.
 export const summaryEvery = 30_000;
+// The sampling chip, a polite status too, changes at most this often (A11).
+export const chipEvery = 1000;
 // A label is cut to this many code points, the last being "…".
 export const maxLabel = 40;
 // The lanes read; the Projects tallied are capped so a flood of distinct ones cannot grow the map.
@@ -59,6 +61,7 @@ export function createStage(o: { reduced?: boolean } = {}) {
   let away = false;
   let sample: { n: number; at: number } | undefined;
   let said: { text: string; at: number } | undefined;
+  let chipSaid: { text: string; at: number } | undefined;
   const lanes = new Map<string, number>();
 
   const expire = (now: number) => (live = live.filter((p) => now - p.start < travelMs && now >= p.start));
@@ -108,6 +111,10 @@ export function createStage(o: { reduced?: boolean } = {}) {
       if (!said || now - said.at >= summaryEvery) said = { text: summaryText(), at: now };
       const sampling = sample && now - sample.at < travelMs ? sample.n : 0;
       const half = travelMs / 2;
+      // The chip is a polite status (A11): it changes at most once a second, however fast the sampling flips.
+      const chipText = o.reduced ? calm : sampling ? `Showing 1 in ${sampling} requests · the feed and Miss board still get every event` : every;
+      if (!chipSaid || (chipText !== chipSaid.text && now - chipSaid.at >= chipEvery)) chipSaid = { text: chipText, at: now };
+      const chip = chipSaid;
       return {
         particles: live.map(({ start, ...p }) => {
           const t = now - start;
@@ -119,7 +126,7 @@ export function createStage(o: { reduced?: boolean } = {}) {
           .map(([project, count]) => ({ project, count })),
         seen,
         missed,
-        chip: o.reduced ? calm : sampling ? `Showing 1 in ${sampling} requests · the feed and Miss board still get every event` : every,
+        chip: chip.text,
         summary: said.text,
       };
     },

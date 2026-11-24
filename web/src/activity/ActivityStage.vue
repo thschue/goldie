@@ -60,7 +60,7 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
       </circle>
     </svg>
     <div class="side">
-      <p class="chip">{{ view.chip }}</p>
+      <p role="status" class="chip">{{ view.chip }}</p>
       <p role="status" class="summary">{{ view.summary }}</p>
       <p class="legend">Colour is the surface: <span class="k mcp">mcp</span> <span class="k cli">cli</span> <span class="k ui">ui</span> <span class="k other">other</span></p>
     </div>
@@ -99,8 +99,9 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
 }
 .lane[aria-pressed='true'] {
   border-width: 2px;
-  background: var(--miss-solid);
-  color: var(--miss-solid-ink);
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand-tint-ink);
   font-weight: 700;
 }
 .lane .name {
