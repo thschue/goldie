@@ -503,6 +503,32 @@ test.describe('a missing article', () => {
     expect(await back.evaluate(gold)).toEqual([]);
   });
 
+  test('a message without a closing period gets one before the hint (#759)', async ({ page }) => {
+    await page.route(apiArticle, (route) => json(route, 404, envelope('not_found', 'No article has the id platform/gone', 'Search for it by its keywords.')));
+    await open(page, 'platform%2Fgone');
+    expect(norm(await alert(page).innerText())).toBe('No article has the id platform/gone. Search for it by its keywords.');
+  });
+
+  for (const end of ['.', '?', '!']) {
+    test(`a message already ending in "${end}" gets nothing extra before the hint (#759)`, async ({ page }) => {
+      await page.route(apiArticle, (route) => json(route, 404, envelope('not_found', `Is this the id${end}`, 'Search for it by its keywords.')));
+      await open(page, 'platform%2Fgone');
+      expect(norm(await alert(page).innerText())).toBe(`Is this the id${end} Search for it by its keywords.`);
+    });
+  }
+
+  test('a message without a period and without a hint is rendered unchanged (#759)', async ({ page }) => {
+    await page.route(apiArticle, (route) => json(route, 404, envelope('not_found', 'No article has the id platform/gone')));
+    await open(page, 'platform%2Fgone');
+    expect(norm(await alert(page).innerText())).toBe('No article has the id platform/gone');
+  });
+
+  test('a message ending in a period and without a hint is rendered unchanged (#759)', async ({ page }) => {
+    await page.route(apiArticle, (route) => json(route, 404, envelope('not_found', 'No article has the id platform/gone.')));
+    await open(page, 'platform%2Fgone');
+    expect(norm(await alert(page).innerText())).toBe('No article has the id platform/gone.');
+  });
+
   test('the back link returns home inside the shell, without a page load', async ({ page }) => {
     await page.route(apiArticle, (route) => json(route, 404, notFound()));
     await open(page, 'platform%2Fgone');
