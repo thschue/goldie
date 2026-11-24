@@ -17,7 +17,8 @@
 //   named Pause that becomes one named Resume;
 // - the miss count is a role=status in main whose text holds the word miss or
 //   misses (not "missed") and the count as a number;
-// - the replica label is text outside the table that holds the replica's name;
+// - the header is the text "Live" alone for one replica (#809), and "Live · merged from all
+//   replicas (n of m answering)" for several; the replica's name is in the table's Replica column;
 // - the h1 is "Activity".
 // Not pinned: the row cap (only that it is below the 10,000 events a replica's
 // history can hold, and that the newest rows are the ones kept), the Via cell (an
@@ -235,7 +236,7 @@ test.describe('the table', () => {
     await expect(cell(rowOf(page, 'quantum'), col.result), 'colour is not the only sign of a Miss').toContainText(/miss/i);
   });
 
-  test('is fed by the merged stream of all replicas and a label names the replica shown', async ({ page }) => {
+  test('is fed by the merged stream of all replicas', async ({ page }) => {
     await open(page, sample);
     const urls = await page.evaluate(() => (window as unknown as Win).__activity.urls);
     expect(urls.length).toBeGreaterThan(0);
@@ -243,7 +244,6 @@ test.describe('the table', () => {
       expect(u).toMatch(/^\/api\/v1\/activity\?/);
       expect(new URL(u, 'http://x').searchParams.getAll('replicas'), 'replicas=all, once').toEqual(['all']);
     }
-    expect(await mainTextOutsideTable(page), 'a label outside the table names the replica').toContain('goldie-0');
   });
 });
 
@@ -557,8 +557,7 @@ test.describe('touch targets at 375 px', () => {
 // - the switcher is buttons with aria-pressed outside the table; "All replicas" is
 //   one, each replica seen is another whose text holds its name, its status in words
 //   (up or down) and its event count as a number;
-// - with no peers there is no "All replicas" and no switcher button: the replica name
-//   is plain text outside the table;
+// - with no peers there is no "All replicas" and no switcher button: the header is just "Live" (#809);
 // - the banner is text in main that starts "Partial view." and names the replica;
 // - a late row carries the word LATE in its row.
 const status = (replica: string, up: boolean, ago = 120_000) =>
@@ -633,12 +632,13 @@ test.describe('the replica switcher', () => {
     await expect(replicaButton(page, 'goldie-1')).not.toContainText(/\bdown\b/i);
   });
 
-  test('with no peers collapses to the replica name', async ({ page }) => {
+  test('with no peers collapses to a header that reads just Live', async ({ page }) => {
     await open(page, [ev(1, { query: 'alone' }), ev(2, { query: 'still alone' })]);
     await expect(rows(page)).toHaveCount(2);
     await expect(switcherButtons(page)).toHaveCount(0);
     await expect(main(page).getByText(/all replicas/i)).toHaveCount(0);
-    expect(await mainTextOutsideTable(page)).toContain('goldie-0');
+    await expect(main(page).getByText('Live', { exact: true })).toBeVisible();
+    expect(await mainTextOutsideTable(page)).not.toContain('goldie-0');
   });
 
   test('renders a replica name as text, never as HTML', async ({ page }) => {
@@ -1024,8 +1024,71 @@ test.describe('the Source repo link and the panel at 375 px', () => {
 test.describe('the live header', () => {
   test.use({ viewport: { width: 375, height: 800 } });
 
-  test('keeps a space between the word replica and the replica name', async ({ page }) => {
+  test('reads just Live with a single replica', async ({ page }) => {
     await open(page, [ev(1, { replica: 'goldie-0' })]);
-    await expect(main(page).locator('p.label')).toHaveText('Live · replica goldie-0');
+    await expect(main(page).locator('p.label')).toHaveText('Live');
+  });
+
+  test('reads how many of the replicas seen answered in the last minute', async ({ page }) => {
+    const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+    await open(page, [ev(1, { replica: 'goldie-0' }), ev(2, { replica: 'goldie-1', time: ago(3 * 60_000) })]);
+    await expect(main(page).locator('p.label')).toHaveText('Live · merged from all replicas (1 of 2 answering)');
+    await send(page, frame(ev(3, { replica: 'goldie-1' })));
+    await expect(main(page).locator('p.label')).toHaveText('Live · merged from all replicas (2 of 2 answering)');
+  });
+});
+
+// The last five minutes and the Project chip (#809, handoff §3.6). Contract these specs pin down:
+// - a region in main named /last five minutes/i holds four list items, the tiles, each text
+//   starting with its label: Requests (a whole number per minute), Misses (a percent), Projects asking
+//   (a count) and Busiest surface ("—" until #805);
+// - the Project filter is the URL's `project`: only that Project's events are rows, and a button in
+//   main named /remove.*<project>/i is its chip; pressing it drops `project` from the URL.
+const tiles = (page: Page) => main(page).getByRole('region', { name: /last five minutes/i });
+const tile = (page: Page, label: string) => tiles(page).getByRole('listitem').filter({ hasText: label });
+
+test.describe('the last five minutes', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('shows Requests, Misses, Projects asking and a dash for the busiest surface', async ({ page }) => {
+    const at = (ms: number) => new Date(Date.now() + ms).toISOString();
+    const batch = Array.from({ length: 600 }, (_, i) =>
+      ev(i + 1, { query: `bulk ${i}`, miss: i % 10 === 0, project: `github.com/acme/p${i % 3}` }),
+    );
+    await open(page, [
+      ...batch,
+      ev(1000, { query: 'replayed', project: 'github.com/acme/old', time: at(-10 * 60_000) }),
+      ev(1001, { query: 'skewed', project: 'github.com/acme/p0', time: at(60 * 60_000) }),
+    ]);
+    await expect(tiles(page)).toBeVisible();
+    await expect(tiles(page).getByRole('listitem')).toHaveCount(4);
+    // 601 requests in five minutes is 120 a minute, though the feed keeps 500 rows; the replayed
+    // one is older than five minutes and the skewed one counts as now.
+    await expect(tile(page, 'Requests')).toContainText(/\b120\b/);
+    await expect(tile(page, 'Misses')).toContainText(/\b10\s*%/);
+    await expect(tile(page, 'Projects asking')).toContainText(/\b3\b/);
+    await expect(tile(page, 'Busiest surface')).toContainText('—');
+  });
+
+  test('does not render a link to Grafana in this slice', async ({ page }) => {
+    await open(page, sample);
+    await expect(main(page).getByText(/Trends in Grafana/i)).toHaveCount(0);
+    await expect(main(page).getByRole('link', { name: /grafana/i })).toHaveCount(0);
+  });
+});
+
+test.describe('the Project filter chip', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+  const shop = 'github.com/acme/shop';
+
+  test('shows the Project as a removable chip, and removing it shows all Projects', async ({ page }) => {
+    await open(page, sample, `/ops/activity?project=${encodeURIComponent(shop)}`);
+    await expect(rows(page)).toHaveCount(2);
+    const chip = main(page).getByRole('button', { name: /remove.*github\.com\/acme\/shop/i });
+    await expect(chip).toBeVisible();
+    await chip.click();
+    await expect(rows(page)).toHaveCount(sample.length);
+    await expect(chip).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
   });
 });
