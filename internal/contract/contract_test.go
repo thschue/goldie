@@ -58,6 +58,14 @@ func (stub) GetLoop(context.Context, GetLoopRequestObject) (GetLoopResponseObjec
 	return GetLoop200JSONResponse{}, nil
 }
 
+func (stub) ListDecisions(context.Context, ListDecisionsRequestObject) (ListDecisionsResponseObject, error) {
+	return ListDecisions200JSONResponse{}, nil
+}
+
+func (stub) GetDecision(context.Context, GetDecisionRequestObject) (GetDecisionResponseObject, error) {
+	return GetDecision200JSONResponse{}, nil
+}
+
 func (stub) GetInstructions(context.Context, GetInstructionsRequestObject) (GetInstructionsResponseObject, error) {
 	return GetInstructions200JSONResponse{}, nil
 }

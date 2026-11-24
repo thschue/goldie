@@ -181,6 +181,51 @@ Operation ID: `getBundle`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/decisions`
+
+List the decisions
+
+Returns the decisions that answer in the Project's view, sorted by name, one
+per name: the nearest Scope wins. Only accepted decisions are listed unless
+`status` asks for another status. A reader may use `status`; it is not the
+operator-only `drafts` parameter.
+
+Operation ID: `listDecisions`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The decisions. | `application/json` (`DecisionList`) |
+| `400` | For the decision list, 'project' is not a 'ProjectId' or 'status' is not a status. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the decision list, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the decision list, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/decisions/{name}`
+
+Read one decision
+
+Returns one decision by name, of any status, with its raw Markdown `content`
+and its supersession `chain`, oldest to newest, including the decision itself.
+Two predecessors of the same successor are ordered by date, then name. A miss
+is a 404 whose hint points to the list.
+
+Operation ID: `getDecision`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The decision. | `application/json` (`Decision`) |
+| `400` | For the decision read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the decision read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `403` | For the decision read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
+| `404` | No decision has this name in the view; the hint points to the decision list. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/instructions`
 
 Read the instruction block
@@ -675,6 +720,44 @@ printable ASCII and cut, which is why only operators read it.
 |---|---|---|---|
 | `file` | `string` | yes | The file the finding is about, relative to the Source root. |
 | `message` | `string` | yes | What is wrong, printable ASCII, at most 1 KiB with the file. |
+
+### `Decision`
+
+One decision record. A get also carries `content` and `chain`.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `chain` | `array` | no | The supersession chain, oldest to newest, including this decision. Only a get sends it. |
+| `content` | `string` | no | The raw Markdown body. Only a get sends it. |
+| `date` | `string` | yes | The decision date, YYYY-MM-DD. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the decision answer is the global one, and this says what to do next. |
+| `keywords` | `array` | yes |  |
+| `name` | `string` | yes |  |
+| `scope` | `string` | yes | 'global', 'local', or the Project that holds the decision. |
+| `status` | `string` | yes |  |
+| `superseded_by` | `string` | yes | The decision that replaces this one, as 'decision:&lt;name&gt;'; empty when none does. |
+| `supersedes` | `array` | yes | The decisions this one replaces, as 'decision:&lt;name&gt;'. |
+| `title` | `string` | yes |  |
+
+### `DecisionChainEntry`
+
+One decision in a supersession chain.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | yes |  |
+| `scope` | `string` | yes | The Scope of this entry: 'global', 'local', or a Project. |
+| `status` | `string` | yes |  |
+| `title` | `string` | yes |  |
+
+### `DecisionList`
+
+The decisions that answer in a view.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `decisions` | `array` | yes | The decisions, sorted by name. |
+| `hint` | `string` | no | Present when the request named a Project that is not registered: the decision list answer is the global one, and this says what to do next. |
 
 ### `Error`
 
