@@ -94,6 +94,11 @@ function go(q: string) {
 // Handoff §3.2 item 1. A chip runs the search as if the user had typed it.
 const suggestions = ['database', 'logging', 'retries', 'feature flags'];
 
+function pick(word: string) {
+  draft.value = word;
+  void go(word);
+}
+
 function submit() {
   void go(draft.value.trim());
 }
@@ -145,7 +150,7 @@ onBeforeUnmount(() => {
   <template v-if="state.kind === 'idle'">
     <p class="chips">
       <span>Try:</span>
-      <button v-for="w in suggestions" :key="w" type="button" class="chip" @click="go(w)">{{ w }}</button>
+      <button v-for="w in suggestions" :key="w" type="button" class="chip" @click="pick(w)">{{ w }}</button>
     </p>
     <HomeGuide />
   </template>

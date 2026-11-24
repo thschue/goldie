@@ -67,8 +67,8 @@ function toggle(id: string) {
 
   <section class="section" aria-labelledby="home-agent">
     <h2 id="home-agent">Put your agent on the golden path</h2>
-    <ol class="steps">
-      <li v-for="s in steps" :key="s.id" class="step">
+    <div class="steps">
+      <div v-for="s in steps" :key="s.id" class="step">
         <div class="body">
           <span class="label">{{ s.label }}</span>
           <CommandSnippet :command="s.command" />
@@ -76,8 +76,8 @@ function toggle(id: string) {
         <button type="button" class="tick" :aria-pressed="ticked.includes(s.id)" :aria-label="`Done: ${s.label}`" @click="toggle(s.id)">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path d="M5 12l5 5 9-10" /></svg>
         </button>
-      </li>
-    </ol>
+      </div>
+    </div>
   </section>
 </template>
 
