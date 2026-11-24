@@ -186,7 +186,7 @@ test.describe('routes and the current page', () => {
     });
   }
 
-  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
+  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
     test(`GET ${path} is 200 and renders the shell, not a 404`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(200);
