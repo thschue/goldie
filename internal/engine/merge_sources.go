@@ -168,8 +168,13 @@ func (s *SourceSet) Run(ctx context.Context, name string, interval time.Duration
 	if s.entry(name) == nil {
 		return
 	}
+	e := s.entry(name)
 	runLoop(ctx, interval, realTicker, func() {
-		_ = s.Poll(ctx, name)
+		// pollMu is held through onPoll, as Trigger holds it, so onPoll never
+		// runs concurrently with itself.
+		e.pollMu.Lock()
+		defer e.pollMu.Unlock()
+		_ = s.pollLocked(ctx, e)
 		if onPoll != nil {
 			onPoll(s.Status(name))
 		}

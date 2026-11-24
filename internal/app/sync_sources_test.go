@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -171,6 +172,63 @@ func TestPostSyncWithAnUnknownSourceAnswers404WithoutEchoingTheName(t *testing.T
 	time.Sleep(300 * time.Millisecond)
 	if servedToOperator(t, g, "a-new") {
 		t.Error("a refused trigger polled a Source")
+	}
+}
+
+// The shadowed list of a Source is capped: 101 Items hidden by alpha show as
+// exactly 100 (maxShadowed in internal/api).
+func TestSyncStatusCapsTheShadowedListAtOneHundred(t *testing.T) {
+	const items = 101
+	files := map[string]string{}
+	for i := range items {
+		for k, v := range gitArticle(fmt.Sprintf("dup-%03d", i)) {
+			files[k] = v
+		}
+	}
+	a, b := newBareRepo(t), newBareRepo(t)
+	a.commit(files)
+	b.commit(files)
+	g := twoSourceServer(t, a, b)
+
+	got := sourceStatuses(t, g)
+	if len(got) != 2 {
+		t.Fatalf("sources = %d, want alpha and beta", len(got))
+	}
+	if n := len(got[1].Shadowed); n != 100 {
+		t.Errorf("beta shadowed = %d Items, want the cap of 100 of the %d it has hidden", n, items)
+	}
+}
+
+// A server with one Source, not a list, still names it and gives it
+// preference 1, and refuses an unknown source name with 404.
+func TestSyncStatusOfASingleSourceNamesItAndRefusesAnUnknownName(t *testing.T) {
+	r := newBareRepo(t)
+	r.commit(gitArticle("only"))
+	cfg := gitConfig(t, r.url, time.Hour)
+	cfg.GitAllowFileURL = true
+	g := startGit(t, cfg)
+	eventually(t, 5*time.Second, "the Source never loaded", func() bool {
+		code, _, _ := readyz(t, g.admin)
+		return code == http.StatusOK
+	})
+
+	resp, body := send(t, g.pub, http.MethodGet, statusPath, bearer(testToken))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200: %s", statusPath, resp.StatusCode, body)
+	}
+	var st struct {
+		Sources []namedSourceStatus `json:"sources"`
+	}
+	if err := json.Unmarshal(body, &st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.Sources) != 1 || st.Sources[0].Name != "git" || st.Sources[0].Preference != 1 {
+		t.Errorf("sources = %+v, want one named git with preference 1", st.Sources)
+	}
+
+	resp, body = send(t, g.pub, http.MethodPost, statusPath+"?source=nope", bearer(testToken))
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("POST ?source=nope = %d, want 404: %s", resp.StatusCode, body)
 	}
 }
 

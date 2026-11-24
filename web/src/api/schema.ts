@@ -1327,7 +1327,8 @@ export interface components {
         SourceSyncStatus: {
             /**
              * @description The Source's name as configured in `GOLDIE_SOURCES`; `dir` or `git`
-             *     for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`.
+             *     for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`;
+             *     `source` for a local-mode upstream that has no name.
              * @example team
              */
             name?: string;
@@ -3364,7 +3365,7 @@ export interface operations {
                 };
             };
             /**
-             * @description The `source` is no Source (`error.code` is `not_found`). Nothing was
+             * @description No Source has the name given in `source` (`error.code` is `not_found`). Nothing was
              *     polled and the name is not echoed.
              */
             404: {

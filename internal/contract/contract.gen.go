@@ -1165,7 +1165,8 @@ type SourceSyncStatus struct {
 	LastSuccess *time.Time `json:"last_success,omitempty"`
 
 	// Name The Source's name as configured in `GOLDIE_SOURCES`; `dir` or `git`
-	// for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`.
+	// for the one Source of `GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`;
+	// `source` for a local-mode upstream that has no name.
 	//
 	//
 	// Examples: team
