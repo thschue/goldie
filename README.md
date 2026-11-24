@@ -136,14 +136,17 @@ pull that wrote files then prints `/loop <interval> /goldie-loop-<name>` for eac
 `/loop /goldie-loop-<name>` for a dynamic one. Those `goldie-` names are goldie's namespace. A pull replaces
 the namespace as a whole, so a skill or agent removed from the platform disappears, and touches nothing
 else: your own skills and agents stay. The bundle comes from `GET /api/v1/bundle`, a tar.gz whose ETag is
-the digest of the set; `pull` keeps that digest in `.claude/goldie-pull.digest` and sends it back, so an
-unchanged set costs no download and no write. A skill file keeps its executable bit. The CLI checks
+the digest of the set; `pull` keeps that digest in `.claude/goldie-pull.digest` and
+sends it back, with a hash of the namespace as it wrote it, so an unchanged set costs no download and
+no write. If a pulled file was edited or deleted since, `pull` asks without the digest and restores
+the namespace. A skill file keeps its executable bit. The CLI checks
 the whole archive before it writes: it refuses an absolute path, `..`, a symlink, hardlink, device or
 fifo, and any entry outside the namespace, and it never writes through a symlinked `.claude`,
 `.claude/skills` or `.claude/agents`. The new files are staged and moved in, and a failure puts the old
 ones back, so a failed pull leaves the project as it was. `--dry-run` lists what would be written or
 removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
-`goldie pull`, when the namespace was never pulled or the set changed. `--dry-run` and `--check` cannot be
+`goldie pull`, when the namespace was never pulled, the set changed or a pulled file was edited or
+deleted. `--dry-run` and `--check` cannot be
 combined. `pull` takes no `--json`.
 
 ```sh

@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1061,5 +1062,144 @@ func TestPullRejectsHostileArchivesAndWritesNothing(t *testing.T) {
 				t.Errorf("a refused body changed the project: %v then %v", before, after)
 			}
 		})
+	}
+}
+
+// --- a damaged namespace (#696) ---
+
+// bundleCall is one GET /api/v1/bundle the server answered.
+type bundleCall struct {
+	status      int
+	conditional bool
+	bytes       int
+}
+
+// bundleLog records the bundle responses of a countingPullServer.
+type bundleLog struct {
+	mu    sync.Mutex
+	calls []bundleCall
+}
+
+func (b *bundleLog) all() []bundleCall {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.calls)
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	n      int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	r.n += len(b)
+	return r.ResponseWriter.Write(b)
+}
+
+// countingPullServer is pullServer with a record of the bundle responses.
+func countingPullServer(t *testing.T, content string) (*httptest.Server, *bundleLog) {
+	t.Helper()
+	h := activityHandler(t, platform.Config{ContentDir: content, RateLimit: roomyRateLimit})
+	rec := &bundleLog{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sr := &statusRecorder{ResponseWriter: w}
+		h.ServeHTTP(sr, r)
+		if r.URL.Path == bundleAPI {
+			rec.mu.Lock()
+			rec.calls = append(rec.calls, bundleCall{sr.status, r.Header.Get("If-None-Match") != "", sr.n})
+			rec.mu.Unlock()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, rec
+}
+
+// Criterion: after a pulled file is deleted or edited by hand (a skill file or
+// an agent file), goldie pull --check exits non-zero and names goldie pull,
+// writing nothing; goldie pull then restores the namespace exactly, and
+// --check is green again.
+func TestPullCheckAndPullCatchADamagedNamespace(t *testing.T) {
+	damage := map[string]func(t *testing.T, path string){
+		"a deleted file": func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"an edited file": func(t *testing.T, path string) {
+			if err := os.WriteFile(path, []byte("edited by hand\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	targets := map[string]string{"a skill file": pLintSkill, "an agent file": pPlannerAgent}
+	for dname, do := range damage {
+		for tname, rel := range targets {
+			t.Run(dname+" in "+tname, func(t *testing.T) {
+				srv, _ := countingPullServer(t, absContent(t))
+				repo := gitCheckout(t, userFiles())
+				pullShop(t, srv.URL, repo)
+				pulled := snapshot(t, repo)
+
+				do(t, filepath.Join(repo, filepath.FromSlash(rel)))
+				damaged := snapshot(t, repo)
+
+				out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--check")
+				if err == nil {
+					t.Errorf("--check succeeded on a damaged namespace:\n%s", out)
+				} else if !strings.Contains(err.Error()+out, "goldie pull") {
+					t.Errorf("--check does not say to run goldie pull: %v %q", err, out)
+				}
+				if after := snapshot(t, repo); !mapsEqual(damaged, after) {
+					t.Errorf("a failing --check wrote to the project: %v then %v", damaged, after)
+				}
+
+				pullShop(t, srv.URL, repo)
+				if after := snapshot(t, repo); !mapsEqual(pulled, after) {
+					t.Errorf("goldie pull did not restore the namespace: want %v, got %v", pulled, after)
+				}
+				if out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--check"); err != nil {
+					t.Errorf("--check after the restoring pull: %v\n%s", err, out)
+				}
+			})
+		}
+	}
+}
+
+// Criterion: an untouched namespace with a current server set is still a
+// no-op, and the server returns no archive: the conditional request is answered
+// 304 with an empty body, for goldie pull and for --check.
+func TestPullOfAnUntouchedNamespaceStillGets304(t *testing.T) {
+	srv, rec := countingPullServer(t, absContent(t))
+	repo := gitCheckout(t, userFiles())
+	pullShop(t, srv.URL, repo)
+	first := snapshot(t, repo)
+	if calls := rec.all(); len(calls) != 1 || calls[0].status != http.StatusOK || calls[0].bytes == 0 {
+		t.Fatalf("the first pull did not fetch the archive once: %+v", calls)
+	}
+
+	pullShop(t, srv.URL, repo)
+	if out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--check"); err != nil {
+		t.Errorf("--check on an untouched namespace: %v\n%s", err, out)
+	}
+	calls := rec.all()
+	if len(calls) != 3 {
+		t.Fatalf("want one request per run, got %+v", calls)
+	}
+	for i, c := range calls[1:] {
+		if !c.conditional || c.status != http.StatusNotModified || c.bytes != 0 {
+			t.Errorf("run %d on an untouched namespace: %+v, want a conditional request answered 304 with no body", i+2, c)
+		}
+	}
+	if after := snapshot(t, repo); !mapsEqual(first, after) {
+		t.Errorf("a no-op pull changed the project: %v then %v", first, after)
 	}
 }
