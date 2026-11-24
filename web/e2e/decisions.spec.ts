@@ -597,3 +597,83 @@ test.describe('a selected decision (#737)', () => {
     await expect(main(page).getByRole('status')).toContainText(/\b6 decisions\b/);
   });
 });
+
+// #737: the selected decision's states, captured and axe-checked at every viewport and theme.
+eachViewport((width, theme) => {
+  test('the selected decision is captured and axe-clean', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    await evidence(page, width, theme, '-selected', 'decisions');
+  });
+
+  test('the selected decision loading is captured and axe-clean', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await page.route(apiDecision, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 4000));
+      await json(route, 200, {}).catch(() => {});
+    });
+    await select(page, 'use-postgres');
+    await expect(main(page).locator('[aria-busy="true"]')).toBeVisible();
+    await evidence(page, width, theme, '-selected-loading', 'decisions');
+  });
+
+  test('the selected decision not found is captured and axe-clean', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    await select(page, 'no-such-decision');
+    await expect(main(page).getByRole('alert')).toContainText('No decision named no-such-decision.');
+    await evidence(page, width, theme, '-selected-404', 'decisions');
+  });
+
+  test('the selected decision error is captured and axe-clean', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await page.route(apiDecision, (route) =>
+      json(route, 500, envelope('internal', 'The decision store is unavailable.', 'Try again in a moment.')),
+    );
+    await select(page, 'use-postgres');
+    await expect(main(page).getByRole('alert')).toContainText('The decision store is unavailable.');
+    await evidence(page, width, theme, '-selected-error', 'decisions');
+  });
+
+  test('a superseded decision with history is captured and axe-clean', async ({ page }) => {
+    const chain = [
+      { name: 'use-mysql', title: 'Use MySQL for the shop database', status: 'superseded', scope: 'global' },
+      { name: 'use-postgres', title: 'Use PostgreSQL for the shop database', status: 'superseded', scope: 'global' },
+      { name: 'use-cockroach', title: 'Use CockroachDB for the shop database', status: 'accepted', scope: 'global' },
+    ];
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [{ ...postgres, status: 'superseded', superseded_by: 'decision:use-cockroach', chain }]);
+    await select(page, 'use-postgres');
+    await expect(main(page).locator('ol li')).toHaveCount(3);
+    await evidence(page, width, theme, '-selected-history', 'decisions');
+  });
+});
+
+test('proposed, rejected, deprecated and superseded decisions show a neutral note, not a status', async ({ page }) => {
+  await stubProjects(page);
+  await stubDecisions(page);
+  await stubDecision(page, [
+    { name: 'a', title: 'A', status: 'proposed', content: 'BODYMARK' } as Detail,
+    { name: 'b', title: 'B', status: 'rejected', content: 'BODYMARK' } as Detail,
+    { name: 'c', title: 'C', status: 'deprecated', content: 'BODYMARK' } as Detail,
+    { name: 'd', title: 'D', status: 'superseded', content: 'BODYMARK' } as Detail,
+  ]);
+  for (const [name, text] of [
+    ['a', /Proposed — under review/],
+    ['b', /Rejected — kept so the question/],
+    ['c', /Deprecated — kept for history/],
+    ['d', /Superseded — kept for history/],
+  ] as const) {
+    await select(page, name);
+    await expect(body(page)).toBeVisible();
+    await expect(main(page).getByText(text)).toBeVisible();
+    await expect(main(page).getByRole('status')).toHaveCount(0);
+  }
+});

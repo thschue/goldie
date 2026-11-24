@@ -39,10 +39,20 @@ const chain = computed(() => data.value?.chain ?? []);
         <ScopeBadge :scope="plain(data.scope)" />
         <time>{{ plain(data.date) }}</time>
       </div>
-      <p v-if="successor" class="note">
-        Superseded by <RouterLink :to="to(successor)">{{ plain(successor) }}</RouterLink>
+      <!-- Copy: handoff §8, the lifecycle notes. Plain text, not a live region. -->
+      <p v-if="data.status === 'superseded'" class="note">
+        Superseded — kept for history.
+        <template v-if="successor">
+          Agents follow <RouterLink :to="to(successor)">{{ plain(successor) }}</RouterLink> instead.
+        </template>
       </p>
-      <p v-else-if="data.superseded_by" class="note">Superseded by {{ plain(data.superseded_by) }}</p>
+      <p v-else-if="data.status === 'proposed'" class="note">
+        Proposed — under review. Agents and default API queries don't see it until it is accepted.
+      </p>
+      <p v-else-if="data.status === 'rejected'" class="note">
+        Rejected — kept so the question isn't reopened without new facts. Not served to agents.
+      </p>
+      <p v-else-if="data.status === 'deprecated'" class="note">Deprecated — kept for history. Agents don't follow it.</p>
       <!-- Copy: handoff §8, "Binding note". -->
       <p v-if="data.status === 'accepted'" class="binding-note">
         <strong>Binding for agents.</strong> A change that contradicts this decision should stop and propose a new decision
@@ -111,6 +121,14 @@ h3 {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
+}
+.status.accepted {
+  border-color: var(--brand-tint-ink);
+  background: var(--brand-tint-ink);
+  color: var(--surface-1);
+}
+.status.proposed {
+  border-style: dashed;
 }
 .chip {
   border-color: var(--border-default);
