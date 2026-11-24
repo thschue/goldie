@@ -1,0 +1,177 @@
+// The Live stream stage (#811, handoff §3.6): Project -> goldie -> Served, a particle per request.
+// The model is pure and driven by a clock the caller passes in (epoch ms), as tiles.ts is. Pinned here:
+// - createStage({ reduced? }) returns { add(events, now), setHidden(hidden, now), read(now) };
+//   `reduced` is prefers-reduced-motion;
+// - maxParticles is the cap on particles alive at once; travelMs is how long one request takes, from
+//   its Project to goldie (leg 'in', the first half) and on to the Item or the miss marker (leg
+//   'out', the second half); a particle is gone from `travelMs` after it arrived;
+// - read(now) is { particles, lanes, seen, missed, chip, summary }. A particle is { project,
+//   surface, target: 'served' | 'miss', label, leg, progress } with progress 0..1 within its leg;
+//   surface is `via` when it is mcp, cli or ui, else 'other'; label is the served Reference, or
+//   for a miss the query. Lanes are { project, count }, one per Project asking, busiest first;
+// - seen and missed count every event, whatever the stage shows; chip is the sampling note;
+//   summary is the text for a screen reader and changes at most once per summaryEvery;
+// - labelText(s) is text only: invisible and bidirectional controls removed, cut to at most
+//   maxLabel code points, the last of them "…" when it was cut.
+import { describe, expect, it } from 'vitest';
+import { add, maxRows, missBoard } from './rows';
+import type { ActivityEvent } from './stream';
+import { createStage, labelText, maxLabel, maxParticles, summaryEvery, travelMs } from './stage';
+
+const t0 = Date.parse('2026-11-24T10:00:00Z');
+
+const ev = (id: number, o: Partial<ActivityEvent> = {}): ActivityEvent => ({
+  id,
+  time: new Date(t0).toISOString(),
+  kind: 'search',
+  query: `q${id}`,
+  project: 'github.com/acme/shop',
+  token: 'ci',
+  client_version: '',
+  trace_id: '',
+  miss: false,
+  replica: 'goldie-0',
+  late: false,
+  served: 'skill:review',
+  ...o,
+});
+const many = (n: number, o: Partial<ActivityEvent> = {}) => Array.from({ length: n }, (_, i) => ev(i + 1, o));
+
+describe('stage particles', () => {
+  it('is a bounded pool and needs no more than the page can draw', () => {
+    expect(maxParticles).toBeGreaterThan(0);
+    expect(maxParticles).toBeLessThanOrEqual(200);
+    expect(travelMs).toBeGreaterThan(0);
+  });
+
+  it('sends a request from its Project to goldie, then to the served Item, coloured by surface', () => {
+    const s = createStage();
+    s.add([ev(1, { via: 'cli' })], t0);
+    const start = s.read(t0).particles;
+    expect(start).toHaveLength(1);
+    expect(start[0]).toMatchObject({ project: 'github.com/acme/shop', surface: 'cli', target: 'served', label: 'skill:review', leg: 'in', progress: 0 });
+    const early = s.read(t0 + travelMs / 4).particles[0];
+    expect(early.leg).toBe('in');
+    expect(early.progress).toBeGreaterThan(0);
+    expect(early.progress).toBeLessThan(1);
+    const late = s.read(t0 + (travelMs * 3) / 4).particles[0];
+    expect(late).toMatchObject({ leg: 'out', target: 'served' });
+    expect(s.read(t0 + travelMs).particles).toEqual([]);
+  });
+
+  it('ends a miss at a miss marker, and reads an unknown or absent surface as other', () => {
+    const s = createStage();
+    s.add([ev(1, { miss: true, served: undefined, via: 'mcp' }), ev(2, { via: 'hook' }), ev(3, { via: 'ui' }), ev(4)], t0);
+    const p = s.read(t0 + (travelMs * 3) / 4).particles;
+    expect(p.map((x) => x.surface).sort()).toEqual(['mcp', 'other', 'other', 'ui']);
+    expect(p.find((x) => x.surface === 'mcp')).toMatchObject({ target: 'miss', label: 'q1' });
+    expect(p.filter((x) => x.target === 'served')).toHaveLength(3);
+  });
+
+  it('lists the Projects asking as lanes, busiest first', () => {
+    const s = createStage();
+    s.add([ev(1, { project: 'a/b/c' }), ev(2, { project: 'x/y/z' }), ev(3, { project: 'x/y/z' })], t0);
+    expect(s.read(t0).lanes).toEqual([
+      { project: 'x/y/z', count: 2 },
+      { project: 'a/b/c', count: 1 },
+    ]);
+  });
+});
+
+describe('stage render budget', () => {
+  it('shows every request below the cap', () => {
+    const s = createStage();
+    s.add(many(3), t0);
+    const v = s.read(t0);
+    expect(v.particles).toHaveLength(3);
+    expect(v.chip).toBe('Showing every request');
+  });
+
+  it('samples above the cap and says so, while the counters, the feed and the Miss board still see every event', () => {
+    const n = maxParticles + 50;
+    expect(n).toBeLessThanOrEqual(maxRows);
+    const s = createStage();
+    const events = many(n).map((e, i) => (i % 2 ? { ...e, miss: true, served: undefined, query: `gap${i % 3}` } : e));
+    s.add(events, t0);
+    const v = s.read(t0);
+    expect(v.particles.length).toBeLessThanOrEqual(maxParticles);
+    expect(v.particles.length).toBeGreaterThan(0);
+    const m = /^Showing 1 in (\d+) requests · the feed and Miss board still get every event$/.exec(v.chip);
+    expect(m).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(2);
+    expect(v.seen).toBe(n);
+    expect(v.missed).toBe(events.filter((e) => e.miss).length);
+    const feed = add([], events);
+    expect(feed).toHaveLength(n);
+    expect(missBoard(feed).reduce((sum, g) => sum + g.count, 0)).toBe(v.missed);
+  });
+});
+
+describe('stage visibility', () => {
+  it('drops the queue while the tab is hidden, so returning causes no burst, yet still counts every event', () => {
+    const s = createStage();
+    s.add(many(5), t0);
+    s.setHidden(true, t0 + 10);
+    expect(s.read(t0 + 20).particles).toEqual([]);
+    s.add(many(5), t0 + 30);
+    expect(s.read(t0 + 40).particles).toEqual([]);
+    s.setHidden(false, t0 + 50);
+    expect(s.read(t0 + 60).particles).toEqual([]);
+    expect(s.read(t0 + 60).seen).toBe(10);
+    s.add(many(2), t0 + 70);
+    expect(s.read(t0 + 70).particles).toHaveLength(2);
+  });
+});
+
+describe('stage reduced motion', () => {
+  it('moves no particle, yet the counters and the summary still update', () => {
+    const s = createStage({ reduced: true });
+    const before = s.read(t0).summary;
+    s.add([...many(3), ev(4, { miss: true, served: undefined })], t0 + 1000);
+    const v = s.read(t0 + 1000);
+    expect(v.particles).toEqual([]);
+    expect(v.seen).toBe(4);
+    expect(v.missed).toBe(1);
+    expect(s.read(t0 + summaryEvery).summary).not.toBe(before);
+    expect(s.read(t0 + summaryEvery).summary).toContain('4 requests');
+  });
+});
+
+describe('stage summary', () => {
+  it('changes at most once per summaryEvery, and then tells the counts', () => {
+    expect(summaryEvery).toBe(30_000);
+    const s = createStage();
+    const first = s.read(t0).summary;
+    s.add([...many(3), ev(4, { miss: true, served: undefined }), ev(5, { miss: true, served: undefined })], t0 + 1000);
+    expect(s.read(t0 + 10_000).summary).toBe(first);
+    s.add(many(2), t0 + 20_000);
+    expect(s.read(t0 + 29_000).summary).toBe(first);
+    const later = s.read(t0 + summaryEvery).summary;
+    expect(later).not.toBe(first);
+    expect(later).toContain('7 requests');
+    expect(later).toContain('2 misses');
+  });
+});
+
+describe('labelText', () => {
+  it('leaves a short label alone and removes invisible and bidirectional controls', () => {
+    expect(labelText('skill:review')).toBe('skill:review');
+    expect(labelText('a‮b​c⁦d')).toBe('abcd');
+  });
+
+  it('cuts by code point, never through a surrogate pair, and marks the cut', () => {
+    const long = '\u{1F600}'.repeat(maxLabel + 10);
+    const out = labelText(long);
+    expect([...out]).toHaveLength(maxLabel);
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.isWellFormed()).toBe(true);
+    expect(labelText('a'.repeat(maxLabel))).toBe('a'.repeat(maxLabel));
+  });
+
+  it('carries a hostile query into the particle only as cut text', () => {
+    const s = createStage();
+    s.add([ev(1, { miss: true, served: undefined, query: `<img src=x onerror=alert(1)>${'x'.repeat(500)}` })], t0);
+    const label = s.read(t0).particles[0].label;
+    expect([...label].length).toBeLessThanOrEqual(maxLabel);
+  });
+});
