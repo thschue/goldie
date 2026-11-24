@@ -1398,6 +1398,21 @@ test.describe('the Grafana and trace links', () => {
     expect(await rels(traceLink(page))).toEqual(['noopener', 'noreferrer']);
   });
 
+  test('lists "Try this search" before "Open trace" in the detail when both are shown (#860)', async ({ page }) => {
+    await open(page, [ev(1, { query: 'both actions', trace_id: '4bf92f3577b34da6a3ce929d0e0e4736' })], '/ops/activity', {
+      trace_url_template: template,
+    });
+    await rowButton(page, 'both actions').click();
+    await expect(traceLink(page)).toHaveCount(1);
+    await expect(trySearch(page)).toHaveCount(1);
+    // DOCUMENT_POSITION_FOLLOWING (4): the trace link follows the search link in the document.
+    const follows = await trySearch(page).evaluate(
+      (search, trace) => Boolean(search.compareDocumentPosition(trace) & Node.DOCUMENT_POSITION_FOLLOWING),
+      await traceLink(page).elementHandle(),
+    );
+    expect(follows, '"Open trace" comes after "Try this search"').toBe(true);
+  });
+
   test('has no "Open trace" without a template', async ({ page }) => {
     await open(page, [ev(1, { query: 'plain id', trace_id: '4bf92f3577b34da6a3ce929d0e0e4736' })]);
     await rowButton(page, 'plain id').click();
