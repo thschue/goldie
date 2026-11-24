@@ -313,10 +313,6 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         <template v-else-if="phase === 'live'">{{ header }}</template>
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
-      <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
-      <button type="button" role="checkbox" class="control miss-toggle" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
-        <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
-      </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
       <a v-if="grafana" class="action" :href="grafana" target="_blank" rel="noopener noreferrer">Trends in Grafana ↗</a>
     </div>
@@ -324,6 +320,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
     <ActivityStage :view="stageView" :filter="project || undefined" @filter="setProject" />
 
     <section class="tiles" aria-label="Last five minutes">
+      <h2>Last five minutes</h2>
       <ul>
         <li>
           <span class="k">Requests</span>{{ ' ' }}
@@ -350,44 +347,6 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </li>
       </ul>
     </section>
-
-    <p v-if="project" class="chips">
-      <button type="button" class="control" :aria-label="`Remove Project filter ${plain(project)}`" @click="dropProject">
-        {{ plain(project) }} <span aria-hidden="true">✕</span>
-      </button>
-    </p>
-
-    <div class="switcher" role="group" aria-label="Surface">
-      <!-- Checkboxes, not pressed buttons: the replica switcher's buttons are the page's aria-pressed set. -->
-      <button
-        v-for="p in pills"
-        :key="p.s"
-        type="button"
-        role="checkbox"
-        class="control"
-        :aria-checked="picked.includes(p.s)"
-        @click="pick(p.s)"
-      >
-        <span v-if="picked.includes(p.s)" aria-hidden="true">✓ </span>{{ p.label }} <span class="count">{{ p.count }}</span>
-      </button>
-    </div>
-
-    <div v-if="peers" class="switcher" role="group" aria-label="Replicas">
-      <button type="button" class="control" :aria-pressed="only === undefined" @click="choose()">
-        All replicas <span class="count">{{ rows.length }}</span>
-      </button>
-      <button
-        v-for="r in replicas"
-        :key="r.name"
-        type="button"
-        class="control"
-        :aria-pressed="only === r.name"
-        @click="choose(r.name)"
-      >
-        <span class="dot" :class="{ off: !r.up }" aria-hidden="true"></span>{{ plain(r.name) }}
-        <span class="state">{{ r.up ? 'up' : 'down' }}</span> <span class="count">{{ r.count }}</span>
-      </button>
-    </div>
 
     <div role="status">
       <div v-if="down.length" class="box warning">
@@ -416,6 +375,50 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </li>
       </ul>
     </section>
+
+    <h2 class="feed-h">Feed</h2>
+    <div class="toolbar">
+      <div class="switcher" role="group" aria-label="Surface">
+        <!-- Checkboxes, not pressed buttons: the replica switcher's buttons are the page's aria-pressed set. -->
+        <button
+          v-for="p in pills"
+          :key="p.s"
+          type="button"
+          role="checkbox"
+          class="control"
+          :aria-checked="picked.includes(p.s)"
+          @click="pick(p.s)"
+        >
+          <span v-if="picked.includes(p.s)" aria-hidden="true">✓ </span>{{ p.label }} <span class="count">{{ p.count }}</span>
+        </button>
+      </div>
+
+      <div v-if="peers" class="switcher" role="group" aria-label="Replicas">
+        <button type="button" class="control" :aria-pressed="only === undefined" @click="choose()">
+          All replicas <span class="count">{{ rows.length }}</span>
+        </button>
+        <button
+          v-for="r in replicas"
+          :key="r.name"
+          type="button"
+          class="control"
+          :aria-pressed="only === r.name"
+          @click="choose(r.name)"
+        >
+          <span class="dot" :class="{ off: !r.up }" aria-hidden="true"></span>{{ plain(r.name) }}
+          <span class="state">{{ r.up ? 'up' : 'down' }}</span> <span class="count">{{ r.count }}</span>
+        </button>
+      </div>
+      <p v-if="project" class="chips">
+        <button type="button" class="control" :aria-label="`Remove Project filter ${plain(project)}`" @click="dropProject">
+          {{ plain(project) }} <span aria-hidden="true">✕</span>
+        </button>
+      </p>
+      <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
+        <button type="button" role="checkbox" class="control miss-toggle" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
+          <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
+        </button>
+    </div>
 
     <p v-if="phase === 'live' && !rows.length" class="box">
       No requests yet. Run <code>goldie search</code> or ask your agent something.
@@ -541,8 +544,21 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   font-size: var(--text-sm);
   font-weight: 400;
 }
-.chips {
-  margin: 0 0 var(--space-4);
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.toolbar .switcher,
+.toolbar .chips {
+  margin: 0;
+}
+.feed-h,
+.tiles h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-lg);
 }
 .board ul {
   display: flex;
@@ -579,7 +595,8 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   gap: var(--space-4);
 }
 .feed .scroll {
-  flex: 1 1 640px;
+  /* 800 px beside the detail (handoff §7); where that does not fit, the detail wraps under it. */
+  flex: 1 1 800px;
   min-width: 0;
 }
 .detail {

@@ -34,6 +34,7 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
 
 <template>
   <section class="stage" aria-label="Live stream">
+    <h2 class="stage-h">Live stream</h2>
     <div class="lanes">
       <button
         v-for="l in view.lanes"
@@ -77,6 +78,11 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   background: radial-gradient(circle at center, var(--stream-stage), var(--surface-1));
+}
+.stage-h {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-lg);
 }
 .lanes {
   display: flex;
