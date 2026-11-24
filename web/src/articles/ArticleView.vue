@@ -18,6 +18,11 @@ const back = computed(() => ({ path: '/', query: carried(route.query, ['q', 'kin
 const backText = computed(() => (back.value.query.q ? '← Back to search' : '← Back to home'));
 const article = ref<Article | null>(null);
 const error = ref<{ message: string; hint: string } | null>(null);
+// §8: the message is a sentence, then the hint is its own. Close the message when a hint follows.
+const errorSentence = computed(() => {
+  const m = error.value?.message ?? '';
+  return error.value?.hint && !/[.?!]$/.test(m.trimEnd()) ? `${m.trimEnd()}.` : m;
+});
 
 // A replaced_by is `<kind>:<name>` (ADR 0021) from a Source. It links only when
 // it has that shape with a known Kind; anything else is not printed.
@@ -76,7 +81,7 @@ onMounted(async () => {
 
   <template v-else-if="error">
     <div role="alert" class="alert">
-      {{ error.message }} <span v-if="error.hint">{{ error.hint }}</span>
+      {{ errorSentence }} <span v-if="error.hint">{{ error.hint }}</span>
     </div>
   </template>
 </template>
