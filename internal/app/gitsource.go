@@ -29,6 +29,9 @@ type source struct {
 	name   string // its name in metrics: "dir" or "git"
 	// logAttrs, when not nil, has Start log every poll with them.
 	logAttrs []any
+	// firstLoadHint, when set, is logged once, after the reason, when the
+	// Source's first load fails.
+	firstLoadHint string
 }
 
 // serveSource builds the one Source cfg names: the dir Source, loaded here so

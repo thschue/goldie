@@ -444,6 +444,15 @@ func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
 	var logged func(engine.SyncStatus)
 	if p.pollLog != nil {
 		logged = logPolls(ctx, p.pollLog)
+		if hint := p.firstLoadHint; hint != "" {
+			polls, once := logged, sync.Once{}
+			logged = func(st engine.SyncStatus) {
+				polls(st)
+				if st.LastError != "" && p.syncer.Current() == nil && ctx.Err() == nil {
+					once.Do(func() { p.pollLog.Warn("the first load failed: " + st.LastError + ": " + hint) })
+				}
+			}
+		}
 	}
 	if logged == nil && p.polls == nil {
 		return nil

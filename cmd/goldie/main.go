@@ -136,7 +136,7 @@ func runServer(out io.Writer) error {
 // logger, so it never reaches a log line or the OTLP log bridge. Log records
 // go to stderr, so stdout carries only the export line and is safe to eval
 // (PC-07).
-func runDev(args []string, out io.Writer) error {
+func runDev(args []string, out io.Writer, git bool) error {
 	lookup, ignored := app.DevLookup(os.LookupEnv)
 	cfg, logger, tel, err := serverSetup(lookup, os.Stderr)
 	if err != nil {
@@ -150,6 +150,12 @@ func runDev(args []string, out io.Writer) error {
 	if dir == "" {
 		dir = "."
 	}
+	if git {
+		dir = ""
+		if cfg.GitURL == "" {
+			cfg.GitURL, cfg.GitRef, cfg.GitPath = cli.DevGit()
+		}
+	}
 	cfg = app.LocalConfig(cfg, dir)
 	if !isSet(lookup, platform.EnvDrainSeconds) {
 		cfg.DrainTimeout = 0 // nothing balances load in front of --dev: stop at once
@@ -162,7 +168,7 @@ func runDev(args []string, out io.Writer) error {
 	ctx, force, stop := stopSignals(logger)
 	defer stop()
 
-	addr, token, wait, err := app.Local{Config: cfg, Logger: logger, Telemetry: tel, Force: force, Examples: examples.Knowledge()}.Start(ctx)
+	addr, token, wait, err := app.Local{Config: cfg, Logger: logger, Telemetry: tel, Force: force, Examples: examples.Knowledge(), Git: git}.Start(ctx)
 	if err != nil {
 		return err
 	}

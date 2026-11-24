@@ -41,12 +41,22 @@ This leaves `goldie` in the clone and on your PATH for this terminal only. Every
 github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH for good, but without the web
 UI: `/` then shows a "goldie (UI not built)" placeholder. The CLI and MCP work either way.
 
-**2. Start a server** from an empty directory. It serves the built-in examples and says so. This runs
-it in a subshell, so you stay in the clone:
+**2. Start a server** from an empty directory. This serves the demo content of this repository from
+git, at the release tag of your `goldie`, and says which repository and path it serves. It runs in a
+subshell, so you stay in the clone:
 
 ```sh
-mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev)
+mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev --git)
 ```
+
+To serve your own repository instead, set `GOLDIE_GIT_URL` (and `GOLDIE_GIT_REF` and
+`GOLDIE_GIT_PATH` if you need them) before the same command:
+
+```sh
+GOLDIE_GIT_URL=https://github.com/your-org/your-content.git goldie server --dev --git
+```
+
+Offline, or to see the built-in examples, run `goldie server --dev` from an empty directory instead.
 
 The server keeps running in this terminal, and Ctrl-C stops it. Open a second terminal for the steps
 below, in the clone, with `goldie` on its PATH as in step 1.
