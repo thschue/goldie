@@ -47,7 +47,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/articles', component: ArticlesView, meta: { title: 'Articles' } },
   { path: '/decisions', component: DecisionsView, meta: { title: 'Decisions' } },
   { path: '/ops/activity', component: ActivityView, meta: { title: 'Activity' } },
-  // Sign in is public: the guard lets it through, and the shell shows no role chip.
+  // Sign in is public: the guard lets it through, and App.vue renders it without the shell.
   { path: '/signin', component: SignInView, meta: { title: 'Sign in', public: true } },
   { path: '/items/article/:name', component: ArticleView, meta: { title: 'Article' } },
   { path: '/ops/sources', component: SourcesView, meta: { title: 'Sources' } },

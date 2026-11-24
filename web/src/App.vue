@@ -2,6 +2,7 @@
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppShell from './components/AppShell.vue';
+import GoldieMark from './components/GoldieMark.vue';
 import ApiUnreachable from './components/ApiUnreachable.vue';
 import { attempt, unreachable } from './api/reachability';
 import SessionBanner from './auth/SessionBanner.vue';
@@ -74,15 +75,23 @@ async function onSignOut() {
 
 <template>
   <main v-if="!ready" class="boot-loading"><div role="status"><h1>Loading…</h1></div></main>
-  <!-- The role is the session's; the public route (sign in) has no session, so no role chip. -->
-  <AppShell v-else :role="role()" :account="!route.meta.public && !checkFailed" @signout="onSignOut">
+  <!-- The public route (sign in, handoff §2.3) is a bare page: logo, then the card. Before sign-in
+       every nav link would redirect back, so it has no shell. -->
+  <main v-else-if="route.meta.public" class="bare">
+    <div class="logo"><GoldieMark /><span>goldie</span></div>
+    <RouterView v-slot="{ Component, route: view }">
+      <component :is="Component" :key="`${view.path}#${attempt}`" />
+    </RouterView>
+  </main>
+  <!-- The role is the session's; the shell is for the signed-in routes, so there is always a role chip. -->
+  <AppShell v-else :role="role()" :account="!checkFailed" @signout="onSignOut">
     <SessionBanner />
     <div v-if="signOutFailed" :key="failures" role="alert" class="page-alert">
       Could not sign you out. You are still signed in.
       <button ref="retry" type="button" @click="onSignOut">Retry</button>
     </div>
-    <ApiUnreachable v-if="unreachable && !route.meta.public" @retry="retryNow" />
-    <div v-else-if="checkFailed && !route.meta.public" :key="checkFailures" role="alert" class="page-alert">
+    <ApiUnreachable v-if="unreachable" @retry="retryNow" />
+    <div v-else-if="checkFailed" :key="checkFailures" role="alert" class="page-alert">
       <h1>Could not check your session</h1>
       <p>Your sign-in is not affected.</p>
       <button ref="checkRetry" type="button" :aria-disabled="checking" @click="retryCheck">Retry</button>
@@ -99,6 +108,23 @@ async function onSignOut() {
 </template>
 
 <style scoped>
+.bare {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  min-height: 100vh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--surface-2);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-display-lg);
+  font-weight: 700;
+}
 .page-alert {
   display: flex;
   flex-wrap: wrap;

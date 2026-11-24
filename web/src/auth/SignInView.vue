@@ -101,7 +101,7 @@ onBeforeUnmount(() => clearInterval(timer));
   padding: var(--space-6);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  background: var(--surface-2);
+  background: var(--surface-1);
 }
 .lead {
   margin: 0 0 var(--space-6);
