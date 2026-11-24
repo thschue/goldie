@@ -22,8 +22,17 @@ export async function loadSources(signal?: AbortSignal): Promise<SourceStatus[]>
 }
 
 // Starts a sync (POST /api/v1/sync, 202): the poll runs on after the answer, so its outcome is
-// read from the status afterwards (waitForSync).
-export const resync = () => post('/api/v1/sync');
+// read from the status afterwards (waitForSync). With a name, only that Source is triggered; the
+// name travels as one encoded query value.
+export const resync = (source?: string) =>
+  post(source ? `/api/v1/sync?${new URLSearchParams({ source })}` : '/api/v1/sync');
+
+// Where a Source comes from, derived from its name: secret:<ns>/<name> is a Secret, any other
+// Source is configured through the environment.
+export function origin(name?: string): string {
+  const m = /^secret:([^/]+)\/(.+)$/.exec(name ?? '');
+  return m ? `Secret ${m[1]}/${m[2]}` : 'env GOLDIE_SOURCES';
+}
 
 const pollTimes = (sources: SourceStatus[]) => sources.map((s) => s.last_poll ?? '').join('|');
 
