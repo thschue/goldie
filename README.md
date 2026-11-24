@@ -83,8 +83,9 @@ goldie init
 ```
 
 On a terminal it guides you: it finds the Project from the repository's git remote, asks you to
-confirm it, writes `.goldie/config.yaml`, checks the server and your token, and prints the commands
-to run next:
+confirm it, writes `.goldie/config.yaml`, checks the server and your token, offers to add goldie's
+block to `CLAUDE.md`, and prints the commands to run next (without `goldie instructions apply` when
+you said yes):
 
 ```sh
 export GOLDIE_ADDR=http://127.0.0.1:8080

@@ -120,6 +120,15 @@ goldie status
 git add .goldie/config.yaml && git commit -m "Add goldie config"
 ```
 
+When the server answered and accepted the token, `init` also asks `Add goldie's instruction block to
+CLAUDE.md? [Y/n]` (stderr). Yes (or Enter) runs `goldie instructions apply --target claude` and prints
+its message on stdout (`Wrote the goldie block to CLAUDE.md (was missing).`, or `CLAUDE.md is already up to
+date.`), and `Next` drops the `goldie instructions apply` line. No, or input that ends at the question,
+changes nothing and `Next` keeps the line. A block edited by hand is never forced: the command's message
+goes to stderr, `init` still exits 0 and `Next` keeps the line. Any other failure (the server cannot render
+the block, the file is a symlink) is reported, `.goldie/config.yaml` stays, `Next` is still printed and
+`init` exits 1.
+
 With no server address, `Next` says to start one (`goldie server --dev`) and run `goldie init` again,
 and holds only the commit command. Nothing but `.goldie/config.yaml` is saved. Without a terminal (a
 pipe, `</dev/null`, CI), or when the input is already at its end, `init` asks nothing and prints only
