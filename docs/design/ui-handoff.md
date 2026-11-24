@@ -38,7 +38,7 @@ Side nav: Home
           Sources   [n failing]
 ```
 
-- The **Project selector** is global. It is detected from the repo when the UI is opened from the CLI (`goldie open`) and is otherwise chosen by the user. It sets the Project for every page and shows `registered` / `unregistered`.
+- The **Project selector** is global. It is detected from the repo when the UI is opened from the CLI (`goldie open`) and is otherwise chosen by the user. It sets the Project for every page and shows `registered` / `unregistered`. The listbox starts with 'All projects (global guidance)', which clears the Project.
 - **Operator-only items are absent for readers, not disabled.** Readers see the *Reader nav note* (§8) in the nav instead.
 - The footer of the nav shows the serving replica and the version.
 
@@ -214,7 +214,7 @@ From top to bottom:
 | Component | Variants / props | Notes |
 |---|---|---|
 | `AppShell` | role: reader \| operator | Top bar + side nav. The nav collapses below 1024 px (see §7). |
-| `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. |
+| `ProjectSelector` | registered \| unregistered \| detected | Shows the full `host/org/repo` id in mono. The first option clears the Project (#804). |
 | `ThemeToggle` | light \| dark \| system | Persists the choice. `system` follows `prefers-color-scheme`. |
 | `SearchField` | hero \| compact | `/` shortcut hint, clear button, `type="search"`, labelled. Submitted in JavaScript (see the `Forms` row). |
 | `SuggestionChip` | on-hero \| on-surface | A button. Sets the query. |
@@ -273,6 +273,7 @@ Legend: **C** = drawn on the canvas, **D** = specified here only (to be added to
 | Empty search (Miss) | Results | Gold dashed panel, no-match copy (§8), suggestion chips. | C |
 | Empty Kind | Results with a Kind filter | Neutral panel: "No `<kind>`s for `<project>` yet."; without a Project: "No `<kind>`s yet." | D |
 | Asset tab, no Project selected (#758) | Skills, Agents, Loops, Instructions | Lists the global assets (the request leaves `project` out); empty copy "No `<noun>` yet." With Projects registered it adds the note "Pick a Project from the selector to see its `<noun>`."; with none, no note. | D |
+| Project selector, all projects option (#804) | Project selector | First option "All projects (global guidance)", always present: while the list loads, after a failed load and with no Projects registered (the note sits below it). Choosing it pushes the URL without `project` and keeps `q` and `target`, so Back restores the Project. `aria-selected` is true only when no Project is set; it has no `registered` / `unregistered` chip. Opening lands on the current Project, or on this option when there is none. | D |
 | Unregistered Project | Project selector + Home | `unregistered` chip; Home shows a hint: "Global and local guidance only. **How to register this project**". | D |
 | Draft | Card, detail | Dashed outline + "draft · hidden from agents"; detail banner (dashed). Operators only; readers never see drafts. | C |
 | Deprecated | Card, detail | Gold badge "deprecated → `replaced_by`"; detail banner with a link to the replacement. | C |
@@ -498,6 +499,7 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Key | Copy |
 |---|---|
 | Home question | What are you deciding today? |
+| Project selector, no Project | Choose a Project (trigger text with no Project). The first option reads All projects (global guidance). |
 | Home sub-line | Same golden path your agents follow — `<n>` Items for `<project>`. |
 | Rate limited, countdown over | Too many requests — you can retry now. |
 | Search placeholder | database, logging, retries, feature flags… |
