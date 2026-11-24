@@ -61,7 +61,11 @@ The journey the `ux-designer` walks on every audit and on any PR that changes it
 2. `goldie server` with an empty environment: it must point at `--dev`.
 3. `goldie server --dev` in an empty directory, then over `examples/knowledge`.
 4. The printed export line pasted into another shell, then `goldie search` and `goldie lookup`.
-5. `goldie init` in a fresh git repository.
+5. `goldie init` in a fresh git repository, on a terminal: it confirms the Project, asks for the server
+   address, reports the server and the token, and ends with a `Next` block of copyable commands
+   (`export GOLDIE_ADDR=…`, `claude mcp add …`, `goldie instructions apply`, `goldie status`, a
+   `git commit`). Without a terminal it asks nothing. The commands match the checklist of
+   `ui-handoff.md` §3.2 item 4.
 6. `goldie mcp --transport stdio` from an MCP client config copied from the README.
 
 Each step either works or says exactly what to do next.

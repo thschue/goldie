@@ -116,6 +116,27 @@ existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.y
 run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
 root); a refusal writes nothing.
 
+On a terminal, `goldie init` guides you. It prints the Project and asks `Use this Project? [Y/n]`
+(`n` stops and names `--project`), writes the config, asks for the server address (the default is
+`--addr` or `GOLDIE_ADDR`), and reports `Server:` (reachable or not, probed once, no redirect
+followed) and `Token:` (accepted, rejected or not set, from `GOLDIE_TOKEN` only; the token is never
+printed). The questions and those two lines go to stderr; the Project, the file, `Registered:` and a
+`Next` block go to stdout. The `Next` block holds the commands to run, one per line:
+
+```sh
+export GOLDIE_ADDR=http://127.0.0.1:8080
+export GOLDIE_TOKEN=<your token>            # only when the token is not set
+claude mcp add --transport http goldie http://127.0.0.1:8080/mcp --header "Authorization: Bearer $GOLDIE_TOKEN"
+goldie instructions apply
+goldie status
+git add .goldie/config.yaml && git commit -m "Add goldie config"
+```
+
+Nothing but `.goldie/config.yaml` is saved. Without a terminal (a pipe, `</dev/null`, CI), or when the
+input ends at the first question, `init` asks nothing and prints only what is described above.
+Ctrl-D at a later question stops with `init stopped; nothing more was changed`; the config already
+written stays.
+
 `goldie instructions apply [--target claude|agents] [--force]` writes goldie's instruction block
 between `<!-- goldie:begin digest=sha256:… -->` and `<!-- goldie:end -->` in `CLAUDE.md` (the default)
 or `AGENTS.md` at the repository root, creating the file if needed. The block comes from
