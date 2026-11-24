@@ -52,8 +52,8 @@ The server keeps running in this terminal, and Ctrl-C stops it. Open a second te
 below, in the clone, with `goldie` on its PATH as in step 1.
 
 It prints an `export GOLDIE_ADDR=… GOLDIE_TOKEN=…` line with a token made for this run. To serve a
-directory of content instead, pass it. From the clone, `examples/knowledge` holds goldie's own
-agents and loops:
+directory of content instead, stop the first server with Ctrl-C and run this from the clone. In
+the clone, `examples/knowledge` holds goldie's own agents and loops:
 
 ```sh
 goldie server --dev examples/knowledge
