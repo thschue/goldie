@@ -11,6 +11,14 @@
 //   may follow). Pressing one requests the list with status=<value> (All is
 //   status=all); the default request sends no status or status=accepted;
 // - every request carries project=<the URL's project> and none when the URL has none;
+// - #737 (handoff §2.2, §3.8): a decision is selected by `&d=<name>` on /decisions. The page
+//   fetches GET /api/v1/decisions/<name> (with project=<the URL's project> when it has one) and
+//   shows the decision in a second column beside the list, under it when narrow. Its Markdown
+//   body is rendered by MarkdownBody (never raw HTML), the history is an <ol> inside main (the
+//   cards are a <ul>) whose current entry has aria-current="step", and the binding note is
+//   plain text in main that is not a role=status. A card's heading is what a click targets.
+//   After a filter change exactly one role=status in main carries the result count
+//   ("N decisions", "1 decision"); the initial load has none;
 // - states follow #587: an error is a role=alert showing the envelope message, the
 //   empty state is a role=status, the loading skeletons carry aria-busy="true".
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -312,7 +320,8 @@ test.describe('the Decisions page', () => {
     await expect(cards(page)).toHaveCount(0);
     await pill(page, 'accepted').click();
     await expect(cards(page)).toHaveCount(2);
-    await expect(main(page).getByRole('status')).toHaveCount(0);
+    // #737: a filter change is announced with the count; the empty state is gone.
+    await expect(main(page).getByRole('status')).toContainText(/\b2 decisions\b/);
   });
 
   test('a failed status request shows the error and the filter can recover', async ({ page }) => {
@@ -362,5 +371,229 @@ test.describe('the Decisions list error: message then hint (#783)', () => {
     const alert = await fail(page, 'The decision store is unavailable', '');
     await expect(alert).toBeVisible();
     expect(norm(await alert.locator('p').first().innerText())).toBe('The decision store is unavailable');
+  });
+});
+
+// #737: the selected decision (handoff §2.2, §3.8, §8).
+const apiDecision = /\/api\/v1\/decisions\/[^/?]+(\?.*)?$/;
+const bindingNote =
+  'Binding for agents. A change that contradicts this decision should stop and propose a new decision instead of silently deviating.';
+
+const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+type Detail = Decision & { content?: string; chain?: { name: string; title: string; status: string; scope: string }[] };
+
+// stubDecision answers GET /api/v1/decisions/<name> from `details` (a miss is a 404 envelope)
+// and records every request URL.
+const stubDecision = async (page: Page, details: Detail[]) => {
+  const urls: URL[] = [];
+  await page.route(apiDecision, (route) => {
+    const url = new URL(route.request().url());
+    urls.push(url);
+    const name = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+    const d = details.find((x) => x.name === name);
+    if (!d) {
+      return json(route, 404, envelope('not_found', `No decision named ${name}.`, 'List the decisions to find the name.'));
+    }
+    return json(route, 200, { ...decision(d), content: d.content ?? '', chain: d.chain ?? [] });
+  });
+  return urls;
+};
+
+const postgres: Detail = {
+  name: 'use-postgres',
+  title: 'Use PostgreSQL for the shop database',
+  content: '## Context\n\nBODYMARK we need **transactions**.',
+  keywords: ['database', 'sql'],
+} as Detail;
+const select = (page: Page, d: string, project: string | null = shop) =>
+  page.goto(`/decisions?${project === null ? '' : `project=${encodeURIComponent(project)}&`}d=${encodeURIComponent(d)}`);
+const body = (page: Page) => main(page).getByText('BODYMARK');
+
+test.describe('a selected decision (#737)', () => {
+  test('d in the URL fetches the decision for the Project and shows its Markdown body', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    const urls = await stubDecision(page, [postgres]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    await expect(main(page).locator('strong', { hasText: 'transactions' })).toBeVisible();
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Context' })).toBeVisible();
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) {
+      expect(u.pathname).toBe('/api/v1/decisions/use-postgres');
+      expect(u.searchParams.get('project')).toBe(shop);
+    }
+  });
+
+  test('clicking a card sets d and keeps the Project', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    await open(page);
+    await expect(cards(page)).toHaveCount(2);
+    await expect(body(page)).toHaveCount(0);
+    await card(page, 'Use PostgreSQL for the shop database').getByRole('heading', { level: 2 }).click();
+    await expect(page).toHaveURL((u) => u.pathname === '/decisions' && u.searchParams.get('d') === 'use-postgres');
+    await expect(page).toHaveURL((u) => u.searchParams.get('project') === shop);
+    await expect(body(page)).toBeVisible();
+  });
+
+  test('the selected decision sits beside the list when wide and under it when narrow', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    for (const [width, height] of [
+      [1280, 800],
+      [375, 812],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await select(page, 'use-postgres');
+      await expect(body(page)).toBeVisible();
+      const list = (await card(page, 'Cap retries at three per request').boundingBox())!;
+      const sel = (await body(page).boundingBox())!;
+      if (width === 1280) {
+        expect(sel.x, 'beside the list').toBeGreaterThanOrEqual(list.x + list.width - 1);
+      } else {
+        expect(sel.y, 'under the list').toBeGreaterThanOrEqual(list.y + list.height - 1);
+      }
+    }
+  });
+
+  test('a hostile body renders as inert content, never raw HTML', async ({ page }) => {
+    const hostile = [
+      'BODYMARK before <script>window.__pwn = "script"</script> after.',
+      '',
+      '<img src=x onerror="window.__pwn = \'img\'">',
+      '',
+      '<iframe src="https://evil.example/frame"></iframe>',
+      '',
+      '<a href="javascript:window.__pwn = \'raw\'">raw anchor</a>',
+      '',
+      '[md js link](javascript:window.__pwn = "md")',
+      '',
+      '[safe link](https://example.org/safe)',
+    ].join('\n');
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [{ ...postgres, content: hostile }]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    await expect(main(page).locator('img[src="x"], iframe, script, style')).toHaveCount(0);
+    await expect(main(page).locator('a[href^="javascript:" i]')).toHaveCount(0);
+    await expect(main(page).getByRole('link', { name: 'safe link' })).toHaveAttribute('href', 'https://example.org/safe');
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => (window as unknown as { __pwn?: string }).__pwn)).toBeUndefined();
+  });
+
+  test('an accepted decision shows the binding note; a proposed one does not', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [
+      postgres,
+      { name: 'adopt-grpc', title: 'Adopt gRPC between services', status: 'proposed', content: 'BODYMARK grpc' } as Detail,
+    ]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    expect(norm(await main(page).innerText())).toContain(bindingNote);
+    await select(page, 'adopt-grpc');
+    await expect(main(page).getByText('BODYMARK grpc')).toBeVisible();
+    expect(norm(await main(page).innerText())).not.toContain('should stop and propose a new decision');
+  });
+
+  test('the history lists the chain oldest to newest with the current one marked', async ({ page }) => {
+    const chain = [
+      { name: 'use-mysql', title: 'Use MySQL for the shop database', status: 'superseded', scope: 'global' },
+      { name: 'use-postgres', title: 'Use PostgreSQL for the shop database', status: 'superseded', scope: 'global' },
+      { name: 'use-cockroach', title: 'Use CockroachDB for the shop database', status: 'accepted', scope: 'global' },
+    ];
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [{ ...postgres, status: 'superseded', superseded_by: 'decision:use-cockroach', chain }]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    const items = main(page).locator('ol li');
+    await expect(items).toHaveCount(3);
+    await expect(items.nth(0)).toContainText('Use MySQL for the shop database');
+    await expect(items.nth(1)).toContainText('Use PostgreSQL for the shop database');
+    await expect(items.nth(2)).toContainText('Use CockroachDB for the shop database');
+    await expect(items.nth(0)).toContainText('superseded');
+    await expect(items.nth(2)).toContainText('accepted');
+    await expect(main(page).locator('ol [aria-current="step"]')).toHaveCount(1);
+    await expect(items.nth(1).locator('xpath=self::*[@aria-current="step"] | .//*[@aria-current="step"]')).toHaveCount(1);
+  });
+
+  test('a superseded decision links to its successor', async ({ page }) => {
+    await stubProjects(page);
+    await page.route(apiDecisions, (route) =>
+      json(route, 200, {
+        decisions: [
+          decision({
+            name: 'use-mysql',
+            title: 'Use MySQL for the shop database',
+            status: 'superseded',
+            superseded_by: 'decision:use-postgres',
+          }),
+        ],
+      }),
+    );
+    await stubDecision(page, [
+      {
+        name: 'use-mysql',
+        title: 'Use MySQL for the shop database',
+        status: 'superseded',
+        superseded_by: 'decision:use-postgres',
+        content: 'BODYMARK mysql',
+      } as Detail,
+      postgres,
+    ]);
+    await select(page, 'use-mysql');
+    await expect(main(page).getByText('BODYMARK mysql')).toBeVisible();
+    const link = main(page).locator('a[href*="d=use-postgres"]');
+    await expect(link.first()).toBeVisible();
+    await link.first().click();
+    await expect(body(page)).toBeVisible();
+    await expect(page).toHaveURL((u) => u.searchParams.get('d') === 'use-postgres');
+  });
+
+  test('facts show the keywords the API serves and invent no source, path, format or number', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    await select(page, 'use-postgres');
+    await expect(body(page)).toBeVisible();
+    await expect(main(page).getByText('database', { exact: true })).toBeVisible();
+    await expect(main(page).getByText('sql', { exact: true })).toBeVisible();
+    const text = norm(await main(page).innerText());
+    expect(text).not.toMatch(/file path|format|madr|nygard|frontmatter|\bADR-\d+|\d{4}\/\d{4}/i);
+    expect(text).not.toMatch(/\bSource\s*:/i);
+  });
+
+  test('an unknown name shows the API message and hint in an alert', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await stubDecision(page, [postgres]);
+    await select(page, 'no-such-decision');
+    const alert = main(page).getByRole('alert');
+    await expect(alert).toContainText('No decision named no-such-decision.');
+    await expect(alert).toContainText('List the decisions to find the name.');
+    await expect(body(page)).toHaveCount(0);
+  });
+
+  test('changing the filter announces the result count politely', async ({ page }) => {
+    await stubProjects(page);
+    await stubDecisions(page);
+    await open(page);
+    await expect(cards(page)).toHaveCount(2);
+    await expect(main(page).getByRole('status')).toHaveCount(0);
+    await pill(page, 'proposed').click();
+    await expect(cards(page)).toHaveCount(1);
+    const status = main(page).getByRole('status');
+    await expect(status).toHaveCount(1);
+    await expect(status).toContainText(/\b1 decision\b(?!s)/);
+    expect(await status.getAttribute('aria-live')).not.toBe('assertive');
+    await pill(page, 'All').click();
+    await expect(cards(page)).toHaveCount(6);
+    await expect(main(page).getByRole('status')).toContainText(/\b6 decisions\b/);
   });
 });
