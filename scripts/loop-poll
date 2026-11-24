@@ -5,7 +5,7 @@
 #
 # Prints one line:
 #   deliver: main=<state> red=<workflows> streams=<n>/2 attention=<n> renovate=<n> frontier=<n> work=<n> fingerprint=<hash>
-#   product: main=<state> red=<workflows> triage=<n> decisions=<n> buffer=<n> wip=<n> fingerprint=<hash>
+#   product: main=<state> red=<workflows> triage=<n> decisions=<n> buffer=<n> outside=<n> wip=<n> fingerprint=<hash>
 # main is the `ci` workflow on the head of main (green, red, pending, unknown;
 # red stops the line); red lists other failed workflows there. For deliver,
 # streams counts this session's open PRs ($GOLDIE_SESSION, default: the short
@@ -14,9 +14,11 @@
 # scripts/lib/markers.jq: disarm, red, dirty, answered), renovate the
 # red or conflicted Renovate PRs not reviewed at their head (green ones merge
 # themselves), and work what the tick can act on (0 ends it).
-# For product, decisions counts PRs whose decision for the head has no
-# answer yet (label or not), buffer the claimable issues, and wip the issues
-# in progress. Read-only.
+# frontier counts the claimable issues in scope: in the current milestone, the
+# open one with the lowest number, or labelled `security` (ADR 0029). For
+# product, decisions counts PRs whose decision for the head has no answer yet
+# (label or not), buffer the claimable issues in scope, outside the claimable
+# ones no milestone covers, and wip the issues in progress. Read-only.
 set -eu
 
 die() { printf 'loop-poll: %s\n' "$*" >&2; exit 2; }
@@ -42,9 +44,15 @@ red=$(printf '%s' "$runs" | jq -r '
 prs=$(gh pr list --state open --limit 200 \
 	--json number,headRefOid,headRefName,labels,author,comments,mergeStateStatus,autoMergeRequest,statusCheckRollup) ||
 	die "cannot list PRs"
-frontier=$(gh issue list --state open --label ready-for-agent --limit 500 \
-	--search 'no:assignee -label:in-progress -label:epic -is:blocked' --json number --jq length) ||
+current=$(gh api 'repos/{owner}/{repo}/milestones?state=open&per_page=100' --jq 'min_by(.number).title // ""') ||
+	die "cannot read the milestones"
+claimable=$(gh issue list --state open --label ready-for-agent --limit 500 \
+	--search 'no:assignee -label:in-progress -label:epic -is:blocked' --json number,labels,milestone \
+	--jq '.[] | {number, milestone, labels: [.labels[].name]}' | jq -s -L "$lib" --arg current "$current" \
+	'include "frontier"; "\([.[] | select(in_scope($current))] | length) \([.[] | select(in_scope($current) | not)] | length)"' -r) ||
 	die "cannot list the frontier"
+frontier=${claimable% *}
+outside=${claimable#* }
 # pr_count <jq filter on one PR with $m = its own markers>: how many open PRs match.
 pr_count() {
 	printf '%s' "$prs" | jq -L "$lib" --arg me "$me" --arg session "$session" \
@@ -70,7 +78,7 @@ product)
 		| ($r | attr("reason")) == "decision" and ($r | attr("sha")) == .headRefOid and (answered($me) | not)')
 	wip=$(gh issue list --state open --label in-progress --limit 500 --json number --jq length) ||
 		die "cannot count issues in progress"
-	extra="triage=$triage decisions=$decisions buffer=$frontier wip=$wip"
+	extra="triage=$triage decisions=$decisions buffer=$frontier outside=$outside wip=$wip"
 	;;
 *) die "unknown loop: $loop" ;;
 esac

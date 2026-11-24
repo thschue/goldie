@@ -65,7 +65,12 @@ reason), consults, test change requests, and harness feedback filed.
    - On `needs-info` (criteria unclear or contradictory): comment the exact gap with
      `reason=spec`, swap the issue's `ready-for-agent` for `needs-info`, and close the draft.
 2. **Implement.** The `implementer` gets `$me`, the issue, the branch, and the acceptance-test
-   commit. Its brief is in its agent definition.
+   commit. Its brief is in its agent definition. For a `shrink:` issue the PR is a `refactor` with
+   no step 1; `./run size` must report a negative `net`, which the reviewer checks.
+   - **Prune:** once it has shipped, the `test-author` prunes the branch's tests on the pushed head
+     (its agent definition says how). Record its commit as
+     `<!-- goldie-loop:tests approved=<commit> -->`; only that marker lets the test lock accept a
+     deleted test line. Then review that head.
 3. **Review.** Always `reviewer`, plus each specialist whose paths the diff touches
    (`git diff --name-only origin/main...<head>`):
 
@@ -82,9 +87,15 @@ reason), consults, test change requests, and harness feedback filed.
    - Send every blocking and every `fix: now` LOW finding to the **same implementer**
      (`SendMessage`; a fresh one after a restart), also when only `now` LOWs are left (a polish
      pass). Then go to step 3 with only the reviewers that had findings, on the new commits.
-   - At most **3** fix rounds. A blocking finding still open after that becomes
+   - A fix round adds code only for a finding with a failing test for a user-observable defect,
+     or one that names the criterion, testing-checklist item or `security-reviewer` finding it
+     satisfies (those need no further justification). Any other finding is answered in the marker.
+   - At most **2** fix rounds. A blocking finding still open after that: the first time, close the
+     PR, remove `in-progress` and the assignee, and comment the findings on the issue, which the
+     frontier offers again to a fresh stream; the second time on the same issue,
      `needs-info reason=round-cap` with the findings and a recommendation. LOWs found after a
-     polish pass are dropped; `fix: follow-up` LOWs go into one `needs-triage` issue.
+     polish pass are dropped; `fix: follow-up` LOWs go into one `needs-triage` issue without a
+     milestone.
 5. **Finish.** Post one marker comment for the head (with `rounds=`), listing the findings by
    agent: fixed, or why not. Then:
    - **clean:** run `scripts/merge-pr <pr> <head>`. It checks the marker, `main`'s gate and the test
@@ -125,7 +136,8 @@ reason), consults, test change requests, and harness feedback filed.
 - **Models:** the session runs on `sonnet` (`claude --model sonnet`, never a 1M context); the
   agent definitions pin each role's model and effort (`opus` only for `security-reviewer`).
 - **Size:** about 400 changed lines without tests and generated code (`./run size`); over 600, a
-  slice list (first slice stays, the rest is filed). Same-job fixes never count.
+  slice list (first slice stays, the rest is filed). Same-job fixes never count. Its `net` and
+  `ratio` lines are in every PR body and review report: growth is reviewed, not assumed.
 - **Found-fixes** become streams of this session when a slot is free; until then, ready drafts. A
   MEDIUM+ security bug on `main` takes the [disclosure](./README.md#disclosure-and-quoting) path in
   the same tick (draft advisory, private fork); tell the user the id.

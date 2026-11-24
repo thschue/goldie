@@ -61,3 +61,8 @@ deny	git push --force-with-lease origin feat/x
 deny	gh label edit in-review --name x
 deny	gh label create area:x
 allow	gh pr comment 5 --body-file /tmp/comment.md
+deny	gh api -X POST repos/thschue/goldie/milestones -f title=MVP
+deny	gh api --method PATCH repos/thschue/goldie/milestones/1 -f state=closed
+deny	gh api -X DELETE repos/thschue/goldie/milestones/1
+allow	gh api repos/thschue/goldie/milestones?state=open
+allow	gh issue edit 5 --milestone MVP

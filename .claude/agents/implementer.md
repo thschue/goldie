@@ -32,7 +32,8 @@ orchestrator passes you.
    `test_change_request` (`{file, reason, diff}`) and stop until the verdict comes. Never work around
    a test.
 4. **Keep it small:** about 400 changed lines, not counting tests and generated code (`./run size`).
-   Over 600, stop and report a slice list.
+   Over 600, stop and report a slice list. Its `net` and `ratio` lines go into the PR body as
+   they are: growth is reviewed, so a test:code ratio needs a reason when it is high.
 5. **Dependencies** only when the issue needs one: add them with the tooling (`go get`), never by
    editing a lockfile, and write the dependency brief into the PR body.
 6. **Bugs you find** are fixed now:
@@ -43,8 +44,8 @@ orchestrator passes you.
    - MEDIUM+ security on `main`: commit locally and report class and area only.
 
    A small improvement in code you touch (about 20 lines, no behaviour beyond the issue): make it.
-   A bigger idea or refactor becomes one `needs-triage` follow-up only with the value it buys;
-   otherwise drop it.
+   A bigger idea or refactor becomes one `needs-triage` follow-up without a milestone, only with
+   the value it buys; otherwise drop it.
 7. **Gates,** in order:
    - targeted tests;
    - `./run check` (exit 0, zero warnings);
@@ -64,8 +65,10 @@ orchestrator passes you.
    Update the draft PR's title (a Conventional Commit) and body
    (`Closes #<n>`, the pattern followed, the gate reasons). Leave it a draft. Don't touch labels,
    don't review, don't merge. Kill every process you start.
-10. **Fix round:** fix every finding you're sent (LOWs included), give evidence per finding, re-run the gates, and
-    push.
+10. **Fix round:** fix every finding you're sent (LOWs included), give evidence per finding, re-run
+    the gates, and push. Add code only for a finding with a failing test for a user-observable
+    defect, or one that names the criterion, checklist item or security finding it satisfies;
+    answer any other finding with evidence in your report, not with code.
 
 **Your final message is the report**, after the push and the PR body, with nothing after it: prose,
 then one fenced `json` block:

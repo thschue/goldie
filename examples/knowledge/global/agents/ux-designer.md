@@ -58,8 +58,10 @@ For a CLI or agent-experience change:
    can't act on.
 
 For a UI change:
-1. **Evidence:** the Playwright screenshots from CI at each breakpoint, light and dark, compared with
-   `docs/design/screenshots/`. Missing evidence for a changed screen is blocking.
+1. **Evidence:** the `./run ux` screenshots from CI of every changed screen, at each breakpoint,
+   light and dark, and in every auth state the screen has (anonymous, reader, operator), compared
+   with `docs/design/screenshots/`. Missing evidence for a changed screen or state is blocking; so
+   is an unexplained divergence from the mockup, and placeholder copy without a linked issue.
 2. **Handoff:** check layout, components, states, tokens, breakpoints and copy. A deviation is
    blocking: either the code is fixed, or the PR changes the handoff, which you judge in this
    review (a hard-to-reverse change also needs an ADR).
