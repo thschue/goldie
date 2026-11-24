@@ -143,9 +143,10 @@ commands does (see below).
 ### The client commands start the embedded server with it
 
 When `.goldie/articles/` is a directory at the repository root, or `.goldie/config.yaml` sets
-`decisions.path` (found from the working directory, up to the nearest `.git`), `search`, `lookup`, `status` and `goldie mcp --transport stdio` start the
-embedded server with the local Scope, which answers every request. The base content is, first
-found wins: `--dir`, `GOLDIE_DIR`, `dir:` in `.goldie/config.yaml`, or empty content. A `.goldie/`
+`decisions.path` (found from the working directory, up to the nearest `.git`), `search`, `lookup`,
+`status` and `goldie mcp --transport stdio` start the embedded server with the local Scope, which
+answers every request. The base content is, first found wins: `--dir`, `GOLDIE_DIR`, `dir:` in
+`.goldie/config.yaml`, or empty content. A `.goldie/`
 without `articles/` and without `decisions.path`, such as the one `goldie init` writes, does not
 switch to local mode, so
 `GOLDIE_ADDR` keeps working. `GOLDIE_ADDR` or `--addr` set next to `.goldie/articles/` is an error
@@ -164,13 +165,13 @@ untrusted like `dir:`: a non-empty string without control characters, a relative
 repository root, naming a folder, read through `os.Root`. An absolute path, `..`, a symlink out of
 the root and control characters are refused, and a path that names no folder is its own error. Every
 error names `.goldie/config.yaml`, never a path or the value. The folder's `.md` files load as
-decisions of Scope `local`, in Nygard, MADR 2.x or frontmatter form (symlinked files are never read).
-A file that reads as no decision, such as `README.md` or a template, is skipped without a word. A
-malformed ADR is not served and is a warning that names its file, which the client commands print to
-stderr as `Warning: <file>: <message>`; the other ADRs load. When no file in the folder reads as a
-decision, one warning says so. `--dir` and `GOLDIE_DIR` are not confined to the root, as before. The CLI only finds
-these paths; the engine reads the articles. The CLI opens the content directory once
-and the embedded server reads only through that handle, so
+decisions of Scope `local`, in Nygard, MADR 2.x or frontmatter form (symlinked files are never
+read). A file that reads as no decision, such as `README.md` or a template, is skipped without a
+word. A malformed ADR is not served and is a warning that names its file, which the client commands
+print to stderr as `Warning: <file>: <message>`; the other ADRs load. When no file in the folder
+reads as a decision, one warning says so. `--dir` and `GOLDIE_DIR` are not confined to the root, as
+before. The CLI only finds these paths; the engine reads the articles. The CLI opens the content
+directory once and the embedded server reads only through that handle, so
 replacing the path with a symlink while the command runs does not redirect the read. For `dir:` in
 `config.yaml` the handle is the one the check opened through the repository root, so there is no gap
 between check and use. `--dir` and `GOLDIE_DIR` are opened by path, once, right after their checks.
