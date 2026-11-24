@@ -117,7 +117,7 @@ describe('Home without a query', () => {
 });
 
 // The search call (#730): `q`, `project` when one is selected, `kind` when a Kind pill is pressed,
-// `drafts` never. The request is what the API sees; the hits and the hint are in web/e2e/search.spec.ts.
+// `drafts` never. The request is what the API sees; the hits, the hint and "no query, no search" are in web/e2e/search.spec.ts.
 describe('the search request', () => {
   const searches = (fetchMock: ReturnType<typeof stubApi>) =>
     fetchMock.mock.calls.map(([u]) => new URL(String(u), 'file:///')).filter((u) => u.pathname === '/api/v1/search');
@@ -155,11 +155,5 @@ describe('the search request', () => {
     await render('/?q=database&drafts=true&project=github.com%2Facme%2Fshop');
     const [call] = searches(fetchMock);
     expect(call.searchParams.has('drafts')).toBe(false);
-  });
-
-  it('makes no search call for a Project without a query', async () => {
-    const fetchMock = stubApi(answer);
-    await render('/?project=github.com%2Facme%2Fshop');
-    expect(searches(fetchMock)).toEqual([]);
   });
 });
