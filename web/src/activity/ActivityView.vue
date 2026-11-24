@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
-import { add, addText, agoText, announceEvery, canSearch, missBoard, queryText, resultText, rowKey, timeText } from './rows';
+import { add, addText, agoText, announceEvery, canSearch, missBoard, itemText, msText, queryText, resultText, rowKey, shownText, surfaceLabel, surfaceOf, surfaces, timeText, type Surface } from './rows';
 import { projectOf } from '../projects/api';
 import { createTiles, liveHeader } from './tiles';
 import { streamActivity, type ActivityEvent, type Frame } from './stream';
@@ -34,6 +34,7 @@ const fleet = ref(new Map<string, { up: boolean; lastSeen: string; heard: number
 const tiles = createTiles();
 const fed = ref(0);
 const only = ref<string>();
+const picked = ref<Surface[]>([]);
 const now = ref(Date.now());
 let held: ActivityEvent[] = [];
 let controller: AbortController | undefined;
@@ -43,12 +44,17 @@ const shown = computed(() =>
     (r) =>
       (!missesOnly.value || r.miss) &&
       (only.value === undefined || r.replica === only.value) &&
-      (!project.value || r.project === project.value),
+      (!project.value || r.project === project.value) &&
+      (!picked.value.length || picked.value.includes(surfaceOf(r) as Surface)),
   ),
 );
 const header = computed(() => liveHeader(new Map([...fleet.value].map(([n, s]) => [n, s.heard])), now.value));
 // fed changes whenever the tiles are fed, so the read happens again.
 const last5 = computed(() => (fed.value, tiles.read(now.value)));
+const pills = computed(() =>
+  surfaces.map((s) => ({ s, label: surfaceLabel[s], count: rows.value.filter((r) => surfaceOf(r) === s).length })),
+);
+const pick = (s: Surface) => (picked.value = picked.value.includes(s) ? picked.value.filter((x) => x !== s) : [...picked.value, s]);
 const board = computed(() => missBoard(rows.value));
 const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
 // When narrow the panel sits under the feed: bring it into view on a selection, never moving focus
@@ -200,7 +206,14 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </li>
         <li>
           <span class="k">Busiest surface</span>{{ ' ' }}
-          <span class="v">—</span>
+          <span class="v">{{ last5.busiest ? surfaceLabel[last5.busiest] : '—' }}</span>
+        </li>
+        <li>
+          <span class="k">Latency</span>{{ ' ' }}
+          <span v-if="last5.latency" class="v">
+            <small>p50</small> {{ msText(last5.latency.p50) }} <small>p95</small> {{ msText(last5.latency.p95) }}
+          </span>
+          <span v-else class="v">—</span>
         </li>
       </ul>
     </section>
@@ -210,6 +223,21 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         {{ plain(project) }} <span aria-hidden="true">✕</span>
       </button>
     </p>
+
+    <div class="switcher" role="group" aria-label="Surface">
+      <!-- Checkboxes, not pressed buttons: the replica switcher's buttons are the page's aria-pressed set. -->
+      <button
+        v-for="p in pills"
+        :key="p.s"
+        type="button"
+        role="checkbox"
+        class="control"
+        :aria-checked="picked.includes(p.s)"
+        @click="pick(p.s)"
+      >
+        <span v-if="picked.includes(p.s)" aria-hidden="true">✓ </span>{{ p.label }} <span class="count">{{ p.count }}</span>
+      </button>
+    </div>
 
     <div v-if="peers" class="switcher" role="group" aria-label="Replicas">
       <button type="button" class="control" :aria-pressed="only === undefined" @click="choose()">
@@ -286,8 +314,11 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
               </td>
               <td>{{ e.kind }}</td>
               <td :id="`q-${i}`" class="query">{{ queryText(e) }}</td>
-              <td :class="{ result: e.miss }">{{ resultText(e) }}</td>
-              <td><span aria-hidden="true">—</span><span class="sr-only">Not recorded</span></td>
+              <td :class="{ result: e.miss }" class="wrap">{{ itemText(e) }}</td>
+              <td>
+                <template v-if="surfaceOf(e)">{{ surfaceLabel[surfaceOf(e)!] }}</template>
+                <template v-else><span aria-hidden="true">—</span><span class="sr-only">Not recorded</span></template>
+              </td>
               <td class="wrap">{{ plain(e.project) || '—' }}</td>
               <td class="wrap">{{ plain(e.replica) || '—' }}</td>
             </tr>
@@ -299,11 +330,27 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         <dl>
           <dt>Query</dt>
           <dd class="query">{{ queryText(chosen) }}</dd>
+          <template v-if="chosen.served">
+            <dt>Query → Item</dt>
+            <dd class="query">{{ queryText(chosen) }} → {{ shownText(chosen.served) }}</dd>
+          </template>
           <dt>Kind</dt>
           <dd>{{ chosen.kind }}</dd>
           <template v-if="chosen.project">
             <dt>Project</dt>
             <dd class="wrap">{{ plain(chosen.project) }}</dd>
+          </template>
+          <template v-if="chosen.latency_us">
+            <dt>Latency</dt>
+            <dd>{{ msText(chosen.latency_us) }}</dd>
+          </template>
+          <template v-if="surfaceOf(chosen)">
+            <dt>Via</dt>
+            <dd>{{ surfaceLabel[surfaceOf(chosen)!] }}</dd>
+          </template>
+          <template v-if="chosen.trace_id">
+            <dt>Trace id</dt>
+            <dd class="wrap">{{ shownText(chosen.trace_id) }}</dd>
           </template>
           <template v-if="chosen.token">
             <dt>Token</dt>
