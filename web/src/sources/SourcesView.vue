@@ -5,7 +5,7 @@ import { useLoad } from '../api/useLoad';
 import { role } from '../auth/session';
 import { plain } from '../assets/api';
 import { ApiError, fallback } from '../api/client';
-import { isFailing, loadSources, origin, resync, waitForSync, when, type SourceStatus } from './api';
+import { isFailing, loadSources, origin, sourceState, resync, waitForSync, when, type SourceStatus } from './api';
 
 // The Sources page (#633, #733, handoff §3.7, §5.3): a card per Source from GET /api/v1/sync,
 // failing ones first, each with its own Resync (POST ?source=<name>). A reader gets the operators-only message and no request. The h1 renders
@@ -108,8 +108,8 @@ function syncMessage(e: unknown) {
     <ul v-else class="list">
       <li v-for="(s, i) in rows" :key="s.name ?? i" class="row" :class="{ bad: isFailing(s) }">
         <div class="head">
-          <h2>{{ s.name ? plain(s.name) : 'Source' }}</h2>
-          <strong v-if="isFailing(s)" class="badge">Failing</strong>
+          <h2>{{ s.name ? plain(s.name) : `Source ${s.preference ?? i + 1}` }}</h2>
+          <strong class="badge">{{ sourceState(s) }}</strong>
           <span class="chip">{{ origin(s.name) }}</span>{{ " " }}
           <span v-if="s.preference" class="chip">Order {{ s.preference }}</span>{{ " " }}
           <span class="chip">{{ s.shadowed?.length ?? 0 }} shadowed {{ s.shadowed?.length === 1 ? 'Item' : 'Items' }}</span>{{ " " }}

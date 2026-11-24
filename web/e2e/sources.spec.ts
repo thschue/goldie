@@ -1,3 +1,5 @@
+// #868: each card's badge is healthy, failing · serving last good or errored, and an unnamed Source's
+// heading carries its order, in both themes.
 // #733: each Source is a card with its name, order, origin, copyable revision, shadowed Items count
 // and its own Resync (POST /api/v1/sync?source=<name>), in both themes.
 // The Sources page /ops/sources (#633, handoff §3, §5.3): a row per Source
@@ -120,6 +122,33 @@ eachViewport((width, theme) => {
     await page.goto('/ops/sources');
     await expect(rows(page)).toHaveCount(3);
     await evidence(page, width, theme, '-cards', 'sources');
+  });
+
+  test('each card shows its three-state badge and two unnamed Sources get distinct headings (#868)', async ({
+    page,
+  }) => {
+    const errored: Source = { revision: '4444444444444444444444444444444444444444', last_error: 'clone failed' };
+    await asOperatorWithCsrf(page);
+    await stubSync(page, [
+      { ...healthy, name: 'platform', preference: 1, shadowed: [] },
+      { ...failing, name: 'team', preference: 2, shadowed: [] },
+      { ...errored, name: 'broken', preference: 3, shadowed: [] },
+      { ...unpolled, preference: 4, shadowed: [] },
+      { ...healthy, preference: 5, shadowed: [] },
+    ]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(5);
+    await expect(card(page, 'platform').getByText(/^healthy$/i)).toBeVisible();
+    await expect(card(page, 'team').getByText(/^failing · serving last good$/i)).toBeVisible();
+    await expect(card(page, 'broken').getByText(/^errored$/i)).toBeVisible();
+    await expect(card(page, 'Source 4').getByText(/^healthy$/i)).toBeVisible();
+    await expect(main(page).getByText(/^(healthy|failing · serving last good|errored)$/i)).toHaveCount(5);
+    await expect(main(page).getByText(/^failing$/i)).toHaveCount(0);
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 4', exact: true })).toBeVisible();
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 5', exact: true })).toBeVisible();
+    const titles = await main(page).getByRole('heading', { level: 2 }).allInnerTexts();
+    expect(new Set(titles).size, 'every card heading is distinct').toBe(titles.length);
+    await evidence(page, width, theme, '-badges', 'sources');
   });
 
   test('the Sources page empty state is captured and axe-clean', async ({ page }) => {
