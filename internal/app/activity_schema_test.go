@@ -81,10 +81,14 @@ func componentSchema(t *testing.T, name string, fields []string) *jsonschema.Sch
 		declared = append(declared, k)
 	}
 	sort.Strings(declared)
-	wantDeclared := append(slices.Clone(fields), optionalFields[name]...)
-	sort.Strings(wantDeclared)
-	if !slices.Equal(declared, wantDeclared) {
-		t.Errorf("%s declares %v, want the wire fields %v", name, declared, wantDeclared)
+	for _, o := range optionalFields[name] {
+		if !slices.Contains(declared, o) {
+			t.Errorf("%s does not declare the optional field %s", name, o)
+		}
+	}
+	declared = slices.DeleteFunc(declared, func(f string) bool { return slices.Contains(optionalFields[name], f) })
+	if !slices.Equal(declared, fields) {
+		t.Errorf("%s declares %v, want the wire fields %v", name, declared, fields)
 	}
 	required := slices.Clone(s.Required)
 	sort.Strings(required)
