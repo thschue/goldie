@@ -15,6 +15,7 @@
 //   event or a status) and words the header: "Live" for one replica, and for several
 //   "Live · merged from all replicas (n of m answering)", n being those heard in the last minute.
 import { describe, expect, it } from 'vitest';
+import handoff from '../../../docs/design/ui-handoff.md?raw';
 import type { ActivityEvent } from './stream';
 import { createTiles, liveHeader, maxProjects } from './tiles';
 
@@ -160,5 +161,24 @@ describe('liveHeader', () => {
       ['b', now - 5 * min],
     ]);
     expect(liveHeader(quiet, now)).toBe('Live · merged from all replicas (0 of 2 answering)');
+  });
+});
+
+// #808: the handoff describes what renders (#814 decided that Who is not shown).
+describe('ui-handoff §3.6 after #808', () => {
+  const section = handoff.slice(handoff.indexOf('### 3.6 Activity'), handoff.indexOf('### 3.7'));
+
+  it('no longer lists Who in the §3.6 detail list, the §8 table row or the Still open sentence', () => {
+    expect(section.length).toBeGreaterThan(0);
+    expect(section).not.toMatch(/\bWho\b/);
+    expect(handoff).not.toMatch(/\|\s*"Who" in Activity/);
+  });
+
+  it('describes the Grafana and trace links as rendered, not as not built or still open', () => {
+    expect(section).not.toContain('"Trends in Grafana ↗" is not rendered yet');
+    expect(section).not.toMatch(/Still open[^\n]*Open trace/);
+    expect(section).toMatch(/Trends in Grafana ↗[^\n]*grafana_url/);
+    expect(section).toMatch(/Open trace ↗[^\n]*trace_url_template[^\n]*trace_id/);
+    expect(section).toMatch(/new tab/);
   });
 });
