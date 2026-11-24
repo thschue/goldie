@@ -101,3 +101,13 @@ func TestFindDecisionsRefusesLookAlikeProjectsBeforeAnyRequest(t *testing.T) {
 		t.Errorf("the API got %d requests for look-alike projects, want none", n)
 	}
 }
+
+// One hit reads "1 decision", not "1 decisions".
+func TestFindDecisionsHeaderIsSingularForOneHit(t *testing.T) {
+	var requests atomic.Int64
+	cs := toolSession(t, hostileDecisionAPI(t, &requests).URL)
+	text, isErr := callTool(t, cs, "find_decisions", map[string]any{"query": "x"})
+	if isErr || !strings.HasPrefix(text, "1 decision for") {
+		t.Errorf("want a singular header, got %v %q", isErr, text)
+	}
+}

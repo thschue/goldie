@@ -240,7 +240,7 @@ serves (to compare with a pulled copy), and the iteration prompt quoted with `| 
 error that points to `list_loops`.
 
 `find_decisions` takes a query and the same optional `project` and answers the accepted decisions
-that match, each with its name, title and Scope; no match is an answer, not an error. The resource
+that match, each with its name, title, Scope, keywords and what matched; no match is an answer, not an error. The resource
 `goldie://decisions/{name}` reads one accepted decision: title, status, Scope, date and the body quoted
 with `| `. A decision that is unknown, or not accepted, is resource-not-found naming `find_decisions`.
 

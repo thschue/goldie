@@ -34,10 +34,15 @@ func decisionNotFound() error {
 	return &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: decisionMissMessage}
 }
 
+type findDecisionsInput struct {
+	Query   string `json:"query" jsonschema:"words describing the choice to find a decision for, for example database choice"`
+	Project string `json:"project,omitempty" jsonschema:"optional: a Project as host/org/repo, for example github.com/acme/shop, from list_projects; leave it out for the session's default Project (see current_context), or global guidance without one"`
+}
+
 // addDecisionTools registers find_decisions.
 func addDecisionTools(s *sdk.Server, t *tools) {
 	sdk.AddTool(s, &sdk.Tool{Name: "find_decisions", Description: findDecisionsDescription},
-		func(ctx context.Context, _ *sdk.CallToolRequest, in findSkillsInput) (*sdk.CallToolResult, any, error) {
+		func(ctx context.Context, _ *sdk.CallToolRequest, in findDecisionsInput) (*sdk.CallToolResult, any, error) {
 			return t.findDecisions(ctx, in.Query, in.Project), nil, nil
 		})
 }
@@ -58,7 +63,11 @@ func (t *tools) findDecisions(ctx context.Context, q, project string) *sdk.CallT
 		return success(fmt.Sprintf("No decisions match %q. Try other words.", contract.CleanLine(q)) + hintLine(res.Hint))
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d decisions for %q, best first. Read one as the resource goldie://decisions/<name>.\n", len(res.Results), contract.CleanLine(q))
+	noun := "decisions"
+	if len(res.Results) == 1 {
+		noun = "decision"
+	}
+	fmt.Fprintf(&b, "%d %s for %q, best first. Read one as the resource goldie://decisions/<name>.\n", len(res.Results), noun, contract.CleanLine(q))
 	for _, h := range res.Results {
 		fmt.Fprintf(&b, "\n- name: %s\n  title: %s\n  scope: %s\n  keywords: %s\n  matched: %s\n",
 			contract.CleanLine(h.Id), contract.CleanLine(h.Name), contract.CleanLine(h.Scope),

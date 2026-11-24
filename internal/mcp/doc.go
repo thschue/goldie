@@ -46,8 +46,8 @@
 // {name}/{+path} (reserved expansion, so the path keeps its slashes) for a
 // file of a bundle (quoted like get_skill) and
 // goldie://agents/{name} for an agent and goldie://decisions/{name} for an accepted
-// decision (title, status and body quoted like get_loop; any other status is the miss). A URI is parsed before any request and
-// never selects a Project; a miss is the protocol's resource-not-found error,
+// decision (title, status and body quoted like get_loop; any other status is the
+// miss). A URI is parsed before any request and never selects a Project; a miss is the protocol's resource-not-found error,
 // which names no address, path or token. A later Kind adds its template and
 // its handler the same way. The server sends no list_changed notification
 // (prompts and resources are advertised without listChanged), for the reason

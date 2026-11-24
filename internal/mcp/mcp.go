@@ -100,7 +100,7 @@ func CountToolCalls(c *platform.ToolCallCounter) Option {
 // a client cannot park a request waiting for tool-list changes that never
 // come, and hold up a drain with it. The same goes for prompts and resources:
 // the prompt list is fixed once a session has asked for it, and the resources
-// (goldie://instructions and the two templates) never change, so no
+// (goldie://instructions and the three templates) never change, so no
 // list_changed notification is ever sent.
 func New(client contract.ClientInterface, opts ...Option) *sdk.Server {
 	t := &tools{client: client}
