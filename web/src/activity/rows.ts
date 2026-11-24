@@ -118,3 +118,12 @@ export const canSearch = (e: ActivityEvent) => e.kind !== 'get';
 // rowKey is what makes a row one event: ids are per replica and start again at 1 when a
 // process restarts, so two replicas share ids.
 export const rowKey = (e: ActivityEvent) => `${e.replica}/${e.id}`;
+
+// webLink is a configured URL when it is an http or https one, else nothing: an href is bound,
+// never parsed as markup, but a javascript: URL would still run (#808).
+export const webLink = (u: string | undefined) => (u && /^https?:\/\//i.test(u) ? u : undefined);
+
+// traceLink is the trace URL of an event: the template (#807) with the trace id percent-encoded
+// into every {trace_id}. Nothing without a template or an id.
+export const traceLink = (template: string | undefined, id: string | undefined) =>
+  id ? webLink(template)?.replaceAll('{trace_id}', () => encodeURIComponent(id)) : undefined;

@@ -2,8 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ApiError } from '../api/client';
+import { session } from '../auth/session';
 import { plain } from '../assets/api';
-import { add, addText, agoText, announceEvery, canSearch, missBoard, itemText, msText, queryText, resultText, rowKey, shownText, surfaceLabel, surfaceOf, surfaces, timeText, type Surface } from './rows';
+import { add, addText, agoText, announceEvery, canSearch, missBoard, itemText, msText, queryText, resultText, rowKey, shownText, surfaceLabel, surfaceOf, surfaces, timeText, traceLink, webLink, type Surface } from './rows';
 import { projectOf } from '../projects/api';
 import ActivityStage from './ActivityStage.vue';
 import { createStage } from './stage';
@@ -76,6 +77,9 @@ const pills = computed(() =>
 const pick = (s: Surface) => (picked.value = picked.value.includes(s) ? picked.value.filter((x) => x !== s) : [...picked.value, s]);
 const board = computed(() => missBoard(rows.value));
 const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
+// The links out (#808) come with the operator's Session (#807); a reader's has neither.
+const grafana = computed(() => webLink(session.value?.grafana_url));
+const traceHref = computed(() => traceLink(session.value?.trace_url_template, chosen.value?.trace_id));
 // When narrow the panel sits under the feed: bring it into view on a selection, never moving focus
 // (handoff §9), and without animation under prefers-reduced-motion.
 const panel = ref<HTMLElement>();
@@ -224,6 +228,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
       </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
+      <a v-if="grafana" class="action" :href="grafana" target="_blank" rel="noopener noreferrer">Trends in Grafana ↗</a>
     </div>
 
     <ActivityStage :view="stageView" :filter="project || undefined" @filter="setProject" />
@@ -403,6 +408,9 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         <p v-if="chosen.miss" class="actions">
           <!-- The API gives no Source URL, so this goes to the Sources page, not to the repo. -->
           <RouterLink class="action" to="/ops/sources">{{ addText(chosen) }}</RouterLink>
+        </p>
+        <p v-if="traceHref" class="actions">
+          <a class="action" :href="traceHref" target="_blank" rel="noopener noreferrer">Open trace ↗</a>
         </p>
         <p v-if="canSearch(chosen)" class="actions">
           <RouterLink class="action" :to="{ path: '/', query: { q: queryText(chosen) } }">Try this search</RouterLink>
