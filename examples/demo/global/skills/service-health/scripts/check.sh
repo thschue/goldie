@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: check.sh <base-url>
+# Usage: sh scripts/check.sh <base-url>
 # Prints healthy and exits 0 when <base-url>/healthz answers 200.
 set -eu
 [ $# -eq 1 ] || { echo "usage: check.sh <base-url>" >&2; exit 2; }

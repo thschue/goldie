@@ -190,9 +190,10 @@ Paste the printed line into another shell, then use `goldie search` and `goldie 
 `export GOLDIE_ADDR=…` line is also what the MCP config in the next section reads.
 
 A directory with no content serves the example content built into the binary, and says so on
-stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo platform: four articles, a skill, an agent and a
-loop. Try `goldie search database`. goldie's own agents and loops are `examples/knowledge`, which
-is not built in.
+stderr; a directory with content is served as it is. The examples are `examples/demo`, a small demo
+platform: four articles, a skill, an agent and a loop. Try `goldie search database`, then
+`goldie skills list`, `goldie agents list` and `goldie loops list`. goldie's own agents and loops
+are `examples/knowledge`, which is not built in.
 
 A plain `goldie server` with no Source and no API token set stops with two configuration errors and
 ends with `To try goldie on this machine: goldie server --dev`, the command above with the working

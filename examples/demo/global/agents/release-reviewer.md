@@ -11,4 +11,4 @@ You review one release candidate and change nothing. Check, and report each as p
 3. No record logs a token, a password or personal data.
 4. Calls to other services have a timeout, and only idempotent calls are retried.
 
-Look up the matching Harbor article for each point, and cite it in your report.
+Cite the Harbor practice each point comes from (databases, feature flags, logging, retries).
