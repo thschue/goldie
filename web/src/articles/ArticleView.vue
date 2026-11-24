@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { carried } from '../projects/api';
 import { getArticle, type Article, ArticleError } from './api';
 import MarkdownBody from './MarkdownBody.vue';
+import { errorSentence } from '../api/errorSentence';
 
 // The article view (#498, handoff §3.4, §5.2, §8): `/items/article/:name`, the
 // name being the article id with any `/` as %2F (ADR 0016). The title is the one
@@ -18,11 +19,7 @@ const back = computed(() => ({ path: '/', query: carried(route.query, ['q', 'kin
 const backText = computed(() => (back.value.query.q ? '← Back to search' : '← Back to home'));
 const article = ref<Article | null>(null);
 const error = ref<{ message: string; hint: string } | null>(null);
-// §8: the message is a sentence, then the hint is its own. Close the message when a hint follows.
-const errorSentence = computed(() => {
-  const m = error.value?.message ?? '';
-  return error.value?.hint && !/[.?!]$/.test(m.trimEnd()) ? `${m.trimEnd()}.` : m;
-});
+const errorText = computed(() => errorSentence(error.value?.message ?? '', error.value?.hint));
 
 // A replaced_by is `<kind>:<name>` (ADR 0021) from a Source. It links only when
 // it has that shape with a known Kind; anything else is not printed.
@@ -81,7 +78,7 @@ onMounted(async () => {
 
   <template v-else-if="error">
     <div role="alert" class="alert">
-      {{ errorSentence }} <span v-if="error.hint">{{ error.hint }}</span>
+      {{ errorText }} <span v-if="error.hint">{{ error.hint }}</span>
     </div>
   </template>
 </template>
