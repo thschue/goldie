@@ -149,6 +149,51 @@ func theCookie(t *testing.T, resp *http.Response) *http.Cookie {
 	return cs[0]
 }
 
+// forgedCookie returns c with its signature broken: same name and length, but
+// the decoded MAC differs. Overwriting trailing base64 characters is not safe:
+// the last character of a 32-byte MAC carries only 4 significant bits, so a
+// "forged" tail can decode to the real MAC (about 1 in 1024 sign-ins).
+func forgedCookie(c *http.Cookie) *http.Cookie {
+	return &http.Cookie{Name: c.Name, Value: forgedValue(c.Value)}
+}
+
+// forgedValue flips the lowest bit of the first decoded byte of the signature,
+// the part after the last colon, and re-encodes it.
+func forgedValue(value string) string {
+	i := strings.LastIndex(value, ":")
+	mac, err := base64.RawURLEncoding.DecodeString(value[i+1:])
+	if err != nil || len(mac) == 0 {
+		panic("forgedValue: cookie value has no base64url signature: " + value)
+	}
+	mac[0] ^= 1
+	return value[:i+1] + base64.RawURLEncoding.EncodeToString(mac)
+}
+
+// The old trick (overwrite the last two characters with "xx") collides with the
+// real signature when the tail already decodes the same; forgedValue never does.
+func TestForgedCookieAlwaysDiffersAfterDecoding(t *testing.T) {
+	mac := bytes.Repeat([]byte{0x5a}, 32)
+	enc := base64.RawURLEncoding.EncodeToString(mac)
+	crafted := "ci-operator:1:2:" + enc[:len(enc)-2] + "xw" // "xw" decodes like "xx"
+	decode := func(v string) []byte {
+		b, err := base64.RawURLEncoding.DecodeString(v[strings.LastIndex(v, ":")+1:])
+		if err != nil {
+			t.Fatalf("decode %q: %v", v, err)
+		}
+		return b
+	}
+	old := crafted[:len(crafted)-2] + "xx"
+	if !bytes.Equal(decode(old), decode(crafted)) {
+		t.Fatalf("precondition: the old trick should collide for the crafted input")
+	}
+	for _, v := range []string{crafted, "n:1:2:" + enc, "n:1:2:" + strings.Repeat("A", 43), "n:1:2:" + strings.Repeat("_", 43)} {
+		f := forgedValue(v)
+		if len(f) != len(v) || bytes.Equal(decode(f), decode(v)) {
+			t.Errorf("forgedValue(%q) = %q: same length and a different MAC wanted", v, f)
+		}
+	}
+}
+
 func withCookie(c *http.Cookie) func(*http.Request) {
 	return func(r *http.Request) { r.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value}) }
 }
@@ -476,7 +521,7 @@ func TestSessionRoleIsReadLiveAndARemovedTokenEndsTheSession(t *testing.T) {
 func TestACookieOnAnUnknownPathStillFailsClosed(t *testing.T) {
 	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
 	c := signedIn(t, h, secureBase, operatorToken)
-	forged := &http.Cookie{Name: c.Name, Value: c.Value[:len(c.Value)-2] + "xx"}
+	forged := forgedCookie(c)
 	for _, path := range []string{"/api/v1/nope", "/api/", "/api/v1/session/extra", "/api/v2/search"} {
 		resp, body := send(t, h, http.MethodGet, secureBase+path, withCookie(forged))
 		assertStatus(t, "forged cookie on "+path, resp, body, http.StatusUnauthorized)
