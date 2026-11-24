@@ -106,6 +106,8 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 **Built so far (#721):** items 1, 2 and 4. The chips are "database", "logging", "retries" and "feature flags" (no "migration" yet); a chip runs the search. The Browse tiles are Skills, Agents and Loops, each linking to `/assets/<tab>` with the count from its list endpoint; a list that fails leaves its tile without a count. The checklist's second command uses this server's origin plus `/mcp`. The placeholder of §8 "Empty state" no longer shows on Home.
 
+**Built so far (#724):** `/articles?project=` lists the articles of the Project's view (`GET /api/v1/articles`) as cards: name (a link to `/items/article/<id>`), id, Scope badge, a lifecycle badge (`published` when the API sends no status) and one "Overrides `<id>` from `<scope>`" line per shadowed Scope. An empty list says "No articles for `<project>` yet."; a failure shows the standard error. The Browse tile for articles comes later.
+
 ### 3.3 Search results (`/?q=`)
 
 - The hero stays, with the query in the field and a clear button.

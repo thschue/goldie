@@ -1,7 +1,16 @@
+import { get } from '../api/client';
 import type { components } from '../api/schema';
 import { api } from '../auth/session';
 
 export type Article = components['schemas']['Article'];
+export type ArticleList = components['schemas']['ArticleList'];
+
+// listArticles reads the articles that win in a Project's view (GET /api/v1/articles). An empty
+// Project is no `project` parameter: the API answers the global view (a blank value is a 400).
+export function listArticles(project: string, signal?: AbortSignal) {
+  const q = project ? `?${new URLSearchParams({ project })}` : '';
+  return get<ArticleList>(`/api/v1/articles${q}`, signal);
+}
 
 // An API error as the person may see it: the envelope's message and hint, never
 // the body of a reply that is not an envelope and never a transport error.
