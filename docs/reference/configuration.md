@@ -19,8 +19,8 @@ a file that is easy to share: giving one stops the server, naming the flag or ke
 Name the file that holds it instead, with `NAME_FILE` in the environment, `--name-file` as a flag or
 `name_file` in the config file (`git_token_file`); setting a value and its file form in the same
 place is an error (PC-05). Every variable in the table below also accepts a `NAME_FILE` form in the environment, which
-reads the value from a file. A `GOLDIE_GIT_URL` may hold a password in its userinfo: given as a flag it
-shows in the process list, so name the token with `git_token_file` instead.
+reads the value from a file. A git URL (`GOLDIE_GIT_URL` or a Source `url`) with https userinfo or a password
+is refused as a flag or in the config file, which show it: name the token with `git_token_file`.
 
 Every check applies whichever way a value arrives. A bad value stops the server, naming the
 variable and whether it came from a flag, the environment or the config file, never the value.

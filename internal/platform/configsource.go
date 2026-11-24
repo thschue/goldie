@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -92,7 +93,65 @@ func NewLayers(fs *pflag.FlagSet, env Lookup, readFile func(string) ([]byte, err
 			errs = append(errs, err)
 		}
 	}
+	errs = append(errs, l.checkURLCredentials()...)
 	return l, errors.Join(errs...)
+}
+
+// checkURLCredentials refuses a git URL that holds credentials when a flag or
+// the config file gives it: a flag shows in the process list and the file is
+// shared. The environment keeps its own rule. Errors name the flag or key and
+// never the URL.
+func (l *Layers) checkURLCredentials() []error {
+	var errs []error
+	for _, s := range []struct{ name, hint string }{
+		{EnvGitURL, "git_token_file"}, {EnvSources, "token_env on the Source"},
+	} {
+		flag := "--" + settingFlag(s.name)
+		var where, text string
+		switch {
+		case l.flags.Changed(settingFlag(s.name)):
+			where, text = flag, l.flags.Lookup(settingFlag(s.name)).Value.String()
+		case l.file[settingKey(s.name)] != "":
+			where, text = settingKey(s.name), l.file[settingKey(s.name)]
+		default:
+			continue
+		}
+		urls := []string{text}
+		label := where
+		if s.name == EnvSources {
+			var list []struct {
+				URL string `json:"url"`
+			}
+			if json.Unmarshal([]byte(text), &list) != nil {
+				continue // LoadConfig reports a document that is no list
+			}
+			urls = urls[:0]
+			for _, e := range list {
+				urls = append(urls, e.URL)
+			}
+		}
+		for i, u := range urls {
+			if urlHoldsCredentials(u) {
+				if s.name == EnvSources {
+					label = fmt.Sprintf("%s[%d].url", where, i)
+				}
+				errs = append(errs, fmt.Errorf("%s: a URL must not hold credentials when set here, they would be shared: use %s", label, s.hint))
+			}
+		}
+	}
+	return errs
+}
+
+// urlHoldsCredentials reports an http(s) URL with userinfo, or any URL with a
+// password. An ssh user name alone is not a credential, and a scp-like address
+// is no URL.
+func urlHoldsCredentials(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return false
+	}
+	_, hasPassword := u.User.Password()
+	return hasPassword || u.Scheme == "http" || u.Scheme == "https"
 }
 
 // readFile loads the YAML config file into l.file. viper parses the file.
@@ -262,21 +321,30 @@ func (l *Layers) Annotate(err error) error {
 	var notes []string
 	seen := map[string]bool{}
 	for _, tok := range settingName.FindAllString(err.Error(), -1) {
-		name := tok
+		name, fileForm := tok, false
 		if found, _ := spec(name); !found {
-			name = strings.TrimSuffix(tok, "_FILE")
+			name, fileForm = strings.TrimSuffix(tok, "_FILE"), true
 		}
-		if found, _ := spec(name); !found || seen[name] {
+		if found, _ := spec(name); !found || seen[tok] {
 			continue
 		}
-		seen[name] = true
+		seen[tok] = true
+		_, secret := spec(name)
 		switch l.Source(name) {
 		case SourceFlag:
-			notes = append(notes, fmt.Sprintf("%s given as the flag --%s", name, settingFlag(name)))
+			flag := settingFlag(name)
+			if fileForm || secret {
+				flag += "-file"
+			}
+			notes = append(notes, fmt.Sprintf("%s given as the flag --%s", tok, flag))
 		case SourceEnvironment:
-			notes = append(notes, name+" read from the environment")
+			notes = append(notes, tok+" read from the environment")
 		case SourceFile:
-			notes = append(notes, settingKey(name)+" read from the config file")
+			key := settingKey(name)
+			if fileForm || secret {
+				key += "_file"
+			}
+			notes = append(notes, key+" read from the config file")
 		}
 	}
 	if len(notes) == 0 {

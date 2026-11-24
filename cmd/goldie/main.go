@@ -210,9 +210,9 @@ func serverSetup(lookup platform.Lookup, annotate func(error) error, logOut io.W
 	}
 	level, _ := platform.ParseLevel(cfg.LogLevel) // validated by LoadConfig
 	logger := platform.NewLogger(logOut, level, "server")
-	tel, err := platform.SetupTelemetry(context.Background(), os.LookupEnv, platform.WithSpanPath(app.SpanPath))
+	tel, err := platform.SetupTelemetry(context.Background(), lookup, platform.WithSpanPath(app.SpanPath))
 	if err != nil {
-		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", err)
+		return cfg, nil, nil, fmt.Errorf("invalid configuration:\n%w", annotate(err))
 	}
 	return cfg, tel.WrapLogger(logger, "server"), tel, nil
 }

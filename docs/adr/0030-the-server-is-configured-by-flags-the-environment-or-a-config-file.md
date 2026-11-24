@@ -29,17 +29,22 @@ variable, a YAML config file, and the default (`--config <file>` or `GOLDIE_CONF
 - **Errors and the report name the source.** A bad value stops the server naming the setting and
   `flag`, `environment` or `file`, never the value. The startup report keeps its flat keys and adds
   a `source` group with the layer of each setting.
-- **Library.** The file layer uses `github.com/spf13/viper`, which the project decided on: it reads
-  the YAML and is built to bind to the cobra and pflag the CLI already uses. The environment layer
-  does not use viper's `AutomaticEnv`: it reads through the `Lookup`, which `--dev` masks and tests
-  replace.
+- **Library.** The file layer uses `github.com/spf13/viper`, for parsing only: `readFile` hands it the
+  YAML and reads back `AllSettings`. The issue named viper bound to the cobra and pflag the CLI uses;
+  that pattern was not followed, because viper's binding and `AutomaticEnv` read the process
+  environment and flags directly, which would bypass the `Lookup` that `--dev` masks and tests replace
+  and would split validation from `LoadConfig`. So there is no pflag binding and no `AutomaticEnv`.
+  The swap to `go.yaml.in/yaml/v3`, already a dependency, stays open behind `readFile`.
 
 ## Consequences
 
 - The precedence and the file format are hard to reverse: operators will keep files, so a key name
   or a layer cannot change without a breaking release.
-- A flag that holds a value shows in the process list. That is why a secret has none, and why
-  `GOLDIE_GIT_URL` with a password in its userinfo should be replaced by `git_token_file`.
+- A flag that holds a value shows in the process list. That is why a secret has none, and why a git
+  URL with https userinfo or a password is refused as a flag or in the file (`--git-url`, `--sources`,
+  `git_url`, `sources[].url`); the environment keeps its existing rule.
+- viper adds 8 indirect modules. It lower-cases keys and treats a dot as nesting, so `Poll_Interval` is
+  read as `poll_interval` and a dotted key is a nested one, which the unknown-key check then refuses.
 - `goldie health` reads the environment only. A probe of a server whose admin address is set in the
   file needs `GOLDIE_ADMIN_ADDR` too.
 - Client commands keep `.goldie/config.yaml` and their variables.
