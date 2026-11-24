@@ -3,6 +3,19 @@
 Work through this before a PR leaves draft, and tick only what applies. `./run check` must already
 exit 0 with zero warnings. Reviewers use the same list.
 
+## MVP journeys
+
+Five journeys must stay green on the built binary; each failing step names what a user could not do.
+The browser journeys J1–J3 are Playwright specs (#748). J4 and J5 are Go tests that start
+`goldie server --dev` on `examples/knowledge` and run with `./run test`:
+
+- J4, an agent over MCP: `TestJ4AgentOverMCP` in `internal/mcp/journey_test.go` (steps `connect`,
+  `list-tools`, `search`, `get`, `no-token`).
+- J5, the CLI first run: `TestJ5CLIFirstRun` in `internal/cli/journey_test.go` (steps `first-run`,
+  `search`, `pull`).
+
+A red step on `main` becomes a `bug` in the MVP milestone; the assertion stays.
+
 ## Always
 
 - [ ] Tests exercise external behaviour at the highest seam named in the issue: HTTP request and
