@@ -92,14 +92,14 @@ eachViewport((width, theme) => {
     expect(first).toBe('Skip to content');
   });
 
-  test('the side nav lists Home, Decisions, the Agent assets group, then the Reader nav note, and no Operate group', async ({ page }) => {
+  test('the side nav lists Home, Articles, Decisions, the Agent assets group, then the Reader nav note, and no Operate group', async ({ page }) => {
     await page.goto('/');
     const nav = await withNav(page);
     await expect(nav).toHaveAttribute('aria-label', /.+/);
     const names = await nav.getByRole('link').allTextContents();
-    expect(names.map((n) => n.trim())).toEqual(['Home', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
+    expect(names.map((n) => n.trim())).toEqual(['Home', 'Articles', 'Decisions', 'Skills', 'Agents', 'Loops', 'Instructions']);
     const text = ((await nav.innerText()) ?? '').replace(/\s+/g, ' ').replace(/’/g, "'");
-    const at = ['Home', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
+    const at = ['Home', 'Articles', 'Decisions', 'Agent assets', 'Skills', 'Agents', 'Loops', 'Instructions', 'Reader view: Activity and Sources are for operators and aren\'t shown.'].map(
       (s) => text.indexOf(s),
     );
     expect(at.every((i) => i >= 0), `all entries present in: ${text}`).toBe(true);
@@ -149,6 +149,7 @@ test.describe('just below 1024 px', () => {
 test.describe('routes and the current page', () => {
   const routes: [string, string][] = [
     ['Home', '/'],
+    ['Articles', '/articles'],
     ['Decisions', '/decisions'],
     ['Skills', '/assets/skills'],
     ['Agents', '/assets/agents'],
@@ -167,6 +168,7 @@ test.describe('routes and the current page', () => {
       // The assets pages show the Agent assets frame (#584), not the empty state.
       if (path.startsWith('/assets/')) await expect(page.getByRole('heading', { level: 1 })).toHaveText('Agent assets');
       else if (path === '/') await expect(page.getByRole('main')).not.toContainText(emptyCopy);
+      else if (path === '/articles') await expect(page.getByRole('heading', { level: 1 })).toHaveText('Articles');
       else if (path === '/decisions') await expect(page.getByRole('heading', { level: 1 })).toHaveText('Decisions');
       else await expect(page.getByRole('main').getByRole('status')).toHaveText(emptyCopy);
       nav = await withNav(page);
@@ -186,7 +188,7 @@ test.describe('routes and the current page', () => {
     });
   }
 
-  for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
+  for (const path of ['/', '/articles', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/ops/activity', '/ops/sources', '/items/skill/x', '/decisions?status=accepted&scope=org']) {
     test(`GET ${path} is 200 and renders the shell, not a 404`, async ({ page }) => {
       const res = await page.goto(path);
       expect(res?.status()).toBe(200);
@@ -198,7 +200,7 @@ test.describe('routes and the current page', () => {
 
   test('every route has its own h1 and only Home asks the Home question', async ({ page }) => {
     const seen = new Map<string, string>();
-    for (const path of ['/', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/no/such/route']) {
+    for (const path of ['/', '/articles', '/decisions', '/assets/skills', '/assets/agents', '/assets/instructions', '/signin', '/ops/activity', '/ops/sources', '/items/skill/x', '/no/such/route']) {
       await page.goto(path);
       const h1 = page.getByRole('heading', { level: 1 });
       await expect(h1, path).toHaveCount(1);
@@ -314,6 +316,7 @@ test.describe('the selected Project follows the user across pages', () => {
 
   const paths: Record<string, string> = {
     Home: '/',
+    Articles: '/articles',
     Decisions: '/decisions',
     Skills: '/assets/skills',
     Agents: '/assets/agents',

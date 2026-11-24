@@ -30,6 +30,7 @@ This document is the contract between design and the UI implementation. The canv
 ```
 Top bar:  [goldie mark] [Project selector ▾]                 [theme] [account ▾ role]
 Side nav: Home
+          Articles
           Decisions                       (#34)
           — Agent assets —
           Skills · Agents · Loops · Instructions
@@ -102,7 +103,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 1. **Hero band** (brand gradient `--brand` → blue‑800): greeting, page question "What are you deciding today?", a 58 px search field, and suggestion chips ("Try: database · logging · retries · migration · feature flags"). `/` focuses the search field from anywhere.
 2. **Browse the golden path**: one tile per Kind (icon, name, one-line purpose, count). A tile opens results filtered to that Kind.
 3. Two cards side by side: **Specific to `<project>`** (project-scoped Items, overrides first) and **What's new on the path** (new / updated / draft / deprecated, newest first).
-4. **Put your agent on the golden path**: a three-step checklist (`goldie init`, `claude mcp add --transport http goldie <url>`, `goldie instructions apply`). Each step has a copy button and can be ticked off. Ticks are stored per browser in `localStorage` and are a convenience only.
+4. **Put your agent on the golden path**: a three-step checklist (`goldie init`, `claude mcp add --transport http goldie <url>`, `goldie instructions apply`). Each step has a copy button and can be ticked off. Ticks are stored per browser in `localStorage` and are a convenience only. <!-- keep in step: the commands are the Next block of `goldie init` (internal/cli/init.go, nextBlock) and the README -->
 
 **Built so far (#721):** items 1, 2 and 4. The chips are "database", "logging", "retries" and "feature flags" (no "migration" yet); a chip runs the search. The Browse tiles are Skills, Agents and Loops, each linking to `/assets/<tab>` with the count from its list endpoint; a list that fails leaves its tile without a count. The checklist's second command uses this server's origin plus `/mcp`. The placeholder of §8 "Empty state" no longer shows on Home.
 
@@ -122,7 +123,7 @@ Not captured as screenshots: search results (`/?q=`), the Article lifecycle vari
 
 ![Item detail](screenshots/article.png)
 
-- A link above everything goes back to `/`, carrying the Project, Kind and search: "← Back to search" when the Item was opened from a search (`q` set), "← Back to home" otherwise (#754).
+- A link above everything goes back to `/`, carrying the Project, Kind and search: "← Back to search" when the Item was opened from a search (`q` set), "← Back to home" otherwise (#754). An article opened from the index (`from=articles`, #812) goes back to `/articles` with the Project: "← Back to articles" (§8).
 - Two columns: the article (Markdown, max 760 px), and an aside of at most 360 px.
 - The aside contains four cards:
   - **Use it**: the CLI command, with a copy button, and the MCP tool name.
@@ -508,6 +509,8 @@ There is no horizontal page scroll at any width, and touch targets are ≥ 44 px
 | Deprecated banner | **Deprecated.** Still served to agents with a warning. Use `<replaced_by>` instead. |
 | Shadowing line | Overrides `<kind:name>` from global |
 | requires_sync | Contains scripts, so agents won't run it from text. Run `goldie pull` to install it. |
+| Back to articles | ← Back to articles (an article opened from the index, `from=articles`; back to `/articles` with the Project. From a search it stays "← Back to search", otherwise "← Back to home".) |
+| Articles global note | Global guidance. Choose a Project to include its articles. (A note after the `/articles` `h1` when no Project is selected; absent with one.) |
 | Reader nav note | Reader view: Activity and Sources are for operators and aren't shown. |
 | Empty state | Nothing to show yet. Content appears here as goldie's pages come online. (A neutral `role="status"` panel under the page's `h1`, on every §2.2 route whose screen isn't built yet; Home's `h1` is the *Home question*.) |
 | Not found | **Page not found** — There's no page at this address. Check the link, or start again from Home. — link: Go to Home (to `/`). The `h1` is the first line; no other chrome changes. |

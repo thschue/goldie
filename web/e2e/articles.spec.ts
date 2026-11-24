@@ -240,3 +240,73 @@ test.describe('the article index error: message then hint (#783)', () => {
     expect(norm(await alert.locator('p').first().innerText())).toBe('The article store is unavailable');
   });
 });
+
+// #812: the article index is where the side nav leads, so an article reached from it goes back to it,
+// and the index says what a missing Project means.
+test.describe('the article index and its article (#812)', () => {
+  const deploy = { id: 'platform/deploy', name: 'Deploying to Kubernetes' };
+  const stubArticle = (page: Page) =>
+    page.route(/\/api\/v1\/articles\/platform%2Fdeploy$/, (route) => json(route, 200, { ...article(deploy), content: 'Use the chart.' }));
+  const back = (page: Page, label: RegExp) => main(page).getByRole('link', { name: label });
+  const follow = async (page: Page) => {
+    await card(page, deploy.name).locator('a[href]').first().click();
+    await expect(page).toHaveURL((u) => u.pathname === '/items/article/platform%2Fdeploy');
+  };
+
+  test('an article reached from the index goes back to the index with the same Project', async ({ page }) => {
+    await stubProjects(page);
+    await stubArticles(page, [deploy]);
+    await stubArticle(page);
+    await open(page);
+    await follow(page);
+    await expect(back(page, /Back to articles/)).toHaveCount(1);
+    await expect(back(page, /Back to articles/)).toHaveText(/^\s*←\s*Back to articles\s*$/);
+    await expect(back(page, /Back to home|Back to search/)).toHaveCount(0);
+    const u = new URL((await back(page, /Back to articles/).getAttribute('href')) ?? '', 'http://x');
+    expect(u.pathname).toBe('/articles');
+    expect(u.searchParams.get('project')).toBe(shop);
+    await back(page, /Back to articles/).click();
+    await expect(page).toHaveURL((l) => l.pathname === '/articles' && l.searchParams.get('project') === shop);
+    await expect(cards(page)).toHaveCount(1);
+  });
+
+  test('an article reached from the index with no Project goes back to the index with none', async ({ page }) => {
+    await stubProjects(page);
+    await stubArticles(page, [deploy]);
+    await stubArticle(page);
+    await page.goto('/articles');
+    await follow(page);
+    await expect(back(page, /Back to articles/)).toHaveCount(1);
+    const u = new URL((await back(page, /Back to articles/).getAttribute('href')) ?? '', 'http://x');
+    expect(u.pathname).toBe('/articles');
+    expect(u.searchParams.has('project')).toBe(false);
+  });
+
+  test('an article opened by its URL still goes back to home', async ({ page }) => {
+    await stubProjects(page);
+    await stubArticle(page);
+    await page.goto('/items/article/platform%2Fdeploy');
+    await expect(back(page, /Back to home/)).toHaveCount(1);
+    await expect(back(page, /Back to articles/)).toHaveCount(0);
+  });
+
+  const note = 'Global guidance. Choose a Project to include its articles.';
+
+  test('with no Project the heading is followed by the note to choose a Project', async ({ page }) => {
+    await stubProjects(page);
+    await stubArticles(page, [deploy]);
+    await page.goto('/articles');
+    await expect(cards(page)).toHaveCount(1);
+    const heading = page.getByRole('heading', { level: 1, name: 'Articles', exact: true });
+    await expect(heading.locator('xpath=following-sibling::*[1]')).toHaveText(note);
+  });
+
+  test('with a Project there is no such note', async ({ page }) => {
+    await stubProjects(page);
+    await stubArticles(page, [deploy]);
+    await open(page);
+    await expect(cards(page)).toHaveCount(1);
+    await expect(main(page)).not.toContainText('Global guidance');
+    await expect(main(page)).not.toContainText('Choose a Project to include its articles');
+  });
+});

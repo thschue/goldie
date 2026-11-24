@@ -440,9 +440,9 @@ test.describe('browsing from Home to an article by clicks', () => {
     await expect(main(page)).toContainText('Retry with jitter.');
   });
 
-  test('the side nav has no Articles entry', async ({ page }) => {
+  test('the side nav has an Articles entry (#812)', async ({ page }) => {
     await stubLists(page, { skills: 1, agents: 1, loops: 1 });
     await page.goto('/');
-    await expect(page.getByRole('navigation').getByRole('link', { name: /articles/i })).toHaveCount(0);
+    await expect(page.getByRole('navigation').getByRole('link', { name: /articles/i })).toHaveCount(1);
   });
 });

@@ -26,6 +26,7 @@ async function render(props: { role?: 'reader' | 'operator' }, path = '/') {
 
 const readerLinks = [
   'Home /',
+  'Articles /articles',
   'Decisions /decisions',
   'Skills /assets/skills',
   'Agents /assets/agents',
@@ -75,5 +76,30 @@ describe('AppShell', () => {
     const { nav, links } = await render({ role: 'reader' }, '/ops/activity');
     expect(links).toEqual(readerLinks);
     expect(nav).not.toContain('/ops/');
+  });
+
+  // #812: Articles sits between Home and Decisions (readerLinks above), and carries the Project like every entry.
+  it('keeps the selected Project on the Articles entry', async () => {
+    const shop = 'github.com/acme/shop';
+    const { links } = await render({}, `/?project=${encodeURIComponent(shop)}`);
+    const href = links.find((l) => l.startsWith('Articles '))?.slice('Articles '.length) ?? '';
+    const u = new URL(href, import.meta.url);
+    expect(u.pathname).toBe('/articles');
+    expect(u.searchParams.get('project')).toBe(shop);
+  });
+
+  const current = (nav: string, href: string) =>
+    new RegExp(`<a [^>]*href="${href}"[^>]*aria-current="page"|<a [^>]*aria-current="page"[^>]*href="${href}"`).test(nav);
+
+  it('marks Articles current on /articles, and on it only', async () => {
+    const { nav } = await render({}, '/articles');
+    expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(current(nav, '/articles')).toBe(true);
+  });
+
+  it('marks Articles current on an article page, and on it only', async () => {
+    const { nav } = await render({}, '/items/article/platform%2Fdeploy');
+    expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(current(nav, '/articles')).toBe(true);
   });
 });

@@ -16,9 +16,15 @@ import { plain } from '../assets/api';
 const route = useRoute();
 
 // The way back (#729): the search this Item came from, with its Project; without a search it is
-// Home with the Project. The text comes from the same carried query as the target, so they agree (#754).
-const back = computed(() => ({ path: '/', query: carried(route.query, ['q', 'kind', 'project']) }));
-const backText = computed(() => (back.value.query.q ? '← Back to search' : '← Back to home'));
+// Home with the Project. An article opened from the index (`from=articles`, #812) goes back to the
+// index with the Project. The text comes from the same decision as the target, so they agree (#754).
+const fromIndex = computed(() => !route.query.q && route.query.from === 'articles');
+const back = computed(() =>
+  fromIndex.value
+    ? { path: '/articles', query: carried(route.query, ['project']) }
+    : { path: '/', query: carried(route.query, ['q', 'kind', 'project']) },
+);
+const backText = computed(() => (fromIndex.value ? '← Back to articles' : back.value.query.q ? '← Back to search' : '← Back to home'));
 const article = ref<Article | null>(null);
 const error = ref<{ message: string; hint: string } | null>(null);
 const errorText = computed(() => errorSentence(error.value?.message ?? '', error.value?.hint));

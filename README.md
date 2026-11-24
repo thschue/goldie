@@ -76,13 +76,29 @@ goldie search database
 
 `goldie lookup <id>` reads an article, and `goldie skills list` lists the skills.
 
-**5. Connect an agent.** For Claude Code:
+**5. Connect an agent.** In a git repository you work in, with the line from step 2 pasted, run:
 
 ```sh
-claude mcp add goldie -e GOLDIE_ADDR="$GOLDIE_ADDR" -e GOLDIE_TOKEN="$GOLDIE_TOKEN" -- goldie mcp --transport stdio
+goldie init
 ```
 
-Ask the agent about databases and it calls goldie. For other agents and for MCP over HTTP, see the
+On a terminal it guides you: it finds the Project from the repository's git remote, asks you to
+confirm it, writes `.goldie/config.yaml`, checks the server and your token, and prints the commands
+to run next:
+
+```sh
+export GOLDIE_ADDR=http://127.0.0.1:8080
+claude mcp add --transport http goldie http://127.0.0.1:8080/mcp --header "Authorization: Bearer $GOLDIE_TOKEN"
+goldie instructions apply
+goldie status
+git add .goldie/config.yaml && git commit -m "Add goldie config"
+```
+
+The address in your output is your server's. `claude mcp add` connects Claude Code to the server,
+`goldie instructions apply` adds goldie's block to `CLAUDE.md`, and `goldie status` checks that it
+all answers. Ask the agent about databases and it calls goldie. The Project says `Registered: no`
+for a repository the examples don't cover; answers are then global, which is fine for a first look.
+Details: [`goldie init`](docs/reference/cli.md), and for other agents or MCP over stdio, the
 [MCP reference](docs/reference/mcp.md).
 
 ## Use it on your own content
