@@ -47,15 +47,47 @@ type Syncer struct {
 	newTicker func(d time.Duration) (ticks <-chan time.Time, stop func())
 }
 
+// realTicker is the ticker of a poll loop: a time.Ticker.
+func realTicker(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
+
+// stamp records in st a finished poll that began at began and ended at ended,
+// and whose Source load, with the SourceSet's checks, ended in err. A failure
+// keeps the last success and Revision and records the redacted error; a
+// success records rev. Syncer and SourceSet both stamp through it.
+func (st *SyncStatus) stamp(began, ended time.Time, rev string, err error) {
+	st.LastPoll = ended
+	st.Duration = ended.Sub(began)
+	if err != nil {
+		st.LastError = redact(err.Error())
+		return
+	}
+	st.LastSuccess = ended
+	st.LastError = ""
+	st.Revision = rev
+}
+
+// timedLoad is one load of src, bracketed by two reads of now, taken outside
+// any lock so contention is not counted as Source time. A Source that returns
+// no Snapshot and no error fails the poll.
+func timedLoad(ctx context.Context, src Source, now func() time.Time) (snap *Snapshot, rev string, began, ended time.Time, err error) {
+	began = now()
+	snap, rev, err = loadSource(ctx, src)
+	ended = now()
+	if err == nil && snap == nil {
+		err = errNilSnapshot
+	}
+	return snap, rev, began, ended, err
+}
+
 // NewSyncer returns a Syncer for src. It loads nothing until Poll or Run.
 func NewSyncer(src Source) *Syncer {
 	return &Syncer{
-		src: src,
-		now: time.Now,
-		newTicker: func(d time.Duration) (<-chan time.Time, func()) {
-			t := time.NewTicker(d)
-			return t.C, t.Stop
-		},
+		src:       src,
+		now:       time.Now,
+		newTicker: realTicker,
 	}
 }
 
@@ -119,39 +151,22 @@ func (s *Syncer) pollReport(ctx context.Context, onPoll func(SyncStatus)) {
 
 // pollLocked is poll for a caller that holds pollMu.
 func (s *Syncer) pollLocked(ctx context.Context) (SyncStatus, error) {
-	began := s.now()
-	snap, rev, err := s.load(ctx)
-	// One read ends the load and stamps the poll, taken before mu so lock
-	// contention is not counted as Source time.
-	now := s.now()
-	if err == nil && snap == nil {
-		err = errNilSnapshot
-	}
+	snap, rev, began, ended, err := timedLoad(ctx, s.src, s.now)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.status.LastPoll = now
-	s.status.Duration = now.Sub(began)
+	s.status.stamp(began, ended, rev, err)
 	if err != nil {
-		s.status.LastError = redact(err.Error())
 		return s.statusCopy(), err
 	}
 	s.current.Store(snap)
-	s.status.LastSuccess = now
-	s.status.LastError = ""
-	s.status.Revision = rev
 	s.status.Warnings = append([]string(nil), snap.warnings...)
 	return s.statusCopy(), nil
 }
 
-// load calls the Source. A panic in Load or Revision becomes errLoadPanicked,
-// so a Source bug fails one poll instead of the process, and the panic value
-// never reaches Status.
-func (s *Syncer) load(ctx context.Context) (snap *Snapshot, rev string, err error) {
-	return loadSource(ctx, s.src)
-}
-
 // loadSource is the one guarded call of a Source, shared by Syncer and
-// SourceSet.
+// SourceSet. A panic in Load or Revision becomes errLoadPanicked, so a Source
+// bug fails one poll instead of the process, and the panic value never reaches
+// Status.
 func loadSource(ctx context.Context, src Source) (snap *Snapshot, rev string, err error) {
 	defer func() {
 		if recover() != nil {
@@ -175,27 +190,35 @@ func loadSource(ctx context.Context, src Source) (snap *Snapshot, rev string, er
 // interval of zero or less means no periodic polling: Run polls once and
 // returns.
 func (s *Syncer) Run(ctx context.Context, interval time.Duration, onPoll func(SyncStatus)) {
-	poll := func() {
-		if ctx.Err() != nil {
-			return
-		}
+	runLoop(ctx, interval, s.newTicker, func() {
 		s.pollMu.Lock()
 		defer s.pollMu.Unlock()
 		s.pollReport(ctx, onPoll)
+	})
+}
+
+// runLoop calls poll once at once, then on every tick of interval, and
+// returns when ctx ends. ctx is checked before each poll, so none starts
+// after cancel. An interval of zero or less polls once and returns.
+func runLoop(ctx context.Context, interval time.Duration, newTicker func(time.Duration) (<-chan time.Time, func()), poll func()) {
+	once := func() {
+		if ctx.Err() == nil {
+			poll()
+		}
 	}
 	if interval <= 0 {
-		poll()
+		once()
 		return
 	}
-	ticks, stop := s.newTicker(interval)
+	ticks, stop := newTicker(interval)
 	defer stop()
-	poll()
+	once()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticks:
-			poll()
+			once()
 		}
 	}
 }

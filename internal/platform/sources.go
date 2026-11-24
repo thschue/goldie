@@ -24,8 +24,15 @@ type SourceSpec struct {
 	Poll      time.Duration // zero follows GOLDIE_POLL_INTERVAL
 	TokenEnv  string
 	SSHKeyEnv string
-	Claims    SourceClaims
+	// Token and SSHKey are the secrets the two *_env fields name, read once
+	// when the list is parsed. They are never logged.
+	Token, SSHKey string
+	Claims        SourceClaims
 }
+
+// RedactedURL is the Source's URL as it may be logged: the same form
+// Config.RedactedGitURL gives GOLDIE_GIT_URL.
+func (s SourceSpec) RedactedURL() string { return redactGitURL(s.URL) }
 
 // SourceClaims says which Projects a Source answers for. Matching is #477.
 type SourceClaims struct {
@@ -133,7 +140,10 @@ func validateSource(e sourceEntry, lookup Lookup, readFile func(string) ([]byte,
 			break
 		}
 	}
-	for _, f := range []struct{ key, env string }{{"token_env", e.TokenEnv}, {"ssh_key_env", e.SSHKeyEnv}} {
+	for _, f := range []struct {
+		key, env string
+		into     *string
+	}{{"token_env", e.TokenEnv, &s.Token}, {"ssh_key_env", e.SSHKeyEnv, &s.SSHKey}} {
 		if f.env == "" {
 			continue
 		}
@@ -142,6 +152,8 @@ func validateSource(e sourceEntry, lookup Lookup, readFile func(string) ([]byte,
 			p = append(p, f.key+": "+err.Error())
 		} else if v == "" {
 			p = append(p, f.key+" names a variable that is not set")
+		} else {
+			*f.into = v
 		}
 	}
 	return s, p

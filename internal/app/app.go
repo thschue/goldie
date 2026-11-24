@@ -398,7 +398,8 @@ type Public struct {
 
 // Start runs the Source's poll loop, at GOLDIE_POLL_INTERVAL, until ctx ends,
 // ends the open activity streams when it does, and registers the Source's
-// readiness check, "source:dir" or "source:git", with reg. It does not block:
+// readiness check, "source:dir" or "source:git", with reg. A list of Sources
+// has one loop and one check, "source:<name>", for each. It does not block:
 // the git Source's first load is the loop's first poll. The check fails until
 // the Syncer holds a Snapshot and then stays ready, so a stale Source stays
 // ready and no error reaches /readyz (PC-02). The git Source's polls are
@@ -406,9 +407,12 @@ type Public struct {
 // starts a loop; a call with a cancelled context does not use up the start.
 // Every call registers the check, which replaces itself.
 func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
-	if p.probe != nil {
+	switch {
+	case p.probe != nil:
 		reg.Add(p.check, p.probe)
-	} else {
+	case p.list != nil:
+		p.list.addChecks(reg)
+	default:
 		reg.Add(p.check, func(context.Context) error {
 			if p.syncer.Current() == nil {
 				return errors.New("no snapshot")
@@ -422,30 +426,33 @@ func (p *Public) Start(ctx context.Context, reg *platform.Registry) {
 		return
 	}
 	p.started = true
-	if p.probe != nil {
+	switch {
+	case p.probe != nil:
 		// Nothing to poll: only the proxied streams end with the server.
-		context.AfterFunc(ctx, p.endStreams)
-		return
+	case p.list != nil:
+		p.list.run(ctx, &p.loops, p.poll)
+	default:
+		onPoll := pollHook(ctx, p.pollLog, p.polls)
+		p.sync.run(ctx, onPoll)
+		p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	}
-	onPoll := p.pollHook(ctx)
-	p.sync.run(ctx, onPoll)
-	p.loops.Go(func() { p.syncer.Run(ctx, p.poll, onPoll) })
 	// The first stop signal ends the activity streams: Shutdown waits for
 	// open requests and never cancels them, so a stream would hold it for
 	// the whole grace period (PC-08).
 	context.AfterFunc(ctx, p.endStreams)
 }
 
-// pollHook is the poll loop's onPoll: it logs polls when the Source asks for
-// it (logPolls) and counts each finished poll in goldie.syncs and times it in goldie.sync.duration. A poll that
-// ends with ctx, the server stopping, is no result and is not counted. It is
-// nil when there is nothing to do.
-func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
+// pollHook is the poll loop's onPoll: it logs polls to log when the Source
+// asks for it (logPolls) and counts each finished poll in goldie.syncs and
+// times it in goldie.sync.duration. A poll that ends with ctx, the server
+// stopping, is no result and is not counted. It is nil when there is nothing
+// to do.
+func pollHook(ctx context.Context, log *slog.Logger, polls *platform.PollCounter) func(engine.SyncStatus) {
 	var logged func(engine.SyncStatus)
-	if p.pollLog != nil {
-		logged = logPolls(ctx, p.pollLog)
+	if log != nil {
+		logged = logPolls(ctx, log)
 	}
-	if logged == nil && p.polls == nil {
+	if logged == nil && polls == nil {
 		return nil
 	}
 	return func(st engine.SyncStatus) {
@@ -453,7 +460,7 @@ func (p *Public) pollHook(ctx context.Context) func(engine.SyncStatus) {
 			logged(st)
 		}
 		if ctx.Err() == nil {
-			p.polls.Add(ctx, st.LastError != "", st.Duration)
+			polls.Add(ctx, st.LastError != "", st.Duration)
 		}
 	}
 }
@@ -511,7 +518,8 @@ func PublicHandlerWith(cfg platform.Config, logger *slog.Logger, tel *platform.T
 	p, err := newPublicCounted(false, cfg, tokens, src, logger, api.DefaultActivityKeepalive, calls, opt)
 	if p != nil {
 		p.polls = tel.PollCounter("goldie.syncs", "Source polls finished, by source and result.", src.name)
-		tel.ItemGauge(itemCounts(src.syncer.Current))
+		tel.ItemGauge(itemCounts(src.current))
+		src.list.countPolls(tel)
 	}
 	return p, err
 }
@@ -571,7 +579,7 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}
-	m, err := newPublicMuxKeepalive(src.syncer.Current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, serverOptions(cfg, logger, opts)...)
+	m, err := newPublicMuxKeepalive(src.current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, serverOptions(cfg, logger, opts)...)
 	if err != nil {
 		return nil, err
 	}
@@ -606,11 +614,12 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 				"This server runs with GOLDIE_MODE=api and does not serve /mcp or the UI.")
 		}))
 	}
-	m.sync.bind(src.syncer)
+	m.sync.bind(src.syncer) // a list has none: the sync operations answer 503 not_ready
 	p := &Public{publicMux: m, source: src}
 	if src.logAttrs != nil {
 		p.pollLog = logger.With(src.logAttrs...)
 	}
+	src.list.logTo(logger)
 	// LoadConfig never yields less than the floor; a Config built by hand
 	// (zero) gets it too, never a busy loop.
 	p.poll = max(cfg.PollInterval, minPollInterval)
