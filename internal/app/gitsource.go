@@ -116,6 +116,8 @@ func logPolls(ctx context.Context, log *slog.Logger) func(engine.SyncStatus) {
 	return func(st engine.SyncStatus) {
 		switch {
 		case ctx.Err() != nil:
+		case st.LastError != "" && rev == "":
+			log.Warn("source poll failed; no content has loaded yet and the server is not ready", "error", st.LastError)
 		case st.LastError != "":
 			log.Warn("source poll failed; the last good content is still served", "error", st.LastError)
 		case st.Revision != rev:
