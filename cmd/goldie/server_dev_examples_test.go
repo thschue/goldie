@@ -303,3 +303,106 @@ func TestServerDevOnExamplesKnowledgeStillServesGoldiesOwnAgentsAndLoops(t *test
 		t.Errorf("GET %s on examples/knowledge = %d, want 200", devArticle, got)
 	}
 }
+
+// #743: goldie pull keeps the executable bit of a skill file. The built-in
+// examples are embedded in the binary, whose file system reports every file as
+// read-only, so the bit is easy to lose: the pulled scripts/check.sh must be
+// executable, and SKILL.md must stay 0644.
+func TestServerDevPullOfTheBuiltInExamplesKeepsTheExecutableBitOfTheSkillScript(t *testing.T) {
+	p := startDev(t, devEnv(), t.TempDir())
+	repo := devRepo(t)
+	devCLI(t, p, repo, "pull")
+	skill := filepath.Join(repo, ".claude", "skills", "goldie-service-health")
+	check, err := os.Stat(filepath.Join(skill, "scripts", "check.sh"))
+	if err != nil {
+		t.Fatalf("goldie pull did not write scripts/check.sh: %v", err)
+	}
+	if check.Mode().Perm() != 0o755 {
+		t.Errorf("pulled scripts/check.sh has mode %v, want -rwxr-xr-x", check.Mode().Perm())
+	}
+	doc, err := os.Stat(filepath.Join(skill, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("goldie pull did not write SKILL.md: %v", err)
+	}
+	if doc.Mode().Perm() != 0o644 {
+		t.Errorf("pulled SKILL.md has mode %v, want -rw-r--r--", doc.Mode().Perm())
+	}
+}
+
+// #743: the modes git stores for the example skill files and the modes the
+// built-in examples pull with do not drift: a file is executable after the pull
+// exactly when git stores it as 100755.
+func TestServerDevPulledExampleSkillModesMatchGit(t *testing.T) {
+	root := filepath.Join(contentDir(t), "..", "demo")
+	cmd := exec.CommandContext(t.Context(), "git", "ls-files", "-s", "--", "global/skills")
+	cmd.Dir = root
+	listing, err := cmd.Output()
+	if err != nil {
+		t.Skipf("git does not list the examples here: %v", err)
+	}
+	gitExec := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(listing)), "\n") {
+		meta, name, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		gitExec[strings.TrimPrefix(name, "global/skills/")] = strings.HasPrefix(meta, "100755")
+	}
+	if len(gitExec) == 0 {
+		t.Fatal("git lists no example skill files: the fixture of this test is gone")
+	}
+	p := startDev(t, devEnv(), t.TempDir())
+	repo := devRepo(t)
+	devCLI(t, p, repo, "pull")
+	for rel, want := range gitExec {
+		info, err := os.Stat(filepath.Join(repo, ".claude", "skills", "goldie-"+filepath.FromSlash(rel)))
+		if err != nil {
+			t.Errorf("goldie pull did not write the example skill file %s: %v", rel, err)
+			continue
+		}
+		if got := info.Mode().Perm()&0o111 != 0; got != want {
+			t.Errorf("pulled %s: executable = %v, but git stores it with executable = %v", rel, got, want)
+		}
+	}
+}
+
+// #743: a directory Source keeps the executable bit through goldie pull, and
+// the files without it stay 0644.
+func TestServerDevPullOfADirectorySourceKeepsTheExecutableBit(t *testing.T) {
+	dir := t.TempDir()
+	skill := filepath.Join(dir, "global", "skills", "tool")
+	if err := os.MkdirAll(filepath.Join(skill, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := "---\nname: tool\ndescription: Run the tool.\nkeywords: [tool]\n---\nRun scripts/run.sh.\n"
+	if err := os.WriteFile(filepath.Join(skill, "SKILL.md"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "scripts", "run.sh"), []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skill, "scripts", "notes.txt"), []byte("notes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	articles := filepath.Join(dir, "global", "articles")
+	if err := os.MkdirAll(articles, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	article := "---\nname: Tools\nkeywords: [tool]\n---\nUse the tool.\n"
+	if err := os.WriteFile(filepath.Join(articles, "tools.md"), []byte(article), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := startDev(t, devEnv(), dir)
+	repo := devRepo(t)
+	devCLI(t, p, repo, "pull")
+	for rel, want := range map[string]os.FileMode{"scripts/run.sh": 0o755, "scripts/notes.txt": 0o644, "SKILL.md": 0o644} {
+		info, err := os.Stat(filepath.Join(repo, ".claude", "skills", "goldie-tool", filepath.FromSlash(rel)))
+		if err != nil {
+			t.Errorf("goldie pull did not write %s: %v", rel, err)
+			continue
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("pulled %s has mode %v, want %v", rel, info.Mode().Perm(), want)
+		}
+	}
+}
