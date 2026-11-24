@@ -1,3 +1,5 @@
+// #868: each card's badge is healthy, failing · serving last good or errored, and an unnamed Source's
+// heading carries its order, in both themes.
 // #733: each Source is a card with its name, order, origin, copyable revision, shadowed Items count
 // and its own Resync (POST /api/v1/sync?source=<name>), in both themes.
 // The Sources page /ops/sources (#633, handoff §3, §5.3): a row per Source
@@ -120,6 +122,29 @@ eachViewport((width, theme) => {
     await page.goto('/ops/sources');
     await expect(rows(page)).toHaveCount(3);
     await evidence(page, width, theme, '-cards', 'sources');
+  });
+
+  test('each card shows its three-state badge and two unnamed Sources get distinct headings (#868)', async ({
+    page,
+  }) => {
+    const errored: Source = { revision: '4444444444444444444444444444444444444444', last_error: 'clone failed' };
+    await asOperatorWithCsrf(page);
+    await stubSync(page, [
+      { ...healthy, name: 'platform', preference: 1, shadowed: [] },
+      { ...failing, name: 'team', preference: 2, shadowed: [] },
+      { ...errored, name: 'broken', preference: 3, shadowed: [] },
+      { ...unpolled, preference: 4, shadowed: [] },
+      { ...healthy, preference: 5, shadowed: [] },
+    ]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(5);
+    await expect(card(page, 'platform').getByText(/^healthy$/i)).toBeVisible();
+    await expect(card(page, 'team').getByText(/^failing · serving last good$/i)).toBeVisible();
+    await expect(card(page, 'broken').getByText(/^errored$/i)).toBeVisible();
+    await expect(main(page).getByText(/^failing$/i)).toHaveCount(0);
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 4', exact: true })).toBeVisible();
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 5', exact: true })).toBeVisible();
+    await evidence(page, width, theme, '-badges', 'sources');
   });
 
   test('the Sources page empty state is captured and axe-clean', async ({ page }) => {
@@ -461,6 +486,43 @@ test.describe('the Sources page: one card per Source (#733)', () => {
     await expect(team).toContainText(/last success/i);
     await expect(team).toContainText(failing.last_error!);
     await expect(card(page, 'platform')).toContainText(/\b1\b/);
+  });
+
+  test('a Source with no last error is healthy, with a last error and a last success it is failing, with no success it is errored (#868)', async ({
+    page,
+  }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, [
+      { ...unpolled, name: 'fresh', preference: 1, shadowed: [] },
+      { ...failing, name: 'team', preference: 2, shadowed: [] },
+      { name: 'broken', preference: 3, shadowed: [], last_poll: failing.last_poll, last_error: 'clone failed' },
+    ]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(3);
+    for (const [name, badge] of [
+      ['fresh', /^healthy$/i],
+      ['team', /^failing · serving last good$/i],
+      ['broken', /^errored$/i],
+    ] as const) {
+      await expect(card(page, name).getByText(badge)).toHaveCount(1);
+      for (const other of [/^healthy$/i, /^failing · serving last good$/i, /^errored$/i].filter((r) => String(r) !== String(badge))) {
+        await expect(card(page, name).getByText(other)).toHaveCount(0);
+      }
+    }
+  });
+
+  test('two unnamed Sources get distinct headings that include their order (#868)', async ({ page }) => {
+    await asRole(page, 'operator');
+    await stubSync(page, [
+      { ...healthy, preference: 1, shadowed: [] },
+      { ...failing, preference: 2, shadowed: [] },
+    ]);
+    await page.goto('/ops/sources');
+    await expect(rows(page)).toHaveCount(2);
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 1', exact: true })).toBeVisible();
+    await expect(main(page).getByRole('heading', { level: 2, name: 'Source 2', exact: true })).toBeVisible();
+    const names = await main(page).getByRole('heading', { level: 2 }).allInnerTexts();
+    expect(new Set(names).size, 'every card heading is distinct').toBe(names.length);
   });
 
   test('a Source without a revision is titled by its name, not "no revision"', async ({ page }) => {
