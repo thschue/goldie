@@ -97,5 +97,5 @@ Missing evidence for a changed surface is blocking, as screenshots are for the U
 
 - Text logs when the log writer is a terminal, JSON otherwise (#454, PC-07).
 - Built-in example content for `goldie server --dev` in an empty directory (#451, #458). The
-  binary embeds `examples/knowledge` through the `examples` package, which only `cmd/goldie`
-  imports.
+  binary embeds `examples/demo` (#682; goldie's own set, `examples/knowledge`, is not embedded)
+  through the `examples` package, which only `cmd/goldie` imports.

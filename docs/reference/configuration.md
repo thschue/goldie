@@ -51,8 +51,8 @@ ends with the line "To try goldie on this machine: goldie server --dev". When on
 a value is invalid, there is no hint.
 
 `goldie server --dev [dir]` serves `dir`, else `GOLDIE_CONTENT_DIR`, else the working directory.
-When that directory has no content, it serves the example content built into the binary (the same
-as `examples/knowledge`) and says so once on stderr, naming the directory. A directory with content
+When that directory has no content, it serves the example content built into the binary (the
+`examples/demo` demo platform) and says so once on stderr, naming the directory. A directory with content
 is served as it is, never mixed with the examples.
 In this mode log records go to stderr, so only the export line goes to stdout. The server runs
 until it is stopped, so run it in the background or redirect stdout to a file and read the
