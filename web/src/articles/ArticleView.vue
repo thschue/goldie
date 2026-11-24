@@ -41,6 +41,8 @@ onMounted(async () => {
 </script>
 
 <template>
+  <!-- The way back sits above everything, so a long article never hides it (#729). -->
+  <RouterLink :to="back" class="back">← Back to search</RouterLink>
   <!-- Copy: handoff §8, lifecycle banners. -->
   <div v-if="article?.status === 'draft'" role="status" class="banner draft">
     <strong>Draft preview.</strong> Agents and API consumers can't see this yet. Merge with <code>status: published</code> to release it.
@@ -68,14 +70,12 @@ onMounted(async () => {
       <span v-for="k in article.keywords" :key="k" class="chip">{{ k }}</span>
     </p>
     <MarkdownBody :source="article.content" />
-    <RouterLink :to="back" class="back">← Back to search</RouterLink>
   </template>
 
   <template v-else-if="error">
     <div role="alert" class="alert">
       {{ error.message }} <span v-if="error.hint">{{ error.hint }}</span>
     </div>
-    <RouterLink :to="back" class="back">← Back to search</RouterLink>
   </template>
 </template>
 
@@ -152,6 +152,7 @@ onMounted(async () => {
   color: var(--danger-ink);
 }
 .back {
+  margin-bottom: var(--space-2);
   display: inline-flex;
   align-items: center;
   min-height: var(--target-min);
