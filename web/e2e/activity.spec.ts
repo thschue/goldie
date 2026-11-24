@@ -10,7 +10,7 @@
 // - the page is one role=table in main with seven th scope=col headers, in the order
 //   Time, Event, Query → Item, Result, Via, Project, Replica; a row is a tr of the
 //   tbody and its cells are its direct children, in the same order;
-// - the stream is the local replica's: GET /api/v1/activity without `replicas`;
+// - the stream is the merged one: GET /api/v1/activity?replicas=all (#631);
 // - a row's action is a button in its Time cell with aria-pressed; the pressed one
 //   is the selected event;
 // - "Misses only" is a checkbox or a button named /misses only/i; Pause is a button
@@ -185,7 +185,7 @@ eachViewport((width, theme) => {
   });
 
   test('the reader state is captured and axe-clean', async ({ page }) => {
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 403, envelope('forbidden', 'this token cannot do that', 'Use an operator token.')),
     );
     await page.goto('/ops/activity');
@@ -195,7 +195,7 @@ eachViewport((width, theme) => {
 
   test('the too-many-streams state is captured and axe-clean', async ({ page }) => {
     await operator(page);
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 503, envelope('too_many_streams', 'too many activity streams are open', 'Close another stream, or retry in a minute.')),
     );
     await page.goto('/ops/activity');
@@ -235,13 +235,13 @@ test.describe('the table', () => {
     await expect(cell(rowOf(page, 'quantum'), col.result), 'colour is not the only sign of a Miss').toContainText(/miss/i);
   });
 
-  test('is fed by the local replica stream and a label names the replica shown', async ({ page }) => {
+  test('is fed by the merged stream of all replicas and a label names the replica shown', async ({ page }) => {
     await open(page, sample);
     const urls = await page.evaluate(() => (window as unknown as Win).__activity.urls);
     expect(urls.length).toBeGreaterThan(0);
     for (const u of urls) {
-      expect(u).toMatch(/^\/api\/v1\/activity(\?|$)/);
-      expect(new URL(u, 'http://x').searchParams.has('replicas'), 'the local stream, not replicas=all').toBe(false);
+      expect(u).toMatch(/^\/api\/v1\/activity\?/);
+      expect(new URL(u, 'http://x').searchParams.getAll('replicas'), 'replicas=all, once').toEqual(['all']);
     }
     expect(await mainTextOutsideTable(page), 'a label outside the table names the replica').toContain('goldie-0');
   });
@@ -415,7 +415,7 @@ test.describe('who may see it', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test('a reader (403) sees that the page is for operators, and no table or raw envelope', async ({ page }) => {
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 403, envelope('forbidden', 'this token cannot do that', 'Use an operator token.')),
     );
     await page.goto('/ops/activity');
@@ -427,7 +427,7 @@ test.describe('who may see it', () => {
 
   test('a 401 ends the session visibly and the page stays', async ({ page }) => {
     await operator(page);
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 401, envelope('unauthorized', 'missing or invalid API token', 'Send a configured API token.')),
     );
     await page.goto('/ops/activity');
@@ -440,7 +440,7 @@ test.describe('who may see it', () => {
   test('a 503 too_many_streams shows its hint, not the raw envelope or the code', async ({ page }) => {
     await operator(page);
     const hint = 'Close another stream, or retry in a minute.';
-    await page.route('**/api/v1/activity', (route) =>
+    await page.route('**/api/v1/activity*', (route) =>
       json(route, 503, envelope('too_many_streams', 'too many activity streams are open', hint)),
     );
     await page.goto('/ops/activity');
@@ -546,5 +546,198 @@ test.describe('touch targets at 375 px', () => {
     }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, 'the table scrolls inside the page, which does not').toBeLessThanOrEqual(0);
+  });
+});
+
+// The replica switcher and the partial-view banner (#631, slice 3 of #22). The stream
+// is `replicas=all`; a peer going down or coming back arrives as an SSE event of type
+// `replica_status` (the contract's ActivityReplicaStatus).
+//
+// Contract these specs pin down (the issue leaves them open):
+// - the switcher is buttons with aria-pressed outside the table; "All replicas" is
+//   one, each replica seen is another whose text holds its name, its status in words
+//   (up or down) and its event count as a number;
+// - with no peers there is no "All replicas" and no switcher button: the replica name
+//   is plain text outside the table;
+// - the banner is text in main that starts "Partial view." and names the replica;
+// - a late row carries the word LATE in its row.
+const status = (replica: string, up: boolean, ago = 120_000) =>
+  `event: replica_status\ndata: ${JSON.stringify({ replica, up, last_seen: new Date(Date.now() - ago).toISOString() })}\n\n`;
+
+const switcherButtons = (page: Page) => main(page).locator('button[aria-pressed]:not(table button)');
+const allReplicas = (page: Page) => switcherButtons(page).filter({ hasText: /all replicas/i });
+const replicaButton = (page: Page, name: string) => switcherButtons(page).filter({ hasText: name });
+const banner = (page: Page) => main(page).getByText(/Partial view\./);
+
+const fleet: Ev[] = [
+  ev(1, { query: 'from zero a', replica: 'goldie-0' }),
+  ev(2, { query: 'from zero b', replica: 'goldie-0' }),
+  ev(3, { query: 'from one a', replica: 'goldie-1' }),
+];
+
+eachViewport((width, theme) => {
+  test('the switcher and the partial-view banner are captured and axe-clean', async ({ page }) => {
+    await open(page, fleet);
+    await send(page, status('goldie-1', false));
+    await expect(banner(page)).toBeVisible();
+    await expect(switcherButtons(page)).toHaveCount(3);
+    await evidence(page, width, theme, '-replicas', 'activity');
+  });
+});
+
+test.describe('the replica switcher', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('has All replicas and one button per replica, with status and count, and filters the rows', async ({ page }) => {
+    await open(page, fleet);
+    await expect(switcherButtons(page)).toHaveCount(3);
+    await expect(allReplicas(page)).toHaveAttribute('aria-pressed', 'true');
+    await expect(allReplicas(page)).toContainText(/\b3\b/);
+    const zero = replicaButton(page, 'goldie-0');
+    const one = replicaButton(page, 'goldie-1');
+    await expect(zero).toHaveAttribute('aria-pressed', 'false');
+    await expect(zero).toContainText(/\bup\b/i);
+    await expect(zero).toContainText(/\b2\b/);
+    await expect(one).toContainText(/\bup\b/i);
+    await expect(one).toContainText(/\b1\b/);
+    await expect(rows(page)).toHaveCount(3);
+
+    await one.click();
+    await expect(one).toHaveAttribute('aria-pressed', 'true');
+    await expect(allReplicas(page)).toHaveAttribute('aria-pressed', 'false');
+    await expect(zero).toHaveAttribute('aria-pressed', 'false');
+    await expect(rows(page)).toHaveCount(1);
+    await expect(rowOf(page, 'from one a')).toHaveCount(1);
+
+    await send(
+      page,
+      frame(ev(4, { query: 'new from zero', replica: 'goldie-0' })) + frame(ev(5, { query: 'new from one', replica: 'goldie-1' })),
+    );
+    await expect(rowOf(page, 'new from one')).toHaveCount(1);
+    await expect(rowOf(page, 'new from zero'), 'the other replica stays filtered out').toHaveCount(0);
+    await expect(one).toContainText(/\b2\b/);
+    await expect(zero).toContainText(/\b3\b/);
+
+    await allReplicas(page).click();
+    await expect(allReplicas(page)).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows(page)).toHaveCount(5);
+  });
+
+  test('shows a replica that is down as down, in words, and up again when it is back', async ({ page }) => {
+    await open(page, fleet);
+    await send(page, status('goldie-1', false));
+    await expect(replicaButton(page, 'goldie-1')).toContainText(/\bdown\b/i);
+    await expect(replicaButton(page, 'goldie-0')).toContainText(/\bup\b/i);
+    await send(page, status('goldie-1', true, 0));
+    await expect(replicaButton(page, 'goldie-1')).toContainText(/\bup\b/i);
+    await expect(replicaButton(page, 'goldie-1')).not.toContainText(/\bdown\b/i);
+  });
+
+  test('with no peers collapses to the replica name', async ({ page }) => {
+    await open(page, [ev(1, { query: 'alone' }), ev(2, { query: 'still alone' })]);
+    await expect(rows(page)).toHaveCount(2);
+    await expect(switcherButtons(page)).toHaveCount(0);
+    await expect(main(page).getByText(/all replicas/i)).toHaveCount(0);
+    expect(await mainTextOutsideTable(page)).toContain('goldie-0');
+  });
+
+  test('renders a replica name as text, never as HTML', async ({ page }) => {
+    const hostile = '<img src=x onerror="window.__pwned=1">';
+    await open(page, [ev(1, { query: 'a', replica: 'goldie-0' }), ev(2, { query: 'b', replica: hostile })]);
+    await expect(rows(page)).toHaveCount(2);
+    await expect(main(page).locator('img')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as Win).__pwned), 'the markup ran').toBeUndefined();
+  });
+
+  test('its buttons show the focus ring with the keyboard', async ({ page }) => {
+    await open(page, fleet);
+    const target = replicaButton(page, 'goldie-0');
+    let reached = false;
+    for (let i = 0; i < 40 && !reached; i++) {
+      await page.keyboard.press('Tab');
+      reached = await target.evaluate((el) => el === document.activeElement);
+    }
+    expect(reached, 'the replica button is in the tab order').toBe(true);
+    await expectFocusRing(target);
+  });
+});
+
+test.describe('the partial-view banner', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('appears while a replica is down, names it and how long, and goes away when it is back', async ({ page }) => {
+    await open(page, fleet);
+    await expect(banner(page), 'no banner while every replica answers').toHaveCount(0);
+    await send(page, status('goldie-1', false, 120_000));
+    await expect(banner(page)).toBeVisible();
+    const copy = await mainTextOutsideTable(page);
+    expect(copy).toMatch(/Partial view\.\s*goldie-1 stopped answering \S.*\bago\b\s*[—-]\s*its newer events are missing until it'?s back\./);
+    expect(copy, 'the time is a number of units').toMatch(/stopped answering [^.]*\d/);
+    await send(page, status('goldie-1', true, 0));
+    await expect(banner(page)).toHaveCount(0);
+  });
+
+  test('shows for a replica that was already down when the stream opened', async ({ page }) => {
+    await operator(page);
+    await stubStream(page);
+    await page.goto('/ops/activity');
+    await page.waitForFunction(() => (window as unknown as Win).__activity.controllers.length > 0);
+    await send(page, status('goldie-1', false) + frame(ev(1, { query: 'only zero' })) + liveMarker);
+    await expect(banner(page)).toBeVisible();
+    await expect(main(page)).toContainText('goldie-1 stopped answering');
+    await expect(rowOf(page, 'only zero')).toHaveCount(1);
+  });
+
+  test('names every replica that is down', async ({ page }) => {
+    await open(page, [...fleet, ev(4, { query: 'from two', replica: 'goldie-2' })]);
+    await send(page, status('goldie-1', false) + status('goldie-2', false));
+    await expect(main(page)).toContainText('goldie-1 stopped answering');
+    await expect(main(page)).toContainText('goldie-2 stopped answering');
+    await send(page, status('goldie-1', true, 0));
+    await expect(main(page)).not.toContainText('goldie-1 stopped answering');
+    await expect(main(page)).toContainText('goldie-2 stopped answering');
+  });
+});
+
+test.describe('late events and equal ids', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('a late event carries a LATE marker in words and an on-time one does not', async ({ page }) => {
+    await open(page, [ev(1, { query: 'on time', replica: 'goldie-0' }), ev(2, { query: 'behind', replica: 'goldie-1', late: true })]);
+    expect(await text(rowOf(page, 'behind'))).toMatch(/\bLATE\b/i);
+    expect(await text(rowOf(page, 'on time'))).not.toMatch(/\bLATE\b/i);
+  });
+
+  test('equal ids from two replicas both show', async ({ page }) => {
+    await open(page, [ev(7, { query: 'zero seven', replica: 'goldie-0' }), ev(7, { query: 'one seven', replica: 'goldie-1' })]);
+    await expect(rows(page)).toHaveCount(2);
+    await expect(rowOf(page, 'zero seven')).toHaveCount(1);
+    await expect(rowOf(page, 'one seven')).toHaveCount(1);
+    await send(page, frame(ev(8, { query: 'zero eight', replica: 'goldie-0' })) + frame(ev(8, { query: 'one eight', replica: 'goldie-1' })));
+    await expect(rows(page)).toHaveCount(4);
+  });
+
+  test('selecting a row whose id another replica shares selects only that row', async ({ page }) => {
+    await open(page, [ev(7, { query: 'zero seven', replica: 'goldie-0' }), ev(7, { query: 'one seven', replica: 'goldie-1' })]);
+    const pressed = (q: string) => rowOf(page, q).locator('button[aria-pressed]');
+    await pressed('zero seven').click();
+    await expect(pressed('zero seven')).toHaveAttribute('aria-pressed', 'true');
+    await expect(pressed('one seven')).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+test.describe('the switcher at 375 px', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test('its buttons are at least 44 px and the page does not scroll sideways', async ({ page }) => {
+    await open(page, fleet);
+    for (const l of [allReplicas(page), replicaButton(page, 'goldie-0'), replicaButton(page, 'goldie-1')]) {
+      const box = await l.boundingBox();
+      expect(box, 'the button is on screen').not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
   });
 });

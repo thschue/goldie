@@ -2,33 +2,56 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ApiError } from '../api/client';
 import { plain } from '../assets/api';
-import { add, announceEvery, queryText, resultText, timeText } from './rows';
+import { add, agoText, announceEvery, queryText, resultText, rowKey, timeText } from './rows';
 import { streamActivity, type ActivityEvent, type Frame } from './stream';
 
-// The activity feed on the local stream (handoff §3.6, §5.1, §5.3, §9; #630). One table of the
-// local replica's events, newest first, kept to the newest maxRows. New rows never take focus:
+// The activity feed on the merged stream of all replicas (handoff §3.6, §5.1, §5.3, §9; #630,
+// #631). One table of the events, newest first, kept to the newest maxRows, a switcher that shows
+// one replica's events, and a partial-view banner while a peer is down. New rows never take focus:
 // nothing here calls focus(), and the rows are keyed by event id so a selection stays on its
 // event. The miss count is a polite status that changes at most every 30 s. Out of scope here:
-// the replica switcher, the Miss board and detail panel, and the live stage.
+// the Miss board and detail panel, and the live stage.
 const rows = ref<ActivityEvent[]>([]);
 const phase = ref<'connecting' | 'live' | 'error'>('connecting');
 const failed = ref<ApiError | Error>();
 const dropped = ref(false);
 const paused = ref(false);
 const missesOnly = ref(false);
-const selected = ref<number>();
+const selected = ref<string>();
+// The replicas seen, by name: from their events (up) and from replica_status (up or down).
+const fleet = ref(new Map<string, { up: boolean; lastSeen: string }>());
+const only = ref<string>();
+const now = ref(Date.now());
 let held: ActivityEvent[] = [];
 let controller: AbortController | undefined;
 
-const shown = computed(() => (missesOnly.value ? rows.value.filter((r) => r.miss) : rows.value));
+const shown = computed(() =>
+  rows.value.filter((r) => (!missesOnly.value || r.miss) && (only.value === undefined || r.replica === only.value)),
+);
 const missCount = computed(() => rows.value.filter((r) => r.miss).length);
 const replica = computed(() => plain(rows.value[0]?.replica));
+
+const replicas = computed(() =>
+  [...fleet.value]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, s]) => ({ name, up: s.up, count: rows.value.filter((r) => r.replica === name).length })),
+);
+const peers = computed(() => replicas.value.length > 1);
+const down = computed(() =>
+  [...fleet.value].filter(([, s]) => !s.up).map(([name, s]) => ({ name, ago: agoText(s.lastSeen, now.value) })),
+);
+const choose = (name?: string) => (only.value = name);
 
 function apply(frames: Frame[]) {
   const events: ActivityEvent[] = [];
   for (const f of frames) {
-    if (f.type === 'event') events.push(f.event);
-    else if (f.type === 'dropped') dropped.value = true;
+    if (f.type === 'event') {
+      events.push(f.event);
+      if (f.event.replica && !fleet.value.has(f.event.replica)) fleet.value.set(f.event.replica, { up: true, lastSeen: '' });
+    } else if (f.type === 'status') {
+      fleet.value.set(f.replica, { up: f.up, lastSeen: f.lastSeen });
+      now.value = Date.now();
+    } else if (f.type === 'dropped') dropped.value = true;
     else if (phase.value === 'connecting') phase.value = 'live';
   }
   if (!events.length) return;
@@ -41,6 +64,9 @@ async function connect() {
   const mine = (controller = new AbortController());
   rows.value = [];
   held = [];
+  fleet.value = new Map();
+  only.value = undefined;
+  selected.value = undefined;
   dropped.value = false;
   failed.value = undefined;
   phase.value = 'connecting';
@@ -62,12 +88,14 @@ function togglePause() {
   }
 }
 
-const select = (id: number) => (selected.value = selected.value === id ? undefined : id);
+const select = (key: string) => (selected.value = selected.value === key ? undefined : key);
 
 // The announced miss count: set when the history ends, then at most once per announceEvery.
 const announced = ref(0);
 let announcedAt = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
+// "stopped answering 2 minutes ago" ages while the page is open.
+const tick = setInterval(() => (now.value = Date.now()), 30_000);
 function announce() {
   clearTimeout(timer);
   timer = undefined;
@@ -86,6 +114,7 @@ onMounted(connect);
 onBeforeUnmount(() => {
   controller?.abort();
   clearTimeout(timer);
+  clearInterval(tick);
 });
 
 const status = computed(() => (failed.value instanceof ApiError ? failed.value.status : 0));
@@ -107,16 +136,46 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   <template v-else>
     <div class="bar">
       <p class="label">
-        <template v-if="phase === 'connecting'">Connecting to the local replica…</template>
+        <template v-if="phase === 'connecting'">Connecting to the replicas…</template>
+        <template v-else-if="peers">
+          Live · merged from all replicas ({{ replicas.filter((r) => r.up).length }} of {{ replicas.length }} answering)
+        </template>
         <template v-else>
-          Live · local replica<template v-if="replica"> <strong>{{ replica }}</strong></template>
+          Live · replica<template v-if="replica"> <strong>{{ replica }}</strong></template>
         </template>
       </p>
       <button type="button" class="control" @click="togglePause">{{ paused ? 'Resume' : 'Pause' }}</button>
-      <button type="button" class="control" :aria-pressed="missesOnly" @click="missesOnly = !missesOnly">
+      <!-- A checkbox, not a pressed button: the switcher's buttons are the page's aria-pressed set. -->
+      <button type="button" role="checkbox" class="control" :aria-checked="missesOnly" @click="missesOnly = !missesOnly">
         <span v-if="missesOnly" aria-hidden="true">✓ </span>Misses only
       </button>
       <p role="status" class="misses">{{ announced }} {{ announced === 1 ? 'miss' : 'misses' }} in this feed</p>
+    </div>
+
+    <div v-if="peers" class="switcher" role="group" aria-label="Replicas">
+      <button type="button" class="control" :aria-pressed="only === undefined" @click="choose()">
+        All replicas <span class="count">{{ rows.length }}</span>
+      </button>
+      <button
+        v-for="r in replicas"
+        :key="r.name"
+        type="button"
+        class="control"
+        :aria-pressed="only === r.name"
+        @click="choose(r.name)"
+      >
+        <span class="dot" :class="{ off: !r.up }" aria-hidden="true"></span>{{ plain(r.name) }}
+        <span class="state">{{ r.up ? 'up' : 'down' }}</span> <span class="count">{{ r.count }}</span>
+      </button>
+    </div>
+
+    <div role="status">
+      <div v-if="down.length" class="box warning">
+        <strong>Partial view.</strong>
+        <template v-for="d in down" :key="d.name">
+          {{ plain(d.name) }} stopped answering {{ d.ago }} — its newer events are missing until it's back.
+        </template>
+      </div>
     </div>
 
     <div role="status">
@@ -143,14 +202,15 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           </tr>
         </thead>
         <tbody>
-          <tr v-for="e in shown" :key="`${e.replica}/${e.id}`" :class="{ miss: e.miss, selected: selected === e.id }">
+          <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e) }">
             <td>
-              <button type="button" class="row" :aria-pressed="selected === e.id" :aria-describedby="`q-${e.id}`" @click="select(e.id)">
+              <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
                 {{ timeText(e.time) }}
               </button>
+              <span v-if="e.late" class="late" title="Arrived after the reorder window">LATE</span>
             </td>
             <td>{{ e.kind }}</td>
-            <td :id="`q-${e.id}`" class="query">{{ queryText(e) }}</td>
+            <td :id="`q-${i}`" class="query">{{ queryText(e) }}</td>
             <td :class="{ result: e.miss }">{{ resultText(e) }}</td>
             <td><span aria-hidden="true">—</span><span class="sr-only">Not recorded</span></td>
             <td class="wrap">{{ plain(e.project) || '—' }}</td>
@@ -163,6 +223,33 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
 </template>
 
 <style scoped>
+.switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.count {
+  font-variant-numeric: tabular-nums;
+}
+.dot {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-right: var(--space-2);
+  border-radius: 50%;
+  background: currentColor;
+}
+.dot.off {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+.late {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--miss-ink);
+}
 .bar {
   display: flex;
   flex-wrap: wrap;
@@ -190,7 +277,8 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   font-weight: 600;
   cursor: pointer;
 }
-.control[aria-pressed='true'] {
+.control[aria-pressed='true'],
+.control[aria-checked='true'] {
   border-width: 2px;
   background: var(--miss-solid);
   color: var(--miss-solid-ink);

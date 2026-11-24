@@ -7,7 +7,11 @@ import { api } from '../auth/session';
 
 export type ActivityEvent = components['schemas']['ActivityEvent'];
 
-export type Frame = { type: 'event'; event: ActivityEvent } | { type: 'dropped'; count: number } | { type: 'live' };
+export type Frame =
+  | { type: 'event'; event: ActivityEvent }
+  | { type: 'dropped'; count: number }
+  | { type: 'status'; replica: string; up: boolean; lastSeen: string }
+  | { type: 'live' };
 
 // One frame is far below this; a longer one without a blank line is hostile or broken.
 const maxFrame = 256 * 1024;
@@ -56,6 +60,11 @@ export function parseFrame(raw: string): Frame | undefined {
     const n = (body as { dropped?: unknown } | null)?.dropped;
     return { type: 'dropped', count: typeof n === 'number' ? n : 0 };
   }
+  if (type === 'replica_status') {
+    const b = body as { replica?: unknown; up?: unknown; last_seen?: unknown } | null;
+    if (typeof b?.replica !== 'string' || b.replica === '' || typeof b.up !== 'boolean') return undefined;
+    return { type: 'status', replica: b.replica, up: b.up, lastSeen: typeof b.last_seen === 'string' ? b.last_seen : '' };
+  }
   return undefined;
 }
 
@@ -71,11 +80,11 @@ export function split(buffer: string): { frames: Frame[]; rest: string } {
   return { frames, rest: rest.length > maxFrame ? '' : rest };
 }
 
-// streamActivity opens the local replica's stream and calls onFrames with each chunk's frames,
+// streamActivity opens the merged stream of all replicas (`replicas=all`) and calls onFrames with each chunk's frames,
 // so a burst is one update. It resolves when the stream ends, throws an ApiError for a non-200
 // answer and a plain Error when the connection fails; an abort is an AbortError.
 export async function streamActivity(signal: AbortSignal, onFrames: (frames: Frame[]) => void): Promise<void> {
-  const res = await api('/api/v1/activity', { signal, headers: { Accept: 'text/event-stream' } });
+  const res = await api('/api/v1/activity?replicas=all', { signal, headers: { Accept: 'text/event-stream' } });
   if (!res.ok) throw await failure(res);
   if (!res.body) throw new Error('no stream');
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();

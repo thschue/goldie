@@ -36,3 +36,20 @@ export const timeText = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour12: false });
 };
+
+// agoText words how long ago an instant was: "30 seconds ago", "2 minutes ago". An instant that
+// cannot be read, or lies ahead of now, is "a moment ago" rather than a wrong number.
+export function agoText(iso: string, now: number): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t) || t > now) return 'a moment ago';
+  const s = Math.floor((now - t) / 1000);
+  const unit = (n: number, name: string) => `${n} ${name}${n === 1 ? '' : 's'} ago`;
+  if (s < 60) return unit(s, 'second');
+  if (s < 3600) return unit(Math.floor(s / 60), 'minute');
+  if (s < 86400) return unit(Math.floor(s / 3600), 'hour');
+  return unit(Math.floor(s / 86400), 'day');
+}
+
+// rowKey is what makes a row one event: ids are per replica and start again at 1 when a
+// process restarts, so two replicas share ids.
+export const rowKey = (e: ActivityEvent) => `${e.replica}/${e.id}`;
