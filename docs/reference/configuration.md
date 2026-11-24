@@ -95,6 +95,9 @@ The file is empty until the server prints its line, so run `. ./dev.env` once th
 The subshell leaves the shell no job to bring to the foreground or kill by job number, so stop
 the server by name: `pkill -f 'goldie server --dev'`. This stops every dev server you
 run, not just the one in this directory.
+With `--git`, `--dev` serves a git Source instead: `GOLDIE_GIT_URL` and its options when set, else the
+`examples/demo` content of the goldie repository at the release tag of the binary (`main` for a dev build).
+With no `GOLDIE_GIT_URL`, a set git credential variable is refused.
 Both listeners bind to 127.0.0.1 on ports the system picks, and the API takes one random
 token (32 bytes from the system's secure random source, in hex), made for this run. It prints
 `export GOLDIE_ADDR=http://127.0.0.1:<port> GOLDIE_TOKEN=<token>` once, to stdout, and the

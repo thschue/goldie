@@ -28,7 +28,7 @@ tells its agents to ask goldie first. The vocabulary is in [CONTEXT.md](CONTEXT.
 
 ## Try it in 5 minutes
 
-You need Go and, for the web UI, Node. Goldie ships with example content, so no Source is needed.
+You need Go and, for the web UI, Node. Goldie ships with example content, so no Source is needed to run it; step 2 clones the demo content from GitHub and needs network access (`goldie server --dev` alone works offline).
 
 **1. Build it.** From a clone of this repository:
 
@@ -41,12 +41,23 @@ This leaves `goldie` in the clone and on your PATH for this terminal only. Every
 github.com/thschue/goldie/cmd/goldie@latest` puts `goldie` on your PATH for good, but without the web
 UI: `/` then shows a "goldie (UI not built)" placeholder. The CLI and MCP work either way.
 
-**2. Start a server** from an empty directory. It serves the built-in examples and says so. This runs
-it in a subshell, so you stay in the clone:
+**2. Start a server** from an empty directory. This serves the demo content of this repository from
+git, at the release tag of your `goldie` (`main` for a build from a clone, which has no release), and
+says which repository and path it serves. The first clone takes a second or two, and a search gets a
+503 until it is ready. It runs in a subshell, so you stay in the clone:
 
 ```sh
-mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev)
+mkdir -p /tmp/goldie-try && (cd /tmp/goldie-try && goldie server --dev --git)
 ```
+
+To serve your own repository instead, set `GOLDIE_GIT_URL` (and `GOLDIE_GIT_REF` and
+`GOLDIE_GIT_PATH` if you need them) before the same command:
+
+```sh
+GOLDIE_GIT_URL=https://github.com/your-org/your-content.git goldie server --dev --git
+```
+
+Offline, or to see the built-in examples, run `goldie server --dev` from an empty directory instead.
 
 The server keeps running in this terminal, and Ctrl-C stops it. Open a second terminal for the steps
 below, in the clone, with `goldie` on its PATH as in step 1.
