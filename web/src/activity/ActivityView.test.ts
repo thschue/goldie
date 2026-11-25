@@ -584,14 +584,13 @@ describe('ActivityView stage node buttons (#881)', () => {
     const { app, page, router } = await mount();
     await page.send([{ type: 'live' }, ev(1, { served: 'skill:review' })]);
     await click(nodeBtn(rootOf(page.button('Pause')), 'item:skill:review'));
-    await router.isReady();
-    expect(router.currentRoute.value.fullPath).toBe('/items/skill/review');
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/items/skill/review'));
     app.unmount();
 
     const hostile = await mount();
     await hostile.page.send([{ type: 'live' }, ev(1, { served: 'article:a/../b?x#y' })]);
     await click(nodeBtn(rootOf(hostile.page.button('Pause')), 'item:article:a/../b?x#y'));
-    expect(hostile.router.currentRoute.value.path).toBe('/items/article/a%2F..%2Fb%3Fx%23y');
+    await vi.waitFor(() => expect(hostile.router.currentRoute.value.path).toBe('/items/article/a%2F..%2Fb%3Fx%23y'));
     expect(hostile.router.currentRoute.value.hash).toBe('');
     hostile.app.unmount();
   });
