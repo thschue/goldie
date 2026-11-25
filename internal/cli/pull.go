@@ -20,6 +20,8 @@ func (s settings) checkPullUsage(pos []string) error {
 		return &UsageError{"pull", "--target must be claude"}
 	case s.dryRun && s.check:
 		return &UsageError{"pull", "--dry-run and --check cannot be used together"}
+	case s.quiet && s.dryRun:
+		return &UsageError{"pull", "--quiet and --dry-run cannot be used together"}
 	}
 	return nil
 }
@@ -50,16 +52,11 @@ func (c *commander) pull(ctx context.Context) error {
 		return errors.New("cannot read the working directory")
 	}
 	rootDir, ok := project.RepositoryRoot(dir)
+	if !ok && c.s.ifPulled { // no repository, so no stamp: a hook has nothing to do
+		return nil
+	}
 	if !ok {
 		return errors.New("not inside a git repository: goldie pull works at the repository root\nRun it in your repository, or create one first: git init")
-	}
-	proj, err := c.project()
-	if err != nil {
-		return err
-	}
-	cl, err := c.client(true)
-	if err != nil {
-		return err
 	}
 	root, err := os.OpenRoot(rootDir)
 	if err != nil {
@@ -69,6 +66,19 @@ func (c *commander) pull(ctx context.Context) error {
 
 	st := readStamp(root)
 	stamp := st.digest
+	// --if-pulled is for hooks: a repository that never took part sends no
+	// request and writes nothing, before any Project or client is resolved.
+	if c.s.ifPulled && stamp == "" {
+		return nil
+	}
+	proj, err := c.project()
+	if err != nil {
+		return err
+	}
+	cl, err := c.client(true)
+	if err != nil {
+		return err
+	}
 	// The stamp only vouches for the set while the namespace on disk is what
 	// that pull wrote; otherwise ask without it, so the server sends the archive.
 	intact := false
@@ -183,7 +193,11 @@ func (c *commander) dryRun(root *os.Root, files []pulledFile) error {
 	return nil
 }
 
+// say prints a result line; --quiet (pull only) prints none.
 func (c *commander) say(line string) error {
+	if c.s.quiet {
+		return nil
+	}
 	_, err := fmt.Fprintln(c.out, line)
 	return err
 }
