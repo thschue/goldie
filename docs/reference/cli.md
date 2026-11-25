@@ -8,8 +8,8 @@ server are in the [configuration reference](configuration.md); the MCP server is
 ## CLI
 
 `goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
-`validate`, `health`) and Ask a server (`search`, `lookup`, `skills`, `agents`, `status`, `init`,
-`mcp`, `version`).
+`validate`, `health`) and Ask a server (every other command: `search`, `lookup`, `skills`, `agents`,
+`loops`, `decisions`, `status`, `init`, `instructions`, `context`, `pull`, `mcp`, `version`).
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
 are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
 command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
@@ -174,8 +174,21 @@ characters removed. The text is at most 8 KB: as many Items as fit are listed, t
 search "<topic>"`. It works in local mode (`GOLDIE_DIR`). Every failure (server unreachable, no token, not
 a git repository, a Project the server has not registered) writes one line to stderr, nothing to stdout
 and exits 0, so the hook never shows an error at session start. `context` without `--hook`, an unknown
-flag or an argument exits 2. Wire it in `.claude/settings.json` under `hooks.SessionStart` with the
-command `goldie context --hook`.
+flag or an argument exits 2. To see why the hook added nothing, run `goldie context --hook` by hand in
+the repository and read the line on stderr.
+
+Wire it in your `.claude/settings.json` (this shape is from memory of Claude Code's hook configuration;
+check it against the current Claude Code docs):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "goldie context --hook" }] }
+    ]
+  }
+}
+```
 
 `goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
 detected Project (`--project` overrides it) into the repository root of the working directory, from any

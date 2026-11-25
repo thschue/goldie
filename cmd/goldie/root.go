@@ -345,7 +345,7 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 	},
 	"context": {
 		"context --hook [flags]", "Print the Catalog as the JSON of a Claude Code SessionStart hook",
-		"Print goldie's instruction clauses and the name and description of each skill,\nagent and loop that applies to this Project, as the JSON a SessionStart hook\ninjects into a session. The text is at most 8 KB; what does not fit is counted.\n\nEvery failure (no server, no token, not a git repository, an unregistered\nProject) prints one line to stderr and exits 0, so the hook never shows an error\nat session start. Using it without --hook, or with an unknown flag, exits 2.",
+		"Print goldie's instruction clauses and the name and description of each skill,\nagent and loop that applies to this Project, as the JSON a SessionStart hook\ninjects into a session. The text is at most 8 KB; what does not fit is counted.\n\nEvery failure (no server, no token, not a git repository, an unregistered\nProject) prints one line to stderr and exits 0, so the hook never shows an error\nat session start. Using it without --hook, or with an unknown flag, exits 2.\n\nThe hooks.SessionStart entry that runs it is in docs/reference/cli.md.",
 		"  goldie context --hook",
 	},
 	"pull": {
