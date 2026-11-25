@@ -128,15 +128,15 @@ func recorded(req, resp any) (Event, bool) {
 	case contract.GetArticle200JSONResponse, contract.GetArticle404JSONResponse:
 		r, _ := req.(contract.GetArticleRequestObject)
 		found, ok := resp.(contract.GetArticle200JSONResponse)
-		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "article", found.Id)}, true
+		return Event{Kind: KindLookup, Query: r.Id, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, engine.KindArticle, found.Id)}, true
 	case contract.GetSkill200JSONResponse, contract.GetSkill404JSONResponse:
 		r, _ := req.(contract.GetSkillRequestObject)
 		found, ok := resp.(contract.GetSkill200JSONResponse)
-		return Event{Kind: KindGet, Query: "skill:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "skill", found.Name)}, true
+		return Event{Kind: KindGet, Query: "skill:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, engine.KindSkill, found.Name)}, true
 	case contract.GetAgent200JSONResponse, contract.GetAgent404JSONResponse:
 		r, _ := req.(contract.GetAgentRequestObject)
 		found, ok := resp.(contract.GetAgent200JSONResponse)
-		return Event{Kind: KindGet, Query: "agent:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, "agent", found.Name)}, true
+		return Event{Kind: KindGet, Query: "agent:" + r.Name, Project: sentProject(r.Params.Project), Miss: !ok, Served: servedRef(ok, engine.KindAgent, found.Name)}, true
 	}
 	return Event{}, false
 }
