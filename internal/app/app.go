@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/thschue/goldie/internal/api"
+	"github.com/thschue/goldie/internal/api/github"
 	"github.com/thschue/goldie/internal/contract"
 	"github.com/thschue/goldie/internal/engine"
 	gmcp "github.com/thschue/goldie/internal/mcp"
@@ -71,7 +72,7 @@ const activityCapacity = 1000
 func newPublicMuxKeepalive(provider func() *engine.Snapshot, tokens *api.Tokens, limiter *api.RateLimiter, gate *api.ClientVersionGate, keepalive time.Duration, opts ...api.ServerOption) (*publicMux, error) {
 	activity := api.NewActivity(activityCapacity, activityReplicaName(), nil)
 	ctl := &syncControl{}
-	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity), api.WithSync(ctl), api.WithSessions(tokens)}, opts...)...)
+	srv, err := api.NewServer(provider, append([]api.ServerOption{api.RecordInto(activity), api.WithSync(ctl), api.ServeSessions(tokens)}, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -117,11 +118,14 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 // guardOperation is guard for one operation. The session resource's
 // operations the spec marks `security: []` (sign-in and sign-out) take no
 // bearer token and go through api.SessionEntry; its others are guard's, with
-// no caching.
+// no caching. The token sign-in and the GitHub callback share the cap on
+// failed sign-ins per address. The callback is a GET GitHub sends the browser
+// to, which SessionEntry's cross-site check lets through (it refuses only
+// unsafe methods); state, the pre-login cookie and PKCE bind it.
 func (m *publicMux) guardOperation(method, path string, h http.Handler) http.Handler {
 	switch {
 	case m.anonymous[method+" "+path]:
-		if method == http.MethodPost && path == api.SessionPath {
+		if method == http.MethodPost && path == api.SessionPath || method == http.MethodGet && path == api.GitHubCallbackPath {
 			h = m.signIn.Limit(h)
 		}
 		return api.SessionEntry(h)
@@ -590,7 +594,11 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 	if err != nil {
 		return nil, &ConfigError{fmt.Errorf("%s %w", platform.EnvSessionKey, err)}
 	}
-	m, err := newPublicMuxKeepalive(src.current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, serverOptions(cfg, logger, opts)...)
+	serverOpts, err := serverOptions(cfg, logger, opts)
+	if err != nil {
+		return nil, err
+	}
+	m, err := newPublicMuxKeepalive(src.current, tokens, rateLimiter(cfg.RateLimit), clientVersionGate(cfg.MinClientVersion), keepalive, serverOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -640,8 +648,16 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 // serverOptions are the options newPublic gives the API server: the
 // instruction variables from the configuration, the activity federation, then
 // the caller's.
-func serverOptions(cfg platform.Config, logger *slog.Logger, opts []api.ServerOption) []api.ServerOption {
+func serverOptions(cfg platform.Config, logger *slog.Logger, opts []api.ServerOption) ([]api.ServerOption, error) {
 	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"}), api.WithSwaggerUI(cfg.SwaggerUIEnabled), api.WithObservabilityLinks(cfg.GrafanaURL, cfg.TraceURLTemplate)}
 	out = append(out, activityFederation(cfg, logger)...)
-	return append(out, opts...)
+	if cfg.GitHubClientID != "" {
+		gh, err := github.New(github.Options{BaseURL: cfg.GitHubURL, ClientID: cfg.GitHubClientID, ClientSecret: cfg.GitHubClientSecret,
+			Orgs: cfg.GitHubOrgs, OperatorTeams: cfg.GitHubTeams})
+		if err != nil {
+			return nil, &ConfigError{err}
+		}
+		out = append(out, api.WithGitHub(gh, cfg.PublicURL))
+	}
+	return append(out, opts...), nil
 }

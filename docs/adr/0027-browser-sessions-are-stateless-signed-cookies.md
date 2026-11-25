@@ -22,7 +22,9 @@ token removed from the configuration, or given a new value under the same name, 
 once.
 
 - The cookie authenticates `GET` and `HEAD` only. An unsafe method with only a cookie is refused
-  (403), so a cookie cannot be used to change anything. A bearer token beats a cookie.
+  (403), so a cookie cannot be used to change anything. A bearer token beats a cookie. The cookie
+  also authenticates `GET` on `/mcp`, `/openapi.*` and `/swagger-ui`, as a bearer token does. (ADR
+  0032 adds a GitHub form of the cookie.)
 - Sign-in and sign-out take no bearer token; a cross-origin request to them is refused. They are
   outside the per-token rate limiter, which needs a token name. Failed sign-ins are capped per
   remote address instead (then 429 with Retry-After; #489). The trade-off: the key is the

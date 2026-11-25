@@ -118,6 +118,14 @@ func (stub) DeleteSession(context.Context, DeleteSessionRequestObject) (DeleteSe
 	return DeleteSession204Response{}, nil
 }
 
+func (stub) GetSessionGithub(context.Context, GetSessionGithubRequestObject) (GetSessionGithubResponseObject, error) {
+	return GetSessionGithub302Response{}, nil
+}
+
+func (stub) GetSessionGithubCallback(context.Context, GetSessionGithubCallbackRequestObject) (GetSessionGithubCallbackResponseObject, error) {
+	return GetSessionGithubCallback302Response{}, nil
+}
+
 func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 	srv := httptest.NewServer(Handler(NewStrictHandler(stub{}, nil)))
 	t.Cleanup(srv.Close)

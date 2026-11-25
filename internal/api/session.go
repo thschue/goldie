@@ -23,8 +23,12 @@ const (
 	// sessionTTL is how long a session lives without use: each authenticated
 	// request with the cookie re-issues it for another sessionTTL.
 	sessionTTL = 30 * time.Minute
-	// sessionMaxAge is the absolute cap after sign-in.
+	// sessionMaxAge is the absolute cap after sign-in with a token.
 	sessionMaxAge = 7 * 24 * time.Hour
+	// githubMaxAge is the absolute cap after sign-in with GitHub: the cookie
+	// holds a Role GitHub granted, so this is how long a removed membership
+	// can still be served (ADR 0032).
+	githubMaxAge = time.Hour
 	// MinSessionKeyLength is the shortest signing key accepted, in bytes.
 	MinSessionKeyLength = 32
 
@@ -33,9 +37,10 @@ const (
 	maxSignInBody = 4 << 10
 )
 
-// Sessions signs and checks session cookies with one key. The cookie holds the
-// token's name and the issue and expiry times under an HMAC, never the token
-// or its role, so there is no session store (ADR 0027).
+// Sessions signs and checks session cookies with one key. A token session's
+// cookie holds the token's name and the issue and expiry times under an HMAC,
+// never the token or its role; a GitHub session's holds the login, the Role
+// and the times (ADR 0032). There is no session store (ADR 0027).
 type Sessions struct {
 	key []byte
 	// dev drops Secure and the __Host- prefix on plain http, for the loopback
@@ -69,45 +74,106 @@ func (t *Tokens) WithSessions(key string, dev bool) (*Tokens, error) {
 	return out, nil
 }
 
-// mac signs the token's name and the digest of its configured value, so
-// rotating the value under the same name ends its sessions.
-func (s *Sessions) mac(e tokenEntry, issued, expires int64) []byte {
+// subject is who a session cookie signs in: a configured token, or a GitHub
+// login with the Role GitHub granted (login is set, token is not).
+type subject struct {
+	token tokenEntry
+	login string
+	role  Role
+}
+
+func tokenSubject(e tokenEntry) subject { return subject{token: e, role: e.role} }
+
+// label is the name the principal carries in logs, metrics and the session
+// resource: the token's name, or github:<role>, never a login.
+func (u subject) label() string {
+	if u.login == "" {
+		return u.token.name
+	}
+	return "github:" + u.role.String()
+}
+
+// limitKey is what the per-token rate limiter counts: the token's name, or
+// the login, so one user's use does not spend another's of the same Role. A
+// token name has no ':', so the two never collide.
+func (u subject) limitKey() string {
+	if u.login == "" {
+		return u.token.name
+	}
+	return "github:" + u.login
+}
+
+func (u subject) maxAge() time.Duration {
+	if u.login == "" {
+		return sessionMaxAge
+	}
+	return githubMaxAge
+}
+
+// mac signs the subject and the times. A token session signs the token's name
+// and the digest of its configured value, so rotating the value under the same
+// name ends its sessions. A GitHub session signs the login and Role under its
+// own domain string, so neither form can stand in for the other.
+func (s *Sessions) mac(u subject, issued, expires int64) []byte {
 	h := hmac.New(sha256.New, s.key)
-	_, _ = fmt.Fprintf(h, "goldie-session\n%s\n%x\n%d\n%d", e.name, e.digest, issued, expires) // a hash.Hash never errors
+	if u.login != "" {
+		_, _ = fmt.Fprintf(h, "goldie-session-github\n%s\n%s\n%d\n%d", u.login, u.role, issued, expires) // a hash.Hash never errors
+	} else {
+		_, _ = fmt.Fprintf(h, "goldie-session\n%s\n%x\n%d\n%d", u.token.name, u.token.digest, issued, expires)
+	}
 	return h.Sum(nil)
 }
 
-// value is the cookie value for a session of the token e, started at issued
-// and valid until now plus sessionTTL, or the absolute cap if that comes first.
-func (s *Sessions) value(e tokenEntry, issued, now time.Time) (string, time.Time) {
+// value is the cookie value for a session of u, started at issued and valid
+// until now plus sessionTTL, or the absolute cap if that comes first.
+func (s *Sessions) value(u subject, issued, now time.Time) (string, time.Time) {
 	expires := now.Add(sessionTTL)
-	if end := issued.Add(sessionMaxAge); expires.After(end) {
+	if end := issued.Add(u.maxAge()); expires.After(end) {
 		expires = end
 	}
 	i, x := issued.Unix(), expires.Unix()
-	return e.name + ":" + strconv.FormatInt(i, 10) + ":" + strconv.FormatInt(x, 10) + ":" +
-		base64.RawURLEncoding.EncodeToString(s.mac(e, i, x)), expires
+	tail := strconv.FormatInt(i, 10) + ":" + strconv.FormatInt(x, 10) + ":" +
+		base64.RawURLEncoding.EncodeToString(s.mac(u, i, x))
+	if u.login != "" {
+		return u.login + ":" + u.role.String() + ":" + tail, expires
+	}
+	return u.token.name + ":" + tail, expires
 }
 
-// open checks a cookie value: well formed, naming a configured token (byName),
-// signed with this key over that token's current value, not expired and
-// within the absolute cap. It returns the token entry and the sign-in time.
-func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenEntry, bool)) (e tokenEntry, issued time.Time, ok bool) {
+// open checks a cookie value: well formed, signed with this key, not expired
+// and within the absolute cap. A token cookie (4 fields) must name a
+// configured token (byName) and is signed over that token's current value; a
+// GitHub cookie (5 fields) carries its own login and Role. It returns the
+// subject and the sign-in time.
+func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenEntry, bool)) (u subject, issued time.Time, ok bool) {
 	parts := strings.Split(value, ":")
-	if len(parts) != 4 {
-		return tokenEntry{}, time.Time{}, false
+	switch len(parts) {
+	case 4:
+		e, found := byName(parts[0])
+		if !found {
+			return subject{}, time.Time{}, false
+		}
+		u = tokenSubject(e)
+	case 5:
+		role, found := roleNames[parts[1]]
+		if !found || parts[0] == "" {
+			return subject{}, time.Time{}, false
+		}
+		u = subject{login: parts[0], role: role}
+	default:
+		return subject{}, time.Time{}, false
 	}
-	e, found := byName(parts[0])
-	i, err1 := strconv.ParseInt(parts[1], 10, 64)
-	x, err2 := strconv.ParseInt(parts[2], 10, 64)
-	sum, err3 := base64.RawURLEncoding.DecodeString(parts[3])
-	if !found || err1 != nil || err2 != nil || err3 != nil || !hmac.Equal(sum, s.mac(e, i, x)) {
-		return tokenEntry{}, time.Time{}, false
+	n := len(parts)
+	i, err1 := strconv.ParseInt(parts[n-3], 10, 64)
+	x, err2 := strconv.ParseInt(parts[n-2], 10, 64)
+	sum, err3 := base64.RawURLEncoding.DecodeString(parts[n-1])
+	if err1 != nil || err2 != nil || err3 != nil || !hmac.Equal(sum, s.mac(u, i, x)) {
+		return subject{}, time.Time{}, false
 	}
-	if x-i > int64(sessionMaxAge/time.Second) || !now.Before(time.Unix(x, 0)) {
-		return tokenEntry{}, time.Time{}, false
+	if x-i > int64(u.maxAge()/time.Second) || !now.Before(time.Unix(x, 0)) {
+		return subject{}, time.Time{}, false
 	}
-	return e, time.Unix(i, 0), true
+	return u, time.Unix(i, 0), true
 }
 
 // CSRFHeader carries the CSRF token: the response of a sign-in and of a
@@ -115,19 +181,23 @@ func (s *Sessions) open(value string, now time.Time, byName func(string) (tokenE
 // send it back.
 const CSRFHeader = "X-Goldie-CSRF"
 
-// csrf returns the CSRF token of the session of e that began at issued (Unix
-// seconds): an HMAC under the session key over the token's name, its digest
-// and the sign-in time. It is stable across cookie re-issues and unique to the
-// session.
-func (s *Sessions) csrf(e tokenEntry, issued int64) string {
+// csrf returns the CSRF token of the session of u that began at issued (Unix
+// seconds): an HMAC under the session key over what the cookie signs (the
+// token's name and digest, or the login and Role) and the sign-in time. It is
+// stable across cookie re-issues and unique to the session.
+func (s *Sessions) csrf(u subject, issued int64) string {
 	h := hmac.New(sha256.New, s.key)
-	_, _ = fmt.Fprintf(h, "goldie-csrf\n%s\n%x\n%d", e.name, e.digest, issued) // a hash.Hash never errors
+	if u.login != "" {
+		_, _ = fmt.Fprintf(h, "goldie-csrf-github\n%s\n%s\n%d", u.login, u.role, issued) // a hash.Hash never errors
+	} else {
+		_, _ = fmt.Fprintf(h, "goldie-csrf\n%s\n%x\n%d", u.token.name, u.token.digest, issued)
+	}
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// csrfOK reports whether r carries the CSRF token of the session of e.
-func (s *Sessions) csrfOK(r *http.Request, e tokenEntry, issued time.Time) bool {
-	return hmac.Equal([]byte(r.Header.Get(CSRFHeader)), []byte(s.csrf(e, issued.Unix())))
+// csrfOK reports whether r carries the CSRF token of the session of u.
+func (s *Sessions) csrfOK(r *http.Request, u subject, issued time.Time) bool {
+	return hmac.Equal([]byte(r.Header.Get(CSRFHeader)), []byte(s.csrf(u, issued.Unix())))
 }
 
 var crossOrigin = http.NewCrossOriginProtection()
@@ -161,8 +231,9 @@ func (s *Sessions) setCookie(w http.ResponseWriter, r *http.Request, value strin
 }
 
 // serveCookie authenticates a request with a valid session cookie; an unsafe
-// method also needs the CSRF token. The token is looked up by name, so its
-// Role is the configuration's now and a removed token ends the session. It
+// method also needs the CSRF token. A token session looks the token up by
+// name, so its Role is the configuration's now and a removed token ends the
+// session; a GitHub session's Role is the one its cookie signs. It
 // re-issues the cookie on every request it lets through. handled is false when
 // the request carries no cookie.
 func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Role, next http.Handler) (handled bool) {
@@ -171,7 +242,7 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 		return false
 	}
 	now := time.Now()
-	e, issued, ok := t.sessions.open(c.Value, now, t.byName)
+	u, issued, ok := t.sessions.open(c.Value, now, t.byName)
 	if !ok {
 		return false // not a session: the usual 401
 	}
@@ -180,23 +251,24 @@ func (t *Tokens) serveCookie(w http.ResponseWriter, r *http.Request, minRole Rol
 	case !safe && crossSite(r):
 		WriteError(w, http.StatusForbidden, "forbidden", "cross-origin requests with a session cookie are refused",
 			"Send the request from the same origin.")
-	case !safe && !t.sessions.csrfOK(r, e, issued):
+	case !safe && !t.sessions.csrfOK(r, u, issued):
 		WriteError(w, http.StatusForbidden, "forbidden", "a session cookie needs a valid CSRF token for this request",
 			"Send the token from GET /api/v1/session in the "+CSRFHeader+" header, or send the API token as a bearer token.")
-	case e.role < minRole:
+	case u.role < minRole:
 		WriteError(w, http.StatusForbidden, "forbidden", "the API token's role does not allow this operation",
 			"Use a token with the operator role.")
 	default:
-		v, expires := t.sessions.value(e, issued, now)
+		v, expires := t.sessions.value(u, issued, now)
 		w.Header().Add("Vary", "Cookie")
 		w.Header().Set("Cache-Control", "private, no-store")
 		t.sessions.setCookie(w, r, v, now, expires)
 		if r.URL.Path == SessionPath {
-			w.Header().Set(CSRFHeader, t.sessions.csrf(e, issued.Unix()))
+			w.Header().Set(CSRFHeader, t.sessions.csrf(u, issued.Unix()))
 		}
-		ctx := context.WithValue(r.Context(), tokenNameKey{}, e.name)
+		ctx := context.WithValue(r.Context(), tokenNameKey{}, u.label())
+		ctx = context.WithValue(ctx, limitKeyKey{}, u.limitKey())
 		ctx = context.WithValue(ctx, sessionKey{}, true)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, e.role)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, tokenRoleKey{}, u.role)))
 	}
 	return true
 }
@@ -208,13 +280,6 @@ func (t *Tokens) byName(name string) (tokenEntry, bool) {
 		}
 	}
 	return tokenEntry{}, false
-}
-
-func (r Role) String() string {
-	if r == RoleOperator {
-		return "operator"
-	}
-	return "reader"
 }
 
 // NoStore forbids caching the response of next.
@@ -240,9 +305,9 @@ func SessionEntry(next http.Handler) http.Handler {
 	}))
 }
 
-// WithSessions is the option that serves the session operations over tokens,
+// ServeSessions is the option that serves the session operations over tokens,
 // which must have been through Tokens.WithSessions.
-func WithSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.tokens = tokens } }
+func ServeSessions(tokens *Tokens) ServerOption { return func(s *Server) { s.tokens = tokens } }
 
 // WithSwaggerUI sets the swagger_ui field of the session: whether the server
 // serves Swagger UI, so the web UI links to it only when it is there.
@@ -319,9 +384,10 @@ func (s *Server) sessionCookies(next contract.StrictHandlerFunc, op string) cont
 		switch resp := resp.(type) {
 		case contract.PostSession200JSONResponse:
 			e, _ := s.tokens.byName(resp.Name) // the entry the sign-in just matched
-			v, expires := s.tokens.sessions.value(e, now, now)
+			u := tokenSubject(e)
+			v, expires := s.tokens.sessions.value(u, now, now)
 			s.tokens.sessions.setCookie(w, r, v, now, expires)
-			w.Header().Set(CSRFHeader, s.tokens.sessions.csrf(e, now.Unix()))
+			w.Header().Set(CSRFHeader, s.tokens.sessions.csrf(u, now.Unix()))
 		case contract.DeleteSession204Response:
 			if s.tokens != nil && s.tokens.sessions != nil {
 				s.tokens.sessions.setCookie(w, r, "", now, time.Time{})

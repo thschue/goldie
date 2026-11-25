@@ -991,7 +991,7 @@ type Session struct {
 	// Examples: HTTPS://GRAFANA.EXAMPLE.COM/d/goldie
 	GrafanaUrl *string `json:"grafana_url,omitempty"`
 
-	// Name The name of the token behind the session.
+	// Name The name of the token behind the session, or `github:<role>` for a GitHub sign-in (never the login).
 	//
 	// Examples: ci-reader
 	Name string `json:"name"`
@@ -1422,6 +1422,24 @@ type SearchArticlesParams struct {
 
 // SearchArticlesParamsKind defines parameters for SearchArticles.
 type SearchArticlesParamsKind string
+
+// GetSessionGithubParams defines parameters for GetSessionGithub.
+type GetSessionGithubParams struct {
+	// Next The same-site path to open after sign-in. Defaults to `/`.
+	Next *string `form:"next,omitempty" json:"next,omitempty"`
+}
+
+// GetSessionGithubCallbackParams defines parameters for GetSessionGithubCallback.
+type GetSessionGithubCallbackParams struct {
+	// Code The authorization code GitHub issued.
+	Code *string `form:"code,omitempty" json:"code,omitempty"`
+
+	// State The `state` from the redirect to GitHub.
+	State *string `form:"state,omitempty" json:"state,omitempty"`
+
+	// Error GitHub's error code when the user declined. Only its presence is used.
+	Error *string `form:"error,omitempty" json:"error,omitempty"`
+}
 
 // ListSkillsParams defines parameters for ListSkills.
 type ListSkillsParams struct {
@@ -1871,6 +1889,45 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
 	PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSessionGithub Start signing in with GitHub
+	//
+	// Redirects the browser to GitHub's authorization page with an `S256`
+	// PKCE challenge and a random `state`, and sets a signed pre-login cookie
+	// (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+	// prefix except on the plain-http dev server) that holds the `state`, the
+	// PKCE verifier and `next` for 10 minutes. Only the GitHub server
+	// configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+	// callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+	// `next` is the same-site path to return to; anything else (an absolute
+	// URL, `//host`, a backslash or a control character) ends at
+	// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+	// A server without GitHub sign-in answers 404 in the error envelope.
+	//
+	// Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
+	GetSessionGithub(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSessionGithubCallback Finish signing in with GitHub
+	//
+	// GitHub redirects the browser here. The request must carry the pre-login
+	// cookie and a `state` equal to the one in it; the cookie is cleared
+	// whatever the outcome, so a `state` works once. The `code` is exchanged
+	// with the PKCE verifier, the user is mapped to a Role from the
+	// configured organisations and teams, and the session cookie is set (the
+	// login, the Role and the times under the session signature, 30 minutes
+	// without use and 1 hour after sign-in at the latest, ADR 0032). The
+	// browser is redirected to the `next` path signed into the pre-login
+	// cookie. This is the one session operation a cross-site navigation may
+	// reach, since GitHub sends the browser here; the `state`, the cookie and
+	// the PKCE verifier are what bind it to the browser that started. Every
+	// failure ends at `/signin?error=<code>` with a fixed code
+	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+	// `invalid_next`, `not_configured`) and no session; GitHub's text is
+	// never echoed. Failed callbacks count against the same per-address cap as
+	// failed sign-ins. The response is `Cache-Control: no-store`.
+	//
+	// Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
+	GetSessionGithubCallback(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListSkills List the skills
 	//
@@ -2455,6 +2512,65 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // Corresponds with POST /api/v1/session (the `PostSession` operationId).
 func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostSessionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSessionGithub Start signing in with GitHub
+//
+// Redirects the browser to GitHub's authorization page with an `S256`
+// PKCE challenge and a random `state`, and sets a signed pre-login cookie
+// (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+// prefix except on the plain-http dev server) that holds the `state`, the
+// PKCE verifier and `next` for 10 minutes. Only the GitHub server
+// configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+// callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+// `next` is the same-site path to return to; anything else (an absolute
+// URL, `//host`, a backslash or a control character) ends at
+// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+// A server without GitHub sign-in answers 404 in the error envelope.
+//
+// Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
+func (c *Client) GetSessionGithub(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSessionGithubRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSessionGithubCallback Finish signing in with GitHub
+//
+// GitHub redirects the browser here. The request must carry the pre-login
+// cookie and a `state` equal to the one in it; the cookie is cleared
+// whatever the outcome, so a `state` works once. The `code` is exchanged
+// with the PKCE verifier, the user is mapped to a Role from the
+// configured organisations and teams, and the session cookie is set (the
+// login, the Role and the times under the session signature, 30 minutes
+// without use and 1 hour after sign-in at the latest, ADR 0032). The
+// browser is redirected to the `next` path signed into the pre-login
+// cookie. This is the one session operation a cross-site navigation may
+// reach, since GitHub sends the browser here; the `state`, the cookie and
+// the PKCE verifier are what bind it to the browser that started. Every
+// failure ends at `/signin?error=<code>` with a fixed code
+// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+// `invalid_next`, `not_configured`) and no session; GitHub's text is
+// never echoed. Failed callbacks count against the same per-address cap as
+// failed sign-ins. The response is `Cache-Control: no-store`.
+//
+// Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
+func (c *Client) GetSessionGithubCallback(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSessionGithubCallbackRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3634,6 +3750,138 @@ func NewPostSessionRequestWithBody(server string, contentType string, body io.Re
 	return req, nil
 }
 
+// NewGetSessionGithubRequest constructs an http.Request for the GetSessionGithub method
+func NewGetSessionGithubRequest(server string, params *GetSessionGithubParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session/github"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Next != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "next", *params.Next, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSessionGithubCallbackRequest constructs an http.Request for the GetSessionGithubCallback method
+func NewGetSessionGithubCallbackRequest(server string, params *GetSessionGithubCallbackParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session/github/callback"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Code != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "code", *params.Code, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Error != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "error", *params.Error, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListSkillsRequest constructs an http.Request for the ListSkills method
 func NewListSkillsRequest(server string, params *ListSkillsParams) (*http.Request, error) {
 	var err error
@@ -4380,6 +4628,49 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
 	PostSessionWithResponse(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSessionResponse, error)
+
+	// GetSessionGithubWithResponse Start signing in with GitHub
+	//
+	// Redirects the browser to GitHub's authorization page with an `S256`
+	// PKCE challenge and a random `state`, and sets a signed pre-login cookie
+	// (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+	// prefix except on the plain-http dev server) that holds the `state`, the
+	// PKCE verifier and `next` for 10 minutes. Only the GitHub server
+	// configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+	// callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+	// `next` is the same-site path to return to; anything else (an absolute
+	// URL, `//host`, a backslash or a control character) ends at
+	// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+	// A server without GitHub sign-in answers 404 in the error envelope.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
+	GetSessionGithubWithResponse(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*GetSessionGithubResponse, error)
+
+	// GetSessionGithubCallbackWithResponse Finish signing in with GitHub
+	//
+	// GitHub redirects the browser here. The request must carry the pre-login
+	// cookie and a `state` equal to the one in it; the cookie is cleared
+	// whatever the outcome, so a `state` works once. The `code` is exchanged
+	// with the PKCE verifier, the user is mapped to a Role from the
+	// configured organisations and teams, and the session cookie is set (the
+	// login, the Role and the times under the session signature, 30 minutes
+	// without use and 1 hour after sign-in at the latest, ADR 0032). The
+	// browser is redirected to the `next` path signed into the pre-login
+	// cookie. This is the one session operation a cross-site navigation may
+	// reach, since GitHub sends the browser here; the `state`, the cookie and
+	// the PKCE verifier are what bind it to the browser that started. Every
+	// failure ends at `/signin?error=<code>` with a fixed code
+	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+	// `invalid_next`, `not_configured`) and no session; GitHub's text is
+	// never echoed. Failed callbacks count against the same per-address cap as
+	// failed sign-ins. The response is `Cache-Control: no-store`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
+	GetSessionGithubCallbackWithResponse(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*GetSessionGithubCallbackResponse, error)
 
 	// ListSkillsWithResponse List the skills
 	//
@@ -6138,6 +6429,130 @@ func (r PostSessionResponse) ContentType() string {
 	return ""
 }
 
+// GetSessionGithubResponse302Headers the declared response headers of an HTTP 302 response for GetSessionGithub
+type GetSessionGithubResponse302Headers struct {
+	Location *string
+}
+
+type GetSessionGithubResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers302 the parsed response headers for an HTTP 302 response
+	Headers302 *GetSessionGithubResponse302Headers
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSessionGithubResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSessionGithubResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSessionGithubResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSessionGithubResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSessionGithubResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSessionGithubResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetSessionGithubCallbackResponse302Headers the declared response headers of an HTTP 302 response for GetSessionGithubCallback
+type GetSessionGithubCallbackResponse302Headers struct {
+	Location *string
+}
+
+// GetSessionGithubCallbackResponse429Headers the declared response headers of an HTTP 429 response for GetSessionGithubCallback
+type GetSessionGithubCallbackResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetSessionGithubCallbackResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorEnvelope
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers302 the parsed response headers for an HTTP 302 response
+	Headers302 *GetSessionGithubCallbackResponse302Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSessionGithubCallbackResponse429Headers
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSessionGithubCallbackResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSessionGithubCallbackResponse) GetJSON429() *ErrorEnvelope {
+	return r.JSON429
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSessionGithubCallbackResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSessionGithubCallbackResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSessionGithubCallbackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSessionGithubCallbackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSessionGithubCallbackResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListSkillsResponse429Headers the declared response headers of an HTTP 429 response for ListSkills
 type ListSkillsResponse429Headers struct {
 	RetryAfter *int
@@ -7180,6 +7595,61 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 		return nil, err
 	}
 	return ParsePostSessionResponse(rsp)
+}
+
+// GetSessionGithubWithResponse Start signing in with GitHub
+//
+// Redirects the browser to GitHub's authorization page with an `S256`
+// PKCE challenge and a random `state`, and sets a signed pre-login cookie
+// (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+// prefix except on the plain-http dev server) that holds the `state`, the
+// PKCE verifier and `next` for 10 minutes. Only the GitHub server
+// configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+// callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+// `next` is the same-site path to return to; anything else (an absolute
+// URL, `//host`, a backslash or a control character) ends at
+// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+// A server without GitHub sign-in answers 404 in the error envelope.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
+func (c *ClientWithResponses) GetSessionGithubWithResponse(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*GetSessionGithubResponse, error) {
+	rsp, err := c.GetSessionGithub(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSessionGithubResponse(rsp)
+}
+
+// GetSessionGithubCallbackWithResponse Finish signing in with GitHub
+//
+// GitHub redirects the browser here. The request must carry the pre-login
+// cookie and a `state` equal to the one in it; the cookie is cleared
+// whatever the outcome, so a `state` works once. The `code` is exchanged
+// with the PKCE verifier, the user is mapped to a Role from the
+// configured organisations and teams, and the session cookie is set (the
+// login, the Role and the times under the session signature, 30 minutes
+// without use and 1 hour after sign-in at the latest, ADR 0032). The
+// browser is redirected to the `next` path signed into the pre-login
+// cookie. This is the one session operation a cross-site navigation may
+// reach, since GitHub sends the browser here; the `state`, the cookie and
+// the PKCE verifier are what bind it to the browser that started. Every
+// failure ends at `/signin?error=<code>` with a fixed code
+// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+// `invalid_next`, `not_configured`) and no session; GitHub's text is
+// never echoed. Failed callbacks count against the same per-address cap as
+// failed sign-ins. The response is `Cache-Control: no-store`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
+func (c *ClientWithResponses) GetSessionGithubCallbackWithResponse(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*GetSessionGithubCallbackResponse, error) {
+	rsp, err := c.GetSessionGithubCallback(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSessionGithubCallbackResponse(rsp)
 }
 
 // ListSkillsWithResponse List the skills
@@ -8824,6 +9294,121 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 	return response, nil
 }
 
+// ParseGetSessionGithubResponse parses an HTTP response from a GetSessionGithubWithResponse call
+func ParseGetSessionGithubResponse(rsp *http.Response) (*GetSessionGithubResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSessionGithubResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 302:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 302:
+		var headers GetSessionGithubResponse302Headers
+		if values := rsp.Header.Values("Location"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Location", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Location = &value
+		}
+		response.Headers302 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetSessionGithubCallbackResponse parses an HTTP response from a GetSessionGithubCallbackWithResponse call
+func ParseGetSessionGithubCallbackResponse(rsp *http.Response) (*GetSessionGithubCallbackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSessionGithubCallbackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 302:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 302:
+		var headers GetSessionGithubCallbackResponse302Headers
+		if values := rsp.Header.Values("Location"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Location", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.Location = &value
+		}
+		response.Headers302 = &headers
+	case rsp.StatusCode == 429:
+		var headers GetSessionGithubCallbackResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseListSkillsResponse parses an HTTP response from a ListSkillsWithResponse call
 func ParseListSkillsResponse(rsp *http.Response) (*ListSkillsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -9386,6 +9971,12 @@ type ServerInterface interface {
 	// PostSession Sign in with a token and get a session cookie
 	// (POST /api/v1/session)
 	PostSession(w http.ResponseWriter, r *http.Request)
+	// GetSessionGithub Start signing in with GitHub
+	// (GET /api/v1/session/github)
+	GetSessionGithub(w http.ResponseWriter, r *http.Request, params GetSessionGithubParams)
+	// GetSessionGithubCallback Finish signing in with GitHub
+	// (GET /api/v1/session/github/callback)
+	GetSessionGithubCallback(w http.ResponseWriter, r *http.Request, params GetSessionGithubCallbackParams)
 	// ListSkills List the skills
 	// (GET /api/v1/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, params ListSkillsParams)
@@ -10135,6 +10726,98 @@ func (siw *ServerInterfaceWrapper) PostSession(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetSessionGithub operation middleware
+func (siw *ServerInterfaceWrapper) GetSessionGithub(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSessionGithubParams
+
+	// ------------- Optional query parameter "next" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "next", r.URL.Query(), &params.Next, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "next"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "next", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSessionGithub(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSessionGithubCallback operation middleware
+func (siw *ServerInterfaceWrapper) GetSessionGithubCallback(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSessionGithubCallbackParams
+
+	// ------------- Optional query parameter "code" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "code", r.URL.Query(), &params.Code, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "code"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "code", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "error" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "error", r.URL.Query(), &params.Error, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "error"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "error", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSessionGithubCallback(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -10515,6 +11198,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/session", wrapper.DeleteSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/session", wrapper.PostSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session/github", wrapper.GetSessionGithub)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session/github/callback", wrapper.GetSessionGithubCallback)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/sync", wrapper.GetSync)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/sync", wrapper.PostSync)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/activity", wrapper.GetActivity)
@@ -12821,6 +13506,158 @@ func (response PostSessiondefaultJSONResponse) VisitPostSessionResponse(w http.R
 	return err
 }
 
+type GetSessionGithubRequestObject struct {
+	Params GetSessionGithubParams
+}
+
+type GetSessionGithubResponseObject interface {
+	VisitGetSessionGithubResponse(w http.ResponseWriter) error
+}
+
+type GetSessionGithub302ResponseHeaders struct {
+	Location *string
+}
+
+type GetSessionGithub302Response struct {
+	Headers GetSessionGithub302ResponseHeaders
+}
+
+func (response GetSessionGithub302Response) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+	if response.Headers.Location != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Location", *response.Headers.Location, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Location: %w", err)
+			}
+			w.Header().Set("Location", v)
+		}
+	}
+	w.WriteHeader(302)
+	return nil
+}
+
+type GetSessionGithub404JSONResponse ErrorEnvelope
+
+func (response GetSessionGithub404JSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithubdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSessionGithubdefaultJSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithubCallbackRequestObject struct {
+	Params GetSessionGithubCallbackParams
+}
+
+type GetSessionGithubCallbackResponseObject interface {
+	VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error
+}
+
+type GetSessionGithubCallback302ResponseHeaders struct {
+	Location *string
+}
+
+type GetSessionGithubCallback302Response struct {
+	Headers GetSessionGithubCallback302ResponseHeaders
+}
+
+func (response GetSessionGithubCallback302Response) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+	if response.Headers.Location != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Location", *response.Headers.Location, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Location: %w", err)
+			}
+			w.Header().Set("Location", v)
+		}
+	}
+	w.WriteHeader(302)
+	return nil
+}
+
+type GetSessionGithubCallback404JSONResponse ErrorEnvelope
+
+func (response GetSessionGithubCallback404JSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithubCallback429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type GetSessionGithubCallback429JSONResponse struct {
+	Body    ErrorEnvelope
+	Headers GetSessionGithubCallback429ResponseHeaders
+}
+
+func (response GetSessionGithubCallback429JSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithubCallbackdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSessionGithubCallbackdefaultJSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSkillsRequestObject struct {
 	Params ListSkillsParams
 }
@@ -13648,6 +14485,12 @@ type StrictServerInterface interface {
 	// PostSession Sign in with a token and get a session cookie
 	// (POST /api/v1/session)
 	PostSession(ctx context.Context, request PostSessionRequestObject) (PostSessionResponseObject, error)
+	// GetSessionGithub Start signing in with GitHub
+	// (GET /api/v1/session/github)
+	GetSessionGithub(ctx context.Context, request GetSessionGithubRequestObject) (GetSessionGithubResponseObject, error)
+	// GetSessionGithubCallback Finish signing in with GitHub
+	// (GET /api/v1/session/github/callback)
+	GetSessionGithubCallback(ctx context.Context, request GetSessionGithubCallbackRequestObject) (GetSessionGithubCallbackResponseObject, error)
 	// ListSkills List the skills
 	// (GET /api/v1/skills)
 	ListSkills(ctx context.Context, request ListSkillsRequestObject) (ListSkillsResponseObject, error)
@@ -14177,6 +15020,58 @@ func (sh *strictHandler) PostSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PostSessionResponseObject); ok {
 		if err := validResponse.VisitPostSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSessionGithub operation middleware
+func (sh *strictHandler) GetSessionGithub(w http.ResponseWriter, r *http.Request, params GetSessionGithubParams) {
+	var request GetSessionGithubRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSessionGithub(ctx, request.(GetSessionGithubRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSessionGithub")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionGithubResponseObject); ok {
+		if err := validResponse.VisitGetSessionGithubResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSessionGithubCallback operation middleware
+func (sh *strictHandler) GetSessionGithubCallback(w http.ResponseWriter, r *http.Request, params GetSessionGithubCallbackParams) {
+	var request GetSessionGithubCallbackRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSessionGithubCallback(ctx, request.(GetSessionGithubCallbackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSessionGithubCallback")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionGithubCallbackResponseObject); ok {
+		if err := validResponse.VisitGetSessionGithubCallbackResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

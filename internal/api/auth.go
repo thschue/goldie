@@ -56,6 +56,13 @@ const (
 	RoleOperator
 )
 
+func (r Role) String() string {
+	if r == RoleOperator {
+		return "operator"
+	}
+	return "reader"
+}
+
 var roleNames = map[string]Role{"reader": RoleReader, "operator": RoleOperator}
 
 // ShorthandName is the name of the GOLDIE_API_TOKEN shorthand's token.
@@ -178,6 +185,7 @@ type (
 	tokenNameKey struct{}
 	tokenRoleKey struct{}
 	sessionKey   struct{} // set when a session cookie authenticated the request
+	limitKeyKey  struct{} // what the rate limiter counts, when it is not the token's name
 )
 
 // TokenName is the name of the token that authenticated the request, never

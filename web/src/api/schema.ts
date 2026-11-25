@@ -489,6 +489,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/session/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start signing in with GitHub
+         * @description Redirects the browser to GitHub's authorization page with an `S256`
+         *     PKCE challenge and a random `state`, and sets a signed pre-login cookie
+         *     (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+         *     prefix except on the plain-http dev server) that holds the `state`, the
+         *     PKCE verifier and `next` for 10 minutes. Only the GitHub server
+         *     configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+         *     callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+         *     `next` is the same-site path to return to; anything else (an absolute
+         *     URL, `//host`, a backslash or a control character) ends at
+         *     `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+         *     A server without GitHub sign-in answers 404 in the error envelope.
+         */
+        get: operations["getSessionGithub"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/session/github/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Finish signing in with GitHub
+         * @description GitHub redirects the browser here. The request must carry the pre-login
+         *     cookie and a `state` equal to the one in it; the cookie is cleared
+         *     whatever the outcome, so a `state` works once. The `code` is exchanged
+         *     with the PKCE verifier, the user is mapped to a Role from the
+         *     configured organisations and teams, and the session cookie is set (the
+         *     login, the Role and the times under the session signature, 30 minutes
+         *     without use and 1 hour after sign-in at the latest, ADR 0032). The
+         *     browser is redirected to the `next` path signed into the pre-login
+         *     cookie. This is the one session operation a cross-site navigation may
+         *     reach, since GitHub sends the browser here; the `state`, the cookie and
+         *     the PKCE verifier are what bind it to the browser that started. Every
+         *     failure ends at `/signin?error=<code>` with a fixed code
+         *     (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+         *     `invalid_next`, `not_configured`) and no session; GitHub's text is
+         *     never echoed. Failed callbacks count against the same per-address cap as
+         *     failed sign-ins. The response is `Cache-Control: no-store`.
+         */
+        get: operations["getSessionGithubCallback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sync": {
         parameters: {
             query?: never;
@@ -1266,7 +1331,7 @@ export interface components {
         /** @description Who a session signs in. */
         Session: {
             /**
-             * @description The name of the token behind the session.
+             * @description The name of the token behind the session, or `github:<role>` for a GitHub sign-in (never the login).
              * @example ci-reader
              */
             name: string;
@@ -3229,6 +3294,86 @@ export interface operations {
             /** @description The sign-out came from another origin, so the cookie is kept. */
             403: {
                 headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getSessionGithub: {
+        parameters: {
+            query?: {
+                /** @description The same-site path to open after sign-in. Defaults to `/`. */
+                next?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to GitHub, or to `/signin?error=<code>` when `next` is refused. The pre-login cookie is in `Set-Cookie`. */
+            302: {
+                headers: {
+                    /** @description GitHub's authorization URL, or `/signin?error=invalid_next`. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description GitHub sign-in is not configured on this server. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getSessionGithubCallback: {
+        parameters: {
+            query?: {
+                /** @description The authorization code GitHub issued. */
+                code?: string;
+                /** @description The `state` from the redirect to GitHub. */
+                state?: string;
+                /** @description GitHub's error code when the user declined. Only its presence is used. */
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Redirect to `next` with the session cookie, or to `/signin?error=<code>` with none. */
+            302: {
+                headers: {
+                    /** @description The same-site path, or `/signin?error=<code>`. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description GitHub sign-in is off, so there is nothing to call back to. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description This remote address made too many failed sign-ins. Wait the seconds in `Retry-After`, then retry. */
+            429: {
+                headers: {
+                    "Retry-After": components["headers"]["RetryAfter"];
                     [name: string]: unknown;
                 };
                 content: {

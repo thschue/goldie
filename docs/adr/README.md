@@ -35,3 +35,4 @@ Consequences.
 - [0029. The milestone is the loop's only input; one stage may subtract; growth is counted](0029-milestone-subtraction-and-growth.md)
 - [0030. A conflict on an enforced Item rejects the Snapshot that just loaded](0030-a-conflict-on-an-enforced-item-rejects-the-snapshot-that-just-loaded.md)
 - [0031. The server is configured by flags, the environment or a config file](0031-the-server-is-configured-by-flags-the-environment-or-a-config-file.md)
+- [0032. A GitHub session cookie carries the Role and ends an hour after sign-in](0032-a-github-session-cookie-carries-the-role-and-expires-after-an-hour.md)
