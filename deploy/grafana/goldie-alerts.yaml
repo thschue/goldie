@@ -1,0 +1,45 @@
+# Prometheus alert rules for goldie. Load them with rule_files in prometheus.yml
+# or a PrometheusRule. See docs/reference/grafana.md.
+groups:
+  - name: goldie
+    rules:
+      - alert: GoldieSourcePollFailing
+        expr: sum by (source) (increase(goldie_syncs_total{result="error"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "goldie Source {{ $labels.source }} polls are failing"
+          description: "The Source has had failed polls for 15 minutes; goldie keeps serving the last good Snapshot."
+      - alert: GoldieSourceNotPolled
+        expr: sum by (source) (increase(goldie_syncs_total{result="ok"}[1h])) == 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "goldie Source {{ $labels.source }} has not synced successfully for an hour"
+          description: "No poll of the Source finished with ok in the last hour, so the served Items may be stale."
+      - alert: GoldieSourcePollSlow
+        expr: histogram_quantile(0.95, sum by (le, source) (rate(goldie_sync_duration_seconds_bucket[15m]))) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "goldie Source {{ $labels.source }} polls are slow"
+          description: "The 95th percentile poll duration is above 30 seconds."
+      - alert: GoldieMcpToolErrors
+        expr: sum(rate(goldie_mcp_tool_calls_total{result="error"}[10m])) / sum(rate(goldie_mcp_tool_calls_total[10m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of goldie MCP tool calls fail"
+          description: "Agents get tool errors, including rate-limited calls."
+      - alert: GoldieNoItemsServed
+        expr: sum(goldie_items) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "goldie serves no Items"
+          description: "The current Snapshot is empty or missing; check the Sources."
