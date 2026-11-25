@@ -73,17 +73,22 @@ export function createStage(o: { reduced?: boolean } = {}) {
   const lanes = new Map<string, number>();
   // Items served since the stage was created, by cut label; capped like the lanes.
   const items = new Map<string, number>();
+  // Served events with no Item named: their particle ends at "other", so they count there.
+  let unnamed = 0;
 
   const expire = (now: number) => (live = live.filter((p) => now - p.start < travelMs && now >= p.start));
   const summaryText = () => {
     if (!seen) return 'No requests yet.';
-    return `${plural(seen, 'request', 'requests')} so far, ${plural(missed, 'miss', 'misses')}.`;
+    const top = [...items].sort((a, b) => b[1] - a[1]).slice(0, maxItems);
+    const most = top.length ? ` Most served: ${top.map(([item, n]) => `${item} (${n})`).join(', ')}.` : '';
+    return `${plural(seen, 'request', 'requests')} so far, ${plural(missed, 'miss', 'misses')}.${most}`;
   };
 
   const tally = (events: ActivityEvent[]) => {
     for (const e of events) {
       seen++;
       if (e.miss) missed++;
+      if (!e.miss && !e.served) unnamed++;
       const item = e.miss || !e.served ? '' : labelText(e.served);
       if (item && (items.has(item) || items.size < maxTallied)) items.set(item, (items.get(item) ?? 0) + 1);
       if (e.project && (lanes.has(e.project) || lanes.size < maxTallied)) lanes.set(e.project, (lanes.get(e.project) ?? 0) + 1);
@@ -137,7 +142,7 @@ export function createStage(o: { reduced?: boolean } = {}) {
           return t < half ? { ...p, end, leg: 'in', progress: t / half } : { ...p, end, leg: 'out', progress: (t - half) / half };
         }),
         items: top,
-        otherItems: ranked.slice(maxItems).reduce((n, [, c]) => n + c, 0),
+        otherItems: ranked.slice(maxItems).reduce((n, [, c]) => n + c, unnamed),
         lanes: [...lanes]
           .sort((a, b) => b[1] - a[1])
           .slice(0, maxLanes)

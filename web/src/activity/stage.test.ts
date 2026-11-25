@@ -253,3 +253,19 @@ describe('labelText', () => {
     expect([...label].length).toBeLessThanOrEqual(maxLabel);
   });
 });
+
+describe('stage Items in the summary and unnamed served events (#880 fix round)', () => {
+  it('names the most-served Items in the summary', () => {
+    const s = createStage();
+    s.add([ev(1, { served: 'skill:a' }), ev(2, { served: 'skill:a' }), ev(3, { served: 'skill:b' })], t0);
+    expect(s.read(t0).summary).toContain('Most served: skill:a (2), skill:b (1).');
+  });
+
+  it('counts a served event without an Item under other Items & bundles, as its particle ends there', () => {
+    const s = createStage();
+    s.add([ev(1, { served: undefined, query: 'no-item' })], t0);
+    const v = s.read(t0 + 1);
+    expect(v.particles[0].end).toBe('other');
+    expect(v.otherItems).toBe(1);
+  });
+});

@@ -160,3 +160,11 @@ describe('ActivityStage', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
   });
 });
+
+describe('ActivityStage Served labels at 375 px (#880 fix round)', () => {
+  it('cuts a long Item label in the SVG and keeps the full text in its title', async () => {
+    const svg = imgOf(await render([ev(1, { served: `skill:${'x'.repeat(30)}` })]))!;
+    expect(svg).toMatch(/<text[^>]*><title[^>]*>skill:x+<\/title>skill:xxx…[^<]*<\/text>/);
+    expect(svg).not.toMatch(/<\/title>skill:x{20}/);
+  });
+});

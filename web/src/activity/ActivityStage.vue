@@ -16,6 +16,12 @@ const laneY = (project: string) => {
   const i = props.view.lanes.findIndex((l) => l.project === project);
   return i < 0 ? height.value / 2 : i * row + row / 2;
 };
+// A Served label is cut short so that it clears goldie and the lane lines at 375 px (§7); the full text is the <title>.
+const shortMax = 10;
+const short = (s: string) => {
+  const c = [...s];
+  return c.length <= shortMax ? s : `${c.slice(0, shortMax - 1).join('')}…`;
+};
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 // x is in percent of the width, y in pixels. Columns: Project 8, Surface 28, goldie 52, Served 92.
@@ -85,10 +91,10 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
       <text :x="`${xGoldie}%`" :y="mid + 28" text-anchor="middle" class="tag">goldie</text>
       <g v-for="n in itemNodes" :key="n.id">
         <circle :cx="`${xServed}%`" :cy="n.y" r="8" class="node" :data-node="n.id" />
-        <text :x="`${xServed}%`" :y="n.y - 12" text-anchor="end" class="tag">{{ n.item }} · {{ n.count }}</text>
+        <text :x="`${xServed}%`" :y="n.y - 12" text-anchor="end" class="tag"><title>{{ n.item }}</title>{{ short(n.item) }} · {{ n.count }}</text>
       </g>
       <circle :cx="`${xServed}%`" :cy="otherY" r="8" class="node" data-node="other" />
-      <text :x="`${xServed}%`" :y="otherY - 12" text-anchor="end" class="tag">other Items &amp; bundles · {{ view.otherItems }}</text>
+      <text :x="`${xServed}%`" :y="otherY - 12" text-anchor="end" class="tag"><title>other Items &amp; bundles</title>other · {{ view.otherItems }}</text>
       <circle :cx="`${xServed}%`" :cy="missY" r="8" class="node miss-node" data-node="miss" />
       <text :x="`${xServed}%`" :y="missY + 22" text-anchor="end" class="tag">Miss</text>
       <circle v-for="(p, i) in dots" :key="i" :cx="`${p.x}%`" :cy="p.y" r="5" :class="p.cls">
