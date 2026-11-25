@@ -164,6 +164,19 @@ Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_T
 goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
 ```
 
+`goldie context --hook` prints the JSON a Claude Code SessionStart hook injects, so a session in the
+repository knows what goldie offers without a long `CLAUDE.md`:
+`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<text>"}}`. The text holds one
+line on asking goldie first, the instruction clauses for target `claude`, then `Skills`, `Agents` and
+`Loops` with one `name: description` line per Item (an empty section and drafts are left out), introduced
+as data from the platform's Sources. Names and descriptions are cut to one line with hidden and bidi
+characters removed. The text is at most 8 KB: as many Items as fit are listed, then `+N more. Ask: goldie
+search "<topic>"`. It works in local mode (`GOLDIE_DIR`). Every failure (server unreachable, no token, not
+a git repository, a Project the server has not registered) writes one line to stderr, nothing to stdout
+and exits 0, so the hook never shows an error at session start. `context` without `--hook`, an unknown
+flag or an argument exits 2. Wire it in `.claude/settings.json` under `hooks.SessionStart` with the
+command `goldie context --hook`.
+
 `goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
 detected Project (`--project` overrides it) into the repository root of the working directory, from any
 subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
