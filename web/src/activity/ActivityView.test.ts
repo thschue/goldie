@@ -71,7 +71,13 @@ const all = (n: Node, hit: (n: Node) => boolean): Node[] => [...(hit(n) ? [n] : 
 
 async function mount() {
   const { default: ActivityView } = await import('./ActivityView.vue');
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: ActivityView }] });
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: ActivityView },
+      { path: '/items/:kind/:name', component: { render: () => null } },
+    ],
+  });
   await router.push('/');
   await router.isReady();
   const root: Node = ops.createElement('root');
@@ -112,7 +118,7 @@ async function mount() {
       await nextTick();
     },
   };
-  return { app, page };
+  return { app, page, router };
 }
 
 const ev = (id: number, o: Partial<ActivityEvent> = {}): Frame => ({
@@ -536,5 +542,123 @@ describe('ActivityView tiles and rows (#879)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// #881: the stage's nodes act on the page. A surface node toggles its Surface pill, an Item node opens the
+// Item's page, the Miss node toggles "Misses only"; the Miss board cards name their surfaces and carry pips.
+describe('ActivityView stage node buttons (#881)', () => {
+  const rootOf = (n: Node) => {
+    while (n.parent) n = n.parent;
+    return n;
+  };
+  const click = async (b: Node) => {
+    const h = b.props.onClick;
+    for (const f of Array.isArray(h) ? h : [h]) (f as () => void)();
+    await nextTick();
+  };
+  const nodeBtn = (root: Node, id: string) => all(root, (n) => n.tag === 'button' && n.props['data-node'] === id)[0];
+  const checkbox = (root: Node, label: string) =>
+    all(root, (n) => n.tag === 'button' && n.props.role === 'checkbox' && squash(textOf(n)).includes(label))[0];
+  const checked = (n: Node) => String(n.props['aria-checked']);
+
+  it('toggles the Surface pill when a surface node is pressed, and the node follows the pill', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1, { via: 'mcp' }), ev(2, { via: 'cli' })]);
+    const root = rootOf(page.button('Pause'));
+    expect(checked(checkbox(root, 'MCP'))).toBe('false');
+
+    await click(nodeBtn(root, 'surface:mcp'));
+    expect(checked(checkbox(root, 'MCP'))).toBe('true');
+    expect(checked(checkbox(root, 'CLI'))).toBe('false');
+    expect(String(nodeBtn(root, 'surface:mcp').props['aria-pressed'])).toBe('true');
+    expect(String(nodeBtn(root, 'surface:cli').props['aria-pressed'])).toBe('false');
+
+    await click(nodeBtn(root, 'surface:mcp'));
+    expect(checked(checkbox(root, 'MCP'))).toBe('false');
+    expect(String(nodeBtn(root, 'surface:mcp').props['aria-pressed'])).toBe('false');
+    app.unmount();
+  });
+
+  it('opens the Item page when an Item node is pressed, the Reference percent-encoded into one segment', async () => {
+    const { app, page, router } = await mount();
+    await page.send([{ type: 'live' }, ev(1, { served: 'skill:review' })]);
+    await click(nodeBtn(rootOf(page.button('Pause')), 'item:skill:review'));
+    await router.isReady();
+    expect(router.currentRoute.value.fullPath).toBe('/items/skill/review');
+    app.unmount();
+
+    const hostile = await mount();
+    await hostile.page.send([{ type: 'live' }, ev(1, { served: 'article:a/../b?x#y' })]);
+    await click(nodeBtn(rootOf(hostile.page.button('Pause')), 'item:article:a/../b?x#y'));
+    expect(hostile.router.currentRoute.value.path).toBe('/items/article/a%2F..%2Fb%3Fx%23y');
+    expect(hostile.router.currentRoute.value.hash).toBe('');
+    hostile.app.unmount();
+  });
+
+  it('toggles "Misses only" when the Miss node is pressed, aria-checked following', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ev(1), ev(2, { miss: true, served: undefined })]);
+    const root = rootOf(page.button('Pause'));
+    expect(checked(checkbox(root, 'Misses only'))).toBe('false');
+
+    await click(nodeBtn(root, 'miss'));
+    expect(checked(checkbox(root, 'Misses only'))).toBe('true');
+    expect(String(nodeBtn(root, 'miss').props['aria-pressed'])).toBe('true');
+
+    await click(nodeBtn(root, 'miss'));
+    expect(checked(checkbox(root, 'Misses only'))).toBe('false');
+    app.unmount();
+  });
+});
+
+describe('ActivityView Miss board surfaces and pips (#881)', () => {
+  const miss = (id: number, ago: number, o: Partial<ActivityEvent> = {}) =>
+    ev(id, { miss: true, served: undefined, query: 'helm chart', time: new Date(Date.now() - ago * 60_000).toISOString(), ...o });
+  const card = (root: Node, query: string) =>
+    all(root, (n) => n.tag === 'button' && String(n.props.class).split(' ').includes('card') && textOf(n).includes(query))[0];
+  const rootOf = (n: Node) => {
+    while (n.parent) n = n.parent;
+    return n;
+  };
+  const pips = (c: Node) => all(c, (n) => String(n.props.class ?? '').split(' ').includes('pip'));
+  const opacity = (n: Node) => {
+    const st = n.props.style;
+    return Number.parseFloat(typeof st === 'string' ? (/opacity:\s*([\d.]+)/.exec(st)?.[1] ?? 'NaN') : String((st as { opacity?: number })?.opacity));
+  };
+
+  it('lists on each card the surfaces its misses came from', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, miss(1, 3, { via: 'mcp' }), miss(2, 2, { via: 'mcp' }), miss(3, 1, { via: 'cli' }), miss(4, 0, { query: 'other thing', via: 'ui' })]);
+    const root = rootOf(page.button('Pause'));
+    const text = squash(textOf(card(root, 'helm chart')));
+    expect(text).toContain('MCP');
+    expect(text).toContain('CLI');
+    expect(text).not.toContain('UI');
+    const other = squash(textOf(card(root, 'other thing')));
+    expect(other).toContain('UI');
+    expect(other).not.toContain('MCP');
+    app.unmount();
+  });
+
+  it('shows up to five aria-hidden pips for recent occurrences, fading with age, the count in text', async () => {
+    const { app, page } = await mount();
+    await page.send([{ type: 'live' }, ...Array.from({ length: 7 }, (_, i) => miss(i + 1, 6 - i)), miss(20, 0, { query: 'twice' }), miss(21, 1, { query: 'twice' })]);
+    const root = rootOf(page.button('Pause'));
+    const busy = card(root, 'helm chart');
+    const p = pips(busy);
+    expect(p).toHaveLength(5);
+    for (const n of p) expect(String(n.props['aria-hidden'])).toBe('true');
+    expect(squash(textOf(busy))).toContain('×7');
+    // Newest first: each pip is no stronger than the one before, and the oldest is fainter than the newest.
+    const o = p.map(opacity);
+    for (const v of o) expect(Number.isNaN(v)).toBe(false);
+    for (let i = 1; i < o.length; i++) expect(o[i]).toBeLessThanOrEqual(o[i - 1]);
+    expect(o[o.length - 1]).toBeLessThan(o[0]);
+
+    const few = card(root, 'twice');
+    expect(pips(few)).toHaveLength(2);
+    expect(squash(textOf(few))).toContain('×2');
+    app.unmount();
   });
 });
