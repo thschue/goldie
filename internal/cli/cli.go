@@ -83,6 +83,8 @@ type settings struct {
 	target               string // instructions: claude or agents
 	force                bool   // instructions apply: replace a hand-edited block
 	hook                 bool   // context: print the SessionStart hook JSON
+	initInstructions     bool   // init: also run instructions apply
+	initHooks            bool   // init: also run hooks install
 	dryRun, check        bool   // pull: list what would change; fail when stale
 	quiet, ifPulled      bool   // pull: print nothing on success; do nothing without a stamp
 	file                 string // skills show: the file of the skill to print
@@ -107,6 +109,10 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
 		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
+	}
+	if name == "init" {
+		fs.BoolVar(&f.s.initInstructions, "instructions", false, "also run goldie instructions apply")
+		fs.BoolVar(&f.s.initHooks, "hooks", false, "also run goldie hooks install")
 	}
 	if name == "context" {
 		fs.BoolVar(&f.s.hook, "hook", false, "print the JSON a Claude Code SessionStart hook injects")
