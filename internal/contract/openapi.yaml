@@ -1464,7 +1464,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "501":
-          description: GitHub sign-in is not configured on this server.
+          description: This server has no GitHub sign-in, so there is nothing to call back to.
           content:
             application/json:
               schema:

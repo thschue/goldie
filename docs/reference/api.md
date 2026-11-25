@@ -561,7 +561,7 @@ Operation ID: `getSessionGithubCallback`
 | `302` | Redirect to 'next' with the session cookie, or to '/signin?error=&lt;code&gt;' with none. | none |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | This remote address made too many failed sign-ins. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
-| `501` | GitHub sign-in is not configured on this server. | `application/json` (`ErrorEnvelope`) |
+| `501` | This server has no GitHub sign-in, so there is nothing to call back to. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/skills`

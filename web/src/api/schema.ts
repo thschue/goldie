@@ -3384,7 +3384,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description GitHub sign-in is not configured on this server. */
+            /** @description This server has no GitHub sign-in, so there is nothing to call back to. */
             501: {
                 headers: {
                     [name: string]: unknown;
