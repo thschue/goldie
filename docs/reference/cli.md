@@ -177,8 +177,7 @@ and exits 0, so the hook never shows an error at session start. `context` withou
 flag or an argument exits 2. To see why the hook added nothing, run `goldie context --hook` by hand in
 the repository and read the line on stderr.
 
-Wire it in your `.claude/settings.json` (this shape is from memory of Claude Code's hook configuration;
-check it against the current Claude Code docs):
+Add this to `.claude/settings.json` ([Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)):
 
 ```json
 {
