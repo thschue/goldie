@@ -574,7 +574,7 @@ test.describe('touch targets at 375 px', () => {
 const status = (replica: string, up: boolean, ago = 120_000) =>
   `event: replica_status\ndata: ${JSON.stringify({ replica, up, last_seen: new Date(Date.now() - ago).toISOString() })}\n\n`;
 
-const switcherButtons = (page: Page) => main(page).locator('button[aria-pressed]:not(table button)');
+const switcherButtons = (page: Page) => main(page).locator('button[aria-pressed]:not(table button):not(.stage button)');
 const allReplicas = (page: Page) => switcherButtons(page).filter({ hasText: /all replicas/i });
 const replicaButton = (page: Page, name: string) => switcherButtons(page).filter({ hasText: name });
 const banner = (page: Page) => main(page).getByText(/Partial view\./);

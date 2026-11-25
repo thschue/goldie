@@ -97,6 +97,14 @@ const pills = computed(() =>
   surfaces.map((s) => ({ s, label: surfaceLabel[s], count: rows.value.filter((r) => surfaceOf(r) === s).length })),
 );
 const pick = (s: Surface) => (picked.value = picked.value.includes(s) ? picked.value.filter((x) => x !== s) : [...picked.value, s]);
+// The stage's hook node is the pills' Other (a hook is not a pill of its own, so its events read Other).
+const pickedNodes = computed(() => (picked.value.includes('other') ? [...picked.value, 'hook'] : picked.value));
+const pickNode = (n: string) => pick(n === 'hook' ? 'other' : (n as Surface));
+// A Reference is <kind>:<name>; the name is one path segment, so a "/", "?" or "#" in it stays in it.
+function openItem(ref: string) {
+  const i = ref.indexOf(':');
+  if (i > 0) void router.push(`/items/${encodeURIComponent(ref.slice(0, i))}/${encodeURIComponent(ref.slice(i + 1))}`);
+}
 const board = computed(() => missBoard(rows.value));
 const chosen = computed(() => rows.value.find((r) => rowKey(r) === selected.value));
 // The links out (#808) come with the operator's Session (#807); a reader's has neither.
@@ -387,7 +395,16 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       <a v-if="grafana" class="action" :href="grafana" target="_blank" rel="noopener noreferrer">Trends in Grafana ↗</a>
     </div>
 
-    <ActivityStage :view="stageView" :filter="project || undefined" @filter="setProject" />
+    <ActivityStage
+      :view="stageView"
+      :filter="project || undefined"
+      :surfaces="pickedNodes"
+      :misses-only="missesOnly"
+      @filter="setProject"
+      @surface="pickNode"
+      @item="openItem"
+      @miss="missesOnly = !missesOnly"
+    />
 
     <section class="tiles" aria-label="Last five minutes">
       <h2>Last five minutes</h2>
@@ -443,6 +460,10 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
           <button type="button" class="control card" @click="selected = rowKey(g.latest)">
             <span class="q">{{ plain(g.query) }}</span>
             <span class="n">×{{ g.count }}</span>
+            <span v-if="g.surfaces.length" class="via">{{ g.surfaces.map((s) => surfaceLabel[s]).join(' · ') }}</span>
+            <span class="pips">
+              <span v-for="i in Math.min(g.count, 5)" :key="i" class="pip" aria-hidden="true" :style="{ opacity: 1 - (i - 1) * 0.18 }"></span>
+            </span>
             <span class="meta">
               {{ g.projects }} {{ g.projects === 1 ? 'project' : 'projects' }} · last seen {{ agoText(g.latest.time, now) }}
             </span>
@@ -679,6 +700,19 @@ tr.fresh {
   font-family: var(--font-mono);
   overflow-wrap: anywhere;
   unicode-bidi: isolate;
+}
+.card .via {
+  font-size: var(--text-sm);
+}
+.card .pips {
+  display: flex;
+  gap: var(--space-1);
+}
+.card .pip {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--miss-ink);
 }
 .card .meta {
   font-size: var(--text-sm);

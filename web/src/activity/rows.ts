@@ -86,22 +86,27 @@ export function agoText(iso: string, now: number): string {
 
 export const boardSize = 4;
 
-export type MissGroup = { query: string; count: number; projects: number; latest: ActivityEvent };
+export type MissGroup = { query: string; count: number; projects: number; latest: ActivityEvent; surfaces: Surface[] };
 
 // missBoard groups the misses of a feed (newest first) by query: the most frequent first, the one
 // seen last first among equals, at most boardSize. The latest event of a group is its first one.
 export function missBoard(feed: ActivityEvent[]): MissGroup[] {
-  const groups = new Map<string, MissGroup & { seen: Set<string> }>();
+  const groups = new Map<string, Omit<MissGroup, 'surfaces'> & { seen: Set<string>; via: Set<Surface> }>();
   for (const e of feed) {
     if (!e.miss) continue;
-    const g = groups.get(e.query) ?? { query: e.query, count: 0, projects: 0, latest: e, seen: new Set<string>() };
+    const g = groups.get(e.query) ?? { query: e.query, count: 0, projects: 0, latest: e, seen: new Set<string>(), via: new Set<Surface>() };
     g.count++;
     if (e.project) g.seen.add(e.project);
     g.projects = g.seen.size;
+    const via = surfaceOf(e);
+    if (via) g.via.add(via);
     groups.set(e.query, g);
   }
   // Map keeps insertion order (newest first) and sort is stable, so ties stay newest first.
-  return [...groups.values()].sort((a, b) => b.count - a.count).slice(0, boardSize);
+  return [...groups.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, boardSize)
+    .map(({ seen: _seen, via, ...g }) => ({ ...g, surfaces: surfaces.filter((s) => via.has(s)) }));
 }
 
 // The line that says what to add for a miss (handoff §8), by what was asked for: a skill, an agent

@@ -27,12 +27,12 @@ const ev = (id: number, o: Partial<ActivityEvent> = {}): ActivityEvent => ({
   ...o,
 });
 
-async function render(events: ActivityEvent[], o: { reduced?: boolean; filter?: string; at?: number } = {}) {
+async function render(events: ActivityEvent[], o: { reduced?: boolean; filter?: string; at?: number; picked?: string[]; missesOnly?: boolean } = {}) {
   const s = createStage({ reduced: o.reduced });
   s.read(t0);
   s.add(events, t0);
   const view = s.read(o.at ?? t0);
-  const app = createSSRApp({ render: () => h(ActivityStage, { view, filter: o.filter }) });
+  const app = createSSRApp({ render: () => h(ActivityStage, { view, filter: o.filter, surfaces: o.picked, missesOnly: o.missesOnly }) });
   return (await renderToString(app)).replace(/<!--[\s\S]*?-->/g, '').replaceAll('&#39;', "'");
 }
 
@@ -134,7 +134,7 @@ describe('ActivityStage', () => {
 
   it('makes each lane a real button outside the role="img" element, and marks the active filter', async () => {
     const html = await render([ev(1, { project: 'a/b/c' }), ev(2, { project: 'x/y/z' })], { filter: 'a/b/c' });
-    const buttons = [...html.matchAll(/<button[^>]*>[\s\S]*?<\/button>/g)].map((m) => m[0]);
+    const buttons = [...html.matchAll(/<button[^>]*>[\s\S]*?<\/button>/g)].map((m) => m[0]).filter((b) => /class="lane"/.test(b));
     expect(buttons).toHaveLength(2);
     for (const b of buttons) expect(b).toContain('type="button"');
     expect(buttons.find((b) => b.includes('a/b/c'))).toContain('aria-pressed="true"');
@@ -166,5 +166,79 @@ describe('ActivityStage Served labels at 375 px (#880 fix round)', () => {
     const svg = imgOf(await render([ev(1, { served: `skill:${'x'.repeat(30)}` })]))!;
     expect(svg).toMatch(/<text[^>]*><title[^>]*>skill:x+<\/title>skill:xxx…[^<]*<\/text>/);
     expect(svg).not.toMatch(/<\/title>skill:x{20}/);
+  });
+});
+
+// #881 (handoff §3.6 items 3 and 5): the nodes are real buttons outside the role="img" SVG, like the lanes.
+// Props `surfaces` (the Surface pills picked) and `missesOnly` say what is on; the page asks by `data-node`
+// on the button: `surface:<name>`, `item:<Reference>`, `miss`. A button is aria-pressed while its filter is on.
+// A node glows (class `glow` on its <circle data-node>) as a particle passes it, and an Item node shows an
+// aria-hidden "+1" as a particle arrives; both are decorative and there are none under prefers-reduced-motion.
+const nodeButtons = (html: string) => [...html.matchAll(/<button[^>]*data-node="([^"]*)"[^>]*>[\s\S]*?<\/button>/g)].map((m) => ({ id: m[1].replaceAll('&amp;', '&'), html: m[0] }));
+const nodeButton = (html: string, id: string) => nodeButtons(html).find((b) => b.id === id);
+const glowing = (html: string) => nodes(html).filter((n) => /class="[^"]*\bglow\b/.test(n.tag)).map((n) => n.id);
+const plusOnes = (html: string) => [...html.matchAll(/<text[^>]*>\+1<\/text>/g)].map((m) => m[0]);
+
+describe('ActivityStage node buttons (#881)', () => {
+  it('makes the Surface, Item and Miss nodes real buttons outside the role="img" SVG', async () => {
+    const html = await render([ev(1, { served: 'skill:review' })]);
+    const ids = nodeButtons(html).map((b) => b.id);
+    for (const s of surfaceNames) expect(ids).toContain(`surface:${s}`);
+    expect(ids).toContain('item:skill:review');
+    expect(ids).toContain('miss');
+    for (const b of nodeButtons(html)) expect(b.html).toContain('type="button"');
+    expect(imgOf(html)).not.toContain('<button');
+    expect(nodeButton(html, 'surface:mcp')!.html).toContain('mcp');
+    expect(nodeButton(html, 'item:skill:review')!.html).toContain('skill:review');
+    expect(nodeButton(html, 'miss')!.html).toContain('Miss');
+    expect(nodeButtons(await render([])).map((b) => b.id)).toEqual(expect.arrayContaining(['surface:mcp', 'miss']));
+  });
+
+  it('marks a surface button and the Miss button pressed while their filter is on', async () => {
+    const on = await render([ev(1)], { picked: ['mcp'], missesOnly: true });
+    expect(nodeButton(on, 'surface:mcp')!.html).toContain('aria-pressed="true"');
+    expect(nodeButton(on, 'surface:cli')!.html).toContain('aria-pressed="false"');
+    expect(nodeButton(on, 'miss')!.html).toContain('aria-pressed="true"');
+    const off = await render([ev(1)]);
+    expect(nodeButton(off, 'surface:mcp')!.html).toContain('aria-pressed="false"');
+    expect(nodeButton(off, 'miss')!.html).toContain('aria-pressed="false"');
+  });
+
+  it('renders a hostile Item on its button as text only', async () => {
+    const html = await render([ev(1, { served: '<img src=x onerror=alert(1)>' })]);
+    expect(html).not.toMatch(/<img/);
+    expect(nodeButtons(html).some((b) => b.html.includes('&lt;img src=x onerror=alert(1)&gt;'))).toBe(true);
+  });
+});
+
+describe('ActivityStage glow and +1 (#881)', () => {
+  it('glows the node a particle is passing, and no node before one has started', async () => {
+    const events = [ev(1, { via: 'cli', served: 'skill:review' })];
+    expect(glowing(await render(events, { at: t0 }))).toEqual([]);
+    expect(glowing(await render(events, { at: t0 + travelMs / 4 }))).toEqual(['surface:cli']);
+    expect(glowing(await render(events, { at: t0 + travelMs / 2 }))).toEqual(['goldie']);
+    expect(glowing(await render(events, { at: t0 + travelMs - 1 }))).toEqual(['item:skill:review']);
+    expect(glowing(await render([ev(2, { miss: true, served: undefined })], { at: t0 + travelMs - 1 }))).toEqual(['miss']);
+  });
+
+  it('flashes an aria-hidden "+1" on an Item node as a particle arrives, and not for a miss or before it arrives', async () => {
+    const served = [ev(1, { served: 'skill:review' })];
+    expect(plusOnes(await render(served, { at: t0 + travelMs / 4 }))).toEqual([]);
+    const arrived = await render(served, { at: t0 + travelMs - 1 });
+    const flash = plusOnes(arrived);
+    expect(flash).toHaveLength(1);
+    expect(flash[0]).toContain('aria-hidden="true"');
+    expect(imgOf(arrived)).toContain(flash[0]);
+    expect(plusOnes(await render([ev(2, { miss: true, served: undefined })], { at: t0 + travelMs - 1 }))).toEqual([]);
+  });
+
+  it('shows neither under prefers-reduced-motion, though both show without it', async () => {
+    const events = [ev(1, { served: 'skill:review' })];
+    expect(glowing(await render(events, { at: t0 + travelMs - 1 })).length).toBeGreaterThan(0);
+    expect(plusOnes(await render(events, { at: t0 + travelMs - 1 }))).toHaveLength(1);
+    const calm = await render(events, { reduced: true, at: t0 + travelMs - 1 });
+    expect(glowing(calm)).toEqual([]);
+    expect(plusOnes(calm)).toEqual([]);
+    expect(nodeButton(calm, 'surface:mcp')).toBeDefined();
   });
 });

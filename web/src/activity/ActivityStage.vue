@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { labelText, maxItems, surfaces, type Particle, type StageView, type Surface } from './stage';
+import { surfaceLabel } from './rows';
+import { labelText, maxItems, surfaces as surfaceNodes, type Particle, type StageView, type Surface } from './stage';
 
 // The Live stream stage (#811, handoff §3.6): Project -> Surface -> goldie -> Served (#880) as SVG, a particle per
 // request, with a live text summary beside it. The SVG is a picture (role="img"); the lanes are
 // real buttons outside it, and pressing one asks the page to filter the feed to that Project.
 // Everything shown is text, cut by labelText: a Project or a query is never markup.
-const props = defineProps<{ view: StageView; filter?: string }>();
-const emit = defineEmits<{ filter: [project: string | undefined] }>();
+const props = defineProps<{ view: StageView; filter?: string; surfaces?: string[]; missesOnly?: boolean }>();
+const emit = defineEmits<{ filter: [project: string | undefined]; surface: [name: string]; item: [reference: string]; miss: [] }>();
 
 const row = 44;
 const rows = computed(() => Math.max(props.view.lanes.length, 5));
@@ -31,8 +32,8 @@ const xGoldie = 52;
 const xServed = 92;
 const mid = computed(() => height.value / 2);
 const surfaceY = (s: Surface) => {
-  const i = surfaces.indexOf(s as (typeof surfaces)[number]);
-  return i < 0 ? mid.value : (height.value * (i + 0.5)) / surfaces.length;
+  const i = surfaceNodes.indexOf(s as (typeof surfaceNodes)[number]);
+  return i < 0 ? mid.value : (height.value * (i + 0.5)) / surfaceNodes.length;
 };
 // The Served column has five slots: up to three Items, other Items & bundles, Miss.
 const slotY = (i: number) => (height.value * (i + 0.5)) / (maxItems + 2);
@@ -58,6 +59,24 @@ function place(p: Particle) {
 const dots = computed(() =>
   props.view.particles.map((p) => ({ ...p, ...place(p), cls: ['particle', `surface-${p.surface}`, { miss: p.target === 'miss' }] })),
 );
+// A node glows while a particle is passing it: the Surface at the middle of the first leg, goldie where the legs meet,
+// the end node as the second leg arrives. The "+1" shows at an Item as a particle arrives. Without particles
+// (prefers-reduced-motion) there is neither.
+const near = 0.15;
+// An Item that is not among the nodes has no node to glow.
+const endNode = (p: Particle) => (p.end === 'miss' ? 'miss' : p.end === 'other' ? 'other' : itemNodes.value.find((n) => n.item === p.label)?.id);
+const nodeAt = (p: Particle) => {
+  if (p.leg === 'in') {
+    if (p.surface !== 'other' && Math.abs(p.progress - 0.5) < near) return `surface:${p.surface}`;
+    return p.progress > 1 - near ? 'goldie' : undefined;
+  }
+  if (p.progress < near) return 'goldie';
+  return p.progress > 1 - near ? endNode(p) : undefined;
+};
+const glow = computed(() => new Set(props.view.particles.map(nodeAt)));
+const arrivals = computed(() =>
+  props.view.particles.filter((p) => p.leg === 'out' && p.end === 'item' && p.progress > 1 - near).map(endNode),
+);
 const toggle = (project: string) => emit('filter', props.filter === project ? undefined : project);
 </script>
 
@@ -77,25 +96,44 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
       </button>
       <p v-if="!view.lanes.length" class="idle">No Project has asked yet.</p>
     </div>
+    <div class="nodes">
+      <button
+        v-for="n in surfaceNodes"
+        :key="`b-${n}`"
+        type="button"
+        class="node-btn"
+        :data-node="`surface:${n}`"
+        :aria-label="n === 'hook' ? 'Other (hook)' : undefined"
+        :aria-pressed="surfaces?.includes(n) ?? false"
+        @click="emit('surface', n)"
+      >
+        {{ surfaceLabel[n === 'hook' ? 'other' : n] }}
+      </button>
+      <button v-for="n in itemNodes" :key="`b-${n.id}`" type="button" class="node-btn" :data-node="n.id" @click="emit('item', n.item)">
+        {{ labelText(n.item) }}
+      </button>
+      <button type="button" class="node-btn miss-btn" data-node="miss" :aria-pressed="missesOnly ?? false" @click="emit('miss')">Miss</button>
+    </div>
     <svg class="canvas" role="img" aria-label="Requests moving from Projects through their Surface and goldie to served Items and misses" :height="height">
       <line v-for="l in view.lanes" :key="`lp-${l.project}`" :x1="`${xProject}%`" :y1="laneY(l.project)" :x2="`${xGoldie}%`" :y2="mid" class="path lane-path" />
-      <line v-for="s in surfaces" :key="`sp-${s}`" :x1="`${xSurface}%`" :y1="surfaceY(s)" :x2="`${xGoldie}%`" :y2="mid" class="path" />
+      <line v-for="s in surfaceNodes" :key="`sp-${s}`" :x1="`${xSurface}%`" :y1="surfaceY(s)" :x2="`${xGoldie}%`" :y2="mid" class="path" />
       <line v-for="n in itemNodes" :key="`ip-${n.id}`" :x1="`${xGoldie}%`" :y1="mid" :x2="`${xServed}%`" :y2="n.y" class="path" />
       <line :x1="`${xGoldie}%`" :y1="mid" :x2="`${xServed}%`" :y2="otherY" class="path" />
       <line :x1="`${xGoldie}%`" :y1="mid" :x2="`${xServed}%`" :y2="missY" class="path miss-path" />
-      <g v-for="s in surfaces" :key="s">
-        <circle :cx="`${xSurface}%`" :cy="surfaceY(s)" r="8" class="node" :data-node="`surface:${s}`" />
+      <g v-for="s in surfaceNodes" :key="s">
+        <circle :cx="`${xSurface}%`" :cy="surfaceY(s)" r="8" class="node" :class="{ glow: glow.has(`surface:${s}`) }" :data-node="`surface:${s}`" />
         <text :x="`${xSurface}%`" :y="surfaceY(s) - 12" text-anchor="middle" class="tag">{{ s }}</text>
       </g>
-      <circle :cx="`${xGoldie}%`" :cy="mid" r="12" class="node" data-node="goldie" />
+      <circle :cx="`${xGoldie}%`" :cy="mid" r="12" class="node" :class="{ glow: glow.has('goldie') }" data-node="goldie" />
       <text :x="`${xGoldie}%`" :y="mid + 28" text-anchor="middle" class="tag">goldie</text>
       <g v-for="n in itemNodes" :key="n.id">
-        <circle :cx="`${xServed}%`" :cy="n.y" r="8" class="node" :data-node="n.id" />
+        <circle :cx="`${xServed}%`" :cy="n.y" r="8" class="node" :class="{ glow: glow.has(n.id) }" :data-node="n.id" />
         <text :x="`${xServed}%`" :y="n.y - 12" text-anchor="end" class="tag"><title>{{ n.item }}</title>{{ short(n.item) }} · {{ n.count }}</text>
+        <text v-if="arrivals.includes(n.id)" :x="`${xServed}%`" :y="n.y + 24" text-anchor="end" class="plus" aria-hidden="true">+1</text>
       </g>
-      <circle :cx="`${xServed}%`" :cy="otherY" r="8" class="node" data-node="other" />
+      <circle :cx="`${xServed}%`" :cy="otherY" r="8" class="node" :class="{ glow: glow.has('other') }" data-node="other" />
       <text :x="`${xServed}%`" :y="otherY - 12" text-anchor="end" class="tag"><title>other Items &amp; bundles</title>other · {{ view.otherItems }}</text>
-      <circle :cx="`${xServed}%`" :cy="missY" r="8" class="node miss-node" data-node="miss" />
+      <circle :cx="`${xServed}%`" :cy="missY" r="8" class="node miss-node" :class="{ glow: glow.has('miss') }" data-node="miss" />
       <text :x="`${xServed}%`" :y="missY + 22" text-anchor="end" class="tag">Miss</text>
       <circle v-for="(p, i) in dots" :key="i" :cx="`${p.x}%`" :cy="p.y" r="5" :class="p.cls">
         <title>{{ p.surface }} · {{ p.end === 'other' ? 'other Items & bundles' : p.label }}</title>
@@ -182,6 +220,46 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
   fill: var(--surface-1);
   stroke: var(--brand);
   stroke-width: 3;
+}
+.nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  grid-column: 1 / -1;
+}
+.node-btn {
+  min-width: var(--target-min);
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--fg-default);
+  font: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  unicode-bidi: isolate;
+}
+.node-btn[aria-pressed='true'] {
+  border-width: 2px;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand-tint-ink);
+  font-weight: 700;
+}
+.node-btn.miss-btn[aria-pressed='true'] {
+  border-color: var(--miss-border);
+  background: var(--miss-surface);
+  color: var(--miss-ink);
+}
+.node.glow {
+  fill: var(--brand-tint);
+  filter: drop-shadow(0 0 6px var(--brand));
+}
+.plus {
+  fill: var(--brand);
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 .tag {
   fill: var(--fg-secondary);
