@@ -1,0 +1,48 @@
+# docker compose up: goldie in mode all, serving examples/knowledge, with no setup.
+# The ports bind to 127.0.0.1 only. The init service writes a random API token and
+# session key into the "secrets" volume on the first start and keeps them after that;
+# goldie reads them through GOLDIE_API_TOKEN_FILE and GOLDIE_SESSION_KEY_FILE
+# (PC-04, PC-05), so no secret is in this file or the repository.
+# Read the token with: docker compose run --rm --no-deps --entrypoint cat init /secrets/api-token
+services:
+  init:
+    image: busybox:1.37
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for f in api-token session-key; do
+          if [ ! -s /secrets/$$f ]; then
+            (umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/$$f)
+          fi
+          chown 65532:65532 /secrets/$$f
+          chmod 0400 /secrets/$$f
+        done
+    volumes:
+      - secrets:/secrets
+
+  goldie:
+    build: .
+    image: goldie:local
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      GOLDIE_MODE: all
+      GOLDIE_API_TOKEN_FILE: /run/goldie/api-token
+      GOLDIE_SESSION_KEY_FILE: /run/goldie/session-key
+    volumes:
+      - secrets:/run/goldie:ro
+    ports:
+      - "127.0.0.1:${GOLDIE_PORT:-8080}:8080"
+      - "127.0.0.1:${GOLDIE_ADMIN_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/goldie", "health", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  secrets:

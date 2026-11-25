@@ -115,6 +115,19 @@ jobs:
           path: ux/
           if-no-files-found: error
 
+  # `./run compose-smoke`: docker compose up on compose.yaml, wait for /readyz, sign in,
+  # fetch one article, down -v (#740). The image builds the UI and the binary itself.
+  compose-smoke:
+    name: compose-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: ./run compose-smoke
+        run: ./run compose-smoke
+
   # `./run regen-ts-check`: the TypeScript types match the spec. Its own job, so a
   # stale web/src/api/schema.ts blocks the merge through `lint and test`.
   regen-ts-check:

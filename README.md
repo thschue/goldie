@@ -121,6 +121,21 @@ for a repository the examples don't cover; answers are then global, which is fin
 Details: [`goldie init`](docs/reference/cli.md), and for other agents or MCP over stdio, the
 [MCP reference](docs/reference/mcp.md).
 
+## Run it in a container
+
+With Docker Compose, from a clone of this repository, `docker compose up` builds the image (UI included)
+and serves the example content, with no setup. The app is at http://127.0.0.1:8080, reachable from your
+machine only. An init step makes a random token and session key in a volume. Read the token, and sign in
+with it:
+
+```sh
+docker compose up --build -d
+docker compose run --rm --no-deps --entrypoint cat init /secrets/api-token
+```
+
+`docker compose down -v` stops it and deletes the token. The ports, the secrets and serving your own
+content are in the [configuration reference](docs/reference/configuration.md#run-in-a-container).
+
 ## Use it on your own content
 
 To serve your own repository, follow [Serve your Source from git](docs/git-source.md). A Source holds

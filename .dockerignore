@@ -1,0 +1,9 @@
+.git
+.github
+.claude
+.tools
+ux
+**/node_modules
+internal/ui/dist/app
+goldie
+bin
