@@ -108,10 +108,38 @@ func (m *publicMux) HandleFunc(pattern string, h func(http.ResponseWriter, *http
 // 405 envelope for the path's other methods.
 func (m *publicMux) handle(method, path string, h http.Handler) {
 	if len(m.methods(path)) == 0 {
-		m.mux.Handle(path, m.guard(path, m.methodNotAllowed(path)))
+		m.mux.Handle(path, m.guardOther(path, m.methodNotAllowed(path)))
 	}
 	m.routes = append(m.routes, route{path, []string{method}})
 	m.mux.Handle(method+" "+path, m.guardOperation(method, path, h))
+}
+
+// guardOther guards the 405 for a path's other methods. A path whose every
+// operation the spec marks `security: []` (the session providers) takes no
+// token there either, so a wrong method learns the same from anyone; any other
+// path is guard's. Which one is decided per request, once every route is
+// registered.
+func (m *publicMux) guardOther(path string, h http.Handler) http.Handler {
+	guarded := m.guard(path, h)
+	open := api.NoStore(h)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if m.allAnonymous(path) {
+			open.ServeHTTP(w, r)
+			return
+		}
+		guarded.ServeHTTP(w, r)
+	})
+}
+
+// allAnonymous reports whether path has operations and every one is anonymous.
+func (m *publicMux) allAnonymous(path string) bool {
+	methods := m.methods(path)
+	for _, method := range methods {
+		if !m.anonymous[method+" "+path] {
+			return false
+		}
+	}
+	return len(methods) > 0
 }
 
 // guardOperation is guard for one operation. The session resource's
@@ -641,7 +669,7 @@ func newPublicCounted(dev bool, cfg platform.Config, tokens *api.Tokens, src sou
 // instruction variables from the configuration, the activity federation, then
 // the caller's.
 func serverOptions(cfg platform.Config, logger *slog.Logger, opts []api.ServerOption) []api.ServerOption {
-	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"}), api.WithSwaggerUI(cfg.SwaggerUIEnabled), api.WithObservabilityLinks(cfg.GrafanaURL, cfg.TraceURLTemplate)}
+	out := []api.ServerOption{api.WithInstructionVars(engine.InstructionVars{MCPName: cfg.MCPName, CLI: "goldie"}), api.WithSwaggerUI(cfg.SwaggerUIEnabled), api.WithObservabilityLinks(cfg.GrafanaURL, cfg.TraceURLTemplate), api.WithGitHubSignIn(cfg.GitHubClientID != "")}
 	out = append(out, activityFederation(cfg, logger)...)
 	return append(out, opts...)
 }
