@@ -8,8 +8,8 @@ server are in the [configuration reference](configuration.md); the MCP server is
 ## CLI
 
 `goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
-`validate`, `health`) and Ask a server (`search`, `lookup`, `skills`, `agents`, `status`, `init`,
-`mcp`, `version`).
+`validate`, `health`) and Ask a server (every other command: `search`, `lookup`, `skills`, `agents`,
+`loops`, `decisions`, `status`, `init`, `instructions`, `context`, `pull`, `mcp`, `version`).
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
 are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
 command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
@@ -164,12 +164,38 @@ Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_T
 goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
 ```
 
-`goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
-detected Project (`--project` overrides it) into the repository root of the working directory, from any
-subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
-`.claude/agents/goldie-<name>.md`, and each loop's entry skill to `.claude/skills/goldie-loop-<name>/SKILL.md`
-(its description, iteration prompt and stop condition; the loop's agents and skills come with the rest). A
-pull then prints `Start a loop in Claude Code:` and `/loop <interval> /goldie-loop-<name>` for each loop,
+`goldie context --hook` prints the JSON a Claude Code SessionStart hook injects, so a session in the
+repository knows what goldie offers without a long `CLAUDE.md`:
+`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<text>"}}`. The text holds one
+line on asking goldie first, the instruction clauses for target `claude`, then `Skills`, `Agents` and
+`Loops` with one `name: description` line per Item (an empty section and drafts are left out), introduced
+as data from the platform's Sources. Names and descriptions are cut to one line with hidden and bidi
+characters removed. The text is at most 8 KB: as many Items as fit are listed, then `+N more. Ask: goldie
+search "<topic>"`. It works in local mode (`GOLDIE_DIR`). Every failure (server unreachable, no token, not
+a git repository, a Project the server has not registered) writes one line to stderr, nothing to stdout
+and exits 0, so the hook never shows an error at session start. `context` without `--hook`, an unknown
+flag or an argument exits 2. To see why the hook added nothing, run `goldie context --hook` by hand in
+the repository and read the line on stderr.
+
+Add this to `.claude/settings.json` ([Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "goldie context --hook" }] }
+    ]
+  }
+}
+```
+
+`goldie pull [--target claude] [--dry-run | --check] [--quiet] [--if-pulled]` writes the skills and
+agents that apply to the detected Project (`--project` overrides it) into the repository root of the
+working directory, from any subdirectory: each skill to `.claude/skills/goldie-<name>/` with its
+files, each agent to `.claude/agents/goldie-<name>.md`, and each loop's entry skill to
+`.claude/skills/goldie-loop-<name>/SKILL.md` (its description, iteration prompt and stop condition; the
+loop's agents and skills come with the rest). A pull then prints `Start a loop in Claude Code:` and
+`/loop <interval> /goldie-loop-<name>` for each loop,
 sorted by name, and `/loop /goldie-loop-<name>` for a dynamic one. A pull that finds the namespace up to
 date says so and prints the same lines for the loops already in it. `--check` and `--dry-run` print
 none. Those `goldie-` names are goldie's namespace. A pull replaces
@@ -186,7 +212,11 @@ ones back, so a failed pull leaves the project as it was. `--dry-run` lists what
 removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
 `goldie pull`, when the namespace was never pulled, the set changed or a pulled file was edited or
 deleted. `--dry-run` and `--check` cannot be
-combined. `pull` takes no `--json`.
+combined. `--quiet` prints nothing on stdout when the pull succeeds (errors still go to stderr and
+exit non-zero) and cannot be combined with `--dry-run` (exit 2). `--if-pulled` does nothing and
+succeeds, sending no request, when the repository has no usable stamp or the directory is not in a
+repository at all, so a session hook can run `goldie pull --quiet --if-pulled` and touch only
+repositories that took part. With a stamp it pulls as usual. `pull` takes no `--json`.
 
 ```sh
 goldie pull --check   # in CI or a hook: exits non-zero if never pulled or stale

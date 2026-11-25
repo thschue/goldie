@@ -32,7 +32,7 @@ const (
 const TokenNote = "Prefer " + EnvToken + " or " + EnvToken + "_FILE to --token: a --token value shows in the process list (ps) of the machine."
 
 // Commands lists the client commands in help order.
-var Commands = []string{"search", "lookup", "skills", "agents", "loops", "decisions", "status", "init", "instructions", "pull", "version"}
+var Commands = []string{"search", "lookup", "skills", "agents", "loops", "decisions", "status", "init", "instructions", "context", "pull", "version"}
 
 // isCommand reports whether name is one of Commands.
 func isCommand(name string) bool { return slices.Contains(Commands, name) }
@@ -82,7 +82,9 @@ type settings struct {
 	dir                  string // content directory of local mode
 	target               string // instructions: claude or agents
 	force                bool   // instructions apply: replace a hand-edited block
+	hook                 bool   // context: print the SessionStart hook JSON
 	dryRun, check        bool   // pull: list what would change; fail when stale
+	quiet, ifPulled      bool   // pull: print nothing on success; do nothing without a stamp
 	file                 string // skills show: the file of the skill to print
 	fileSet              bool   // --file was given, even empty
 	json                 bool
@@ -99,10 +101,15 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 		fs.StringVar(&f.s.target, "target", "claude", "layout to write: claude (.claude/skills and .claude/agents)")
 		fs.BoolVar(&f.s.dryRun, "dry-run", false, "list the files a pull would write or remove, and write nothing")
 		fs.BoolVar(&f.s.check, "check", false, "exit non-zero when the namespace was never pulled or is stale, and write nothing")
+		fs.BoolVar(&f.s.quiet, "quiet", false, "print nothing on stdout when the pull succeeds (errors still go to stderr)")
+		fs.BoolVar(&f.s.ifPulled, "if-pulled", false, "do nothing, and succeed, when this repository was never pulled (no usable stamp)")
 	}
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
 		fs.BoolVar(&f.s.force, "force", false, "apply: replace a block that was edited by hand and discard those edits")
+	}
+	if name == "context" {
+		fs.BoolVar(&f.s.hook, "hook", false, "print the JSON a Claude Code SessionStart hook injects")
 	}
 	if name == "skills" { // only skills have files to read
 		fs.Func("file", "show: print one file of the skill to stdout, as its raw bytes (a `path` from its file list)", func(v string) error {
@@ -110,7 +117,7 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 			return nil
 		})
 	}
-	if name != "init" && name != "instructions" && name != "pull" { // init prints three fixed lines; instructions and pull have no JSON
+	if name != "init" && name != "instructions" && name != "pull" && name != "context" { // init prints three fixed lines; instructions, pull and context have no JSON
 		fs.BoolVar(&f.s.json, "json", false, "print JSON")
 	}
 	return func(ctx context.Context, pos []string, env Env) error {
@@ -140,6 +147,12 @@ func (f *ClientFlags) run(ctx context.Context, name string, pos []string, env En
 		if err := f.s.checkInstructionsUsage(pos); err != nil {
 			return err
 		}
+	}
+	if name == "context" { // misuse exits 2; every other failure exits 0
+		if err := f.s.checkContextUsage(pos); err != nil {
+			return err
+		}
+		return f.contextHook(ctx, env)
 	}
 	if name == "pull" {
 		if err := f.s.checkPullUsage(pos); err != nil {

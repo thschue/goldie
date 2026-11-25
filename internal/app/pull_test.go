@@ -1203,3 +1203,197 @@ func TestPullOfAnUntouchedNamespaceStillGets304(t *testing.T) {
 		t.Errorf("a no-op pull changed the project: %v then %v", first, after)
 	}
 }
+
+// --- goldie pull --quiet and --if-pulled (#669) ---
+
+const stampPath = ".claude/goldie-pull.digest"
+
+// bundleCalls is how many bundle requests the server has answered.
+func bundleCalls(rec *bundleLog) int { return len(rec.all()) }
+
+// Criterion 1: --quiet prints nothing on stdout when a pull writes files and
+// when the namespace is already up to date.
+func TestPullQuietPrintsNothingWhenPullingOrUpToDate(t *testing.T) {
+	content := copyContent(t)
+	srv := pullServer(t, content)
+	repo := gitCheckout(t, userFiles())
+
+	out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--quiet")
+	if err != nil {
+		t.Fatalf("goldie pull --quiet: %v\n%s", err, out)
+	}
+	if out != "" {
+		t.Errorf("--quiet printed on a pull that wrote files: %q", out)
+	}
+	wantSet(t, "pulled", namespaceFiles(snapshot(t, repo)), shopSet(), shopAgents)
+
+	if out, err = pullCLI(t, srv.URL, repo, "--project", pullProject, "--quiet"); err != nil || out != "" {
+		t.Errorf("--quiet on an up-to-date namespace: err %v, stdout %q", err, out)
+	}
+
+	if err := os.WriteFile(filepath.Join(content, "global", "skills", "lint", "SKILL.md"), []byte("# Lint v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err = pullCLI(t, pullServer(t, content).URL, repo, "--project", pullProject, "--quiet"); err != nil || out != "" {
+		t.Errorf("--quiet on a changed set: err %v, stdout %q", err, out)
+	}
+	if got := readPulled(t, repo, pLintSkill); got != "# Lint v2\n" {
+		t.Errorf("--quiet did not write the changed set: %q", got)
+	}
+}
+
+// Criterion 1: errors keep their exit path under --quiet: a failing server is
+// still an error (not misuse) and nothing is written or printed on stdout.
+func TestPullQuietStillFailsWhenTheServerFails(t *testing.T) {
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(broken.Close)
+	repo := gitCheckout(t, userFiles())
+	before := snapshot(t, repo)
+	out, err := pullCLI(t, broken.URL, repo, "--project", pullProject, "--quiet")
+	if err == nil {
+		t.Fatalf("--quiet against a failing server succeeded:\n%s", out)
+	}
+	var ue *cli.UsageError
+	if errors.As(err, &ue) {
+		t.Errorf("a server failure is not misuse (exit 2): %v", err)
+	}
+	if out != "" {
+		t.Errorf("--quiet printed on stdout for an error: %q", out)
+	}
+	if after := snapshot(t, repo); !mapsEqual(before, after) {
+		t.Errorf("a failed --quiet pull changed the project: %v then %v", before, after)
+	}
+}
+
+// Criterion 2: --if-pulled in a repository without a stamp sends no request,
+// writes nothing and succeeds, also when the stamp is one readStamp rejects
+// (a symlink, oversized, malformed).
+func TestPullIfPulledWithoutAStampDoesNothing(t *testing.T) {
+	srv, rec := countingPullServer(t, absContent(t))
+	outside := filepath.Join(t.TempDir(), "valid-stamp")
+	if err := os.WriteFile(outside, []byte("sha256-abc123\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]func(t *testing.T, repo string){
+		"no stamp": func(*testing.T, string) {},
+		"symlinked stamp": func(t *testing.T, repo string) {
+			if err := os.MkdirAll(filepath.Join(repo, ".claude"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(repo, stampPath)); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"oversized stamp": func(t *testing.T, repo string) {
+			writeCheckoutFile(t, repo, stampPath, "sha256-abc123\n"+strings.Repeat("x", 300))
+		},
+		"malformed stamp": func(t *testing.T, repo string) {
+			writeCheckoutFile(t, repo, stampPath, "not a digest!\n")
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := gitCheckout(t, userFiles())
+			setup(t, repo)
+			before := snapshot(t, repo)
+			calls := bundleCalls(rec)
+			for _, extra := range [][]string{{"--if-pulled"}, {"--if-pulled", "--quiet"}, {"--if-pulled", "--check"}} {
+				out, err := pullCLI(t, srv.URL, repo, append([]string{"--project", pullProject}, extra...)...)
+				if err != nil {
+					t.Errorf("%v without a usable stamp: %v\n%s", extra, err, out)
+				}
+				if slices.Contains(extra, "--quiet") && out != "" {
+					t.Errorf("%v printed %q", extra, out)
+				}
+			}
+			if got := bundleCalls(rec); got != calls {
+				t.Errorf("--if-pulled without a stamp sent %d bundle requests", got-calls)
+			}
+			if after := snapshot(t, repo); !mapsEqual(before, after) {
+				t.Errorf("--if-pulled without a stamp wrote to the project: %v then %v", before, after)
+			}
+		})
+	}
+}
+
+// Criterion 2: with a stamp, --if-pulled pulls as today: an up-to-date
+// namespace costs a conditional request answered 304, a changed set is
+// written, and with --check a stale namespace fails.
+func TestPullIfPulledWithAStampPullsAsToday(t *testing.T) {
+	content := copyContent(t)
+	srv, rec := countingPullServer(t, content)
+	repo := gitCheckout(t, userFiles())
+	pullShop(t, srv.URL, repo)
+	first := snapshot(t, repo)
+	calls := bundleCalls(rec)
+
+	out, err := pullCLI(t, srv.URL, repo, "--project", pullProject, "--if-pulled")
+	if err != nil {
+		t.Fatalf("--if-pulled on an up-to-date namespace: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "already up to date") {
+		t.Errorf("--if-pulled on an up-to-date namespace says %q", out)
+	}
+	all := rec.all()
+	if len(all) != calls+1 || !all[calls].conditional || all[calls].status != http.StatusNotModified {
+		t.Errorf("--if-pulled with a stamp: %+v, want one conditional request answered 304", all[calls:])
+	}
+	if after := snapshot(t, repo); !mapsEqual(first, after) {
+		t.Errorf("an up-to-date --if-pulled changed the project")
+	}
+
+	if err := os.WriteFile(filepath.Join(content, "global", "skills", "lint", "SKILL.md"), []byte("# Lint v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed := pullServer(t, content)
+	if out, err := pullCLI(t, changed.URL, repo, "--project", pullProject, "--if-pulled", "--check"); err == nil {
+		t.Errorf("--if-pulled --check on a stale namespace succeeded:\n%s", out)
+	}
+	if out, err := pullCLI(t, changed.URL, repo, "--project", pullProject, "--if-pulled", "--quiet"); err != nil || out != "" {
+		t.Fatalf("--if-pulled --quiet on a changed set: err %v, stdout %q", err, out)
+	}
+	if got := readPulled(t, repo, pLintSkill); got != "# Lint v2\n" {
+		t.Errorf("--if-pulled did not write the changed set: %q", got)
+	}
+}
+
+// Criterion 3: --quiet with --dry-run is misuse (exit 2) with the exact
+// message, writes nothing and sends no request.
+func TestPullQuietWithDryRunIsMisuse(t *testing.T) {
+	srv, rec := countingPullServer(t, absContent(t))
+	repo := gitCheckout(t, userFiles())
+	before := snapshot(t, repo)
+	for _, args := range [][]string{{"--quiet", "--dry-run"}, {"--quiet", "--dry-run", "--if-pulled"}} {
+		out, err := pullCLI(t, srv.URL, repo, append([]string{"--project", pullProject}, args...)...)
+		var ue *cli.UsageError
+		if !errors.As(err, &ue) {
+			t.Fatalf("%v: want a usage error (exit 2), got %v\n%s", args, err, out)
+		}
+		if err.Error() != "--quiet and --dry-run cannot be used together" {
+			t.Errorf("%v: message %q", args, err.Error())
+		}
+	}
+	if bundleCalls(rec) != 0 {
+		t.Errorf("misuse sent a request")
+	}
+	if after := snapshot(t, repo); !mapsEqual(before, after) {
+		t.Errorf("misuse changed the project")
+	}
+}
+
+// Criterion 4: a plain goldie pull is as before, including the first pull into
+// a fresh repository: it writes the namespace and says so.
+func TestPlainPullStillWorksIntoAFreshRepository(t *testing.T) {
+	srv := pullServer(t, absContent(t))
+	repo := gitCheckout(t, userFiles())
+	out := pullShop(t, srv.URL, repo)
+	if !strings.Contains(out, "Pulled ") {
+		t.Errorf("a plain first pull printed %q, want the Pulled line", out)
+	}
+	wantSet(t, "pulled", namespaceFiles(snapshot(t, repo)), shopSet(), shopAgents)
+	if out := pullShop(t, srv.URL, repo); !strings.Contains(out, "already up to date") {
+		t.Errorf("a plain second pull printed %q", out)
+	}
+}
