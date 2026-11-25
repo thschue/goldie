@@ -10,8 +10,8 @@ then read the API without holding the token.
 
 ## Decision
 
-This is the first slice of the session layer ADR 0008 calls for; refresh, CSRF protection and
-per-session revocation arrive with GitHub sign-in (#25).
+This is the first slice of the session layer ADR 0008 calls for; ADR 0028 owns CSRF protection, and
+ADR 0032 drops refresh and per-session revocation.
 
 `POST /api/v1/session` exchanges a configured API token for a session cookie. The cookie is
 `HttpOnly`, `SameSite=Strict` and scoped to the whole site, and it carries the token's name and its

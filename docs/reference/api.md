@@ -552,8 +552,8 @@ the PKCE verifier are what bind it to the browser that started. Every
 failure ends at `/signin?error=<code>` with a fixed code
 (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
 `invalid_next`) and no session; GitHub's text is
-never echoed. Failed callbacks count against the same per-address cap as
-failed sign-ins. The response is `Cache-Control: no-store`.
+never echoed. Only failed code exchanges (`exchange_failed`) count against
+the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
 
 Operation ID: `getSessionGithubCallback`
 

@@ -1933,8 +1933,8 @@ type ClientInterface interface {
 	// failure ends at `/signin?error=<code>` with a fixed code
 	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
 	// `invalid_next`) and no session; GitHub's text is
-	// never echoed. Failed callbacks count against the same per-address cap as
-	// failed sign-ins. The response is `Cache-Control: no-store`.
+	// never echoed. Only failed code exchanges (`exchange_failed`) count against
+	// the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
 	//
 	// Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
 	GetSessionGithubCallback(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2587,8 +2587,8 @@ func (c *Client) GetSessionGithub(ctx context.Context, params *GetSessionGithubP
 // failure ends at `/signin?error=<code>` with a fixed code
 // (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
 // `invalid_next`) and no session; GitHub's text is
-// never echoed. Failed callbacks count against the same per-address cap as
-// failed sign-ins. The response is `Cache-Control: no-store`.
+// never echoed. Only failed code exchanges (`exchange_failed`) count against
+// the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
 //
 // Corresponds with GET /api/v1/session/github/callback (the `GetSessionGithubCallback` operationId).
 func (c *Client) GetSessionGithubCallback(ctx context.Context, params *GetSessionGithubCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4735,8 +4735,8 @@ type ClientWithResponsesInterface interface {
 	// failure ends at `/signin?error=<code>` with a fixed code
 	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
 	// `invalid_next`) and no session; GitHub's text is
-	// never echoed. Failed callbacks count against the same per-address cap as
-	// failed sign-ins. The response is `Cache-Control: no-store`.
+	// never echoed. Only failed code exchanges (`exchange_failed`) count against
+	// the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -7799,8 +7799,8 @@ func (c *ClientWithResponses) GetSessionGithubWithResponse(ctx context.Context, 
 // failure ends at `/signin?error=<code>` with a fixed code
 // (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
 // `invalid_next`) and no session; GitHub's text is
-// never echoed. Failed callbacks count against the same per-address cap as
-// failed sign-ins. The response is `Cache-Control: no-store`.
+// never echoed. Only failed code exchanges (`exchange_failed`) count against
+// the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
