@@ -1051,8 +1051,8 @@ test.describe('the live header', () => {
 
 // The last five minutes and the Project chip (#809, handoff §3.6). Contract these specs pin down:
 // - a region in main named /last five minutes/i holds four list items, the tiles, each text
-//   starting with its label: Requests (a whole number per minute), Misses (a percent), Projects asking
-//   (a count), Busiest surface and (#810) Latency;
+//   starting with its label: Requests (a whole number, with the sub-line "per minute"), Misses (a percent,
+//   with "of requests"), Projects asking (a count), Busiest surface and (#810) Latency;
 // - the Project filter is the URL's `project`: only that Project's events are rows, and a button in
 //   main named /remove.*<project>/i is its chip; pressing it drops `project` from the URL.
 const tiles = (page: Page) => main(page).getByRole('region', { name: /last five minutes/i });
@@ -1174,8 +1174,9 @@ test.describe('the Live stream stage (#811)', () => {
 // - the detail adds "Query → Item" as `<query> → <served>`, Latency (milliseconds, one decimal),
 //   Via and Trace id; a field the event lacks (no served, a latency_us of 0 or none, no via, no
 //   trace id: a peer on an older version) is left out with its label;
-// - the Latency tile holds p50 and p95 over five minutes in milliseconds with one decimal, and
-//   Busiest surface holds the surface's name;
+// - the Latency tile's headline is the p50 over five minutes and "p95 <ms>" sits under it,
+//   in milliseconds with one decimal,
+//   and Busiest surface holds the surface's name;
 // - event text (served, trace id) is text without invisible or bidirectional controls, and a long
 //   served is cut by code point, never in the middle of a character.
 const surfaces = (page: Page) => main(page).getByRole('group', { name: /surface/i });
