@@ -864,3 +864,77 @@ func TestSessionLinksAreOptionalStringsInTheAPIReference(t *testing.T) {
 		}
 	}
 }
+
+// The session providers (#645, slice 4 of #25): an unauthenticated
+// GET /api/v1/session/providers tells the UI whether to offer GitHub sign-in.
+// The body is {"github": true|false} and nothing else, never a URL, a client
+// id or an org name, and it is never cached.
+const (
+	providersPath = "/api/v1/session/providers"
+
+	providersClientID = "Iv1.providersclientid0123"
+	providersSecret   = "providers-oauth-secret-0123456789abcdef0123456789"
+	providersGitHub   = "https://ghe.providers.example.com"
+	providersOrg      = "providers-secret-org"
+	providersPublic   = "https://goldie.providers.example.com"
+)
+
+// providersGitHubEnv is a complete GitHub sign-in configuration.
+func providersGitHubEnv() map[string]string {
+	return map[string]string{
+		platform.EnvGitHubClientID:     providersClientID,
+		platform.EnvGitHubClientSecret: providersSecret,
+		platform.EnvGitHubURL:          providersGitHub,
+		platform.EnvGitHubOrgs:         providersOrg,
+		"GOLDIE_PUBLIC_URL":            providersPublic,
+		"GOLDIE_SESSION_KEY":           sessionKey,
+	}
+}
+
+func TestSessionProvidersReportsWhetherGitHubSignInIsConfigured(t *testing.T) {
+	for name, c := range map[string]struct {
+		extra map[string]string
+		want  bool
+	}{
+		"configured":     {providersGitHubEnv(), true},
+		"not configured": {map[string]string{"GOLDIE_SESSION_KEY": sessionKey}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, err := PublicHandler(sessionConfig(t, namedTokenLines(), c.extra), nil)
+			if err != nil {
+				t.Fatalf("PublicHandler: %v", err)
+			}
+			// No token and no cookie.
+			resp, body := send(t, h, http.MethodGet, secureBase+providersPath, nil)
+			assertStatus(t, "GET providers", resp, body, http.StatusOK)
+			assertNoStore(t, "GET providers", resp)
+			assertNoCookie(t, "GET providers", resp)
+			var got map[string]any
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("body is not JSON: %v: %s", err, body)
+			}
+			if len(got) != 1 || got["github"] != c.want {
+				t.Errorf("body = %s, want exactly {\"github\": %v}", body, c.want)
+			}
+			assertNoLeak(t, "GET providers", resp, body,
+				providersClientID, providersSecret, providersGitHub, providersOrg, providersPublic,
+				"ghe.providers.example.com", readerToken, operatorToken)
+		})
+	}
+}
+
+// Like sign-in, the providers need no token; any other method is the 405
+// envelope listing GET.
+func TestSessionProvidersOtherMethodsAreTheEnvelope405(t *testing.T) {
+	h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		resp, body := send(t, h, method, secureBase+providersPath, nil)
+		assertStatus(t, method+" providers", resp, body, http.StatusMethodNotAllowed)
+		if code, _ := errorHint(t, body); code != "method_not_allowed" {
+			t.Errorf("%s providers: code %q, want method_not_allowed: %s", method, code, body)
+		}
+		if got := resp.Header.Get("Allow"); !strings.Contains(got, "GET") {
+			t.Errorf("%s providers: Allow %q, want GET listed", method, got)
+		}
+	}
+}
