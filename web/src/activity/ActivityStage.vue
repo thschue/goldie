@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { surfaceLabel } from './rows';
 import { labelText, maxItems, surfaces as surfaceNodes, type Particle, type StageView, type Surface } from './stage';
 
 // The Live stream stage (#811, handoff §3.6): Project -> Surface -> goldie -> Served (#880) as SVG, a particle per
@@ -62,8 +63,8 @@ const dots = computed(() =>
 // the end node as the second leg arrives. The "+1" shows at an Item as a particle arrives. Without particles
 // (prefers-reduced-motion) there is neither.
 const near = 0.15;
-const endNode = (p: Particle) =>
-  p.end === 'miss' ? 'miss' : p.end === 'other' ? 'other' : itemNodes.value[Math.max(props.view.items.findIndex((i) => i.item === p.label), 0)]?.id;
+// An Item that is not among the nodes has no node to glow.
+const endNode = (p: Particle) => (p.end === 'miss' ? 'miss' : p.end === 'other' ? 'other' : itemNodes.value.find((n) => n.item === p.label)?.id);
 const nodeAt = (p: Particle) => {
   if (p.leg === 'in') {
     if (p.surface !== 'other' && Math.abs(p.progress - 0.5) < near) return `surface:${p.surface}`;
@@ -102,10 +103,11 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
         type="button"
         class="node-btn"
         :data-node="`surface:${n}`"
+        :aria-label="n === 'hook' ? 'Other (hook)' : undefined"
         :aria-pressed="surfaces?.includes(n) ?? false"
         @click="emit('surface', n)"
       >
-        {{ n }}
+        {{ surfaceLabel[n === 'hook' ? 'other' : n] }}
       </button>
       <button v-for="n in itemNodes" :key="`b-${n.id}`" type="button" class="node-btn" :data-node="n.id" @click="emit('item', n.item)">
         {{ labelText(n.item) }}
