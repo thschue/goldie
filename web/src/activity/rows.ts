@@ -38,8 +38,8 @@ export function surfaceOf(e: ActivityEvent): Surface | undefined {
 }
 
 // A latency in microseconds as milliseconds with one decimal: "0.9 ms". Rounded on integers, so
-// 850 is 0.9, not the 0.8 that floating point gives.
-export const msText = (us: number) => `${(Math.round(us / 100) / 10).toFixed(1)} ms`;
+// 850 is 0.9, not the 0.8 that floating point gives. Under 0.05 ms it reads "< 0.1 ms", not "0.0 ms".
+export const msText = (us: number) => (us < 50 ? '< 0.1 ms' : `${(Math.round(us / 100) / 10).toFixed(1)} ms`);
 
 // clip cuts text to at most max code points, never inside a character, and marks the cut. Event
 // text is whatever a client sent, so no cell or detail field shows it unbounded.

@@ -183,6 +183,29 @@ function apply(frames: Frame[]) {
   tiles.add(events, now.value);
   fed.value++;
   rows.value = add(rows.value, events);
+  flash(fresh);
+}
+
+// A live row fades in from --row-flash over 1 s (handoff §3.6); history and Resume never flash,
+// and under prefers-reduced-motion nothing does.
+const freshKeys = ref(new Set<string>());
+const freshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function flash(events: ActivityEvent[]) {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  for (const key of events.map(rowKey)) {
+    clearTimeout(freshTimers.get(key));
+    freshKeys.value = new Set(freshKeys.value).add(key);
+    // Each row leaves the flash on its own 1 s, whatever arrives after it.
+    freshTimers.set(
+      key,
+      setTimeout(() => {
+        freshTimers.delete(key);
+        const next = new Set(freshKeys.value);
+        next.delete(key);
+        freshKeys.value = next;
+      }, 1000),
+    );
+  }
 }
 
 // connect starts from an empty view (first load, Retry). After a drop, run() keeps the view and asks
@@ -301,6 +324,7 @@ onMounted(() => {
   connect();
 });
 onBeforeUnmount(() => {
+  freshTimers.forEach(clearTimeout);
   controller?.abort();
   clearTimeout(retry);
   clearTimeout(slowTimer);
@@ -361,11 +385,13 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
       <ul v-else>
         <li>
           <span class="k">Requests</span>{{ ' ' }}
-          <span class="v">{{ Math.round(last5.perMinute) }}<small> per minute</small></span>
+          <span class="v">{{ Math.round(last5.perMinute) }}</span>{{ ' ' }}
+          <span class="sub">per minute</span>
         </li>
-        <li>
+        <li :class="{ attention: !!last5.missPercent }">
           <span class="k">Misses</span>{{ ' ' }}
-          <span class="v">{{ last5.missPercent === undefined ? '—' : `${last5.missPercent} %` }}</span>
+          <span class="v">{{ last5.missPercent === undefined ? '—' : `${last5.missPercent} %` }}</span>{{ ' ' }}
+          <span class="sub">of requests</span>
         </li>
         <li>
           <span class="k">Projects asking</span>{{ ' ' }}
@@ -377,10 +403,10 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
         </li>
         <li>
           <span class="k">Latency</span>{{ ' ' }}
-          <span v-if="last5.latency" class="v">
-            <small>p50</small> {{ msText(last5.latency.p50) }} <small>p95</small> {{ msText(last5.latency.p95) }}
-          </span>
-          <span v-else class="v">—</span>
+          <span class="v">{{ last5.latency ? msText(last5.latency.p50) : '—' }}</span>
+          <template v-if="last5.latency">
+            {{ ' ' }}<span class="sub">p95 {{ msText(last5.latency.p95) }}</span>
+          </template>
         </li>
       </ul>
     </section>
@@ -481,7 +507,7 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e) }">
+            <tr v-for="(e, i) in shown" :key="rowKey(e)" :class="{ miss: e.miss, selected: selected === rowKey(e), fresh: freshKeys.has(rowKey(e)) }">
               <td>
                 <button type="button" class="row" :aria-pressed="selected === rowKey(e)" :aria-describedby="`q-${i}`" @click="select(rowKey(e))">
                   {{ timeText(e.time) }}
@@ -582,9 +608,25 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.tiles small {
+.tiles .sub {
+  color: var(--fg-secondary);
   font-size: var(--text-sm);
-  font-weight: 400;
+}
+.tiles li.attention {
+  border-color: var(--miss-border);
+  background: var(--miss-surface);
+}
+.tiles li.attention .v {
+  color: var(--miss-ink);
+}
+tr.fresh {
+  background: var(--row-flash);
+  animation: row-fade 1s ease-out forwards;
+}
+@keyframes row-fade {
+  to {
+    background: transparent;
+  }
 }
 .toolbar {
   display: flex;
