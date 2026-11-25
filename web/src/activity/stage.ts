@@ -1,4 +1,4 @@
-// The model of the Live stream stage (#811, handoff §3.6, Q53): Project -> goldie -> Served, a
+// The model of the Live stream stage (#811, handoff §3.6, Q53): Project -> Surface -> goldie -> Served (#880), a
 // particle per request. It is pure and driven by a clock the caller passes in (epoch ms), as
 // tiles.ts is. The pool is capped: above the cap the stage samples and says so, while the counters
 // still see every event. While the tab is hidden nothing is queued; under reduced motion no
@@ -19,11 +19,17 @@ export const maxLabel = 40;
 export const maxLanes = 6;
 const maxTallied = 1000;
 
-export type Surface = 'mcp' | 'cli' | 'ui' | 'other';
+// The four Surface nodes (#880); any other `via` reads as 'other' and has no node.
+export const surfaces = ['mcp', 'hook', 'cli', 'ui'] as const;
+// The Items the Served column names; the rest are one node.
+export const maxItems = 3;
+export type Surface = (typeof surfaces)[number] | 'other';
 export type Particle = {
   project: string;
   surface: Surface;
   target: 'served' | 'miss';
+  // Where the particle ends: its Item's node, "other Items & bundles", or Miss.
+  end: 'item' | 'other' | 'miss';
   label: string;
   leg: 'in' | 'out';
   progress: number;
@@ -31,6 +37,8 @@ export type Particle = {
 export type StageView = {
   particles: Particle[];
   lanes: { project: string; count: number }[];
+  items: { item: string; count: number }[];
+  otherItems: number;
   seen: number;
   missed: number;
   chip: string;
@@ -47,12 +55,12 @@ export function labelText(s: string): string {
   return chars.length <= maxLabel ? chars.join('') : `${chars.slice(0, maxLabel - 1).join('')}…`;
 }
 
-const surfaceOf = (via: string | undefined): Surface => (via === 'mcp' || via === 'cli' || via === 'ui' ? via : 'other');
+const surfaceOf = (via: string | undefined): Surface => (surfaces.find((x) => x === via) ?? 'other');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const every = 'Showing every request';
 const calm = 'Animation is off · the counters, the feed and the Miss board still get every event';
 
-type Live = Omit<Particle, 'leg' | 'progress'> & { start: number };
+type Live = Omit<Particle, 'leg' | 'progress' | 'end'> & { start: number };
 
 export function createStage(o: { reduced?: boolean } = {}) {
   let live: Live[] = [];
@@ -63,6 +71,8 @@ export function createStage(o: { reduced?: boolean } = {}) {
   let said: { text: string; at: number } | undefined;
   let chipSaid: { text: string; at: number } | undefined;
   const lanes = new Map<string, number>();
+  // Items served since the stage was created, by cut label; capped like the lanes.
+  const items = new Map<string, number>();
 
   const expire = (now: number) => (live = live.filter((p) => now - p.start < travelMs && now >= p.start));
   const summaryText = () => {
@@ -74,6 +84,8 @@ export function createStage(o: { reduced?: boolean } = {}) {
     for (const e of events) {
       seen++;
       if (e.miss) missed++;
+      const item = e.miss || !e.served ? '' : labelText(e.served);
+      if (item && (items.has(item) || items.size < maxTallied)) items.set(item, (items.get(item) ?? 0) + 1);
       if (e.project && (lanes.has(e.project) || lanes.size < maxTallied)) lanes.set(e.project, (lanes.get(e.project) ?? 0) + 1);
     }
   };
@@ -115,11 +127,17 @@ export function createStage(o: { reduced?: boolean } = {}) {
       const chipText = o.reduced ? calm : sampling ? `Showing 1 in ${sampling} requests · the feed and Miss board still get every event` : every;
       if (!chipSaid || (chipText !== chipSaid.text && now - chipSaid.at >= chipEvery)) chipSaid = { text: chipText, at: now };
       const chip = chipSaid;
+      const ranked = [...items].sort((a, b) => b[1] - a[1]);
+      const top = ranked.slice(0, maxItems).map(([item, count]) => ({ item, count }));
+      const named = new Set(top.map((i) => i.item));
       return {
         particles: live.map(({ start, ...p }) => {
           const t = now - start;
-          return t < half ? { ...p, leg: 'in', progress: t / half } : { ...p, leg: 'out', progress: (t - half) / half };
+          const end: Particle['end'] = p.target === 'miss' ? 'miss' : named.has(p.label) ? 'item' : 'other';
+          return t < half ? { ...p, end, leg: 'in', progress: t / half } : { ...p, end, leg: 'out', progress: (t - half) / half };
         }),
+        items: top,
+        otherItems: ranked.slice(maxItems).reduce((n, [, c]) => n + c, 0),
         lanes: [...lanes]
           .sort((a, b) => b[1] - a[1])
           .slice(0, maxLanes)
