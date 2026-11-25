@@ -593,15 +593,16 @@ func itemCounts(current func() *engine.Snapshot) func() []platform.ItemCount {
 
 // resultCounters is the option that counts searches and lookups by result
 // (goldie.searches, goldie.lookups) and the skill gets that hit
-// (goldie.skill.gets) through tel, and the counter of MCP tool calls
+// (goldie.skill.gets) and every Item use (goldie.item.uses) through tel, and the counter of MCP tool calls
 // (goldie.mcp.tool.calls) that addMCP hands to each MCP server.
 func resultCounters(tel *platform.Telemetry) (api.ServerOption, *platform.ToolCallCounter) {
 	results := api.CountResults(
 		tel.ResultCounter("goldie.searches", "Searches answered, by result."),
 		tel.ResultCounter("goldie.lookups", "Article lookups answered, by result."))
 	gets := api.CountSkillGets(tel.SkillGetCounter("goldie.skill.gets", "Skill gets that hit, by skill name, scope and client."))
+	uses := api.CountItemUses(tel.ItemUseCounter("goldie.item.uses", "Item lookups and gets that hit, by kind, name, scope, client, project and principal."))
 	calls := tel.ToolCallCounter("goldie.mcp.tool.calls", "MCP tool calls, by tool and result.")
-	return func(s *api.Server) { results(s); gets(s) }, calls
+	return func(s *api.Server) { results(s); gets(s); uses(s) }, calls
 }
 
 // newPublic builds the public handler over a Source and a parsed token set;

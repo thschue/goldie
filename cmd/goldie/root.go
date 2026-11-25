@@ -144,6 +144,7 @@ func newRoot(out io.Writer) *cobra.Command {
 	)
 	root.AddCommand(serverCmd(out), validateCmd(), healthCmd())
 	root.AddCommand(clientCmds(out)...)
+	root.AddCommand(hooksCmd(out))
 	root.AddCommand(mcpCmd())
 	root.AddCommand(helpCmd(root))
 	for _, c := range root.Commands() {
@@ -343,6 +344,11 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"Keep goldie's instruction block in CLAUDE.md or AGENTS.md current.\n\napply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set, which discards\nthe edits. check exits non-zero when the block is missing, outdated or edited,\nand writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is overwritten.",
 		"  goldie instructions apply\n  goldie instructions apply --target agents --force\n  goldie instructions check --target agents",
 	},
+	"context": {
+		"context --hook [flags]", "Print the Catalog as the JSON of a Claude Code SessionStart hook",
+		"Print goldie's instruction clauses and the name and description of each skill,\nagent and loop that applies to this Project, as the JSON a SessionStart hook\ninjects into a session. The text is at most 8 KB; what does not fit is counted.\n\nEvery failure (no server, no token, not a git repository, an unregistered\nProject) prints one line to stderr and exits 0, so the hook never shows an error\nat session start. Using it without --hook, or with an unknown flag, exits 2.\n\nThe hooks.SessionStart entry that runs it is in docs/reference/cli.md.",
+		"  goldie context --hook",
+	},
 	"pull": {
 		"pull [--target claude] [--dry-run | --check] [flags]", "Write the Goldie skills and agents into .claude",
 		"Fetch the skills and agents that apply to this Project and write them to\n.claude/skills/goldie-<name>/ and .claude/agents/goldie-<name>.md at the\nrepository root. Those names are goldie's: a pull replaces them as a whole and\ntouches nothing else. An unchanged set writes nothing. The archive is checked\nbefore anything is written, so a failed pull leaves the project as it was.\n\nA pull prints the /loop line of each loop it pulled, also when nothing\nchanged. --dry-run and --check print none.\n\n--dry-run lists the files and writes nothing. --check exits non-zero when the\nnamespace was never pulled or is stale, and writes nothing.",
@@ -384,6 +390,29 @@ func clientCmds(out io.Writer) []*cobra.Command {
 		cmds = append(cmds, cmd)
 	}
 	return cmds
+}
+
+// hooksCmd is goldie hooks install. It needs no server and no token, so it
+// takes none of the client flags.
+func hooksCmd(out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:     "hooks install",
+		Short:   "Add goldie's SessionStart hook to .claude/settings.json",
+		GroupID: groupAsk,
+		Long: "Add goldie's hook to hooks.SessionStart in .claude/settings.json at the repository root, creating\n" +
+			"the file if needed. The hook runs goldie context --hook and goldie pull --quiet --if-pulled at every\n" +
+			"session start in Claude Code. Every other byte of the file stays as it is, a second run changes\n" +
+			"nothing, and .claude/settings.local.json is never touched.\n\n" +
+			"Committing .claude/settings.json shares the hook with the team: everyone who opens the repository\n" +
+			"in Claude Code runs it, so each needs goldie installed and a token set up.\n\n" +
+			"It refuses, and writes nothing, for a file that is not plain JSON (comments, a byte order mark,\n" +
+			"trailing commas, duplicate keys), a hooks entry of the wrong type, a symlinked or irregular file or\n" +
+			".claude, a file over 4 MiB, or a directory that is not in a git repository.",
+		Example: "  goldie hooks install",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return misuse(cli.HooksInstall(args, out))
+		},
+	}
 }
 
 func mcpCmd() *cobra.Command {

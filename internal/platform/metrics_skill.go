@@ -35,13 +35,24 @@ func (sc *SkillGetCounter) Add(ctx context.Context, name string, global bool, vi
 	if sc == nil || sc.c == nil {
 		return
 	}
-	scope := "project"
-	if global {
-		scope = "global"
-	}
-	if via != "cli" && via != "mcp" {
-		via = "other"
-	}
 	sc.c.Add(ctx, 1, metric.WithAttributeSet(attribute.NewSet(
-		attribute.String("name", name), attribute.String("scope", scope), attribute.String("via", via))))
+		attribute.String("name", name), attribute.String("scope", scopeLabel(global)), attribute.String("via", viaLabel(via)))))
+}
+
+// scopeLabel is the scope attribute of an Item metric: global, or project for
+// any other Scope, never a Project id.
+func scopeLabel(global bool) string {
+	if global {
+		return "global"
+	}
+	return "project"
+}
+
+// viaLabel is the via attribute of an Item metric: cli or mcp, anything else
+// is other, so no request value becomes a label.
+func viaLabel(via string) string {
+	if via == "cli" || via == "mcp" {
+		return via
+	}
+	return "other"
 }

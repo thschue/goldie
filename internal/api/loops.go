@@ -76,6 +76,7 @@ func (s *Server) GetLoop(ctx context.Context, req contract.GetLoopRequestObject)
 	if !found {
 		return contract.GetLoop404JSONResponse(noSuchLoop), nil
 	}
+	noteItemHit(ctx, engine.KindLoop, l.Name, l.Scope, proj)
 	res := loopAnswer(l, true)
 	res.Hint = hint
 	return contract.GetLoop200JSONResponse(res), nil

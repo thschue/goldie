@@ -8,8 +8,8 @@ server are in the [configuration reference](configuration.md); the MCP server is
 ## CLI
 
 `goldie`, `goldie help` and `goldie --help` list the commands in two groups, Run a server (`server`,
-`validate`, `health`) and Ask a server (`search`, `lookup`, `skills`, `agents`, `status`, `init`,
-`mcp`, `version`).
+`validate`, `health`) and Ask a server (every other command: `search`, `lookup`, `skills`, `agents`,
+`loops`, `decisions`, `status`, `init`, `instructions`, `context`, `pull`, `mcp`, `version`).
 `goldie <command> --help` (or `goldie help <command>`) shows a command's flags and examples. Flags
 are GNU style (`--dev`, `--addr`); a single-dash long flag such as `-dev` is an error. An unknown
 command or flag prints one error line and a `Run 'goldie <command> --help'.` line to stderr and exits 2;
@@ -149,11 +149,11 @@ markers is never touched, and a block that is already current is not rewritten. 
 block edited by hand unless you pass `--force`, which discards those edits, and refuses a damaged file (a
 begin marker without an end, or two blocks) even with `--force`. It also refuses a block whose text could
 change how the rest of your file renders (an unclosed code fence, raw HTML, a link reference definition),
-a `CLAUDE.md` or `AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes
-nothing. `goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated
-or edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
-between `apply` reading the file and renaming over it, an edit by another process is lost; there is no
-lock, and the window is one local write.
+a `CLAUDE.md` or `AGENTS.md` that is a symlink or over 4 MiB, and a run outside a git repository; a
+refusal writes nothing. `goldie instructions check` writes nothing and exits non-zero when the block is
+missing, outdated or edited. The file is replaced by a rename of a temporary file in the same
+directory. Lost update: between `apply` reading the file and renaming over it, an edit by another
+process is lost; there is no lock, and the window is one local write.
 
 If your `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` line), apply only the agents target:
 `goldie instructions apply --target agents`. Applying both would show the block twice.
@@ -164,12 +164,57 @@ Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_T
 goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
 ```
 
-`goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
-detected Project (`--project` overrides it) into the repository root of the working directory, from any
-subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
-`.claude/agents/goldie-<name>.md`, and each loop's entry skill to `.claude/skills/goldie-loop-<name>/SKILL.md`
-(its description, iteration prompt and stop condition; the loop's agents and skills come with the rest). A
-pull then prints `Start a loop in Claude Code:` and `/loop <interval> /goldie-loop-<name>` for each loop,
+`goldie context --hook` prints the JSON a Claude Code SessionStart hook injects, so a session in the
+repository knows what goldie offers without a long `CLAUDE.md`:
+`{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"<text>"}}`. The text holds one
+line on asking goldie first, the instruction clauses for target `claude`, then `Skills`, `Agents` and
+`Loops` with one `name: description` line per Item (an empty section and drafts are left out), introduced
+as data from the platform's Sources. Names and descriptions are cut to one line with hidden and bidi
+characters removed. The text is at most 8 KB: as many Items as fit are listed, then `+N more. Ask: goldie
+search "<topic>"`. It works in local mode (`GOLDIE_DIR`). Every failure (server unreachable, no token, not
+a git repository, a Project the server has not registered) writes one line to stderr, nothing to stdout
+and exits 0, so the hook never shows an error at session start. `context` without `--hook`, an unknown
+flag or an argument exits 2. To see why the hook added nothing, run `goldie context --hook` by hand in
+the repository and read the line on stderr.
+
+`goldie hooks install` adds the hook for you
+([Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)). It puts one group under
+`hooks.SessionStart` in `.claude/settings.json` at the repository root, with two command hooks:
+`goldie context --hook` and `goldie pull --quiet --if-pulled`. The hook runs at every session start;
+committing `.claude/settings.json` shares it with the team. A hook is goldie's when its `command` equals one
+of those two strings, and only goldie's group changes: every other byte of the file stays (keys, order,
+indentation, line endings, your own hooks), a second run changes nothing, and `.claude/settings.local.json`
+is never touched. A missing `.claude` or `settings.json` is created with only goldie's entry, and the mode
+of an existing file is kept. It prints `Added the goldie SessionStart hook to .claude/settings.json.`,
+`... is already up to date.` or `Updated ...` (a goldie group that lacked one of the two hooks) and exits 0.
+It needs no server and no token. It refuses with one line and a next step, exit 1 and nothing written, for a
+file that is not plain JSON (invalid, a byte order mark, comments, trailing commas, duplicate keys), `hooks`
+or `hooks.SessionStart` of the wrong type, goldie's hooks repeated or split over several groups, a
+`settings.json` or `.claude` that is a symlink or not a regular file, a file over 4 MiB, or a directory
+outside a git repository. Any verb other than `install` exits 2. The same file by hand:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "goldie context --hook" },
+          { "type": "command", "command": "goldie pull --quiet --if-pulled" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`goldie pull [--target claude] [--dry-run | --check] [--quiet] [--if-pulled]` writes the skills and
+agents that apply to the detected Project (`--project` overrides it) into the repository root of the
+working directory, from any subdirectory: each skill to `.claude/skills/goldie-<name>/` with its
+files, each agent to `.claude/agents/goldie-<name>.md`, and each loop's entry skill to
+`.claude/skills/goldie-loop-<name>/SKILL.md` (its description, iteration prompt and stop condition; the
+loop's agents and skills come with the rest). A pull then prints `Start a loop in Claude Code:` and
+`/loop <interval> /goldie-loop-<name>` for each loop,
 sorted by name, and `/loop /goldie-loop-<name>` for a dynamic one. A pull that finds the namespace up to
 date says so and prints the same lines for the loops already in it. `--check` and `--dry-run` print
 none. Those `goldie-` names are goldie's namespace. A pull replaces
@@ -186,7 +231,11 @@ ones back, so a failed pull leaves the project as it was. `--dry-run` lists what
 removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
 `goldie pull`, when the namespace was never pulled, the set changed or a pulled file was edited or
 deleted. `--dry-run` and `--check` cannot be
-combined. `pull` takes no `--json`.
+combined. `--quiet` prints nothing on stdout when the pull succeeds (errors still go to stderr and
+exit non-zero) and cannot be combined with `--dry-run` (exit 2). `--if-pulled` does nothing and
+succeeds, sending no request, when the repository has no usable stamp or the directory is not in a
+repository at all, so a session hook can run `goldie pull --quiet --if-pulled` and touch only
+repositories that took part. With a stamp it pulls as usual. `pull` takes no `--json`.
 
 ```sh
 goldie pull --check   # in CI or a hook: exits non-zero if never pulled or stale
