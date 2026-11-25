@@ -1902,7 +1902,8 @@ type ClientInterface interface {
 	// `next` is the same-site path to return to; anything else (an absolute
 	// URL, `//host`, a backslash or a control character) ends at
 	// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-	// A server without GitHub sign-in answers 404 in the error envelope.
+	// A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+	// failed sign-ins is refused with a 429 here too.
 	//
 	// Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
 	GetSessionGithub(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1922,7 +1923,7 @@ type ClientInterface interface {
 	// the PKCE verifier are what bind it to the browser that started. Every
 	// failure ends at `/signin?error=<code>` with a fixed code
 	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-	// `invalid_next`, `not_configured`) and no session; GitHub's text is
+	// `invalid_next`) and no session; GitHub's text is
 	// never echoed. Failed callbacks count against the same per-address cap as
 	// failed sign-ins. The response is `Cache-Control: no-store`.
 	//
@@ -2534,7 +2535,8 @@ func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBod
 // `next` is the same-site path to return to; anything else (an absolute
 // URL, `//host`, a backslash or a control character) ends at
 // `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-// A server without GitHub sign-in answers 404 in the error envelope.
+// A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+// failed sign-ins is refused with a 429 here too.
 //
 // Corresponds with GET /api/v1/session/github (the `GetSessionGithub` operationId).
 func (c *Client) GetSessionGithub(ctx context.Context, params *GetSessionGithubParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2564,7 +2566,7 @@ func (c *Client) GetSessionGithub(ctx context.Context, params *GetSessionGithubP
 // the PKCE verifier are what bind it to the browser that started. Every
 // failure ends at `/signin?error=<code>` with a fixed code
 // (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-// `invalid_next`, `not_configured`) and no session; GitHub's text is
+// `invalid_next`) and no session; GitHub's text is
 // never echoed. Failed callbacks count against the same per-address cap as
 // failed sign-ins. The response is `Cache-Control: no-store`.
 //
@@ -4641,7 +4643,8 @@ type ClientWithResponsesInterface interface {
 	// `next` is the same-site path to return to; anything else (an absolute
 	// URL, `//host`, a backslash or a control character) ends at
 	// `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-	// A server without GitHub sign-in answers 404 in the error envelope.
+	// A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+	// failed sign-ins is refused with a 429 here too.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4663,7 +4666,7 @@ type ClientWithResponsesInterface interface {
 	// the PKCE verifier are what bind it to the browser that started. Every
 	// failure ends at `/signin?error=<code>` with a fixed code
 	// (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-	// `invalid_next`, `not_configured`) and no session; GitHub's text is
+	// `invalid_next`) and no session; GitHub's text is
 	// never echoed. Failed callbacks count against the same per-address cap as
 	// failed sign-ins. The response is `Cache-Control: no-store`.
 	//
@@ -6434,20 +6437,41 @@ type GetSessionGithubResponse302Headers struct {
 	Location *string
 }
 
+// GetSessionGithubResponse429Headers the declared response headers of an HTTP 429 response for GetSessionGithub
+type GetSessionGithubResponse429Headers struct {
+	RetryAfter *int
+}
+
 type GetSessionGithubResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	// JSON404 the response for an HTTP 404 `application/json` response
-	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *ErrorEnvelope
+	// JSON501 the response for an HTTP 501 `application/json` response
+	JSON501 *ErrorEnvelope
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers302 the parsed response headers for an HTTP 302 response
 	Headers302 *GetSessionGithubResponse302Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSessionGithubResponse429Headers
 }
 
-// GetJSON404 returns the response for an HTTP 404 `application/json` response
-func (r GetSessionGithubResponse) GetJSON404() *ErrorEnvelope {
-	return r.JSON404
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSessionGithubResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSessionGithubResponse) GetJSON429() *ErrorEnvelope {
+	return r.JSON429
+}
+
+// GetJSON501 returns the response for an HTTP 501 `application/json` response
+func (r GetSessionGithubResponse) GetJSON501() *ErrorEnvelope {
+	return r.JSON501
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -6497,10 +6521,12 @@ type GetSessionGithubCallbackResponse429Headers struct {
 type GetSessionGithubCallbackResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	// JSON404 the response for an HTTP 404 `application/json` response
-	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
 	// JSON429 the response for an HTTP 429 `application/json` response
 	JSON429 *ErrorEnvelope
+	// JSON501 the response for an HTTP 501 `application/json` response
+	JSON501 *ErrorEnvelope
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *ErrorResponse
 	// Headers302 the parsed response headers for an HTTP 302 response
@@ -6509,14 +6535,19 @@ type GetSessionGithubCallbackResponse struct {
 	Headers429 *GetSessionGithubCallbackResponse429Headers
 }
 
-// GetJSON404 returns the response for an HTTP 404 `application/json` response
-func (r GetSessionGithubCallbackResponse) GetJSON404() *ErrorEnvelope {
-	return r.JSON404
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSessionGithubCallbackResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
 }
 
 // GetJSON429 returns the response for an HTTP 429 `application/json` response
 func (r GetSessionGithubCallbackResponse) GetJSON429() *ErrorEnvelope {
 	return r.JSON429
+}
+
+// GetJSON501 returns the response for an HTTP 501 `application/json` response
+func (r GetSessionGithubCallbackResponse) GetJSON501() *ErrorEnvelope {
+	return r.JSON501
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -7609,7 +7640,8 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 // `next` is the same-site path to return to; anything else (an absolute
 // URL, `//host`, a backslash or a control character) ends at
 // `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-// A server without GitHub sign-in answers 404 in the error envelope.
+// A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+// failed sign-ins is refused with a 429 here too.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -7637,7 +7669,7 @@ func (c *ClientWithResponses) GetSessionGithubWithResponse(ctx context.Context, 
 // the PKCE verifier are what bind it to the browser that started. Every
 // failure ends at `/signin?error=<code>` with a fixed code
 // (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-// `invalid_next`, `not_configured`) and no session; GitHub's text is
+// `invalid_next`) and no session; GitHub's text is
 // never echoed. Failed callbacks count against the same per-address cap as
 // failed sign-ins. The response is `Cache-Control: no-store`.
 //
@@ -9311,12 +9343,26 @@ func ParseGetSessionGithubResponse(rsp *http.Response) (*GetSessionGithubRespons
 	case rsp.StatusCode == 302:
 		break // No content-type
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest ErrorEnvelope
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON404 = &dest
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON501 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -9338,6 +9384,16 @@ func ParseGetSessionGithubResponse(rsp *http.Response) (*GetSessionGithubRespons
 			headers.Location = &value
 		}
 		response.Headers302 = &headers
+	case rsp.StatusCode == 429:
+		var headers GetSessionGithubResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
 	}
 
 	return response, nil
@@ -9360,12 +9416,12 @@ func ParseGetSessionGithubCallbackResponse(rsp *http.Response) (*GetSessionGithu
 	case rsp.StatusCode == 302:
 		break // No content-type
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest ErrorEnvelope
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
 		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.JSON404 = &dest
+		response.JSON426 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
 		var dest ErrorEnvelope
@@ -9373,6 +9429,13 @@ func ParseGetSessionGithubCallbackResponse(rsp *http.Response) (*GetSessionGithu
 			return nil, err
 		}
 		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON501 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest ErrorResponse
@@ -13536,16 +13599,60 @@ func (response GetSessionGithub302Response) VisitGetSessionGithubResponse(w http
 	return nil
 }
 
-type GetSessionGithub404JSONResponse ErrorEnvelope
+type GetSessionGithub426JSONResponse struct{ UpgradeRequiredJSONResponse }
 
-func (response GetSessionGithub404JSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+func (response GetSessionGithub426JSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithub429ResponseHeaders struct {
+	RetryAfter *int
+}
+
+type GetSessionGithub429JSONResponse struct {
+	Body    ErrorEnvelope
+	Headers GetSessionGithub429ResponseHeaders
+}
+
+func (response GetSessionGithub429JSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithub501JSONResponse ErrorEnvelope
+
+func (response GetSessionGithub501JSONResponse) VisitGetSessionGithubResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(501)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -13597,16 +13704,16 @@ func (response GetSessionGithubCallback302Response) VisitGetSessionGithubCallbac
 	return nil
 }
 
-type GetSessionGithubCallback404JSONResponse ErrorEnvelope
+type GetSessionGithubCallback426JSONResponse struct{ UpgradeRequiredJSONResponse }
 
-func (response GetSessionGithubCallback404JSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+func (response GetSessionGithubCallback426JSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(404)
+	w.WriteHeader(426)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -13637,6 +13744,20 @@ func (response GetSessionGithubCallback429JSONResponse) VisitGetSessionGithubCal
 		}
 	}
 	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionGithubCallback501JSONResponse ErrorEnvelope
+
+func (response GetSessionGithubCallback501JSONResponse) VisitGetSessionGithubCallbackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(501)
 	_, err := buf.WriteTo(w)
 	return err
 }

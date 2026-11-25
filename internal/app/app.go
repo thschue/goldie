@@ -118,15 +118,19 @@ func (m *publicMux) handle(method, path string, h http.Handler) {
 // guardOperation is guard for one operation. The session resource's
 // operations the spec marks `security: []` (sign-in and sign-out) take no
 // bearer token and go through api.SessionEntry; its others are guard's, with
-// no caching. The token sign-in and the GitHub callback share the cap on
-// failed sign-ins per address. The callback is a GET GitHub sends the browser
+// no caching. The token sign-in and the two GitHub operations share the cap on
+// failed sign-ins per address; the GitHub ones also pass the version gate. The callback is a GET GitHub sends the browser
 // to, which SessionEntry's cross-site check lets through (it refuses only
 // unsafe methods); state, the pre-login cookie and PKCE bind it.
 func (m *publicMux) guardOperation(method, path string, h http.Handler) http.Handler {
 	switch {
 	case m.anonymous[method+" "+path]:
-		if method == http.MethodPost && path == api.SessionPath || method == http.MethodGet && path == api.GitHubCallbackPath {
+		switch {
+		case method == http.MethodPost && path == api.SessionPath:
 			h = m.signIn.Limit(h)
+		case method == http.MethodGet && (path == api.GitHubCallbackPath || path == api.GitHubStartPath):
+			// A browser sends no X-Goldie-Client, so the version gate refuses only an old goldie.
+			h = m.gate.Require(m.signIn.Limit(h))
 		}
 		return api.SessionEntry(h)
 	case path == api.SessionPath:

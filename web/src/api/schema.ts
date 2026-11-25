@@ -508,7 +508,8 @@ export interface paths {
          *     `next` is the same-site path to return to; anything else (an absolute
          *     URL, `//host`, a backslash or a control character) ends at
          *     `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-         *     A server without GitHub sign-in answers 404 in the error envelope.
+         *     A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+         *     failed sign-ins is refused with a 429 here too.
          */
         get: operations["getSessionGithub"];
         put?: never;
@@ -541,7 +542,7 @@ export interface paths {
          *     the PKCE verifier are what bind it to the browser that started. Every
          *     failure ends at `/signin?error=<code>` with a fixed code
          *     (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-         *     `invalid_next`, `not_configured`) and no session; GitHub's text is
+         *     `invalid_next`) and no session; GitHub's text is
          *     never echoed. Failed callbacks count against the same per-address cap as
          *     failed sign-ins. The response is `Cache-Control: no-store`.
          */
@@ -3324,8 +3325,19 @@ export interface operations {
                 };
                 content?: never;
             };
+            426: components["responses"]["UpgradeRequired"];
+            /** @description The sign-in limit for this remote address is spent. Wait the seconds in `Retry-After`, then retry. */
+            429: {
+                headers: {
+                    "Retry-After": components["headers"]["RetryAfter"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description GitHub sign-in is not configured on this server. */
-            404: {
+            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3361,19 +3373,20 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description GitHub sign-in is off, so there is nothing to call back to. */
-            404: {
+            426: components["responses"]["UpgradeRequired"];
+            /** @description This remote address made too many failed sign-ins. Wait the seconds in `Retry-After`, then retry. */
+            429: {
                 headers: {
+                    "Retry-After": components["headers"]["RetryAfter"];
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description This remote address made too many failed sign-ins. Wait the seconds in `Retry-After`, then retry. */
-            429: {
+            /** @description GitHub sign-in is not configured on this server. */
+            501: {
                 headers: {
-                    "Retry-After": components["headers"]["RetryAfter"];
                     [name: string]: unknown;
                 };
                 content: {

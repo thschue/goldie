@@ -520,14 +520,17 @@ callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
 `next` is the same-site path to return to; anything else (an absolute
 URL, `//host`, a backslash or a control character) ends at
 `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-A server without GitHub sign-in answers 404 in the error envelope.
+A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
+failed sign-ins is refused with a 429 here too.
 
 Operation ID: `getSessionGithub`
 
 | Status | Description | Body |
 |---|---|---|
 | `302` | Redirect to GitHub, or to '/signin?error=&lt;code&gt;' when 'next' is refused. The pre-login cookie is in 'Set-Cookie'. | none |
-| `404` | GitHub sign-in is not configured on this server. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The sign-in limit for this remote address is spent. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `501` | GitHub sign-in is not configured on this server. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/session/github/callback`
@@ -547,7 +550,7 @@ reach, since GitHub sends the browser here; the `state`, the cookie and
 the PKCE verifier are what bind it to the browser that started. Every
 failure ends at `/signin?error=<code>` with a fixed code
 (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
-`invalid_next`, `not_configured`) and no session; GitHub's text is
+`invalid_next`) and no session; GitHub's text is
 never echoed. Failed callbacks count against the same per-address cap as
 failed sign-ins. The response is `Cache-Control: no-store`.
 
@@ -556,8 +559,9 @@ Operation ID: `getSessionGithubCallback`
 | Status | Description | Body |
 |---|---|---|
 | `302` | Redirect to 'next' with the session cookie, or to '/signin?error=&lt;code&gt;' with none. | none |
-| `404` | GitHub sign-in is off, so there is nothing to call back to. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | This remote address made too many failed sign-ins. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `501` | GitHub sign-in is not configured on this server. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/skills`

@@ -25,6 +25,8 @@ import (
 // user is and which Role that earns, and sets the session cookie.
 
 const (
+	// GitHubStartPath starts the GitHub sign-in.
+	GitHubStartPath = SessionPath + "/github"
 	// GitHubCallbackPath is where GitHub sends the browser back to.
 	GitHubCallbackPath = SessionPath + "/github/callback"
 
@@ -49,7 +51,7 @@ func WithGitHub(gh GitHubSignIn, publicURL string) ServerOption {
 	}
 }
 
-var notConfiguredGitHub = envelope("not_found", "GitHub sign-in is not configured on this server",
+var notConfiguredGitHub = envelope("not_configured", "GitHub sign-in is not configured on this server",
 	"Sign in with a token instead.")
 
 // signInRedirect is a refusal: the sign-in page with a fixed error code, which
@@ -86,7 +88,7 @@ func (s *Server) githubReady() bool {
 func (s *Server) GetSessionGithub(ctx context.Context, req contract.GetSessionGithubRequestObject) (contract.GetSessionGithubResponseObject, error) {
 	f, ok := ctx.Value(githubFlowKey{}).(githubFlow)
 	if !ok || !s.githubReady() {
-		return contract.GetSessionGithub404JSONResponse(notConfiguredGitHub), nil
+		return contract.GetSessionGithub501JSONResponse(notConfiguredGitHub), nil
 	}
 	next := "/"
 	if req.Params.Next != nil {
@@ -109,7 +111,7 @@ func (s *Server) GetSessionGithub(ctx context.Context, req contract.GetSessionGi
 func (s *Server) GetSessionGithubCallback(ctx context.Context, req contract.GetSessionGithubCallbackRequestObject) (contract.GetSessionGithubCallbackResponseObject, error) {
 	f, ok := ctx.Value(githubFlowKey{}).(githubFlow)
 	if !ok || !s.githubReady() {
-		return contract.GetSessionGithubCallback404JSONResponse(notConfiguredGitHub), nil
+		return contract.GetSessionGithubCallback501JSONResponse(notConfiguredGitHub), nil
 	}
 	sessions, now := s.tokens.sessions, time.Now()
 	login, ok := sessions.openLoginCookie(f.r, now)
