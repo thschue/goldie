@@ -27,7 +27,7 @@ const grafana = computed(() => (role() === 'operator' ? webLink(session.value?.g
 <template>
   <section class="card">
     <h2>Usage</h2>
-    <p v-if="state === 'error'" class="fail">Couldn't load the usage.</p>
+    <p v-if="state === 'error'" class="fail">Couldn't load the usage. Reload the page to try again.</p>
     <template v-else-if="data">
       <ul>
         <li v-for="c in clients" :key="c">
