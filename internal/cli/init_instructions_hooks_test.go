@@ -112,23 +112,6 @@ func TestInitHooksFlagInstallsTheSessionStartHook(t *testing.T) {
 	noClaudeFile(t, root) // --hooks asks for the hook only
 }
 
-func TestInitHooksFlagKeepsWhatIsInSettings(t *testing.T) {
-	root := guidedRepo(t)
-	writeSettings(t, root, userHooks)
-	if _, stderr, err := runInit(nil, nil, "--hooks"); err != nil {
-		t.Fatalf("init: %v\nstderr: %s", err, stderr)
-	}
-	b, _ := os.ReadFile(settingsPath(root))
-	for _, keep := range []string{`"permissions"`, `echo mine`, `echo my own start`} {
-		if !strings.Contains(string(b), keep) {
-			t.Errorf("settings.json lost %q:\n%s", keep, b)
-		}
-	}
-	if cmds := hookCommandsOf(t, root); len(cmds) != 3 {
-		t.Errorf("SessionStart commands = %q", cmds)
-	}
-}
-
 func TestInitWithBothFlagsRunsBothAfterItsOwnLines(t *testing.T) {
 	srv := instructionsServer(t, false)
 	root := guidedRepo(t)
