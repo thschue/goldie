@@ -226,6 +226,7 @@ const toggle = (project: string) => emit('filter', props.filter === project ? un
   grid-column: 1 / -1;
 }
 .node-btn {
+  min-width: var(--target-min);
   min-height: var(--target-min);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-strong);
