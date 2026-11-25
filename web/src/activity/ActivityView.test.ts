@@ -331,6 +331,38 @@ describe('ActivityView states (#877)', () => {
   });
 });
 
+describe('ActivityView 503 over a kept feed (#885)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  // A live feed drops, and the reconnect is refused with a 503: the feed stays under the message.
+  async function refusedOverKeptFeed() {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    dropFirst = true;
+    const mounted = await mount();
+    await mounted.page.send([{ type: 'live' }, ...Array.from({ length: 10 }, (_, i) => ev(i + 1))]);
+    refuse = new ApiError(503, 'Unavailable.', 'Try again shortly.');
+    drop();
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(2_000);
+    return mounted;
+  }
+
+  it('names a lost live connection, not a failed open, while the feed is still shown', async () => {
+    const { app, page } = await refusedOverKeptFeed();
+    expect(page.text()).toContain('q10');
+    expect(page.text()).toContain('Lost the live connection.');
+    expect(page.text()).not.toContain("Couldn't open the activity feed.");
+    app.unmount();
+  });
+
+  it('keeps the feed visible when Retry asks again, until the new replay arrives', async () => {
+    const { app, page } = await refusedOverKeptFeed();
+    await page.press('Retry');
+    expect(page.text()).toContain('q10');
+    app.unmount();
+  });
+});
+
 describe('ActivityView Miss detail and Miss board (#878)', () => {
   afterEach(() => vi.useRealTimers());
   // nearest is in the contract (ActivityEvent) but not yet in the generated types.
