@@ -143,7 +143,7 @@ func (m *publicMux) allAnonymous(path string) bool {
 }
 
 // guardOperation is guard for one operation. The session resource's
-// operations the spec marks `security: []` (sign-in and sign-out) take no
+// operations the spec marks `security: []` (sign-in, sign-out and the providers) take no
 // bearer token and go through api.SessionEntry; its others are guard's, with
 // no caching.
 func (m *publicMux) guardOperation(method, path string, h http.Handler) http.Handler {
