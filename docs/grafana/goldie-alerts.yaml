@@ -4,13 +4,13 @@ groups:
   - name: goldie
     rules:
       - alert: GoldieSourcePollFailing
-        expr: sum by (source) (increase(goldie_syncs_total{result="error"}[15m])) > 0
+        expr: sum by (source) (increase(goldie_syncs_total{result="error"}[15m])) > 0 and sum by (source) (increase(goldie_syncs_total{result="ok"}[15m])) == 0
         for: 15m
         labels:
           severity: warning
         annotations:
           summary: "goldie Source {{ $labels.source }} polls are failing"
-          description: "The Source has had failed polls for 15 minutes; goldie keeps serving the last good Snapshot."
+          description: "The Source had failed polls and no successful poll for 15 minutes; goldie keeps serving the last good Snapshot."
       - alert: GoldieSourceNotPolled
         expr: sum by (source) (increase(goldie_syncs_total{result="ok"}[1h])) == 0
         for: 30m

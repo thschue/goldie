@@ -36,7 +36,7 @@
     {
       "id": 1,
       "title": "Item uses by kind",
-      "description": "Lookups and gets that found the Item (goldie.item.uses).",
+      "description": "Lookups and gets that found the Item (goldie.item.uses), by kind.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -75,8 +75,8 @@
     },
     {
       "id": 2,
-      "title": "Item uses by client (via)",
-      "description": "",
+      "title": "Item uses by surface",
+      "description": "Uses by the surface that asked: mcp, cli or other (the UI and any other client count as other).",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -136,7 +136,9 @@
             "uid": "${datasource}"
           },
           "expr": "topk(10, sum by (kind, name) (increase(goldie_item_uses_total[$__range])))",
-          "legendFormat": ""
+          "legendFormat": "",
+          "instant": true,
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -150,12 +152,29 @@
           ]
         },
         "overrides": []
-      }
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "Uses"
+            }
+          }
+        }
+      ]
     },
     {
       "id": 4,
       "title": "Item uses by Project",
-      "description": "Uses by registered Project; unregistered clients are one bucket.",
+      "description": "Uses by registered Project in the selected time range; unregistered clients are one bucket.",
       "type": "bargauge",
       "datasource": {
         "type": "prometheus",
@@ -175,7 +194,8 @@
             "uid": "${datasource}"
           },
           "expr": "topk(10, sum by (project) (increase(goldie_item_uses_total[$__range])))",
-          "legendFormat": "{{project}}"
+          "legendFormat": "{{project}}",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -186,7 +206,7 @@
     {
       "id": 5,
       "title": "Item uses by principal",
-      "description": "",
+      "description": "Uses by API token name in the selected time range; anonymous is one bucket.",
       "type": "bargauge",
       "datasource": {
         "type": "prometheus",
@@ -206,7 +226,8 @@
             "uid": "${datasource}"
           },
           "expr": "topk(10, sum by (principal) (increase(goldie_item_uses_total[$__range])))",
-          "legendFormat": "{{principal}}"
+          "legendFormat": "{{principal}}",
+          "instant": true
         }
       ],
       "fieldConfig": {
@@ -217,7 +238,7 @@
     {
       "id": 6,
       "title": "Searches and lookups by result",
-      "description": "",
+      "description": "Searches and article lookups answered; a miss found nothing.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -259,7 +280,7 @@
     {
       "id": 7,
       "title": "Items served",
-      "description": "",
+      "description": "Items in the current Snapshot, by kind.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -298,7 +319,7 @@
     {
       "id": 8,
       "title": "Skill gets by skill",
-      "description": "",
+      "description": "Skill gets that found the skill, by skill name.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -331,7 +352,7 @@
     {
       "id": 9,
       "title": "Source polls by result",
-      "description": "",
+      "description": "Finished polls of each configured Source, by result.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -356,6 +377,7 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "ops",
           "links": [
             {
               "title": "Open Sources in the goldie UI",
@@ -370,7 +392,7 @@
     {
       "id": 10,
       "title": "Source poll duration (p95)",
-      "description": "",
+      "description": "95th percentile time a Source poll took.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -410,7 +432,7 @@
     {
       "id": 11,
       "title": "MCP tool calls by tool",
-      "description": "",
+      "description": "MCP tool calls answered by the server, by tool and result.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",

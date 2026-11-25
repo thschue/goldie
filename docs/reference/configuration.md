@@ -171,6 +171,8 @@ other instruments: there are no HTTP server duration or runtime metrics.
 | `goldie.sync.duration` | `s` | `source`: the Source's name, from `GOLDIE_SOURCES`, or `git` or `dir` for the `GOLDIE_GIT_URL` or `GOLDIE_CONTENT_DIR` shorthand; `result`: `ok` or `error` | Histogram of how long each Source poll took, in seconds (buckets 0.05 to 60); a failed poll is recorded with `error`. |
 | `goldie.mcp.tool.calls` | `{call}` | `tool`: one of the eleven tool names or `other`; `result`: `ok` or `error` | MCP tool calls answered by the server; error when the tool result is an error, rate-limited calls included. |
 
+A Grafana dashboard and alert rules for these metrics are in [Grafana dashboard and alert rules](grafana.md).
+
 A skill get that answers 404 is not counted, so a name a caller makes up never becomes a `name` label; `name` is the skill's own spelling, whatever case the caller used.
 `scope` is `global` for a skill every Project gets and `project` for a skill one Project defines; a skill from the local `.goldie/` Scope counts as `project`.
 `via` is `cli` for the goldie CLI (dev builds included), `mcp` for an agent through `goldie mcp` or the server's `/mcp`, and `other` for curl, the web UI, any other client or no header.
