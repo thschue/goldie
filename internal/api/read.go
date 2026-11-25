@@ -141,6 +141,7 @@ type Server struct {
 	sync      SyncControl               // see WithSync, nil lists no Source
 	tokens    *Tokens                   // see WithSessions, nil: no sign-in
 	swaggerUI bool                      // see WithSwaggerUI
+	github    bool                      // see WithGitHubSignIn
 	grafana   string                    // see WithObservabilityLinks
 	traceTmpl string
 
