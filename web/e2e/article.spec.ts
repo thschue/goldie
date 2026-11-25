@@ -65,7 +65,7 @@ async function stubArticle(page: Page, a: Article, status = 200) {
   const seen: string[] = [];
   await page.route(apiArticle, (route) => {
     const u = new URL(route.request().url());
-    seen.push(u.pathname + u.search);
+    if (!u.pathname.endsWith('/usage')) seen.push(u.pathname + u.search); // the usage card's read is not an article lookup
     return json(route, status, a);
   });
   return seen;
