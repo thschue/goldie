@@ -578,6 +578,9 @@ func TestUpdatedThatIsNotADayFailsTheItemWithoutEchoingTheValue(t *testing.T) {
 			continue // a SKILL.md fails closed to a draft, it never fails the load
 		}
 		for i, v := range bad {
+			if k.kind != "article" && i > 0 {
+				continue // the day formats are one rule, checked on the article; every kind is checked with one bad value
+			}
 			t.Run(fmt.Sprintf("%s/%d", k.kind, i), func(t *testing.T) {
 				msg := loadErr(t, map[string]string{k.file: k.doc("updated: " + v)}, k.file)
 				if !strings.Contains(msg, want) {
