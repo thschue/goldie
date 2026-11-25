@@ -7,7 +7,7 @@
 //   'out', the second half); a particle is gone from `travelMs` after it arrived;
 // - read(now) is { particles, lanes, seen, missed, chip, summary }. A particle is { project,
 //   surface, target: 'served' | 'miss', label, leg, progress } with progress 0..1 within its leg;
-//   surface is `via` when it is mcp, cli or ui, else 'other'; label is the served Reference, or
+//   surface is `via` when it is mcp, hook, cli or ui (#880: the four Surface nodes), else 'other'; label is the served Reference, or
 //   for a miss the query. Lanes are { project, count }, one per Project asking, busiest first;
 // - seen and missed count every event, whatever the stage shows; chip is the sampling note;
 //   summary is the text for a screen reader and changes at most once per summaryEvery;
@@ -61,7 +61,7 @@ describe('stage particles', () => {
 
   it('ends a miss at a miss marker, and reads an unknown or absent surface as other', () => {
     const s = createStage();
-    s.add([ev(1, { miss: true, served: undefined, via: 'mcp' }), ev(2, { via: 'hook' }), ev(3, { via: 'ui' }), ev(4)], t0);
+    s.add([ev(1, { miss: true, served: undefined, via: 'mcp' }), ev(2, { via: 'sidecar' }), ev(3, { via: 'ui' }), ev(4)], t0);
     const p = s.read(t0 + (travelMs * 3) / 4).particles;
     expect(p.map((x) => x.surface).sort()).toEqual(['mcp', 'other', 'other', 'ui']);
     expect(p.find((x) => x.surface === 'mcp')).toMatchObject({ target: 'miss', label: 'q1' });
@@ -75,6 +75,69 @@ describe('stage particles', () => {
       { project: 'x/y/z', count: 2 },
       { project: 'a/b/c', count: 1 },
     ]);
+  });
+});
+
+// #880: view.items is the three most-served Items since the stage was created, { item, count }, most
+// served first, the Item cut by labelText; view.otherItems counts what the rest were served; a miss is
+// no Item. A particle's `end` is 'item' when its Item is among those three, 'other' when it is not, and
+// 'miss' for a miss. Counting goes on past the pool, a Pause (count) and reduced motion.
+describe('stage Surface and Item nodes (#880)', () => {
+  const served = (item: string, n: number, o: Partial<ActivityEvent> = {}) =>
+    Array.from({ length: n }, (_, i) => ev(1000 + i, { served: item, query: `q-${item}-${i}`, ...o }));
+
+  it('ranks the three most-served Items since the page opened, with the rest as one count', () => {
+    const s = createStage();
+    s.add([...served('skill:a', 5), ...served('skill:b', 4), ...served('skill:c', 3), ...served('skill:d', 2), ...served('skill:e', 1)], t0);
+    const v = s.read(t0);
+    expect(v.items).toEqual([
+      { item: 'skill:a', count: 5 },
+      { item: 'skill:b', count: 4 },
+      { item: 'skill:c', count: 3 },
+    ]);
+    expect(v.otherItems).toBe(3);
+  });
+
+  it('keeps counting through a Pause and reduced motion, and counts no miss as an Item', () => {
+    const s = createStage({ reduced: true });
+    s.add([...served('skill:a', 2), ...served('skill:b', 1), ev(50, { miss: true, served: undefined, query: 'nothing' })], t0);
+    s.count(served('skill:b', 3));
+    const v = s.read(t0);
+    expect(v.particles).toEqual([]);
+    expect(v.items).toEqual([
+      { item: 'skill:b', count: 4 },
+      { item: 'skill:a', count: 2 },
+    ]);
+    expect(v.otherItems).toBe(0);
+  });
+
+  it('is empty before any request is served', () => {
+    const v = createStage().read(t0);
+    expect(v.items).toEqual([]);
+    expect(v.otherItems).toBe(0);
+  });
+
+  it('ends a particle at its Item node, at other Items & bundles, or at Miss', () => {
+    const s = createStage();
+    s.add(
+      [...served('skill:a', 3), ...served('skill:b', 3), ...served('skill:c', 3), ...served('skill:rare', 1), ev(60, { miss: true, served: undefined, query: 'nothing' })],
+      t0,
+    );
+    const v = s.read(t0 + (travelMs * 3) / 4);
+    const top = v.items.map((i) => i.item);
+    expect(top).toHaveLength(3);
+    expect(top).not.toContain('skill:rare');
+    const ends = (label: string) => new Set(v.particles.filter((p) => p.label === label).map((p) => p.end));
+    for (const item of top) expect(ends(item)).toEqual(new Set(['item']));
+    expect(ends('skill:rare')).toEqual(new Set(['other']));
+    expect(ends('nothing')).toEqual(new Set(['miss']));
+  });
+
+  it('cuts an Item label like any other label', () => {
+    const s = createStage();
+    s.add([ev(1, { served: `<img src=x onerror=alert(1)>${'x'.repeat(500)}` })], t0);
+    const [item] = s.read(t0).items;
+    expect([...item.item].length).toBeLessThanOrEqual(maxLabel);
   });
 });
 
@@ -188,5 +251,21 @@ describe('labelText', () => {
     s.add([ev(1, { miss: true, served: undefined, query: `<img src=x onerror=alert(1)>${'x'.repeat(500)}` })], t0);
     const label = s.read(t0).particles[0].label;
     expect([...label].length).toBeLessThanOrEqual(maxLabel);
+  });
+});
+
+describe('stage Items in the summary and unnamed served events (#880 fix round)', () => {
+  it('names the most-served Items in the summary', () => {
+    const s = createStage();
+    s.add([ev(1, { served: 'skill:a' }), ev(2, { served: 'skill:a' }), ev(3, { served: 'skill:b' })], t0);
+    expect(s.read(t0).summary).toContain('Most served: skill:a (2), skill:b (1).');
+  });
+
+  it('counts a served event without an Item under other Items & bundles, as its particle ends there', () => {
+    const s = createStage();
+    s.add([ev(1, { served: undefined, query: 'no-item' })], t0);
+    const v = s.read(t0 + 1);
+    expect(v.particles[0].end).toBe('other');
+    expect(v.otherItems).toBe(1);
   });
 });
