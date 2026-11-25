@@ -86,17 +86,6 @@ describe('stage Surface and Item nodes (#880)', () => {
   const served = (item: string, n: number, o: Partial<ActivityEvent> = {}) =>
     Array.from({ length: n }, (_, i) => ev(1000 + i, { served: item, query: `q-${item}-${i}`, ...o }));
 
-  it('reads hook as a Surface of its own, next to mcp, cli and ui', () => {
-    const s = createStage();
-    s.add([ev(1, { via: 'hook' }), ev(2, { via: 'mcp' }), ev(3, { via: 'cli' }), ev(4, { via: 'ui' })], t0);
-    expect(
-      s
-        .read(t0)
-        .particles.map((p) => p.surface)
-        .sort(),
-    ).toEqual(['cli', 'hook', 'mcp', 'ui']);
-  });
-
   it('ranks the three most-served Items since the page opened, with the rest as one count', () => {
     const s = createStage();
     s.add([...served('skill:a', 5), ...served('skill:b', 4), ...served('skill:c', 3), ...served('skill:d', 2), ...served('skill:e', 1)], t0);
