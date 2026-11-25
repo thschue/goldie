@@ -1051,12 +1051,12 @@ test.describe('the live header', () => {
 
 // The last five minutes and the Project chip (#809, handoff §3.6). Contract these specs pin down:
 // - a region in main named /last five minutes/i holds four list items, the tiles, each text
-//   starting with its label: Requests (a whole number per minute), Misses (a percent), Projects asking
-//   (a count), Busiest surface and (#810) Latency;
+//   starting with its label: Requests (a whole number, with the sub-line "per minute"), Misses (a percent,
+//   with "of requests"), Projects asking (a count), Busiest surface and (#810) Latency;
 // - the Project filter is the URL's `project`: only that Project's events are rows, and a button in
 //   main named /remove.*<project>/i is its chip; pressing it drops `project` from the URL.
 const tiles = (page: Page) => main(page).getByRole('region', { name: /last five minutes/i });
-const tile = (page: Page, label: string) => tiles(page).getByRole('listitem').filter({ hasText: label });
+const tile = (page: Page, label: string | RegExp) => tiles(page).getByRole('listitem').filter({ hasText: label });
 
 test.describe('the last five minutes', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
@@ -1075,8 +1075,11 @@ test.describe('the last five minutes', () => {
     await expect(tiles(page).getByRole('listitem')).toHaveCount(5);
     // 601 requests in five minutes is 120 a minute, though the feed keeps 500 rows; the replayed
     // one is older than five minutes and the skewed one counts as now.
-    await expect(tile(page, 'Requests')).toContainText(/\b120\b/);
+    // The Misses sub-line reads "of requests", so the Requests tile is found by its leading label.
+    await expect(tile(page, /^\s*Requests\b/)).toContainText(/\b120\b/);
+    await expect(tile(page, /^\s*Requests\b/)).toContainText(/per minute/i);
     await expect(tile(page, 'Misses')).toContainText(/\b10\s*%/);
+    await expect(tile(page, 'Misses')).toContainText(/of requests/i);
     await expect(tile(page, 'Projects asking')).toContainText(/\b3\b/);
   });
 
@@ -1171,8 +1174,9 @@ test.describe('the Live stream stage (#811)', () => {
 // - the detail adds "Query → Item" as `<query> → <served>`, Latency (milliseconds, one decimal),
 //   Via and Trace id; a field the event lacks (no served, a latency_us of 0 or none, no via, no
 //   trace id: a peer on an older version) is left out with its label;
-// - the Latency tile holds p50 and p95 over five minutes in milliseconds with one decimal, and
-//   Busiest surface holds the surface's name;
+// - the Latency tile's headline is the p50 over five minutes and "p95 <ms>" sits under it,
+//   in milliseconds with one decimal,
+//   and Busiest surface holds the surface's name;
 // - event text (served, trace id) is text without invisible or bidirectional controls, and a long
 //   served is cut by code point, never in the middle of a character.
 const surfaces = (page: Page) => main(page).getByRole('group', { name: /surface/i });
@@ -1341,8 +1345,9 @@ test.describe('the Busiest surface and Latency tiles', () => {
     await expect(tile(page, 'Busiest surface')).toContainText(/mcp/i);
     expect(await text(tile(page, 'Busiest surface'))).not.toContain('—');
     const l = await text(tile(page, 'Latency'));
-    expect(l).toMatch(/p50/i);
-    expect(l).toMatch(/p95/i);
+    // The p50 is the tile's value, with no label; the p95 sits under it (#879).
+    expect(l, 'the p50 value has no label').not.toMatch(/p50/i);
+    expect(l).toMatch(/p95\s*96\.0/i);
     expect(l.indexOf('51.0'), 'p50 is 51.0 ms').toBeGreaterThan(-1);
     expect(l.indexOf('96.0'), 'p95 is 96.0 ms').toBeGreaterThan(l.indexOf('51.0'));
     expect(l).toMatch(/\bms\b/);
