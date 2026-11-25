@@ -82,7 +82,10 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 		return errors.New("cannot open the repository root")
 	}
 	defer func() { _ = root.Close() }()
-	file, mode, err := readInstructionFile(root, name)
+	file, mode, err := readRootFile(root, name)
+	if errors.Is(err, errNotRegular) { // a CLAUDE.md linked to AGENTS.md is managed through the target
+		return fmt.Errorf("%w. Manage the file it points to, for example with --target agents", err)
+	}
 	if err != nil {
 		return err
 	}
@@ -111,18 +114,29 @@ func (c *commander) instructions(ctx context.Context, action string) error {
 		_, err = fmt.Fprintf(c.out, "%s is already up to date.\n", name)
 		return err
 	}
-	if err := writeInstructionFile(root, name, out, mode); err != nil {
+	if err := writeRootFile(root, name, out, mode); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(c.out, "Wrote the goldie block to %s (was %s).\n", name, status)
 	return err
 }
 
-// readInstructionFile reads name under root. A missing file is empty content.
-// A symlink, a directory or any other irregular file is refused: apply would
-// replace a link by a file, so a CLAUDE.md linked to AGENTS.md is managed
-// through --target agents.
-func readInstructionFile(root *os.Root, name string) ([]byte, os.FileMode, error) {
+// maxEditedFile is the most readRootFile reads: a file goldie edits in place
+// (CLAUDE.md, AGENTS.md, .claude/settings.json) is text a person keeps, so a
+// larger one is refused, not buffered.
+const maxEditedFile = 4 << 20
+
+// errNotRegular is a file that is a symlink, a directory or another irregular
+// file. The caller adds the next step.
+var errNotRegular = errors.New("is not a regular file (a symlink?); goldie never follows or replaces it")
+
+// errTooLarge is a file over maxEditedFile.
+var errTooLarge = fmt.Errorf("is larger than %d MiB, so goldie does not edit it", maxEditedFile>>20)
+
+// readRootFile reads name under root. A missing file is empty content. A
+// symlink, a directory or any other irregular file is refused with errNotRegular,
+// and a file over maxEditedFile with errTooLarge: both wrapped after the name.
+func readRootFile(root *os.Root, name string) ([]byte, os.FileMode, error) {
 	fi, err := root.Lstat(name)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -130,16 +144,21 @@ func readInstructionFile(root *os.Root, name string) ([]byte, os.FileMode, error
 	case err != nil:
 		return nil, 0, fmt.Errorf("cannot read %s", name)
 	case !fi.Mode().IsRegular():
-		return nil, 0, fmt.Errorf("%s is not a regular file (a symlink?); goldie never follows or replaces it. Manage the file it points to, for example with --target agents", name)
+		return nil, 0, fmt.Errorf("%s %w", name, errNotRegular)
+	case fi.Size() > maxEditedFile:
+		return nil, 0, fmt.Errorf("%s %w", name, errTooLarge)
 	}
 	f, err := root.Open(name)
 	if err != nil {
 		return nil, 0, fmt.Errorf("cannot read %s", name)
 	}
 	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(f)
-	if err != nil {
+	b, err := io.ReadAll(io.LimitReader(f, maxEditedFile+1))
+	switch {
+	case err != nil:
 		return nil, 0, fmt.Errorf("cannot read %s", name)
+	case len(b) > maxEditedFile:
+		return nil, 0, fmt.Errorf("%s %w", name, errTooLarge)
 	}
 	return b, fi.Mode().Perm(), nil
 }
@@ -156,9 +175,9 @@ func tempName(name string) string {
 	return "." + name + "." + hex.EncodeToString(r[:]) + ".tmp"
 }
 
-// writeInstructionFile replaces name under root by data: it writes a
+// writeRootFile replaces name under root by data: it writes a
 // temporary file in the same directory, syncs it and renames it over name.
-func writeInstructionFile(root *os.Root, name string, data []byte, mode os.FileMode) (err error) {
+func writeRootFile(root *os.Root, name string, data []byte, mode os.FileMode) (err error) {
 	tmp := tempName(name)
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {

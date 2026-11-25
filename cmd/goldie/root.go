@@ -144,6 +144,7 @@ func newRoot(out io.Writer) *cobra.Command {
 	)
 	root.AddCommand(serverCmd(out), validateCmd(), healthCmd())
 	root.AddCommand(clientCmds(out)...)
+	root.AddCommand(hooksCmd(out))
 	root.AddCommand(mcpCmd())
 	root.AddCommand(helpCmd(root))
 	for _, c := range root.Commands() {
@@ -389,6 +390,29 @@ func clientCmds(out io.Writer) []*cobra.Command {
 		cmds = append(cmds, cmd)
 	}
 	return cmds
+}
+
+// hooksCmd is goldie hooks install. It needs no server and no token, so it
+// takes none of the client flags.
+func hooksCmd(out io.Writer) *cobra.Command {
+	return &cobra.Command{
+		Use:     "hooks install",
+		Short:   "Add goldie's SessionStart hook to .claude/settings.json",
+		GroupID: groupAsk,
+		Long: "Add goldie's hook to hooks.SessionStart in .claude/settings.json at the repository root, creating\n" +
+			"the file if needed. The hook runs goldie context --hook and goldie pull --quiet --if-pulled at every\n" +
+			"session start in Claude Code. Every other byte of the file stays as it is, a second run changes\n" +
+			"nothing, and .claude/settings.local.json is never touched.\n\n" +
+			"Committing .claude/settings.json shares the hook with the team: everyone who opens the repository\n" +
+			"in Claude Code runs it, so each needs goldie installed and a token set up.\n\n" +
+			"It refuses, and writes nothing, for a file that is not plain JSON (comments, a byte order mark,\n" +
+			"trailing commas, duplicate keys), a hooks entry of the wrong type, a symlinked or irregular file or\n" +
+			".claude, a file over 4 MiB, or a directory that is not in a git repository.",
+		Example: "  goldie hooks install",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return misuse(cli.HooksInstall(args, out))
+		},
+	}
 }
 
 func mcpCmd() *cobra.Command {
