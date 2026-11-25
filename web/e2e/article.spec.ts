@@ -829,3 +829,168 @@ test.describe('an article when the Project changes', () => {
     await expect(page).toHaveTitle('Article · goldie');
   });
 });
+
+// The Usage card in the item detail aside (#901, handoff §3.4, §5.3, §8). The usage comes from
+// GET /api/v1/articles/<id with %2F>/usage (ItemUsage: source, since, uses{cli,mcp,other}, #898).
+// Contract these specs pin down:
+// - the card is headed "Usage" in the one complementary in main, and shows each client's count
+//   (cli, mcp, other) as text, with the label "since <process start>, this replica" and never
+//   "7 days"; there is no chart;
+// - a zero count is shown as 0, not hidden;
+// - while the usage loads the card is a skeleton (an element with aria-busy="true"); the article
+//   itself is already shown;
+// - a failed usage fetch puts one line of error text inside the card; the article stays and no
+//   role=alert is outside the aside (no page error);
+// - the link "Usage over time in Grafana ↗" is in the card only for the operator role and only
+//   with a grafana_url on the Session; it opens in a new tab with rel "noopener noreferrer".
+test.describe('the usage card', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  const aside = (page: Page) => main(page).getByRole('complementary');
+  const grafana = 'https://grafana.example.com/d/goldie';
+  const start = '2026-11-25T08:00:00Z';
+  const usageLink = (page: Page) => aside(page).getByRole('link', { name: /usage over time in grafana/i });
+  const asideText = async (page: Page) => norm(await aside(page).innerText());
+  const cli12 = /cli\W*12\b/i;
+
+  type Usage = { cli: number; mcp: number; other: number };
+  const usage = (uses: Usage = { cli: 12, mcp: 3, other: 1 }) => ({ source: 'this-replica', since: start, uses });
+
+  // setup stubs the Session, the article and its usage; the usage answer is a body, or a function
+  // that answers the route itself. It returns the usage request paths as the browser sent them.
+  async function setup(
+    page: Page,
+    opts: { role?: string; links?: { grafana_url?: string }; usage?: unknown | ((r: Route) => Promise<void>) } = {},
+  ) {
+    await page.route('**/api/v1/session', (route) =>
+      route.request().method() === 'GET'
+        ? json(route, 200, { name: 'rita-reader', role: opts.role ?? 'reader', ...opts.links })
+        : route.continue(),
+    );
+    await stubArticle(page, article());
+    const seen: string[] = [];
+    await page.route(/\/api\/v1\/articles\/[^/?]+\/usage/, (route) => {
+      const u = new URL(route.request().url());
+      seen.push(u.pathname + u.search);
+      const answer = opts.usage === undefined ? usage() : opts.usage;
+      return typeof answer === 'function' ? (answer as (r: Route) => Promise<void>)(route) : json(route, 200, answer);
+    });
+    return seen;
+  }
+
+  test('shows the count per client, labelled since the process start on this replica, with no chart', async ({ page }) => {
+    const seen = await setup(page);
+    await open(page);
+    await expect(aside(page).getByText('Usage', { exact: true })).toBeVisible();
+    await expect.poll(() => asideText(page)).toMatch(cli12);
+    const text = await asideText(page);
+    expect(text).toMatch(/mcp\W*3\b/i);
+    expect(text).toMatch(/other\W*1\b/i);
+    expect(text).toMatch(/since\s+\S.*2026.*,\s*this replica/i);
+    expect(text).not.toMatch(/7 days|30 days/i);
+    await expect(main(page).locator('canvas')).toHaveCount(0);
+    expect(seen).toEqual(['/api/v1/articles/platform%2Fdeploy/usage']);
+  });
+
+  test('shows a zero count as 0', async ({ page }) => {
+    await setup(page, { usage: usage({ cli: 0, mcp: 0, other: 0 }) });
+    await open(page);
+    await expect.poll(() => asideText(page)).toMatch(/cli\W*0\b/i);
+    const text = await asideText(page);
+    expect(text).toMatch(/mcp\W*0\b/i);
+    expect(text).toMatch(/other\W*0\b/i);
+    expect(text).toMatch(/this replica/i);
+  });
+
+  test('shows a skeleton while the usage loads, with the article already shown', async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    await setup(page, {
+      usage: async (route: Route) => {
+        await gate;
+        await json(route, 200, usage());
+      },
+    });
+    await open(page);
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    await expect(aside(page).getByText('Usage', { exact: true })).toBeVisible();
+    await expect(aside(page).locator('[aria-busy="true"]').first()).toBeVisible();
+    expect(await asideText(page)).not.toMatch(cli12);
+    release();
+    await expect.poll(() => asideText(page)).toMatch(cli12);
+    await expect(aside(page).locator('[aria-busy="true"]')).toHaveCount(0);
+  });
+
+  test('a failed usage fetch shows a one-line error in the card and no page error', async ({ page }) => {
+    await setup(page, {
+      usage: (route: Route) =>
+        json(route, 500, envelope('internal', 'Something went wrong.', 'panic at /srv/goldie 10.0.0.7')),
+    });
+    await open(page);
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    await expect(main(page).getByText('Use the platform chart.')).toBeVisible();
+    await expect(aside(page).getByText('Usage', { exact: true })).toBeVisible();
+    await expect(aside(page).getByText(/could not|couldn.t|unavailable|failed|error/i)).toHaveCount(1);
+    expect(await asideText(page)).not.toMatch(/cli\W*\d/i);
+    expect(await asideText(page)).not.toMatch(/panic|\/srv|10\.0\.0\.7/);
+    const pageAlerts = await main(page)
+      .locator('[role="alert"]')
+      .evaluateAll((els) => els.filter((e) => !e.closest('aside, [role="complementary"]')).length);
+    expect(pageAlerts, 'an alert outside the aside is a page error').toBe(0);
+    await expect(h1(page)).not.toHaveText('Article not available');
+  });
+
+  test('a reader sees the card with no identity and no Grafana link', async ({ page }) => {
+    await setup(page);
+    await open(page);
+    await expect.poll(() => asideText(page)).toMatch(cli12);
+    expect(await mainText(page)).not.toContain('rita-reader');
+    await expect(usageLink(page)).toHaveCount(0);
+    await expect(main(page).getByText(/grafana/i)).toHaveCount(0);
+  });
+
+  test('an operator with a grafana_url sees the link, in a new tab, with rel noopener noreferrer', async ({ page }) => {
+    await setup(page, { role: 'operator', links: { grafana_url: grafana } });
+    await open(page);
+    await expect(usageLink(page)).toHaveCount(1);
+    await expect(usageLink(page)).toHaveText(/^\s*Usage over time in Grafana\s*↗\s*$/);
+    await expect(usageLink(page)).toHaveAttribute('href', grafana);
+    await expect(usageLink(page)).toHaveAttribute('target', '_blank');
+    const rel = ((await usageLink(page).getAttribute('rel')) ?? '').split(/\s+/).sort();
+    expect(rel).toEqual(['noopener', 'noreferrer']);
+  });
+
+  test('an operator without a grafana_url has no Grafana link', async ({ page }) => {
+    await setup(page, { role: 'operator' });
+    await open(page);
+    await expect.poll(() => asideText(page)).toMatch(cli12);
+    await expect(usageLink(page)).toHaveCount(0);
+    await expect(main(page).getByText(/grafana/i)).toHaveCount(0);
+  });
+
+  test('a reader never gets the Grafana link, even if the Session carries a grafana_url', async ({ page }) => {
+    await setup(page, { role: 'reader', links: { grafana_url: grafana } });
+    await open(page);
+    await expect.poll(() => asideText(page)).toMatch(cli12);
+    await expect(usageLink(page)).toHaveCount(0);
+    await expect(main(page).getByText(/grafana/i)).toHaveCount(0);
+  });
+});
+
+eachViewport((width, theme) => {
+  test('an article with the usage card is captured and axe-clean', async ({ page }) => {
+    await page.route('**/api/v1/session', (route) =>
+      route.request().method() === 'GET'
+        ? json(route, 200, { name: 'ops', role: 'operator', grafana_url: 'https://grafana.example.com/d/goldie' })
+        : route.continue(),
+    );
+    await stubArticle(page, article());
+    await page.route(/\/api\/v1\/articles\/[^/?]+\/usage/, (route) =>
+      json(route, 200, { source: 'this-replica', since: '2026-11-25T08:00:00Z', uses: { cli: 12, mcp: 3, other: 0 } }),
+    );
+    await open(page);
+    await expect(h1(page)).toHaveText('Deploying to Kubernetes');
+    await expect(main(page).getByRole('complementary').getByText(/cli\W*12\b/i)).toBeVisible();
+    await evidence(page, width, theme, '-usage', 'article');
+  });
+});
