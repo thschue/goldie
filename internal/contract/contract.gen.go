@@ -87,6 +87,21 @@ func (e ItemStatus) Valid() bool {
 	}
 }
 
+// Defines values for ItemUsageSource.
+const (
+	ThisReplica ItemUsageSource = "this-replica"
+)
+
+// Valid indicates whether the value is a known member of the ItemUsageSource enum.
+func (e ItemUsageSource) Valid() bool {
+	switch e {
+	case ThisReplica:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectItemStatus.
 const (
 	ProjectItemStatusDeprecated ProjectItemStatus = "deprecated"
@@ -679,6 +694,30 @@ type InstructionBlock struct {
 //
 // Examples: deprecated
 type ItemStatus string
+
+// ItemUsage The uses of one Item on the replica that answered, from an in-process tally
+// that restarts with the process (#900).
+type ItemUsage struct {
+	// Since When this process started, in RFC 3339.
+	//
+	// Example: 2026-11-25T08:00:00Z
+	Since time.Time `json:"since"`
+
+	// Source Example: this-replica
+	Source ItemUsageSource `json:"source"`
+
+	// Uses Answered lookups and gets by client; every key is always present.
+	//
+	// Example: {"cli":12,"mcp":3,"other":1}
+	Uses struct {
+		Cli   int `json:"cli"`
+		Mcp   int `json:"mcp"`
+		Other int `json:"other"`
+	} `json:"uses"`
+}
+
+// ItemUsageSource Example: this-replica
+type ItemUsageSource string
 
 // Loop One loop definition with its resolved closure.
 //
@@ -1280,6 +1319,13 @@ type GetAgentParams struct {
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
+// GetAgentUsageParams defines parameters for GetAgentUsage.
+type GetAgentUsageParams struct {
+	// Project Resolve the agent for this Project (ADR 0020), as `getAgent` does. A
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
 // ListArticlesParams defines parameters for ListArticles.
 type ListArticlesParams struct {
 	// Project Resolve the list for this Project (ADR 0020): its own article wins over the
@@ -1312,6 +1358,13 @@ type GetArticleParams struct {
 	// never shadows an enforced global Item (ADR 0021). MCP never asks
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
+// GetArticleUsageParams defines parameters for GetArticleUsage.
+type GetArticleUsageParams struct {
+	// Project Resolve the article for this Project (ADR 0020), as `getArticle` does. A
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 }
 
 // GetBundleParams defines parameters for GetBundle.
@@ -1401,6 +1454,13 @@ type GetLoopParams struct {
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
 }
 
+// GetLoopUsageParams defines parameters for GetLoopUsage.
+type GetLoopUsageParams struct {
+	// Project Resolve the loop for this Project (ADR 0020), as `getLoop` does. A
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
+}
+
 // SearchArticlesParams defines parameters for SearchArticles.
 type SearchArticlesParams struct {
 	// Q Search words, separated by spaces. Matching ignores case.
@@ -1480,6 +1540,13 @@ type GetSkillFileParams struct {
 	// never shadows an enforced global Item (ADR 0021). MCP never asks
 	// for drafts.
 	Drafts *Drafts `form:"drafts,omitempty" json:"drafts,omitempty"`
+}
+
+// GetSkillUsageParams defines parameters for GetSkillUsage.
+type GetSkillUsageParams struct {
+	// Project Resolve the skill for this Project (ADR 0020), as `getSkill` does. A
+	// value that is not a `ProjectId` is a 400.
+	Project *ProjectId `form:"project,omitempty" json:"project,omitempty"`
 }
 
 // PostSyncParams defines parameters for PostSync.
@@ -1638,6 +1705,19 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/agents/{name} (the `GetAgent` operationId).
 	GetAgent(ctx context.Context, name string, params *GetAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetAgentUsage Read how often one agent was used on this replica
+	//
+	// Returns the uses of the agent (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The agent
+	// is resolved as `getAgent` resolves it; an agent that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
+	GetAgentUsage(ctx context.Context, name string, params *GetAgentUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListArticles List the articles of a view
 	//
 	// Returns the articles that win in the Project's view, one per id, sorted
@@ -1657,6 +1737,19 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetArticleUsage Read how often one article was used on this replica
+	//
+	// Returns the uses of the article (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The article
+	// is resolved as `getArticle` resolves it; an article that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
+	GetArticleUsage(ctx context.Context, id string, params *GetArticleUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetBundle Download the resolved set as an archive
 	//
@@ -1732,6 +1825,19 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
 	GetLoop(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetLoopUsage Read how often one loop was used on this replica
+	//
+	// Returns the uses of the loop (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The loop
+	// is resolved as `getLoop` resolves it; a loop that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Corresponds with GET /api/v1/loops/{name}/usage (the `GetLoopUsage` operationId).
+	GetLoopUsage(ctx context.Context, name string, params *GetLoopUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListProjects List the registered Projects
 	//
@@ -1926,6 +2032,19 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
 	GetSkillFile(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSkillUsage Read how often one skill was used on this replica
+	//
+	// Returns the uses of the skill (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The skill
+	// is resolved as `getSkill` resolves it; a skill that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Corresponds with GET /api/v1/skills/{name}/usage (the `GetSkillUsage` operationId).
+	GetSkillUsage(ctx context.Context, name string, params *GetSkillUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetSync Read the content sync status and warnings
 	//
 	// Returns, per Source, its `name` and `preference`, the revision served
@@ -2081,6 +2200,29 @@ func (c *Client) GetAgent(ctx context.Context, name string, params *GetAgentPara
 	return c.Client.Do(req)
 }
 
+// GetAgentUsage Read how often one agent was used on this replica
+//
+// Returns the uses of the agent (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The agent
+// is resolved as `getAgent` resolves it; an agent that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
+func (c *Client) GetAgentUsage(ctx context.Context, name string, params *GetAgentUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAgentUsageRequest(c.Server, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListArticles List the articles of a view
 //
 // Returns the articles that win in the Project's view, one per id, sorted
@@ -2111,6 +2253,29 @@ func (c *Client) ListArticles(ctx context.Context, params *ListArticlesParams, r
 // Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetArticleRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetArticleUsage Read how often one article was used on this replica
+//
+// Returns the uses of the article (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The article
+// is resolved as `getArticle` resolves it; an article that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
+func (c *Client) GetArticleUsage(ctx context.Context, id string, params *GetArticleUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArticleUsageRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2246,6 +2411,29 @@ func (c *Client) ListLoops(ctx context.Context, params *ListLoopsParams, reqEdit
 // Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
 func (c *Client) GetLoop(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetLoopRequest(c.Server, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetLoopUsage Read how often one loop was used on this replica
+//
+// Returns the uses of the loop (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The loop
+// is resolved as `getLoop` resolves it; a loop that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Corresponds with GET /api/v1/loops/{name}/usage (the `GetLoopUsage` operationId).
+func (c *Client) GetLoopUsage(ctx context.Context, name string, params *GetLoopUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetLoopUsageRequest(c.Server, name, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2569,6 +2757,29 @@ func (c *Client) GetSkillFile(ctx context.Context, name string, path string, par
 	return c.Client.Do(req)
 }
 
+// GetSkillUsage Read how often one skill was used on this replica
+//
+// Returns the uses of the skill (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The skill
+// is resolved as `getSkill` resolves it; a skill that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Corresponds with GET /api/v1/skills/{name}/usage (the `GetSkillUsage` operationId).
+func (c *Client) GetSkillUsage(ctx context.Context, name string, params *GetSkillUsageParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSkillUsageRequest(c.Server, name, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetSync Read the content sync status and warnings
 //
 // Returns, per Source, its `name` and `preference`, the revision served
@@ -2853,6 +3064,67 @@ func NewGetAgentRequest(server string, name string, params *GetAgentParams) (*ht
 	return req, nil
 }
 
+// NewGetAgentUsageRequest constructs an http.Request for the GetAgentUsage method
+func NewGetAgentUsageRequest(server string, name string, params *GetAgentUsageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/agents/" + pathParam0 + "/usage"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListArticlesRequest constructs an http.Request for the ListArticles method
 func NewListArticlesRequest(server string, params *ListArticlesParams) (*http.Request, error) {
 	var err error
@@ -2969,6 +3241,67 @@ func NewGetArticleRequest(server string, id string, params *GetArticleParams) (*
 		if params.Drafts != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetArticleUsageRequest constructs an http.Request for the GetArticleUsage method
+func NewGetArticleUsageRequest(server string, id string, params *GetArticleUsageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/articles/" + pathParam0 + "/usage"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3374,6 +3707,67 @@ func NewGetLoopRequest(server string, name string, params *GetLoopParams) (*http
 		if params.Drafts != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "drafts", *params.Drafts, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetLoopUsageRequest constructs an http.Request for the GetLoopUsage method
+func NewGetLoopUsageRequest(server string, name string, params *GetLoopUsageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/loops/" + pathParam0 + "/usage"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3918,6 +4312,67 @@ func NewGetSkillFileRequest(server string, name string, path string, params *Get
 	return req, nil
 }
 
+// NewGetSkillUsageRequest constructs an http.Request for the GetSkillUsage method
+func NewGetSkillUsageRequest(server string, name string, params *GetSkillUsageParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "name", name, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/skills/" + pathParam0 + "/usage"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Project != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "project", *params.Project, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSyncRequest constructs an http.Request for the GetSync method
 func NewGetSyncRequest(server string) (*http.Request, error) {
 	var err error
@@ -4176,6 +4631,21 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/agents/{name} (the `GetAgent` operationId).
 	GetAgentWithResponse(ctx context.Context, name string, params *GetAgentParams, reqEditors ...RequestEditorFn) (*GetAgentResponse, error)
 
+	// GetAgentUsageWithResponse Read how often one agent was used on this replica
+	//
+	// Returns the uses of the agent (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The agent
+	// is resolved as `getAgent` resolves it; an agent that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
+	GetAgentUsageWithResponse(ctx context.Context, name string, params *GetAgentUsageParams, reqEditors ...RequestEditorFn) (*GetAgentUsageResponse, error)
+
 	// ListArticlesWithResponse List the articles of a view
 	//
 	// Returns the articles that win in the Project's view, one per id, sorted
@@ -4199,6 +4669,21 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/articles/{id} (the `GetArticle` operationId).
 	GetArticleWithResponse(ctx context.Context, id string, params *GetArticleParams, reqEditors ...RequestEditorFn) (*GetArticleResponse, error)
+
+	// GetArticleUsageWithResponse Read how often one article was used on this replica
+	//
+	// Returns the uses of the article (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The article
+	// is resolved as `getArticle` resolves it; an article that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
+	GetArticleUsageWithResponse(ctx context.Context, id string, params *GetArticleUsageParams, reqEditors ...RequestEditorFn) (*GetArticleUsageResponse, error)
 
 	// GetBundleWithResponse Download the resolved set as an archive
 	//
@@ -4286,6 +4771,21 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/loops/{name} (the `GetLoop` operationId).
 	GetLoopWithResponse(ctx context.Context, name string, params *GetLoopParams, reqEditors ...RequestEditorFn) (*GetLoopResponse, error)
+
+	// GetLoopUsageWithResponse Read how often one loop was used on this replica
+	//
+	// Returns the uses of the loop (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The loop
+	// is resolved as `getLoop` resolves it; a loop that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/loops/{name}/usage (the `GetLoopUsage` operationId).
+	GetLoopUsageWithResponse(ctx context.Context, name string, params *GetLoopUsageParams, reqEditors ...RequestEditorFn) (*GetLoopUsageResponse, error)
 
 	// ListProjectsWithResponse List the registered Projects
 	//
@@ -4499,6 +4999,21 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/skills/{name}/files/{path} (the `GetSkillFile` operationId).
 	GetSkillFileWithResponse(ctx context.Context, name string, path string, params *GetSkillFileParams, reqEditors ...RequestEditorFn) (*GetSkillFileResponse, error)
+
+	// GetSkillUsageWithResponse Read how often one skill was used on this replica
+	//
+	// Returns the uses of the skill (answered lookups or gets) counted on this
+	// replica since it started (`source` is `this-replica`, `since` is the
+	// process start). It counts the events `goldie.item.uses` counts, by client,
+	// without needing metrics, and reading the usage is no use. The numbers
+	// restart with the process and are not summed across replicas. The skill
+	// is resolved as `getSkill` resolves it; a skill that is not visible to the
+	// caller's Project view is the same 404 as a missing one.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/skills/{name}/usage (the `GetSkillUsage` operationId).
+	GetSkillUsageWithResponse(ctx context.Context, name string, params *GetSkillUsageParams, reqEditors ...RequestEditorFn) (*GetSkillUsageResponse, error)
 
 	// GetSyncWithResponse Read the content sync status and warnings
 	//
@@ -4851,6 +5366,103 @@ func (r GetAgentResponse) ContentType() string {
 	return ""
 }
 
+// GetAgentUsageResponse429Headers the declared response headers of an HTTP 429 response for GetAgentUsage
+type GetAgentUsageResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetAgentUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ItemUsage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetAgentUsageResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAgentUsageResponse) GetJSON200() *ItemUsage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetAgentUsageResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetAgentUsageResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetAgentUsageResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetAgentUsageResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetAgentUsageResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetAgentUsageResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetAgentUsageResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAgentUsageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAgentUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAgentUsageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAgentUsageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListArticlesResponse429Headers the declared response headers of an HTTP 429 response for ListArticles
 type ListArticlesResponse429Headers struct {
 	RetryAfter *int
@@ -5046,6 +5658,103 @@ func (r GetArticleResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetArticleResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetArticleUsageResponse429Headers the declared response headers of an HTTP 429 response for GetArticleUsage
+type GetArticleUsageResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetArticleUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ItemUsage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetArticleUsageResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetArticleUsageResponse) GetJSON200() *ItemUsage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetArticleUsageResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetArticleUsageResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetArticleUsageResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetArticleUsageResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetArticleUsageResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetArticleUsageResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetArticleUsageResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetArticleUsageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArticleUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArticleUsageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetArticleUsageResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5628,6 +6337,103 @@ func (r GetLoopResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetLoopResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetLoopUsageResponse429Headers the declared response headers of an HTTP 429 response for GetLoopUsage
+type GetLoopUsageResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetLoopUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ItemUsage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetLoopUsageResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetLoopUsageResponse) GetJSON200() *ItemUsage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetLoopUsageResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetLoopUsageResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetLoopUsageResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetLoopUsageResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetLoopUsageResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetLoopUsageResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetLoopUsageResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetLoopUsageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetLoopUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetLoopUsageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetLoopUsageResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6561,6 +7367,103 @@ func (r GetSkillFileResponse) ContentType() string {
 	return ""
 }
 
+// GetSkillUsageResponse429Headers the declared response headers of an HTTP 429 response for GetSkillUsage
+type GetSkillUsageResponse429Headers struct {
+	RetryAfter *int
+}
+
+type GetSkillUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ItemUsage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorEnvelope
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *ErrorEnvelope
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorEnvelope
+	// JSON426 the response for an HTTP 426 `application/json` response
+	JSON426 *UpgradeRequired
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *RateLimited
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *NotReady
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *GetSkillUsageResponse429Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSkillUsageResponse) GetJSON200() *ItemUsage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetSkillUsageResponse) GetJSON400() *ErrorEnvelope {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetSkillUsageResponse) GetJSON401() *ErrorEnvelope {
+	return r.JSON401
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetSkillUsageResponse) GetJSON404() *ErrorEnvelope {
+	return r.JSON404
+}
+
+// GetJSON426 returns the response for an HTTP 426 `application/json` response
+func (r GetSkillUsageResponse) GetJSON426() *UpgradeRequired {
+	return r.JSON426
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r GetSkillUsageResponse) GetJSON429() *RateLimited {
+	return r.JSON429
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetSkillUsageResponse) GetJSON503() *NotReady {
+	return r.JSON503
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSkillUsageResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSkillUsageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSkillUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSkillUsageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSkillUsageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetSyncResponse429Headers the declared response headers of an HTTP 429 response for GetSync
 type GetSyncResponse429Headers struct {
 	RetryAfter *int
@@ -6941,6 +7844,27 @@ func (c *ClientWithResponses) GetAgentWithResponse(ctx context.Context, name str
 	return ParseGetAgentResponse(rsp)
 }
 
+// GetAgentUsageWithResponse Read how often one agent was used on this replica
+//
+// Returns the uses of the agent (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The agent
+// is resolved as `getAgent` resolves it; an agent that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
+func (c *ClientWithResponses) GetAgentUsageWithResponse(ctx context.Context, name string, params *GetAgentUsageParams, reqEditors ...RequestEditorFn) (*GetAgentUsageResponse, error) {
+	rsp, err := c.GetAgentUsage(ctx, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAgentUsageResponse(rsp)
+}
+
 // ListArticlesWithResponse List the articles of a view
 //
 // Returns the articles that win in the Project's view, one per id, sorted
@@ -6975,6 +7899,27 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 		return nil, err
 	}
 	return ParseGetArticleResponse(rsp)
+}
+
+// GetArticleUsageWithResponse Read how often one article was used on this replica
+//
+// Returns the uses of the article (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The article
+// is resolved as `getArticle` resolves it; an article that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
+func (c *ClientWithResponses) GetArticleUsageWithResponse(ctx context.Context, id string, params *GetArticleUsageParams, reqEditors ...RequestEditorFn) (*GetArticleUsageResponse, error) {
+	rsp, err := c.GetArticleUsage(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArticleUsageResponse(rsp)
 }
 
 // GetBundleWithResponse Download the resolved set as an archive
@@ -7098,6 +8043,27 @@ func (c *ClientWithResponses) GetLoopWithResponse(ctx context.Context, name stri
 		return nil, err
 	}
 	return ParseGetLoopResponse(rsp)
+}
+
+// GetLoopUsageWithResponse Read how often one loop was used on this replica
+//
+// Returns the uses of the loop (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The loop
+// is resolved as `getLoop` resolves it; a loop that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/loops/{name}/usage (the `GetLoopUsage` operationId).
+func (c *ClientWithResponses) GetLoopUsageWithResponse(ctx context.Context, name string, params *GetLoopUsageParams, reqEditors ...RequestEditorFn) (*GetLoopUsageResponse, error) {
+	rsp, err := c.GetLoopUsage(ctx, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetLoopUsageResponse(rsp)
 }
 
 // ListProjectsWithResponse List the registered Projects
@@ -7383,6 +8349,27 @@ func (c *ClientWithResponses) GetSkillFileWithResponse(ctx context.Context, name
 		return nil, err
 	}
 	return ParseGetSkillFileResponse(rsp)
+}
+
+// GetSkillUsageWithResponse Read how often one skill was used on this replica
+//
+// Returns the uses of the skill (answered lookups or gets) counted on this
+// replica since it started (`source` is `this-replica`, `since` is the
+// process start). It counts the events `goldie.item.uses` counts, by client,
+// without needing metrics, and reading the usage is no use. The numbers
+// restart with the process and are not summed across replicas. The skill
+// is resolved as `getSkill` resolves it; a skill that is not visible to the
+// caller's Project view is the same 404 as a missing one.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/skills/{name}/usage (the `GetSkillUsage` operationId).
+func (c *ClientWithResponses) GetSkillUsageWithResponse(ctx context.Context, name string, params *GetSkillUsageParams, reqEditors ...RequestEditorFn) (*GetSkillUsageResponse, error) {
+	rsp, err := c.GetSkillUsage(ctx, name, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSkillUsageResponse(rsp)
 }
 
 // GetSyncWithResponse Read the content sync status and warnings
@@ -7732,6 +8719,94 @@ func ParseGetAgentResponse(rsp *http.Response) (*GetAgentResponse, error) {
 	return response, nil
 }
 
+// ParseGetAgentUsageResponse parses an HTTP response from a GetAgentUsageWithResponse call
+func ParseGetAgentUsageResponse(rsp *http.Response) (*GetAgentUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAgentUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemUsage
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetAgentUsageResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseListArticlesResponse parses an HTTP response from a ListArticlesWithResponse call
 func ParseListArticlesResponse(rsp *http.Response) (*ListArticlesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7902,6 +8977,94 @@ func ParseGetArticleResponse(rsp *http.Response) (*GetArticleResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetArticleResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetArticleUsageResponse parses an HTTP response from a GetArticleUsageWithResponse call
+func ParseGetArticleUsageResponse(rsp *http.Response) (*GetArticleUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArticleUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemUsage
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetArticleUsageResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -8439,6 +9602,94 @@ func ParseGetLoopResponse(rsp *http.Response) (*GetLoopResponse, error) {
 	switch {
 	case rsp.StatusCode == 429:
 		var headers GetLoopResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetLoopUsageResponse parses an HTTP response from a GetLoopUsageWithResponse call
+func ParseGetLoopUsageResponse(rsp *http.Response) (*GetLoopUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetLoopUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemUsage
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetLoopUsageResponse429Headers
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value int
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
@@ -9271,6 +10522,94 @@ func ParseGetSkillFileResponse(rsp *http.Response) (*GetSkillFileResponse, error
 	return response, nil
 }
 
+// ParseGetSkillUsageResponse parses an HTTP response from a GetSkillUsageWithResponse call
+func ParseGetSkillUsageResponse(rsp *http.Response) (*GetSkillUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSkillUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ItemUsage
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorEnvelope
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 426:
+		var dest UpgradeRequired
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON426 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest RateLimited
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest NotReady
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 429:
+		var headers GetSkillUsageResponse429Headers
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value int
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		response.Headers429 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetSyncResponse parses an HTTP response from a GetSyncWithResponse call
 func ParseGetSyncResponse(rsp *http.Response) (*GetSyncResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -9517,12 +10856,18 @@ type ServerInterface interface {
 	// GetAgent Read one agent
 	// (GET /api/v1/agents/{name})
 	GetAgent(w http.ResponseWriter, r *http.Request, name string, params GetAgentParams)
+	// GetAgentUsage Read how often one agent was used on this replica
+	// (GET /api/v1/agents/{name}/usage)
+	GetAgentUsage(w http.ResponseWriter, r *http.Request, name string, params GetAgentUsageParams)
 	// ListArticles List the articles of a view
 	// (GET /api/v1/articles)
 	ListArticles(w http.ResponseWriter, r *http.Request, params ListArticlesParams)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(w http.ResponseWriter, r *http.Request, id string, params GetArticleParams)
+	// GetArticleUsage Read how often one article was used on this replica
+	// (GET /api/v1/articles/{id}/usage)
+	GetArticleUsage(w http.ResponseWriter, r *http.Request, id string, params GetArticleUsageParams)
 	// GetBundle Download the resolved set as an archive
 	// (GET /api/v1/bundle)
 	GetBundle(w http.ResponseWriter, r *http.Request, params GetBundleParams)
@@ -9541,6 +10886,9 @@ type ServerInterface interface {
 	// GetLoop Read one loop
 	// (GET /api/v1/loops/{name})
 	GetLoop(w http.ResponseWriter, r *http.Request, name string, params GetLoopParams)
+	// GetLoopUsage Read how often one loop was used on this replica
+	// (GET /api/v1/loops/{name}/usage)
+	GetLoopUsage(w http.ResponseWriter, r *http.Request, name string, params GetLoopUsageParams)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(w http.ResponseWriter, r *http.Request)
@@ -9574,6 +10922,9 @@ type ServerInterface interface {
 	// GetSkillFile Read one file of a skill
 	// (GET /api/v1/skills/{name}/files/{path})
 	GetSkillFile(w http.ResponseWriter, r *http.Request, name string, path string, params GetSkillFileParams)
+	// GetSkillUsage Read how often one skill was used on this replica
+	// (GET /api/v1/skills/{name}/usage)
+	GetSkillUsage(w http.ResponseWriter, r *http.Request, name string, params GetSkillUsageParams)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(w http.ResponseWriter, r *http.Request)
@@ -9731,6 +11082,48 @@ func (siw *ServerInterfaceWrapper) GetAgent(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// GetAgentUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetAgentUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAgentUsageParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAgentUsage(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListArticles operation middleware
 func (siw *ServerInterfaceWrapper) ListArticles(w http.ResponseWriter, r *http.Request) {
 
@@ -9823,6 +11216,48 @@ func (siw *ServerInterfaceWrapper) GetArticle(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetArticle(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetArticleUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetArticleUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetArticleUsageParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetArticleUsage(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10125,6 +11560,48 @@ func (siw *ServerInterfaceWrapper) GetLoop(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetLoop(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLoopUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetLoopUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetLoopUsageParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLoopUsage(w, r, name, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10493,6 +11970,48 @@ func (siw *ServerInterfaceWrapper) GetSkillFile(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GetSkillUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetSkillUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "name" -------------
+	var name string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "name", r.PathValue("name"), &name, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSkillUsageParams
+
+	// ------------- Optional query parameter "project" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "project", r.URL.Query(), &params.Project, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "project"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "project", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSkillUsage(w, r, name, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetSync operation middleware
 func (siw *ServerInterfaceWrapper) GetSync(w http.ResponseWriter, r *http.Request) {
 
@@ -10698,6 +12217,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}", wrapper.GetAgent)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops", wrapper.ListLoops)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops/{name}", wrapper.GetLoop)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/articles/{id}/usage", wrapper.GetArticleUsage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/skills/{name}/usage", wrapper.GetSkillUsage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/agents/{name}/usage", wrapper.GetAgentUsage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/loops/{name}/usage", wrapper.GetLoopUsage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/decisions", wrapper.ListDecisions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/decisions/{name}", wrapper.GetDecision)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instructions", wrapper.GetInstructions)
@@ -11173,6 +12696,139 @@ func (response GetAgentdefaultJSONResponse) VisitGetAgentResponse(w http.Respons
 	return err
 }
 
+type GetAgentUsageRequestObject struct {
+	Name   string `json:"name"`
+	Params GetAgentUsageParams
+}
+
+type GetAgentUsageResponseObject interface {
+	VisitGetAgentUsageResponse(w http.ResponseWriter) error
+}
+
+type GetAgentUsage200JSONResponse ItemUsage
+
+func (response GetAgentUsage200JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage400JSONResponse ErrorEnvelope
+
+func (response GetAgentUsage400JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage401JSONResponse ErrorEnvelope
+
+func (response GetAgentUsage401JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage404JSONResponse ErrorEnvelope
+
+func (response GetAgentUsage404JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetAgentUsage426JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetAgentUsage429JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsage503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetAgentUsage503JSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAgentUsagedefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetAgentUsagedefaultJSONResponse) VisitGetAgentUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListArticlesRequestObject struct {
 	Params ListArticlesParams
 }
@@ -11441,6 +13097,139 @@ type GetArticledefaultJSONResponse struct {
 }
 
 func (response GetArticledefaultJSONResponse) VisitGetArticleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsageRequestObject struct {
+	Id     string `json:"id"`
+	Params GetArticleUsageParams
+}
+
+type GetArticleUsageResponseObject interface {
+	VisitGetArticleUsageResponse(w http.ResponseWriter) error
+}
+
+type GetArticleUsage200JSONResponse ItemUsage
+
+func (response GetArticleUsage200JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage400JSONResponse ErrorEnvelope
+
+func (response GetArticleUsage400JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage401JSONResponse ErrorEnvelope
+
+func (response GetArticleUsage401JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage404JSONResponse ErrorEnvelope
+
+func (response GetArticleUsage404JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetArticleUsage426JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetArticleUsage429JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsage503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetArticleUsage503JSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetArticleUsagedefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetArticleUsagedefaultJSONResponse) VisitGetArticleUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -12259,6 +14048,139 @@ type GetLoopdefaultJSONResponse struct {
 }
 
 func (response GetLoopdefaultJSONResponse) VisitGetLoopResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsageRequestObject struct {
+	Name   string `json:"name"`
+	Params GetLoopUsageParams
+}
+
+type GetLoopUsageResponseObject interface {
+	VisitGetLoopUsageResponse(w http.ResponseWriter) error
+}
+
+type GetLoopUsage200JSONResponse ItemUsage
+
+func (response GetLoopUsage200JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage400JSONResponse ErrorEnvelope
+
+func (response GetLoopUsage400JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage401JSONResponse ErrorEnvelope
+
+func (response GetLoopUsage401JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage404JSONResponse ErrorEnvelope
+
+func (response GetLoopUsage404JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetLoopUsage426JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetLoopUsage429JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsage503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetLoopUsage503JSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLoopUsagedefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetLoopUsagedefaultJSONResponse) VisitGetLoopUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -13486,6 +15408,139 @@ func (response GetSkillFiledefaultJSONResponse) VisitGetSkillFileResponse(w http
 	return err
 }
 
+type GetSkillUsageRequestObject struct {
+	Name   string `json:"name"`
+	Params GetSkillUsageParams
+}
+
+type GetSkillUsageResponseObject interface {
+	VisitGetSkillUsageResponse(w http.ResponseWriter) error
+}
+
+type GetSkillUsage200JSONResponse ItemUsage
+
+func (response GetSkillUsage200JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage400JSONResponse ErrorEnvelope
+
+func (response GetSkillUsage400JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage401JSONResponse ErrorEnvelope
+
+func (response GetSkillUsage401JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage404JSONResponse ErrorEnvelope
+
+func (response GetSkillUsage404JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage426JSONResponse struct{ UpgradeRequiredJSONResponse }
+
+func (response GetSkillUsage426JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.UpgradeRequiredJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage429JSONResponse struct{ RateLimitedJSONResponse }
+
+func (response GetSkillUsage429JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.RetryAfter != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Retry-After", *response.Headers.RetryAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "integer", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Retry-After: %w", err)
+			}
+			w.Header().Set("Retry-After", v)
+		}
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsage503JSONResponse struct{ NotReadyJSONResponse }
+
+func (response GetSkillUsage503JSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.NotReadyJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSkillUsagedefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSkillUsagedefaultJSONResponse) VisitGetSkillUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSyncRequestObject struct {
 }
 
@@ -13835,12 +15890,18 @@ type StrictServerInterface interface {
 	// GetAgent Read one agent
 	// (GET /api/v1/agents/{name})
 	GetAgent(ctx context.Context, request GetAgentRequestObject) (GetAgentResponseObject, error)
+	// GetAgentUsage Read how often one agent was used on this replica
+	// (GET /api/v1/agents/{name}/usage)
+	GetAgentUsage(ctx context.Context, request GetAgentUsageRequestObject) (GetAgentUsageResponseObject, error)
 	// ListArticles List the articles of a view
 	// (GET /api/v1/articles)
 	ListArticles(ctx context.Context, request ListArticlesRequestObject) (ListArticlesResponseObject, error)
 	// GetArticle Look up one article
 	// (GET /api/v1/articles/{id})
 	GetArticle(ctx context.Context, request GetArticleRequestObject) (GetArticleResponseObject, error)
+	// GetArticleUsage Read how often one article was used on this replica
+	// (GET /api/v1/articles/{id}/usage)
+	GetArticleUsage(ctx context.Context, request GetArticleUsageRequestObject) (GetArticleUsageResponseObject, error)
 	// GetBundle Download the resolved set as an archive
 	// (GET /api/v1/bundle)
 	GetBundle(ctx context.Context, request GetBundleRequestObject) (GetBundleResponseObject, error)
@@ -13859,6 +15920,9 @@ type StrictServerInterface interface {
 	// GetLoop Read one loop
 	// (GET /api/v1/loops/{name})
 	GetLoop(ctx context.Context, request GetLoopRequestObject) (GetLoopResponseObject, error)
+	// GetLoopUsage Read how often one loop was used on this replica
+	// (GET /api/v1/loops/{name}/usage)
+	GetLoopUsage(ctx context.Context, request GetLoopUsageRequestObject) (GetLoopUsageResponseObject, error)
 	// ListProjects List the registered Projects
 	// (GET /api/v1/projects)
 	ListProjects(ctx context.Context, request ListProjectsRequestObject) (ListProjectsResponseObject, error)
@@ -13892,6 +15956,9 @@ type StrictServerInterface interface {
 	// GetSkillFile Read one file of a skill
 	// (GET /api/v1/skills/{name}/files/{path})
 	GetSkillFile(ctx context.Context, request GetSkillFileRequestObject) (GetSkillFileResponseObject, error)
+	// GetSkillUsage Read how often one skill was used on this replica
+	// (GET /api/v1/skills/{name}/usage)
+	GetSkillUsage(ctx context.Context, request GetSkillUsageRequestObject) (GetSkillUsageResponseObject, error)
 	// GetSync Read the content sync status and warnings
 	// (GET /api/v1/sync)
 	GetSync(ctx context.Context, request GetSyncRequestObject) (GetSyncResponseObject, error)
@@ -14027,6 +16094,33 @@ func (sh *strictHandler) GetAgent(w http.ResponseWriter, r *http.Request, name s
 	}
 }
 
+// GetAgentUsage operation middleware
+func (sh *strictHandler) GetAgentUsage(w http.ResponseWriter, r *http.Request, name string, params GetAgentUsageParams) {
+	var request GetAgentUsageRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetAgentUsage(ctx, request.(GetAgentUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAgentUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAgentUsageResponseObject); ok {
+		if err := validResponse.VisitGetAgentUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListArticles operation middleware
 func (sh *strictHandler) ListArticles(w http.ResponseWriter, r *http.Request, params ListArticlesParams) {
 	var request ListArticlesRequestObject
@@ -14073,6 +16167,33 @@ func (sh *strictHandler) GetArticle(w http.ResponseWriter, r *http.Request, id s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetArticleResponseObject); ok {
 		if err := validResponse.VisitGetArticleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetArticleUsage operation middleware
+func (sh *strictHandler) GetArticleUsage(w http.ResponseWriter, r *http.Request, id string, params GetArticleUsageParams) {
+	var request GetArticleUsageRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetArticleUsage(ctx, request.(GetArticleUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetArticleUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetArticleUsageResponseObject); ok {
+		if err := validResponse.VisitGetArticleUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -14231,6 +16352,33 @@ func (sh *strictHandler) GetLoop(w http.ResponseWriter, r *http.Request, name st
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetLoopResponseObject); ok {
 		if err := validResponse.VisitGetLoopResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLoopUsage operation middleware
+func (sh *strictHandler) GetLoopUsage(w http.ResponseWriter, r *http.Request, name string, params GetLoopUsageParams) {
+	var request GetLoopUsageRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetLoopUsage(ctx, request.(GetLoopUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLoopUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLoopUsageResponseObject); ok {
+		if err := validResponse.VisitGetLoopUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -14517,6 +16665,33 @@ func (sh *strictHandler) GetSkillFile(w http.ResponseWriter, r *http.Request, na
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetSkillFileResponseObject); ok {
 		if err := validResponse.VisitGetSkillFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSkillUsage operation middleware
+func (sh *strictHandler) GetSkillUsage(w http.ResponseWriter, r *http.Request, name string, params GetSkillUsageParams) {
+	var request GetSkillUsageRequestObject
+
+	request.Name = name
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSkillUsage(ctx, request.(GetSkillUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSkillUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSkillUsageResponseObject); ok {
+		if err := validResponse.VisitGetSkillUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

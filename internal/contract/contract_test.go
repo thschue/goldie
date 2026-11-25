@@ -149,3 +149,19 @@ func TestStrictHandlerRoutesTheSpecOperations(t *testing.T) {
 		}
 	}
 }
+
+func (stub) GetArticleUsage(context.Context, GetArticleUsageRequestObject) (GetArticleUsageResponseObject, error) {
+	return GetArticleUsage200JSONResponse{}, nil
+}
+
+func (stub) GetSkillUsage(context.Context, GetSkillUsageRequestObject) (GetSkillUsageResponseObject, error) {
+	return GetSkillUsage200JSONResponse{}, nil
+}
+
+func (stub) GetAgentUsage(context.Context, GetAgentUsageRequestObject) (GetAgentUsageResponseObject, error) {
+	return GetAgentUsage200JSONResponse{}, nil
+}
+
+func (stub) GetLoopUsage(context.Context, GetLoopUsageRequestObject) (GetLoopUsageResponseObject, error) {
+	return GetLoopUsage200JSONResponse{}, nil
+}

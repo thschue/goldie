@@ -241,6 +241,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/articles/{id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how often one article was used on this replica
+         * @description Returns the uses of the article (answered lookups or gets) counted on this
+         *     replica since it started (`source` is `this-replica`, `since` is the
+         *     process start). It counts the events `goldie.item.uses` counts, by client,
+         *     without needing metrics, and reading the usage is no use. The numbers
+         *     restart with the process and are not summed across replicas. The article
+         *     is resolved as `getArticle` resolves it; an article that is not visible to the
+         *     caller's Project view is the same 404 as a missing one.
+         */
+        get: operations["getArticleUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/skills/{name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how often one skill was used on this replica
+         * @description Returns the uses of the skill (answered lookups or gets) counted on this
+         *     replica since it started (`source` is `this-replica`, `since` is the
+         *     process start). It counts the events `goldie.item.uses` counts, by client,
+         *     without needing metrics, and reading the usage is no use. The numbers
+         *     restart with the process and are not summed across replicas. The skill
+         *     is resolved as `getSkill` resolves it; a skill that is not visible to the
+         *     caller's Project view is the same 404 as a missing one.
+         */
+        get: operations["getSkillUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how often one agent was used on this replica
+         * @description Returns the uses of the agent (answered lookups or gets) counted on this
+         *     replica since it started (`source` is `this-replica`, `since` is the
+         *     process start). It counts the events `goldie.item.uses` counts, by client,
+         *     without needing metrics, and reading the usage is no use. The numbers
+         *     restart with the process and are not summed across replicas. The agent
+         *     is resolved as `getAgent` resolves it; an agent that is not visible to the
+         *     caller's Project view is the same 404 as a missing one.
+         */
+        get: operations["getAgentUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/loops/{name}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read how often one loop was used on this replica
+         * @description Returns the uses of the loop (answered lookups or gets) counted on this
+         *     replica since it started (`source` is `this-replica`, `since` is the
+         *     process start). It counts the events `goldie.item.uses` counts, by client,
+         *     without needing metrics, and reading the usage is no use. The numbers
+         *     restart with the process and are not summed across replicas. The loop
+         *     is resolved as `getLoop` resolves it; a loop that is not visible to the
+         *     caller's Project view is the same 404 as a missing one.
+         */
+        get: operations["getLoopUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decisions": {
         parameters: {
             query?: never;
@@ -747,6 +851,36 @@ export interface components {
              * @example 18
              */
             size: number;
+        };
+        /**
+         * @description The uses of one Item on the replica that answered, from an in-process tally
+         *     that restarts with the process (#900).
+         */
+        ItemUsage: {
+            /**
+             * @example this-replica
+             * @enum {string}
+             */
+            source: "this-replica";
+            /**
+             * Format: date-time
+             * @description When this process started, in RFC 3339.
+             * @example 2026-11-25T08:00:00Z
+             */
+            since: string;
+            /**
+             * @description Answered lookups and gets by client; every key is always present.
+             * @example {
+             *       "cli": 12,
+             *       "mcp": 3,
+             *       "other": 1
+             *     }
+             */
+            uses: {
+                cli: number;
+                mcp: number;
+                other: number;
+            };
         };
         /** @description One skill bundle. */
         Skill: {
@@ -2685,6 +2819,302 @@ export interface operations {
                 };
             };
             /** @description No loop has this name in the view; the hint points to the loop list. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getArticleUsage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the article for this Project (ADR 0020), as `getArticle` does. A
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The article id, as for `getArticle`: one path segment, a `/` sent as `%2F`.
+                 * @example platform/deploy
+                 */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The uses of the article on this replica. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "source": "this-replica",
+                     *       "since": "2026-11-25T08:00:00Z",
+                     *       "uses": {
+                     *         "cli": 12,
+                     *         "mcp": 3,
+                     *         "other": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemUsage"];
+                };
+            };
+            /** @description For the article usage read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the article usage read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No article of this name is visible in the view. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSkillUsage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the skill for this Project (ADR 0020), as `getSkill` does. A
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The skill name, one path segment.
+                 * @example deploy
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The uses of the skill on this replica. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "source": "this-replica",
+                     *       "since": "2026-11-25T08:00:00Z",
+                     *       "uses": {
+                     *         "cli": 12,
+                     *         "mcp": 3,
+                     *         "other": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemUsage"];
+                };
+            };
+            /** @description For the skill usage read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the skill usage read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No skill of this name is visible in the view. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getAgentUsage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the agent for this Project (ADR 0020), as `getAgent` does. A
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The agent name, one path segment.
+                 * @example reviewer
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The uses of the agent on this replica. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "source": "this-replica",
+                     *       "since": "2026-11-25T08:00:00Z",
+                     *       "uses": {
+                     *         "cli": 12,
+                     *         "mcp": 3,
+                     *         "other": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemUsage"];
+                };
+            };
+            /** @description For the agent usage read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the agent usage read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No agent of this name is visible in the view. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            426: components["responses"]["UpgradeRequired"];
+            429: components["responses"]["RateLimited"];
+            503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getLoopUsage: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Resolve the loop for this Project (ADR 0020), as `getLoop` does. A
+                 *     value that is not a `ProjectId` is a 400.
+                 */
+                project?: components["schemas"]["ProjectId"];
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description The loop name, one path segment.
+                 * @example nightly
+                 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The uses of the loop on this replica. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "source": "this-replica",
+                     *       "since": "2026-11-25T08:00:00Z",
+                     *       "uses": {
+                     *         "cli": 12,
+                     *         "mcp": 3,
+                     *         "other": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemUsage"];
+                };
+            };
+            /** @description For the loop usage read, `project` is not a `ProjectId`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description For the loop usage read, no bearer token was sent, or it is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No loop of this name is visible in the view. */
             404: {
                 headers: {
                     [name: string]: unknown;
