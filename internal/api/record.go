@@ -31,26 +31,35 @@ func CountSkillGets(c *platform.SkillGetCounter) ServerOption {
 	return func(s *Server) { s.skillGets = c }
 }
 
-// skillHitKey carries the skillHit GetSkill fills for record.
-type skillHitKey struct{}
-
-// skillHit is the skill a get answered with: its canonical name (SkillIn
-// matches names ignoring case, so the caller's spelling would make a series
-// per spelling) and whether its Scope is global.
-type skillHit struct {
-	name   string
-	global bool
+// CountItemUses makes the Server count every lookup or get that hits, of an
+// article, skill, agent or loop (goldie.item.uses). A nil counter counts
+// nothing.
+func CountItemUses(c *platform.ItemUseCounter) ServerOption {
+	return func(s *Server) { s.itemUses = c }
 }
 
-func withSkillHit(ctx context.Context) (context.Context, *skillHit) {
-	got := &skillHit{}
-	return context.WithValue(ctx, skillHitKey{}, got), got
+// itemHitKey carries the itemHit a lookup or get fills for record.
+type itemHitKey struct{}
+
+// itemHit is the Item a lookup or get answered with: its kind, its canonical
+// name (a lookup matches names ignoring case, so the caller's spelling would
+// make a series per spelling), whether its Scope is global and the registered
+// Project the request resolved for ("" when none).
+type itemHit struct {
+	kind, name, project string
+	global              bool
 }
 
-// noteSkillHit tells record which skill answered a get.
-func noteSkillHit(ctx context.Context, sk engine.Skill) {
-	if got, ok := ctx.Value(skillHitKey{}).(*skillHit); ok {
-		got.name, got.global = sk.Name, sk.Scope == engine.ScopeGlobal
+func withItemHit(ctx context.Context) (context.Context, *itemHit) {
+	got := &itemHit{}
+	return context.WithValue(ctx, itemHitKey{}, got), got
+}
+
+// noteItemHit tells record which Item answered a lookup or get. project is
+// the registered Project's id from scopeHint, never the one sent.
+func noteItemHit(ctx context.Context, kind, name, scope, project string) {
+	if got, ok := ctx.Value(itemHitKey{}).(*itemHit); ok {
+		*got = itemHit{kind: kind, name: name, project: project, global: scope == engine.ScopeGlobal}
 	}
 }
 
@@ -60,16 +69,22 @@ func noteSkillHit(ctx context.Context, sk engine.Skill) {
 // it, and one the operation refused (400, 503 not_ready) does not match a type
 // recorded takes, so no rejected request's query text is kept. The text
 // goes to the Activity only, never to a log or a span, and to no metric but
-// goldie.skill.gets, which gets the canonical name of a skill that was found
-// and nothing else.
+// goldie.skill.gets and goldie.item.uses, which get the canonical name of an Item
+// that was found and nothing else.
 func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, req any) (any, error) {
-		ctx, got := withSkillHit(ctx)
+		ctx, got := withItemHit(ctx)
 		start := time.Now()
 		resp, err := next(ctx, w, r, req)
 		latency := time.Since(start)
-		if _, hit := resp.(contract.GetSkill200JSONResponse); hit {
-			s.skillGets.Add(ctx, got.name, got.global, clientVia(r.Header))
+		if got.kind != "" {
+			via := clientVia(r.Header)
+			if got.kind == "skill" {
+				s.skillGets.Add(ctx, got.name, got.global, via)
+			}
+			principal, _ := TokenName(ctx)
+			s.itemUses.Add(ctx, platform.ItemUse{Kind: got.kind, Name: got.name, Global: got.global,
+				Via: via, Project: got.project, Principal: principal})
 		}
 		if e, ok := recorded(req, resp); ok {
 			switch e.Kind {

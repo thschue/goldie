@@ -80,7 +80,7 @@ func (s *Server) GetSkill(ctx context.Context, req contract.GetSkillRequestObjec
 	if !found {
 		return contract.GetSkill404JSONResponse(noSuchSkill), nil
 	}
-	noteSkillHit(ctx, sk)
+	noteItemHit(ctx, "skill", sk.Name, sk.Scope, proj)
 	res := skillAnswer(sk)
 	res.Hint = hint
 	return contract.GetSkill200JSONResponse(res), nil
@@ -159,6 +159,7 @@ func (s *Server) GetAgent(ctx context.Context, req contract.GetAgentRequestObjec
 	if !found {
 		return contract.GetAgent404JSONResponse(noSuchAgent), nil
 	}
+	noteItemHit(ctx, "agent", a.Name, a.Scope, proj)
 	return contract.GetAgent200JSONResponse{Name: a.Name, Description: a.Description, Hint: hint}, nil
 }
 
