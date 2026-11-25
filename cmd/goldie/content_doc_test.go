@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -42,5 +43,48 @@ func TestFirstArticleGuideLoadsAndIsFound(t *testing.T) {
 	}
 	if !strings.Contains(string(readme), "docs/content.md") {
 		t.Error("README.md does not link docs/content.md")
+	}
+}
+
+// #726: docs/content.md documents the optional updated key with an example, and
+// the example loads through goldie validate.
+func TestContentGuideDocumentsTheUpdatedKeyWithALoadingExample(t *testing.T) {
+	doc, err := os.ReadFile("../../docs/content.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var example string
+	for _, block := range strings.Split(string(doc), "```")[1:] {
+		if strings.Contains(block, "\nupdated: 20") && strings.Contains(block, "---\n") {
+			_, example, _ = strings.Cut(block, "\n")
+			break
+		}
+	}
+	if example == "" {
+		t.Fatal("docs/content.md has no example with an updated: YYYY-MM-DD frontmatter key")
+	}
+	dir := t.TempDir()
+	writeArticle(t, dir, "global/articles/example.md", example)
+	if stdout, stderr, code := runValidate(t, dir, validateEnv(), "validate", dir); code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("the updated example fails validate: exit %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+}
+
+// #726: an ADR records that the author sets updated, that it is optional and a
+// day, and why git history and a Snapshot diff were rejected.
+func TestAnADRRecordsTheUpdatedDayDecision(t *testing.T) {
+	files, err := filepath.Glob("../../docs/adr/*updated*.md")
+	if err != nil || len(files) != 1 {
+		t.Fatalf("want exactly one ADR with updated in its file name, got %v (%v)", files, err)
+	}
+	b, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ToLower(string(b))
+	for _, want := range []string{"`updated`", "optional", "day", "git history", "snapshot diff"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("%s does not mention %q", files[0], want)
+		}
 	}
 }
