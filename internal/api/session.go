@@ -256,6 +256,11 @@ func WithObservabilityLinks(grafanaURL, traceURLTemplate string) ServerOption {
 	return func(s *Server) { s.grafana, s.traceTmpl = grafanaURL, traceURLTemplate }
 }
 
+// WithGitHubSignIn sets whether the server offers GitHub sign-in, which
+// GET /api/v1/session/providers reports. The configuration has validated the
+// settings as a whole, so a client ID means all of them.
+func WithGitHubSignIn(on bool) ServerOption { return func(s *Server) { s.github = on } }
+
 // link is v as the optional string of a session of role, nil when the role is
 // not the operator's or v is unset.
 func link(role Role, v string) *string {
@@ -301,6 +306,10 @@ func (s *Server) GetSession(ctx context.Context, _ contract.GetSessionRequestObj
 	}
 	return contract.GetSession200JSONResponse{Name: name, Role: contract.SessionRole(role.String()), SwaggerUi: s.swaggerUI,
 		GrafanaUrl: link(role, s.grafana), TraceUrlTemplate: link(role, s.traceTmpl)}, nil
+}
+
+func (s *Server) GetSessionProviders(context.Context, contract.GetSessionProvidersRequestObject) (contract.GetSessionProvidersResponseObject, error) {
+	return contract.GetSessionProviders200JSONResponse{Github: s.github}, nil
 }
 
 func (s *Server) DeleteSession(context.Context, contract.DeleteSessionRequestObject) (contract.DeleteSessionResponseObject, error) {

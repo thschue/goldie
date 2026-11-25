@@ -1017,6 +1017,14 @@ type Session struct {
 // Examples: reader
 type SessionRole string
 
+// SessionProviders The sign-in providers beyond the token.
+type SessionProviders struct {
+	// Github True when GitHub sign-in is configured, so a client may offer it.
+	//
+	// Examples: true
+	Github bool `json:"github"`
+}
+
 // SessionRequest The token to sign in with.
 type SessionRequest struct {
 	// Token A configured API token, in plain text.
@@ -1872,6 +1880,16 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
 	PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSessionProviders Read which sign-in providers the server offers
+	//
+	// Tells a signed-out browser whether to offer GitHub sign-in next to the
+	// token field. It takes no token and sets no cookie, and the body holds
+	// only `github`: never a URL, a client ID or an organisation name. The
+	// response is `Cache-Control: no-store`.
+	//
+	// Corresponds with GET /api/v1/session/providers (the `GetSessionProviders` operationId).
+	GetSessionProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListSkills List the skills
 	//
 	// Returns the skills that answer in the Project's view, sorted by name, one
@@ -2455,6 +2473,26 @@ func (c *Client) PostSessionWithBody(ctx context.Context, contentType string, bo
 // Corresponds with POST /api/v1/session (the `PostSession` operationId).
 func (c *Client) PostSession(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostSessionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetSessionProviders Read which sign-in providers the server offers
+//
+// Tells a signed-out browser whether to offer GitHub sign-in next to the
+// token field. It takes no token and sets no cookie, and the body holds
+// only `github`: never a URL, a client ID or an organisation name. The
+// response is `Cache-Control: no-store`.
+//
+// Corresponds with GET /api/v1/session/providers (the `GetSessionProviders` operationId).
+func (c *Client) GetSessionProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSessionProvidersRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3634,6 +3672,33 @@ func NewPostSessionRequestWithBody(server string, contentType string, body io.Re
 	return req, nil
 }
 
+// NewGetSessionProvidersRequest constructs an http.Request for the GetSessionProviders method
+func NewGetSessionProvidersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := "/api/v1/session/providers"
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListSkillsRequest constructs an http.Request for the ListSkills method
 func NewListSkillsRequest(server string, params *ListSkillsParams) (*http.Request, error) {
 	var err error
@@ -4380,6 +4445,18 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/session (the `PostSession` operationId).
 	PostSessionWithResponse(ctx context.Context, body PostSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*PostSessionResponse, error)
+
+	// GetSessionProvidersWithResponse Read which sign-in providers the server offers
+	//
+	// Tells a signed-out browser whether to offer GitHub sign-in next to the
+	// token field. It takes no token and sets no cookie, and the body holds
+	// only `github`: never a URL, a client ID or an organisation name. The
+	// response is `Cache-Control: no-store`.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/session/providers (the `GetSessionProviders` operationId).
+	GetSessionProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSessionProvidersResponse, error)
 
 	// ListSkillsWithResponse List the skills
 	//
@@ -6138,6 +6215,54 @@ func (r PostSessionResponse) ContentType() string {
 	return ""
 }
 
+type GetSessionProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SessionProviders
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetSessionProvidersResponse) GetJSON200() *SessionProviders {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetSessionProvidersResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetSessionProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSessionProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSessionProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetSessionProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ListSkillsResponse429Headers the declared response headers of an HTTP 429 response for ListSkills
 type ListSkillsResponse429Headers struct {
 	RetryAfter *int
@@ -7180,6 +7305,24 @@ func (c *ClientWithResponses) PostSessionWithResponse(ctx context.Context, body 
 		return nil, err
 	}
 	return ParsePostSessionResponse(rsp)
+}
+
+// GetSessionProvidersWithResponse Read which sign-in providers the server offers
+//
+// Tells a signed-out browser whether to offer GitHub sign-in next to the
+// token field. It takes no token and sets no cookie, and the body holds
+// only `github`: never a URL, a client ID or an organisation name. The
+// response is `Cache-Control: no-store`.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/session/providers (the `GetSessionProviders` operationId).
+func (c *ClientWithResponses) GetSessionProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSessionProvidersResponse, error) {
+	rsp, err := c.GetSessionProviders(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSessionProvidersResponse(rsp)
 }
 
 // ListSkillsWithResponse List the skills
@@ -8824,6 +8967,39 @@ func ParsePostSessionResponse(rsp *http.Response) (*PostSessionResponse, error) 
 	return response, nil
 }
 
+// ParseGetSessionProvidersResponse parses an HTTP response from a GetSessionProvidersWithResponse call
+func ParseGetSessionProvidersResponse(rsp *http.Response) (*GetSessionProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSessionProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SessionProviders
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := runtime.JSONUnmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListSkillsResponse parses an HTTP response from a ListSkillsWithResponse call
 func ParseListSkillsResponse(rsp *http.Response) (*ListSkillsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -9386,6 +9562,9 @@ type ServerInterface interface {
 	// PostSession Sign in with a token and get a session cookie
 	// (POST /api/v1/session)
 	PostSession(w http.ResponseWriter, r *http.Request)
+	// GetSessionProviders Read which sign-in providers the server offers
+	// (GET /api/v1/session/providers)
+	GetSessionProviders(w http.ResponseWriter, r *http.Request)
 	// ListSkills List the skills
 	// (GET /api/v1/skills)
 	ListSkills(w http.ResponseWriter, r *http.Request, params ListSkillsParams)
@@ -10135,6 +10314,20 @@ func (siw *ServerInterfaceWrapper) PostSession(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// GetSessionProviders operation middleware
+func (siw *ServerInterfaceWrapper) GetSessionProviders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSessionProviders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSkills operation middleware
 func (siw *ServerInterfaceWrapper) ListSkills(w http.ResponseWriter, r *http.Request) {
 
@@ -10512,6 +10705,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects", wrapper.ListProjects)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}", wrapper.GetProject)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/projects/{id}/items", wrapper.GetProjectItems)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session/providers", wrapper.GetSessionProviders)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/session", wrapper.DeleteSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/session", wrapper.GetSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/session", wrapper.PostSession)
@@ -12821,6 +13015,44 @@ func (response PostSessiondefaultJSONResponse) VisitPostSessionResponse(w http.R
 	return err
 }
 
+type GetSessionProvidersRequestObject struct {
+}
+
+type GetSessionProvidersResponseObject interface {
+	VisitGetSessionProvidersResponse(w http.ResponseWriter) error
+}
+
+type GetSessionProviders200JSONResponse SessionProviders
+
+func (response GetSessionProviders200JSONResponse) VisitGetSessionProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSessionProvidersdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	StatusCode int
+}
+
+func (response GetSessionProvidersdefaultJSONResponse) VisitGetSessionProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSkillsRequestObject struct {
 	Params ListSkillsParams
 }
@@ -13648,6 +13880,9 @@ type StrictServerInterface interface {
 	// PostSession Sign in with a token and get a session cookie
 	// (POST /api/v1/session)
 	PostSession(ctx context.Context, request PostSessionRequestObject) (PostSessionResponseObject, error)
+	// GetSessionProviders Read which sign-in providers the server offers
+	// (GET /api/v1/session/providers)
+	GetSessionProviders(ctx context.Context, request GetSessionProvidersRequestObject) (GetSessionProvidersResponseObject, error)
 	// ListSkills List the skills
 	// (GET /api/v1/skills)
 	ListSkills(ctx context.Context, request ListSkillsRequestObject) (ListSkillsResponseObject, error)
@@ -14177,6 +14412,30 @@ func (sh *strictHandler) PostSession(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(PostSessionResponseObject); ok {
 		if err := validResponse.VisitPostSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSessionProviders operation middleware
+func (sh *strictHandler) GetSessionProviders(w http.ResponseWriter, r *http.Request) {
+	var request GetSessionProvidersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSessionProviders(ctx, request.(GetSessionProvidersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSessionProviders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSessionProvidersResponseObject); ok {
+		if err := validResponse.VisitGetSessionProvidersResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

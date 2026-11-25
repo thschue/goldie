@@ -343,6 +343,11 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"Keep goldie's instruction block in CLAUDE.md or AGENTS.md current.\n\napply writes the block between goldie's markers in CLAUDE.md or AGENTS.md at the\nrepository root, creating the file if needed, and keeps the rest of the file. It\nrefuses a block that was edited by hand unless --force is set, which discards\nthe edits. check exits non-zero when the block is missing, outdated or edited,\nand writes nothing.\n\nBetween apply's read and its rename the file can change; an edit made in that\nwindow is overwritten.",
 		"  goldie instructions apply\n  goldie instructions apply --target agents --force\n  goldie instructions check --target agents",
 	},
+	"context": {
+		"context --hook [flags]", "Print the Catalog as the JSON of a Claude Code SessionStart hook",
+		"Print goldie's instruction clauses and the name and description of each skill,\nagent and loop that applies to this Project, as the JSON a SessionStart hook\ninjects into a session. The text is at most 8 KB; what does not fit is counted.\n\nEvery failure (no server, no token, not a git repository, an unregistered\nProject) prints one line to stderr and exits 0, so the hook never shows an error\nat session start. Using it without --hook, or with an unknown flag, exits 2.\n\nThe hooks.SessionStart entry that runs it is in docs/reference/cli.md.",
+		"  goldie context --hook",
+	},
 	"pull": {
 		"pull [--target claude] [--dry-run | --check] [flags]", "Write the Goldie skills and agents into .claude",
 		"Fetch the skills and agents that apply to this Project and write them to\n.claude/skills/goldie-<name>/ and .claude/agents/goldie-<name>.md at the\nrepository root. Those names are goldie's: a pull replaces them as a whole and\ntouches nothing else. An unchanged set writes nothing. The archive is checked\nbefore anything is written, so a failed pull leaves the project as it was.\n\nA pull prints the /loop line of each loop it pulled, also when nothing\nchanged. --dry-run and --check print none.\n\n--dry-run lists the files and writes nothing. --check exits non-zero when the\nnamespace was never pulled or is stale, and writes nothing.",

@@ -429,6 +429,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/session/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read which sign-in providers the server offers
+         * @description Tells a signed-out browser whether to offer GitHub sign-in next to the
+         *     token field. It takes no token and sets no cookie, and the body holds
+         *     only `github`: never a URL, a client ID or an organisation name. The
+         *     response is `Cache-Control: no-store`.
+         */
+        get: operations["getSessionProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/session": {
         parameters: {
             query?: never;
@@ -1291,6 +1314,14 @@ export interface components {
              * @example HTTPS://TEMPO.EXAMPLE.COM/trace/{trace_id}
              */
             trace_url_template?: string;
+        };
+        /** @description The sign-in providers beyond the token. */
+        SessionProviders: {
+            /**
+             * @description True when GitHub sign-in is configured, so a client may offer it.
+             * @example true
+             */
+            github: boolean;
         };
         /** @description How the last content load went, for operators. */
         SyncStatus: {
@@ -3097,6 +3128,32 @@ export interface operations {
             426: components["responses"]["UpgradeRequired"];
             429: components["responses"]["RateLimited"];
             503: components["responses"]["NotReady"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSessionProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The providers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "github": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SessionProviders"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

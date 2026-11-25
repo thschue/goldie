@@ -114,6 +114,10 @@ func (stub) GetSession(context.Context, GetSessionRequestObject) (GetSessionResp
 	return GetSession200JSONResponse{Name: "boom", Role: "reader"}, nil
 }
 
+func (stub) GetSessionProviders(context.Context, GetSessionProvidersRequestObject) (GetSessionProvidersResponseObject, error) {
+	return GetSessionProviders200JSONResponse{Github: false}, nil
+}
+
 func (stub) DeleteSession(context.Context, DeleteSessionRequestObject) (DeleteSessionResponseObject, error) {
 	return DeleteSession204Response{}, nil
 }
