@@ -30,6 +30,8 @@ type Loop struct {
 	Scope string
 	// Status is StatusDraft, StatusPublished or StatusDeprecated.
 	Status string
+	// Updated is the frontmatter updated, a day YYYY-MM-DD, or empty.
+	Updated string
 	// Interval is the frontmatter interval as written, or empty for a dynamic loop.
 	Interval string
 	// Dynamic is true for a loop that paces itself.
@@ -230,7 +232,7 @@ func (s *Snapshot) checkLoops(all []*Article) error {
 func (s *Snapshot) loopIn(proj string, a *Article, o ReadOptions) (Loop, bool) {
 	sp := a.loop
 	l := Loop{
-		Name: a.ID, Description: a.description, Scope: a.Scope, Status: a.Status,
+		Name: a.ID, Description: a.description, Scope: a.Scope, Status: a.Status, Updated: a.Updated,
 		Interval: sp.interval, Dynamic: sp.dynamic, Stop: sp.stop, Content: sp.body,
 		Agents: []LoopRef{}, Skills: []LoopRef{},
 	}

@@ -35,3 +35,4 @@ Consequences.
 - [0029. The milestone is the loop's only input; one stage may subtract; growth is counted](0029-milestone-subtraction-and-growth.md)
 - [0030. A conflict on an enforced Item rejects the Snapshot that just loaded](0030-a-conflict-on-an-enforced-item-rejects-the-snapshot-that-just-loaded.md)
 - [0031. The server is configured by flags, the environment or a config file](0031-the-server-is-configured-by-flags-the-environment-or-a-config-file.md)
+- [0032. The author sets an optional `updated` day on an Item](0032-the-author-sets-an-optional-updated-day-on-an-item.md)

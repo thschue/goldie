@@ -31,6 +31,8 @@ type Agent struct {
 	Enforced bool
 	// ReplacedBy is the frontmatter replaced_by as written, or empty.
 	ReplacedBy string
+	// Updated is the frontmatter updated, a day YYYY-MM-DD, or empty.
+	Updated string
 	// Raw is the file exactly as written, for pull.
 	Raw []byte
 }
@@ -133,7 +135,7 @@ func parseAgent(name string, raw []byte) (Article, error) {
 // toAgent copies an agent record into the public type.
 func toAgent(a Article) Agent {
 	return Agent{
-		Name: a.ID, Description: a.description, Scope: a.Scope, Status: a.Status,
+		Name: a.ID, Description: a.description, Scope: a.Scope, Status: a.Status, Updated: a.Updated,
 		Enforced: a.Enforced, ReplacedBy: a.ReplacedBy, Raw: append([]byte(nil), a.raw...),
 	}
 }

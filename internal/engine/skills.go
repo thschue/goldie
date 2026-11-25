@@ -39,6 +39,8 @@ type Skill struct {
 	Status string
 	// Description is the description in the frontmatter of SKILL.md, or empty.
 	Description string
+	// Updated is the updated day in the frontmatter of SKILL.md, or empty.
+	Updated string
 	// RequiresSync is true when the bundle holds a file under scripts/.
 	RequiresSync bool
 }
@@ -55,6 +57,8 @@ type skillBundle struct {
 	keywords []string
 	// status and description are the frontmatter's ("" if absent).
 	status, description string
+	// updated is the frontmatter's day ("" if absent or not a day).
+	updated string
 }
 
 // skillKeywords reads the keywords from the frontmatter of a SKILL.md. A
@@ -81,22 +85,23 @@ func skillKeywords(raw []byte) []string {
 // broken file never leaks a skill meant to be hidden. A SKILL.md with no
 // leading --- declares no status and is published (""). The file is served as
 // written either way.
-func skillMeta(raw []byte) (status, description string) {
+func skillMeta(raw []byte) (status, description, updated string) {
 	front, _, err := splitFrontmatter(raw)
 	if err != nil {
 		if bytes.HasPrefix(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")), []byte("---\n")) {
-			return StatusDraft, ""
+			return StatusDraft, "", ""
 		}
-		return "", ""
+		return "", "", ""
 	}
 	// Each key decodes on its own, so a mistyped description never changes
 	// the status.
 	var meta struct {
 		Status      yaml.Node `yaml:"status"`
 		Description yaml.Node `yaml:"description"`
+		Updated     yaml.Node `yaml:"updated"`
 	}
 	if yaml.Unmarshal(front, &meta) != nil {
-		return StatusDraft, ""
+		return StatusDraft, "", ""
 	}
 	if present(meta.Status) {
 		v, ok := scalar(meta.Status, "!!str")
@@ -108,9 +113,17 @@ func skillMeta(raw []byte) (status, description string) {
 			status = StatusDraft
 		}
 	}
+	// An updated that is not a day fails closed too: the skill is a draft.
+	if present(meta.Updated) {
+		day, ok := updatedDay(meta.Updated)
+		if !ok {
+			status = StatusDraft
+		}
+		updated = day
+	}
 	var desc string
 	_ = meta.Description.Decode(&desc)
-	return status, strings.TrimSpace(desc)
+	return status, strings.TrimSpace(desc), updated
 }
 
 // errNoSkillFile is what SkillFile returns for anything that is not a file of
@@ -156,8 +169,8 @@ func loadSkills(fsys fs.FS, dir, scope, what string) (map[string]skillBundle, er
 		if !ok {
 			return nil, fmt.Errorf("%s: has no %s", p, skillFileName)
 		}
-		status, description := skillMeta(skill)
-		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, exec: exec, keywords: skillKeywords(skill), status: status, description: description}
+		status, description, updated := skillMeta(skill)
+		bundles[key] = skillBundle{name: e.Name(), scope: scope, files: files, exec: exec, keywords: skillKeywords(skill), status: status, description: description, updated: updated}
 	}
 	return bundles, nil
 }
@@ -256,7 +269,7 @@ func (b skillBundle) skill() Skill {
 	}
 	slices.Sort(files)
 	return Skill{Name: b.name, Scope: b.scope, Files: files, Sizes: sizes,
-		Status: b.status, Description: b.description, RequiresSync: sync}
+		Status: b.status, Description: b.description, Updated: b.updated, RequiresSync: sync}
 }
 
 // Skills returns the skills that answer in proj's view, sorted by name: one
