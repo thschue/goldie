@@ -54,3 +54,13 @@ One version covers the binary, the image and the Helm chart; release-please mana
   types, enum values, error codes) are snake_case ([ADR 0024](docs/adr/0024-api-wire-names-are-snake-case.md)).
 - **May change in `0.x` minor releases until `1.0`:** CLI flags, config variables and Helm values.
   Breaking changes are called out in the release notes. At `1.0` they freeze too.
+
+## Releases
+
+Merging the release-please PR creates the tag and the GitHub release. The same workflow then runs
+goreleaser (`.goreleaser.yaml`), which builds the SPA with `./run ui`, fails if the embedded UI is
+still the placeholder, and attaches `goldie` archives for linux, darwin and windows on amd64 and
+arm64 plus `checksums.txt` to that release. The binary reports the release version in
+`goldie version`. Every PR runs the same build as a `--snapshot` (the `snapshot` CI job) without
+publishing. The changelog groups `feat`, `fix`, `perf`, `revert` and `docs` commits; other types are
+hidden (`changelog-sections` in `release-please-config.json`).

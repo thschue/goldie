@@ -1,7 +1,9 @@
 name: release-please
 
-# Skeleton: opens and maintains the release PR on main. Publishing the image,
-# the Helm chart and the binaries on tag is added by the release issue.
+# Opens and maintains the release PR on main and, when merging it creates a
+# release, attaches the binaries. A tag pushed with GITHUB_TOKEN starts no
+# workflow, so goreleaser runs here after release_created, not on the tag.
+# Publishing the image and the Helm chart is added by the release issue.
 on:
   push:
     branches: [main]
@@ -13,8 +15,12 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -22,3 +28,32 @@ jobs:
           # RELEASE_PLEASE_TOKEN (a fine-grained token or App token with contents and
           # pull-requests write) makes CI run on it.
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+
+  binaries:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          # No caches in a release build: restored output from earlier main runs
+          # must not reach the published binaries.
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.20.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
