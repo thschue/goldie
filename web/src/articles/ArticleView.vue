@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { carried } from '../projects/api';
 import { getArticle, type Article, ArticleError } from './api';
 import MarkdownBody from './MarkdownBody.vue';
+import UsageCard from './UsageCard.vue';
 import CommandSnippet from '../assets/CommandSnippet.vue';
 import { errorSentence } from '../api/errorSentence';
 import { plain } from '../assets/api';
@@ -118,6 +119,7 @@ watch(
           <CommandSnippet :command="`goldie lookup ${article.id}`" />
           <p class="tool">MCP tool <code>get_article</code></p>
         </section>
+        <UsageCard :id="article.id" :project="String(route.query.project ?? '')" />
         <section class="card">
           <h2>Details</h2>
           <dl>

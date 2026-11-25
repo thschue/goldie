@@ -3,6 +3,7 @@ import type { components } from '../api/schema';
 import { api } from '../auth/session';
 
 export type Article = components['schemas']['Article'];
+export type ItemUsage = components['schemas']['ItemUsage'];
 export type ArticleList = components['schemas']['ArticleList'];
 
 // listArticles reads the articles that win in a Project's view (GET /api/v1/articles). An empty
@@ -53,4 +54,19 @@ export async function getArticle(id: string, project = ''): Promise<Article> {
     throw new ArticleError(generic);
   }
   return a as Article;
+}
+
+const count = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0;
+
+// getArticleUsage reads the uses of one article on this replica (GET /api/v1/articles/{id}/usage,
+// #898). The id is one path segment (ADR 0016). A reply of another shape is an error, so the card
+// shows its one line and never prints a half-read number.
+export async function getArticleUsage(id: string, project: string, signal?: AbortSignal): Promise<ItemUsage> {
+  const q = project ? `?${new URLSearchParams({ project })}` : '';
+  const u = await get<Partial<ItemUsage> | null>(`/api/v1/articles/${encodeURIComponent(id)}/usage${q}`, signal);
+  const uses = u?.uses;
+  if (!uses || !count(uses.cli) || !count(uses.mcp) || !count(uses.other) || typeof u?.since !== 'string' || Number.isNaN(Date.parse(u.since))) {
+    throw new ArticleError(generic);
+  }
+  return u as ItemUsage;
 }
