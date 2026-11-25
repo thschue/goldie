@@ -28,7 +28,7 @@ var namespaceDirs = []string{"skills", "agents"}
 
 var digestRE = regexp.MustCompile(`^[0-9A-Za-z._:-]{1,128}$`)
 
-var errLinked = errors.New("is a symlink or not a directory; goldie pull never writes through it")
+var errLinked = errors.New("is a symlink or not a directory; goldie never writes through it")
 
 // plainDir reports whether name under root is absent (exists false) or a real
 // directory. A symlink, a file or anything else is an error: the namespace is
@@ -251,7 +251,7 @@ func applyPull(root *os.Root, files []pulledFile, digest string) (err error) {
 		undo()
 		return err
 	}
-	if err := writeInstructionFile(sub, stampName, []byte(digest+"\nns="+ns+"\n"), 0o644); err != nil {
+	if err := writeRootFile(sub, stampName, []byte(digest+"\nns="+ns+"\n"), 0o644); err != nil {
 		undo()
 		return errors.New("cannot write .claude/" + stampName)
 	}

@@ -149,11 +149,11 @@ markers is never touched, and a block that is already current is not rewritten. 
 block edited by hand unless you pass `--force`, which discards those edits, and refuses a damaged file (a
 begin marker without an end, or two blocks) even with `--force`. It also refuses a block whose text could
 change how the rest of your file renders (an unclosed code fence, raw HTML, a link reference definition),
-a `CLAUDE.md` or `AGENTS.md` that is a symlink, and a run outside a git repository; a refusal writes
-nothing. `goldie instructions check` writes nothing and exits non-zero when the block is missing, outdated
-or edited. The file is replaced by a rename of a temporary file in the same directory. Lost update:
-between `apply` reading the file and renaming over it, an edit by another process is lost; there is no
-lock, and the window is one local write.
+a `CLAUDE.md` or `AGENTS.md` that is a symlink or over 4 MiB, and a run outside a git repository; a
+refusal writes nothing. `goldie instructions check` writes nothing and exits non-zero when the block is
+missing, outdated or edited. The file is replaced by a rename of a temporary file in the same
+directory. Lost update: between `apply` reading the file and renaming over it, an edit by another
+process is lost; there is no lock, and the window is one local write.
 
 If your `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` line), apply only the agents target:
 `goldie instructions apply --target agents`. Applying both would show the block twice.
@@ -177,13 +177,32 @@ and exits 0, so the hook never shows an error at session start. `context` withou
 flag or an argument exits 2. To see why the hook added nothing, run `goldie context --hook` by hand in
 the repository and read the line on stderr.
 
-Add this to `.claude/settings.json` ([Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)):
+`goldie hooks install` adds the hook for you
+([Claude Code hooks documentation](https://code.claude.com/docs/en/hooks)). It puts one group under
+`hooks.SessionStart` in `.claude/settings.json` at the repository root, with two command hooks:
+`goldie context --hook` and `goldie pull --quiet --if-pulled`. The hook runs at every session start;
+committing `.claude/settings.json` shares it with the team. A hook is goldie's when its `command` equals one
+of those two strings, and only goldie's group changes: every other byte of the file stays (keys, order,
+indentation, line endings, your own hooks), a second run changes nothing, and `.claude/settings.local.json`
+is never touched. A missing `.claude` or `settings.json` is created with only goldie's entry, and the mode
+of an existing file is kept. It prints `Added the goldie SessionStart hook to .claude/settings.json.`,
+`... is already up to date.` or `Updated ...` (a goldie group that lacked one of the two hooks) and exits 0.
+It needs no server and no token. It refuses with one line and a next step, exit 1 and nothing written, for a
+file that is not plain JSON (invalid, a byte order mark, comments, trailing commas, duplicate keys), `hooks`
+or `hooks.SessionStart` of the wrong type, goldie's hooks repeated or split over several groups, a
+`settings.json` or `.claude` that is a symlink or not a regular file, a file over 4 MiB, or a directory
+outside a git repository. Any verb other than `install` exits 2. The same file by hand:
 
 ```json
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "goldie context --hook" }] }
+      {
+        "hooks": [
+          { "type": "command", "command": "goldie context --hook" },
+          { "type": "command", "command": "goldie pull --quiet --if-pulled" }
+        ]
+      }
     ]
   }
 }
