@@ -239,6 +239,17 @@ async function connect() {
   await run();
 }
 
+// Retry over a kept feed asks again in place: the view stays and the replay reconciles it.
+function retryNow() {
+  if (!kept.value) return connect();
+  clearTimeout(retry);
+  wait.value = 0;
+  attempts = 0;
+  failed.value = undefined;
+  phase.value = 'reconnecting';
+  return run();
+}
+
 async function run() {
   controller?.abort();
   const mine = (controller = new AbortController());
@@ -354,9 +365,10 @@ const hint = computed(() => (failed.value instanceof ApiError ? plain(failed.val
     <button type="button" class="control" :disabled="wait > 0" @click="connect">Retry</button>
   </div>
   <div v-else-if="phase === 'error'" class="box danger" role="alert">
-    <p v-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
+    <p v-if="status === 503 && kept">Lost the live connection.</p>
+    <p v-else-if="status === 503">Couldn't open the activity feed. {{ hint }}</p>
     <p v-else>Couldn't read the activity feed. {{ hint || 'Check your connection, then try again.' }}</p>
-    <button type="button" class="control" @click="connect">Retry</button>
+    <button type="button" class="control" @click="retryNow">Retry</button>
   </div>
 
   <template v-if="phase !== 'error' || kept">
