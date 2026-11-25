@@ -52,6 +52,9 @@ func (c *commander) pull(ctx context.Context) error {
 		return errors.New("cannot read the working directory")
 	}
 	rootDir, ok := project.RepositoryRoot(dir)
+	if !ok && c.s.ifPulled { // no repository, so no stamp: a hook has nothing to do
+		return nil
+	}
 	if !ok {
 		return errors.New("not inside a git repository: goldie pull works at the repository root\nRun it in your repository, or create one first: git init")
 	}
