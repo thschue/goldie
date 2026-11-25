@@ -4,6 +4,7 @@
   "extends": [
     "config:recommended",
     "helpers:pinGitHubActionDigestsToSemver",
+    "docker:pinDigests",
     ":semanticPrefixFixDepsChoreOthers"
   ],
   "semanticCommits": "enabled",
@@ -49,10 +50,17 @@
       "groupName": "pinned tools"
     },
     {
-      "description": "The base images of the Dockerfile and compose.yaml (#740). The Go and Node majors follow go.mod and web/.nvmrc, which move by a deliberate PR",
+      "description": "The base images of the Dockerfile and compose.yaml (#740), pinned by digest",
       "matchManagers": ["dockerfile", "docker-compose"],
       "groupName": "container images",
       "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"]
+    },
+    {
+      "description": "The Go and Node image versions follow go.mod and web/.nvmrc, which move by a deliberate PR; their digests still update",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["node", "golang"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
     },
     {
       "description": "The Go directive and toolchain move only by a deliberate PR",
