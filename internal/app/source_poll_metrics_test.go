@@ -90,7 +90,11 @@ func TestSourcePollsAreCountedByResult(t *testing.T) {
 	}
 
 	raw := col.body("/v1/metrics")
+	var syncAttrValues []string
 	counts, keys := metricCounts(t, raw, "goldie.syncs", func(attrs map[string]string) string {
+		for _, v := range attrs {
+			syncAttrValues = append(syncAttrValues, v)
+		}
 		return attrs["source"] + "/" + attrs["result"]
 	})
 	if counts["git/ok"] != 1 || counts["git/error"] != 1 || len(counts) != 2 {
@@ -99,9 +103,16 @@ func TestSourcePollsAreCountedByResult(t *testing.T) {
 	if len(keys) != 2 || keys[0] != "result" || keys[1] != "source" {
 		t.Errorf("goldie.syncs attribute keys = %v, want only result and source", keys)
 	}
-	for _, planted := range []string{repo.dir, repo.url, "git-first"} {
+	for _, planted := range []string{repo.dir, repo.url} {
 		if bytes.Contains(raw, []byte(planted)) {
 			t.Errorf("the metrics export carries %q (PC-12)", planted)
+		}
+	}
+	// goldie.item.uses carries the Item id by design (#898), so the id of the
+	// fetched article is checked on the goldie.syncs points only.
+	for _, v := range syncAttrValues {
+		if strings.Contains(v, "git-first") {
+			t.Errorf("goldie.syncs carries the Item id in attribute value %q (PC-12)", v)
 		}
 	}
 }
@@ -309,9 +320,18 @@ func TestSourcePollDurationIsRecordedByResult(t *testing.T) {
 		}
 		checkPollBuckets(t, p.bounds)
 	}
-	for _, planted := range []string{repo.dir, repo.url, "git-first"} {
+	for _, planted := range []string{repo.dir, repo.url} {
 		if bytes.Contains(raw, []byte(planted)) {
 			t.Errorf("the metrics export carries %q (PC-12)", planted)
+		}
+	}
+	// goldie.item.uses carries the Item id by design (#898), so the id of the
+	// fetched article is checked on the goldie.sync.duration points only.
+	for _, p := range points {
+		for _, v := range p.attrs {
+			if strings.Contains(v, "git-first") {
+				t.Errorf("goldie.sync.duration carries the Item id in attribute value %q (PC-12)", v)
+			}
 		}
 	}
 }

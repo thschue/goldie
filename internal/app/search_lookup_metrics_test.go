@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -211,8 +212,14 @@ func TestSearchesAndLookupsAreCountedByHitOrMiss(t *testing.T) {
 	}
 
 	raw := col.body("/v1/metrics")
+	var attrValues []string
 	for _, name := range []string{"goldie.searches", "goldie.lookups"} {
-		counts, keys := metricCounts(t, raw, name, func(attrs map[string]string) string { return attrs["result"] })
+		counts, keys := metricCounts(t, raw, name, func(attrs map[string]string) string {
+			for _, v := range attrs {
+				attrValues = append(attrValues, v)
+			}
+			return attrs["result"]
+		})
 		if counts["hit"] != 1 || counts["miss"] != 1 || len(counts) != 2 {
 			t.Errorf("%s by result = %v, want one hit and one miss", name, counts)
 		}
@@ -220,9 +227,16 @@ func TestSearchesAndLookupsAreCountedByHitOrMiss(t *testing.T) {
 			t.Errorf("%s attribute keys = %v, want only result", name, keys)
 		}
 	}
-	for _, planted := range []string{missQuery, missID, "planted-project-marker-3317", "platform/deploy"} {
+	for _, planted := range []string{missQuery, missID, "planted-project-marker-3317"} {
 		if bytes.Contains(raw, []byte(planted)) {
 			t.Errorf("the metrics export carries %q (PC-12)", planted)
+		}
+	}
+	// goldie.item.uses carries the Item id by design (#898), so the id of the
+	// looked-up article is checked on the searches and lookups points only.
+	for _, v := range attrValues {
+		if strings.Contains(v, "platform/deploy") {
+			t.Errorf("goldie.searches or goldie.lookups carries the Item id in attribute value %q (PC-12)", v)
 		}
 	}
 }
