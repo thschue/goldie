@@ -268,3 +268,63 @@ func TestInitInstructionsWithoutATokenFailsButKeepsTheRest(t *testing.T) {
 		t.Error("the config or the hook is missing")
 	}
 }
+
+// Input already at its end is a terminal as far as init can tell (/dev/null):
+// the flags still run, after the plain init.
+func TestInitFlagsRunWhenInputIsAtItsEnd(t *testing.T) {
+	srv := instructionsServer(t, false)
+	root := guidedRepo(t)
+	stdout, stderr, err := runInit(strings.NewReader(""), map[string]string{"GOLDIE_TOKEN": guidedToken}, "--addr", srv.URL, "--instructions", "--hooks")
+	if err != nil {
+		t.Fatalf("init: %v\nstderr: %s", err, stderr)
+	}
+	if want := initOwn(root, "Registered: yes\n") + flagBlockMsg + flagHooksMsg; stdout != want {
+		t.Errorf("stdout:\n%s\nwant:\n%s", stdout, want)
+	}
+	if !strings.Contains(claudeFile(root), "Ask goldie first.") || len(hookCommandsOf(t, root)) != 2 {
+		t.Error("the block or the hook is missing")
+	}
+}
+
+// On a terminal --instructions answers the question: it is not asked, the
+// block is applied and Next drops the command and commits CLAUDE.md.
+func TestInitInstructionsFlagOnATerminalSkipsTheQuestion(t *testing.T) {
+	srv := instructionsServer(t, false)
+	root := guidedRepo(t)
+	stdout, stderr, err := runInit(strings.NewReader("\n"+srv.URL+"\n"), map[string]string{"GOLDIE_TOKEN": guidedToken}, "--instructions")
+	if err != nil {
+		t.Fatalf("init: %v\nstderr: %s", err, stderr)
+	}
+	if strings.Contains(stderr, "instruction block") {
+		t.Errorf("the question was asked:\n%s", stderr)
+	}
+	before, next, _ := strings.Cut(stdout, "\nNext:\n")
+	if !strings.HasSuffix(before, flagBlockMsg) || !strings.Contains(claudeFile(root), "Ask goldie first.") {
+		t.Errorf("the block was not applied before Next:\n%s", stdout)
+	}
+	if strings.Contains(next, "goldie instructions apply") || !strings.Contains(next, ".goldie/config.yaml CLAUDE.md") {
+		t.Errorf("Next does not reflect the applied block:\n%s", next)
+	}
+	noSettingsFile(t, root)
+}
+
+// On a terminal --hooks installs the hook before the Next block.
+func TestInitHooksFlagOnATerminalInstallsBeforeNext(t *testing.T) {
+	srv := instructionsServer(t, false)
+	root := guidedRepo(t)
+	stdout, stderr, err := runInit(strings.NewReader("\n"+srv.URL+"\nn\n"), map[string]string{"GOLDIE_TOKEN": guidedToken}, "--hooks")
+	if err != nil {
+		t.Fatalf("init: %v\nstderr: %s", err, stderr)
+	}
+	before, next, ok := strings.Cut(stdout, "\nNext:\n")
+	if !ok || !strings.HasSuffix(before, flagHooksMsg) {
+		t.Errorf("the hook message is not just before Next:\n%s", stdout)
+	}
+	if !strings.Contains(next, "goldie instructions apply") {
+		t.Errorf("Next lost the instructions command:\n%s", next)
+	}
+	if len(hookCommandsOf(t, root)) != 2 {
+		t.Error("the hook is missing")
+	}
+	noClaudeFile(t, root)
+}

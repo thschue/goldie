@@ -110,7 +110,13 @@ func (c *commander) initProject(ctx context.Context) error {
 		}
 		return c.initGuided(ctx, root, proj, newPrompter(c.env.In, c.errOut))
 	}
-	if err := c.initPlain(ctx, root, proj, true); err != nil {
+	return c.initPlainSteps(ctx, root, proj, true)
+}
+
+// initPlainSteps is initPlain followed by the steps the flags ask for: the
+// instruction block, then the hook. Both steps run; their errors are joined.
+func (c *commander) initPlainSteps(ctx context.Context, root string, proj project.Detected, withProject bool) error {
+	if err := c.initPlain(ctx, root, proj, withProject); err != nil {
 		return err
 	}
 	var instrErr error
@@ -183,7 +189,7 @@ func (c *commander) initGuided(ctx context.Context, root string, proj project.De
 	use, err := p.confirm("Use this Project?")
 	switch {
 	case errors.Is(err, errPromptEOF): // the question was never shown
-		return c.initPlain(ctx, root, proj, false)
+		return c.initPlainSteps(ctx, root, proj, false)
 	case errors.Is(err, errPromptCut):
 		return errors.New(errInitStopped)
 	case err != nil:

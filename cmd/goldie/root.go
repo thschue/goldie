@@ -335,9 +335,9 @@ var clientHelp = map[string]struct{ use, short, long, example string }{
 		"  goldie status\n  goldie status --addr http://127.0.0.1:8080",
 	},
 	"init": {
-		"init [--project ID] [flags]", "Write .goldie/config.yaml for this repository",
-		"Write .goldie/config.yaml at the repository root with the Project found from\nits git remotes, and say whether the server holds it. It never overwrites.",
-		"  goldie init\n  goldie init --project github.com/acme/shop",
+		"init [--project ID] [--instructions] [--hooks] [flags]", "Write .goldie/config.yaml for this repository",
+		"Write .goldie/config.yaml at the repository root with the Project found from\nits git remotes, and say whether the server holds it. It never overwrites.\n\n--instructions also runs goldie instructions apply. --hooks also runs goldie\nhooks install: it adds a SessionStart hook that runs a command for everyone who\nclones the repository. Nothing is installed without the flag.",
+		"  goldie init\n  goldie init --project github.com/acme/shop\n  goldie init --instructions --hooks",
 	},
 	"instructions": {
 		"instructions apply|check [flags]", "Write or check goldie's instruction block in CLAUDE.md or AGENTS.md",
