@@ -67,7 +67,9 @@ answered with a message that points to `list_skills` or to that restart. The ser
 `goldie://skills/{name}/{+path}` reads one file of a skill's bundle (the path keeps its slashes,
 as in `scripts/run.sh`), as text with each line quoted with `| `, and `goldie://agents/{name}`
 reads an agent's name and description. The session's default Project picks the bundle, never the
-URI. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
+URI: resource URIs carry no Project, because a resource is addressed by its URI alone and the
+session already has a default Project. To read another Project's skill or its files, call
+`get_skill` with `project`. A skill, file or agent that doesn't exist answers as resource not found. So does a URI that
 is malformed or leaves the bundle. The error names `list_skills` and `list_agents` as the next
 step. A failed prompt or resource read says it was a prompt or resource, not a tool.
 When the default Project has a problem, a prompt or resource error names the problem and tells the
