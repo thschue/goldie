@@ -20,7 +20,7 @@ carries a bad `updated` fails closed like a bad `status`: the skill is a draft a
 
 Rejected:
 
-- **Git history.** It needs full clones, which `gitlimit.go` forbids, and it says nothing for a `dir`
+- **Git history.** Sources clone shallow (`git.go`, `Depth = 1`) and under the caps in `gitlimit.go`, so there is no history to read, and it says nothing for a `dir`
   Source, which has no history.
 - **Snapshot diff.** The time of the first Snapshot that held a change resets on restart and differs
   per replica (ADR 0022).
