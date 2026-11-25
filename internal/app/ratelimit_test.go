@@ -457,6 +457,13 @@ func TestSpecDeclaresTheRateLimitResponse(t *testing.T) {
 			if !ok || method == "parameters" {
 				continue
 			}
+			if path == "/api/v1/session/providers" {
+				// The providers take no bearer token and skip the gate and the limit (#645).
+				if sec, ok := o["security"].([]any); !ok || len(sec) != 0 {
+					t.Errorf("%s %s: takes no bearer token but is not marked security: []", method, path)
+				}
+				continue
+			}
 			if path == "/api/v1/session" && (method == "post" || method == "delete") {
 				// Sign-in and sign-out take no bearer token (ADR 0027).
 				if sec, ok := o["security"].([]any); !ok || len(sec) != 0 {

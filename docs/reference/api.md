@@ -520,8 +520,9 @@ callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
 `next` is the same-site path to return to; anything else (an absolute
 URL, `//host`, a backslash or a control character) ends at
 `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
-A server without GitHub sign-in answers 501 in the error envelope. A remote address that made too many
-failed sign-ins is refused with a 429 here too.
+A server without GitHub sign-in answers 501 in the error envelope.
+A remote address that made too many failed sign-ins is refused with a
+429 here too.
 
 Operation ID: `getSessionGithub`
 
@@ -562,6 +563,22 @@ Operation ID: `getSessionGithubCallback`
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | This remote address made too many failed sign-ins. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `501` | This server has no GitHub sign-in, so there is nothing to call back to. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/session/providers`
+
+Read which sign-in providers the server offers
+
+Tells a signed-out browser whether to offer GitHub sign-in next to the
+token field. It takes no token and sets no cookie, and the body holds
+only `github`: never a URL, a client ID or an organisation name. The
+response is `Cache-Control: no-store`.
+
+Operation ID: `getSessionProviders`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The providers. | `application/json` (`SessionProviders`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
 ### `GET /api/v1/skills`
@@ -1071,6 +1088,14 @@ Who a session signs in.
 | `role` | `string` | yes | The token's role, read from the configuration now. Clients ignore values they do not know. |
 | `swagger_ui` | `boolean` | yes | True when the server serves Swagger UI at /swagger-ui, so a client may link to it. |
 | `trace_url_template` | `string` | no | The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset. |
+
+### `SessionProviders`
+
+The sign-in providers beyond the token.
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `github` | `boolean` | yes | True when GitHub sign-in is configured, so a client may offer it. |
 
 ### `SessionRequest`
 

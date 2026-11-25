@@ -78,6 +78,9 @@ func readOperationPaths(t *testing.T) []string {
 		if isAnonymousRead(specPaths[path]) {
 			continue // an anonymous browser redirect, not a snapshot-backed read
 		}
+		if path == "/api/v1/session/providers" {
+			continue // anonymous and needs no Snapshot: it reads the configuration only (#645)
+		}
 		if strings.Contains(path, "{") {
 			c, err := contracttest.ExamplePath(method, path)
 			if err != nil {
@@ -214,6 +217,9 @@ func TestSpecDeclaresNotReadyOnEveryRead(t *testing.T) {
 		}
 		if isAnonymousRead(item) {
 			continue
+		}
+		if path == "/api/v1/session/providers" {
+			continue // anonymous and needs no Snapshot (#645)
 		}
 		get, _ := item.(map[string]any)["get"].(map[string]any)
 		responses, _ := get["responses"].(map[string]any)

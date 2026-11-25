@@ -522,3 +522,101 @@ func TestGitHubPrincipalIsLabelledByRoleAndLimitedByLogin(t *testing.T) {
 		}
 	}
 }
+
+// ghExchangeFails is a callback whose state and cookie are right but whose
+// code GitHub refuses, which is an exchange_failed.
+func ghExchangeFails(t *testing.T, h http.Handler) (*http.Response, []byte) {
+	t.Helper()
+	s := ghStartFlow(t, h, "/activity")
+	return ghCallback(t, h, url.Values{"code": {"never-issued"}, "state": {s.state}}, "/activity", s.cookie)
+}
+
+// The callback is a GET any site can make a visitor's browser send, so only a
+// failed code exchange counts toward the per-address cap; the gate and the
+// off switch behave like the other session operations.
+func TestGitHubCallbackLimitVersionGateAndOffSwitch(t *testing.T) {
+	t.Run("failed exchanges count toward the cap", func(t *testing.T) {
+		f := newGHFake(t)
+		h := ghHandler(t, f, sessionKey, nil)
+		last := ghStartFlow(t, h, "/activity") // started before the cap: the start is limited too
+		for i := range 10 {
+			resp, body := ghExchangeFails(t, h)
+			if resp.StatusCode == http.StatusTooManyRequests {
+				t.Fatalf("failed callback %d: limited before the cap", i+1)
+			}
+			ghAssertRefused(t, "failed exchange", resp, body)
+		}
+		resp, body := ghCallback(t, h, url.Values{"code": {"never-issued"}, "state": {last.state}}, "/activity", last.cookie)
+		if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
+			t.Errorf("callback after 10 failures: status %d, Retry-After %q, want 429 with Retry-After: %s",
+				resp.StatusCode, resp.Header.Get("Retry-After"), body)
+		}
+	})
+	t.Run("a bad state does not count toward the cap", func(t *testing.T) {
+		f := newGHFake(t)
+		h := ghHandler(t, f, sessionKey, nil)
+		for range 15 {
+			s := ghStartFlow(t, h, "/activity")
+			resp, body := ghCallback(t, h, url.Values{"code": {"x"}, "state": {"forged-" + s.state}}, "/activity", s.cookie)
+			ghAssertRefused(t, "bad state", resp, body)
+		}
+		if c := ghSignIn(t, h, f, "alice"); c == nil {
+			t.Error("sign-in after bad-state callbacks failed")
+		}
+	})
+	t.Run("an old client gets 426 on both operations", func(t *testing.T) {
+		f := newGHFake(t)
+		cfg := sessionConfig(t, namedTokenLines(), map[string]string{
+			"GOLDIE_SESSION_KEY":          sessionKey,
+			"GOLDIE_GITHUB_CLIENT_ID":     ghClientID,
+			"GOLDIE_GITHUB_CLIENT_SECRET": ghClientSecret,
+			"GOLDIE_GITHUB_URL":           f.URL,
+			"GOLDIE_GITHUB_ORGS":          "acme",
+			"GOLDIE_PUBLIC_URL":           secureBase,
+			"GOLDIE_MIN_CLIENT_VERSION":   "2.0.0",
+		})
+		h := ghHandlerFor(t, cfg, nil)
+		for _, path := range []string{ghStartPath, ghCallbackPath} {
+			resp, body := send(t, h, http.MethodGet, secureBase+path, func(r *http.Request) {
+				r.Header.Set("X-Goldie-Client", "goldie/1.0.0")
+			})
+			if resp.StatusCode != http.StatusUpgradeRequired {
+				t.Errorf("GET %s with an old client: status %d, want 426: %s", path, resp.StatusCode, body)
+			}
+		}
+	})
+	t.Run("a server without GitHub sign-in answers 501", func(t *testing.T) {
+		h := sessionHandler(t, namedTokenLines(), sessionKey, nil)
+		for _, path := range []string{ghStartPath, ghCallbackPath} {
+			resp, body := send(t, h, http.MethodGet, secureBase+path, nil)
+			if resp.StatusCode != http.StatusNotImplemented {
+				t.Errorf("GET %s without GitHub: status %d, want 501: %s", path, resp.StatusCode, body)
+				continue
+			}
+			assertEnvelope(t, body, "not_configured")
+		}
+	})
+}
+
+// A GitHub that answers 403 on the team endpoint (SAML enforcement) refuses the
+// sign-in even for an organisation member: a Role is never the result of an
+// error.
+func TestGitHubCallbackRefusesWhenTheTeamLookupFails(t *testing.T) {
+	f := newGHFake(t)
+	inner := f.Config.Handler
+	f.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/teams/") {
+			w.Header().Set("Connection", "close")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		inner.ServeHTTP(w, r)
+	})
+	h := ghHandler(t, f, sessionKey, nil)
+	s := ghStartFlow(t, h, "/activity")
+	resp, body := ghCallback(t, h, url.Values{"code": {f.issue("alice", s.challenge)}, "state": {s.state}}, "/activity", s.cookie)
+	ghAssertRefused(t, "team lookup 403", resp, body)
+	if loc, err := resp.Location(); err != nil || loc.Query().Get("error") != "exchange_failed" {
+		t.Errorf("Location %q, want /signin?error=exchange_failed", resp.Header.Get("Location"))
+	}
+}

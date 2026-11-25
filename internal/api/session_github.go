@@ -130,7 +130,7 @@ func (s *Server) GetSessionGithubCallback(ctx context.Context, req contract.GetS
 		code = *req.Params.Code
 	}
 	if !ok || state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(login.State)) != 1 {
-		return refuse("state_invalid", true)
+		return refuse("state_invalid", false)
 	}
 	if req.Params.Error != nil {
 		return refuse("access_denied", false)

@@ -143,6 +143,7 @@ type Server struct {
 	gh         GitHubSignIn              // see WithGitHub, nil: no sign-in with GitHub
 	ghRedirect string                    // the callback URL, from GOLDIE_PUBLIC_URL
 	swaggerUI  bool                      // see WithSwaggerUI
+	github     bool                      // see WithGitHubSignIn
 	grafana    string                    // see WithObservabilityLinks
 	traceTmpl  string
 

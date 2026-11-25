@@ -2,7 +2,8 @@
 
 Status: proposed
 
-Amends ADR 0027.
+Amends ADR 0027 and ADR 0008. It narrows ADR 0008 for the browser: no refresh tokens, no per-session
+revocation, and no membership re-check on refresh; the re-check is the one-hour cap on the session.
 
 ## Context
 
