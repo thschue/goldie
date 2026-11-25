@@ -17,15 +17,27 @@ import (
 // promptPrefix starts the name of every prompt: goldie-<skill name>.
 const promptPrefix = "goldie-"
 
-// promptDescription is the description of the prompt of one skill. It names
-// the skill, whose name is clean, and nothing else of what a Source says.
+// promptDescription is the generic description of the prompt of a skill that
+// has no description of its own. It names the skill, whose name is clean.
 func promptDescription(skill string) string {
 	return "Loads the " + skill + " skill's instructions into this conversation."
 }
 
-// promptSet is what a session's prompts were made from: the skill names and the
-// loop names, each in the API's order.
-type promptSet struct{ skills, loops []string }
+// promptSet is what a session's prompts were made from: the skill names (with
+// each skill's cleaned description) and the loop names, each in the API's order.
+type promptSet struct {
+	skills, loops []string
+	descs         map[string]string
+}
+
+// skillDescription is the description of the prompt of one skill: the skill's
+// own description, cleaned to one line, or the generic text when it has none.
+func (p promptSet) skillDescription(skill string) string {
+	if d := p.descs[skill]; d != "" {
+		return d
+	}
+	return promptDescription(skill)
+}
 
 // promptSnapshots hold, per session, the skill and loop names the
 // session's prompts were made from. The prompt list is fixed when a session starts: the first
@@ -80,6 +92,7 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 		return promptSet{}, wordErrorFor(err, t.local, failed)
 	}
 	var names []string
+	descs := map[string]string{}
 	seen := map[string]bool{}
 	for _, sk := range res.Skills {
 		// A name from a Source is a prompt only when it is one clean path segment.
@@ -88,12 +101,17 @@ func (t *tools) snapshot(ctx context.Context, s *sdk.Server, snaps *promptSnapsh
 		}
 		seen[sk.Name] = true
 		names = append(names, sk.Name)
+		if sk.Description != nil {
+			if d := strings.TrimSpace(contract.CleanLine(*sk.Description)); d != "" {
+				descs[sk.Name] = d
+			}
+		}
 	}
 	loops, err := t.loopNames(ctx, proj, failed)
 	if err != nil {
 		return promptSet{}, err
 	}
-	set = promptSet{skills: names, loops: loops}
+	set = promptSet{skills: names, loops: loops, descs: descs}
 	snaps.mu.Lock()
 	defer snaps.mu.Unlock()
 	if have, ok := snaps.names[ss]; ok {
@@ -156,7 +174,7 @@ func (t *tools) listPrompts(ctx context.Context, s *sdk.Server, snaps *promptSna
 	}
 	res := &sdk.ListPromptsResult{Prompts: []*sdk.Prompt{}}
 	for _, n := range set.skills {
-		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: promptPrefix + n, Description: promptDescription(n)})
+		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: promptPrefix + n, Description: set.skillDescription(n)})
 	}
 	for _, n := range set.loopPrompts() {
 		res.Prompts = append(res.Prompts, &sdk.Prompt{Name: loopPromptPrefix + n, Description: loopPromptDescription(n)})
@@ -192,7 +210,7 @@ func (t *tools) getPrompt(ctx context.Context, s *sdk.Server, snaps *promptSnaps
 		return nil, wordErrorFor(err, t.local, surfacePrompt)
 	}
 	return &sdk.GetPromptResult{
-		Description: promptDescription(skill),
+		Description: set.skillDescription(skill),
 		Messages: []*sdk.PromptMessage{{
 			Role:    "user",
 			Content: &sdk.TextContent{Text: contract.CleanText(string(file))},
