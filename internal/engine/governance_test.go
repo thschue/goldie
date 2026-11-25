@@ -481,3 +481,115 @@ func writeTo(t *testing.T, root, name, content string) {
 		t.Fatal(err)
 	}
 }
+
+// Issue #726 (ADR for the updated day): every Item may carry an optional
+// frontmatter key updated, a day YYYY-MM-DD, exposed as Updated. A bad value
+// fails the Item and the error never echoes it.
+
+// updatedKinds is one valid file per Kind that takes updated, with how to read
+// the loaded Item back.
+var updatedKinds = []struct {
+	kind, file string
+	doc        func(front ...string) string
+	item       func(s *engine.Snapshot) (any, bool)
+}{
+	{"article", "global/articles/a.md",
+		func(front ...string) string { return govArticle("A", front...) },
+		func(s *engine.Snapshot) (any, bool) { return s.ArticleIn("", "a") }},
+	{"agent", "global/agents/bot.md",
+		func(front ...string) string {
+			return "---\nname: bot\ndescription: d\n" + strings.Join(front, "\n") + "\n---\n# bot\n"
+		},
+		func(s *engine.Snapshot) (any, bool) { return s.AgentIn("", "bot") }},
+	{"skill", "global/skills/deploy/SKILL.md",
+		func(front ...string) string {
+			return "---\nname: deploy\ndescription: d\n" + strings.Join(front, "\n") + "\n---\n# deploy\n"
+		},
+		func(s *engine.Snapshot) (any, bool) { return s.SkillIn("", "deploy") }},
+	{"loop", "global/loops/nightly.md",
+		func(front ...string) string {
+			return "---\nname: nightly\ndescription: d\ninterval: 30m\nstop: done\n" + strings.Join(front, "\n") + "\n---\nPrompt\n"
+		},
+		func(s *engine.Snapshot) (any, bool) { return s.LoopIn("", "nightly") }},
+	{"decision", "global/decisions/pick.md",
+		func(front ...string) string {
+			return "---\ntitle: Pick\nstatus: accepted\ndate: 2023-05-02\n" + strings.Join(front, "\n") + "\n---\nWe decided.\n"
+		},
+		func(s *engine.Snapshot) (any, bool) { return s.DecisionIn("", "pick") }},
+}
+
+// updatedOf reads the exported Updated field of an Item by reflection, so the
+// tests compile before the field exists and fail on its absence.
+func updatedOf(t *testing.T, item any) string {
+	t.Helper()
+	f := reflect.ValueOf(item).FieldByName("Updated")
+	if !f.IsValid() {
+		t.Fatalf("%T has no field Updated", item)
+	}
+	return fmt.Sprint(f.Interface())
+}
+
+func TestUpdatedDayIsAcceptedAndExposedOnEveryKind(t *testing.T) {
+	for _, k := range updatedKinds {
+		t.Run(k.kind, func(t *testing.T) {
+			snap := load(t, map[string]string{k.file: k.doc("updated: 2024-03-09")})
+			item, ok := k.item(snap)
+			if !ok {
+				t.Fatalf("%s not found", k.kind)
+			}
+			if got := updatedOf(t, item); got != "2024-03-09" {
+				t.Errorf("Updated = %q, want 2024-03-09", got)
+			}
+		})
+	}
+}
+
+func TestItemWithoutUpdatedLoadsWithNoChangeTime(t *testing.T) {
+	for _, k := range updatedKinds {
+		t.Run(k.kind, func(t *testing.T) {
+			snap := load(t, map[string]string{k.file: k.doc()})
+			item, ok := k.item(snap)
+			if !ok {
+				t.Fatalf("%s not found", k.kind)
+			}
+			if got := updatedOf(t, item); got != "" {
+				t.Errorf("Updated = %q, want empty", got)
+			}
+		})
+	}
+}
+
+func TestDecisionKeepsDateSeparateFromUpdated(t *testing.T) {
+	snap := load(t, map[string]string{"global/decisions/pick.md": updatedKinds[4].doc("updated: 2024-03-09")})
+	d, ok := snap.DecisionIn("", "pick")
+	if !ok {
+		t.Fatal("decision not found")
+	}
+	if d.Date != "2023-05-02" || updatedOf(t, d) != "2024-03-09" {
+		t.Errorf("Date = %q, Updated = %q; want 2023-05-02 and 2024-03-09", d.Date, updatedOf(t, d))
+	}
+}
+
+func TestUpdatedThatIsNotADayFailsTheItemWithoutEchoingTheValue(t *testing.T) {
+	const want = "updated must be a day such as 2023-05-02"
+	bad := []string{"SECRETVALUE-9", "2023-5-2", "2023-02-30", "20230502", "2023-05-02T10:00:00Z", "[SECRETVALUE-9]", ""}
+	for _, k := range updatedKinds {
+		if k.kind == "skill" {
+			continue // a SKILL.md fails closed to a draft, it never fails the load
+		}
+		for i, v := range bad {
+			if k.kind != "article" && i > 0 {
+				continue // the day formats are one rule, checked on the article; every kind is checked with one bad value
+			}
+			t.Run(fmt.Sprintf("%s/%d", k.kind, i), func(t *testing.T) {
+				msg := loadErr(t, map[string]string{k.file: k.doc("updated: " + v)}, k.file)
+				if !strings.Contains(msg, want) {
+					t.Errorf("error %q does not say %q", msg, want)
+				}
+				if strings.Contains(msg, "SECRETVALUE") || (v != "" && strings.Contains(strings.ReplaceAll(msg, want, ""), v)) {
+					t.Errorf("error echoes the value %q: %q", v, msg)
+				}
+			})
+		}
+	}
+}

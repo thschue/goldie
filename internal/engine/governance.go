@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -82,6 +83,7 @@ type lifecycleMeta struct {
 	Status     yaml.Node `yaml:"status"`
 	Enforced   yaml.Node `yaml:"enforced"`
 	ReplacedBy yaml.Node `yaml:"replaced_by"`
+	Updated    yaml.Node `yaml:"updated"`
 }
 
 // apply validates the lifecycle frontmatter and sets it on a. The errors name
@@ -115,7 +117,27 @@ func (m lifecycleMeta) apply(a *Article) error {
 		}
 		a.ReplacedBy = v
 	}
+	if present(m.Updated) {
+		v, ok := updatedDay(m.Updated)
+		if !ok {
+			return errors.New("updated must be a day such as 2023-05-02")
+		}
+		a.Updated = v
+	}
 	return nil
+}
+
+// updatedDay reads the frontmatter updated: a day, YYYY-MM-DD, written bare or
+// quoted. Anything else, an empty value included, is not a day.
+func updatedDay(n yaml.Node) (string, bool) {
+	v, ok := scalar(n, "!!timestamp")
+	if !ok {
+		v, ok = scalar(n, "!!str")
+	}
+	if _, err := time.Parse(time.DateOnly, v); !ok || err != nil {
+		return "", false
+	}
+	return v, true
 }
 
 // present reports whether the field was written at all; an empty value such as

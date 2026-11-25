@@ -55,6 +55,9 @@ type Article struct {
 	// ReplacedBy is the frontmatter replaced_by as written, a reference
 	// <kind>:<name> that resolves in this Item's view (ADR 0021), or empty.
 	ReplacedBy string
+	// Updated is the frontmatter updated, a day YYYY-MM-DD the author sets, or
+	// empty when the Item has none (ADR 0032).
+	Updated string
 	// Overrides is set by Snapshot.View and ArticleIn on a winning Item: the
 	// Scopes of the readable, lower-priority copies with the same identity, nearest first
 	// (local, Project, global). Empty when the Item shadows nothing.

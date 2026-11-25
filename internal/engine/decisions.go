@@ -35,6 +35,8 @@ type Decision struct {
 	Status string
 	// Date is the frontmatter date, YYYY-MM-DD.
 	Date string
+	// Updated is the frontmatter updated, a day YYYY-MM-DD, or empty. It is not Date.
+	Updated string
 	// Enforced is the frontmatter enforced: true.
 	Enforced bool
 	// Supersedes lists the references the frontmatter names, as written.
@@ -160,7 +162,7 @@ func decisionRefs(n yaml.Node) ([]string, error) {
 // toDecision copies a decision record into the public type.
 func toDecision(a Article) Decision {
 	return Decision{
-		Name: a.ID, Title: a.Name, Scope: a.Scope, Status: a.Status, Date: a.decision.date,
+		Name: a.ID, Title: a.Name, Scope: a.Scope, Status: a.Status, Date: a.decision.date, Updated: a.Updated,
 		Enforced: a.Enforced, Supersedes: slices.Clone(a.decision.supersedes), SupersededBy: a.ReplacedBy,
 		Keywords: slices.Clone(a.Keywords), Content: a.Content,
 	}

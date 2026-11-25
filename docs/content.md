@@ -16,9 +16,22 @@ keywords: [deploy, release]
 Run the pipeline from main. Tag the release first.
 ```
 
+With the optional `updated` key:
+
+```markdown
+---
+name: Deploying a service
+keywords: [deploy, release]
+updated: 2024-03-09
+---
+Run the pipeline from main. Tag the release first.
+```
+
 - `name` is the title. It is required and may not be blank.
 - `keywords` is a list of words a search matches, besides the words in `name`. Add the words people
   will type.
+- `updated` is optional: the day you last changed the article, as `YYYY-MM-DD`. Goldie shows it as the
+  change time and never sets it for you, so bump it when you edit. Any other value fails the load.
 - Everything after the second `---` is the body, in Markdown.
 
 Check it and find it. No server is needed for this check.

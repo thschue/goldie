@@ -348,3 +348,24 @@ func TestValidateFollowsTheServersLoad(t *testing.T) {
 		}
 	}
 }
+
+// #726: goldie validate accepts an updated day on an Item and rejects any other
+// value with the fixed reason, never echoing the value.
+func TestValidateChecksTheUpdatedDay(t *testing.T) {
+	ok := t.TempDir()
+	writeArticle(t, ok, "global/articles/a.md", "---\nname: A\nkeywords: [a]\nupdated: 2024-03-09\n---\nBody.\n")
+	if stdout, stderr, code := runValidate(t, ok, validateEnv(), "validate", ok); code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("validate exit %d, want 0 and no output\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	bad := t.TempDir()
+	writeArticle(t, bad, "global/articles/a.md", "---\nname: A\nkeywords: [a]\nupdated: SECRETVALUE-9\n---\nBody.\n")
+	stdout, stderr, code := runValidate(t, bad, validateEnv(), "validate", bad)
+	reason := wantInvalid(t, stdout, stderr, code, bad)
+	if !strings.Contains(reason, "updated must be a day such as 2023-05-02") {
+		t.Errorf("reason %q does not say the updated rule", reason)
+	}
+	if strings.Contains(reason, "SECRETVALUE-9") {
+		t.Errorf("reason echoes the value: %q", reason)
+	}
+}
