@@ -26,6 +26,8 @@
 #                    serves the demo specs (GOLDIE_UX_DEMO_URL, GOLDIE_UX_DEMO_TOKEN)
 #                    (screenshots, axe) into ux/, the CI artifact for the UX review; the specs sign in
 #                    with a throwaway reader token (GOLDIE_UX_TOKEN); needs Node
+#   ./run compose-smoke  docker compose up --build (compose.yaml), wait for /readyz, sign in with the token
+#                    the init service wrote, fetch one article, and tear down with down -v; needs Docker
 #   ./run regen-check  fail if generated code differs from a fresh generation
 #   ./run regen-fixture  prove the drift check fires on testdata/openapi/drifted.yaml
 #   ./run regen-ts-check  fail if web/src/api/schema.ts differs from the spec, and prove the check fires
@@ -75,6 +77,7 @@ cleanup() {
 		bg_pid=
 	fi
 	[ -z "${ux_pid:-}${ux_demo_pid:-}" ] || ux_stop
+	[ -z "${compose_up:-}" ] || compose_smoke_down
 	if [ -n "$RUN_WT" ]; then
 		git worktree remove --force "$RUN_WT" >/dev/null 2>&1 || :
 		RUN_WT=
@@ -698,6 +701,54 @@ ux_index() {
 	} >"$UX_DIR/index.md"
 }
 
+# compose-smoke: the stack of compose.yaml, end to end over HTTP on loopback (#740).
+# It builds the image, starts it, waits for /readyz on the admin port, reads the
+# token the init service wrote into the volume, signs in at /api/v1/session, lists
+# the articles and fetches one. The exit trap (cleanup) always runs down -v, so no
+# container or volume is left behind. A reviewer tool like ux, not part of check: it needs Docker.
+COMPOSE_PROJECT=goldie-smoke
+compose_up=
+compose() { docker compose -p "$COMPOSE_PROJECT" "$@"; }
+compose_smoke_down() {
+	compose down -v --remove-orphans >/dev/null 2>&1 || :
+	compose_up=
+}
+cmd_compose_smoke() {
+	command -v docker >/dev/null 2>&1 || die "docker not found: ./run compose-smoke needs Docker with Compose"
+	app="http://127.0.0.1:${GOLDIE_PORT:-8080}"
+	admin="http://127.0.0.1:${GOLDIE_ADMIN_PORT:-8081}"
+	smoke_tmp=$(mktemp -d "$RUN_TMP/d.XXXXXX") || die "cannot create a temporary directory"
+	compose_up=1
+	say "compose-smoke: docker compose up --build"
+	compose up -d --build || { compose logs >&2 || :; die "compose-smoke: docker compose up failed"; }
+	i=0
+	until curl -fsS --max-time 5 "$admin/readyz" >/dev/null 2>&1; do
+		i=$((i + 1))
+		[ "$i" -lt 60 ] || { compose logs >&2 || :; die "compose-smoke: /readyz not ready after 120 seconds"; }
+		sleep 2
+	done
+	say "compose-smoke: ready, signing in"
+	token=$(compose run --rm --no-deps -T --entrypoint cat init /secrets/api-token) ||
+		die "compose-smoke: cannot read the token from the secrets volume"
+	[ -n "$token" ] || die "compose-smoke: the init service wrote no token"
+	(umask 077 && printf 'Authorization: Bearer %s\n' "$token" >"$smoke_tmp/auth" &&
+		printf '{"token":"%s"}' "$token" >"$smoke_tmp/signin") || die "cannot write the sign-in files"
+	code=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+		--data @"$smoke_tmp/signin" "$app/api/v1/session") || die "compose-smoke: the sign-in request failed"
+	[ "$code" = 200 ] || die "compose-smoke: sign-in answered $code, want 200"
+	say "compose-smoke: fetching one article"
+	curl -fsS --max-time 10 -H @"$smoke_tmp/auth" "$app/api/v1/articles" >"$smoke_tmp/list" ||
+		die "compose-smoke: listing articles failed"
+	id=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$smoke_tmp/list" | head -n 1)
+	[ -n "$id" ] || die "compose-smoke: the seeded content lists no article"
+	curl -fsS --max-time 10 -H @"$smoke_tmp/auth" "$app/api/v1/articles/$id" >"$smoke_tmp/article" ||
+		die "compose-smoke: fetching article $id failed"
+	grep -q "\"id\":\"$id\"" "$smoke_tmp/article" || die "compose-smoke: article $id came back without its id"
+	say "compose-smoke: tearing down"
+	compose_smoke_down
+	say "compose-smoke passed"
+}
+
 # ux_goldie <admin-addr> <args>: exec the built binary with only the
 # configuration ./run ux sets, since a token or address from the caller's
 # environment would clash with it. Port 0 on loopback takes a free port, which
@@ -967,6 +1018,7 @@ sync-agents) cmd_sync_agents ;;
 regen) cmd_regen ;;
 ui) cmd_ui ;;
 ux) cmd_ux ;;
+compose-smoke) cmd_compose_smoke ;;
 regen-check) cmd_regen_check ;;
 regen-fixture) cmd_regen_fixture ;;
 regen-ts-check) cmd_regen_ts_check ;;

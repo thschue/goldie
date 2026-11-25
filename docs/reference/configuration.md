@@ -76,6 +76,31 @@ responses keep working; `/mcp` bounds its own requests. The admin listener bound
 request and response at 10 seconds. Shutdown does not wait on these timeouts: it follows
 `GOLDIE_DRAIN_SECONDS`.
 
+## Run in a container
+
+`docker compose up` in a clone of the repository builds the image (the UI included) and runs one goldie in
+mode `all` on the example content (`examples/knowledge`), with no setup: the app is at http://127.0.0.1:8080
+and the admin port at http://127.0.0.1:8081, both on the host's loopback only (`GOLDIE_PORT` and
+`GOLDIE_ADMIN_PORT`, read by compose from your shell or a `.env` file next to `compose.yaml`, move them). `--dev` is not used: it picks random
+loopback ports, so the image sets `GOLDIE_ADDR=:8080` and `GOLDIE_ADMIN_ADDR=:8081`. An init service writes a
+random API token and session key into the `secrets` volume on the first start and keeps them, and goldie
+reads them through `GOLDIE_API_TOKEN_FILE` and `GOLDIE_SESSION_KEY_FILE` (PC-05). Read the token with
+`docker compose run --rm --no-deps --entrypoint cat init /secrets/api-token` and sign in with it.
+To serve your own directory, mount it over `/content`. To serve your own git repository, the image's
+`GOLDIE_CONTENT_DIR=/content` must go, because `GOLDIE_GIT_URL` alone conflicts with it: set it to empty in a
+`compose.override.yaml` next to `compose.yaml`:
+
+```yaml
+services:
+  goldie:
+    environment:
+      GOLDIE_CONTENT_DIR: ""
+      GOLDIE_GIT_URL: https://github.com/your-org/your-content.git
+```
+
+`docker compose down -v` removes the volume and with it the token. The healthcheck is
+`goldie health --ready`, which asks `/readyz`. `./run compose-smoke` runs this whole path.
+
 ## goldie server --dev
 
 A first run of plain `goldie server`, with neither a Source (`GOLDIE_CONTENT_DIR` or `GOLDIE_GIT_URL`)
