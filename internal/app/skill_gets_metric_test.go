@@ -115,7 +115,11 @@ func TestSkillGetsAreCountedByNameScopeAndViaOnHitsOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := col.body("/v1/metrics")
+	var getsAttrValues []string
 	counts, keys := metricCounts(t, raw, "goldie.skill.gets", func(a map[string]string) string {
+		for _, v := range a {
+			getsAttrValues = append(getsAttrValues, v)
+		}
 		return a["name"] + "|" + a["scope"] + "|" + a["via"]
 	})
 	want := map[string]int64{
@@ -130,9 +134,16 @@ func TestSkillGetsAreCountedByNameScopeAndViaOnHitsOnly(t *testing.T) {
 	if !reflect.DeepEqual(keys, []string{"name", "scope", "via"}) {
 		t.Errorf("goldie.skill.gets attribute keys = %v, want name, scope and via only", keys)
 	}
-	for _, planted := range []string{missName, "planted-project-marker-6120", "planted-via-marker-2209", testToken} {
+	for _, planted := range []string{missName, "planted-via-marker-2209", testToken} {
 		if bytes.Contains(raw, []byte(planted)) {
 			t.Errorf("the metrics export carries %q (PC-12)", planted)
+		}
+	}
+	// goldie.item.uses carries the registered Project id by design (#898), so
+	// the Project id is checked on the goldie.skill.gets points only.
+	for _, v := range getsAttrValues {
+		if strings.Contains(v, "planted-project-marker-6120") {
+			t.Errorf("goldie.skill.gets carries the Project id in attribute value %q (PC-12)", v)
 		}
 	}
 }

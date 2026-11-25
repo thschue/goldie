@@ -135,6 +135,7 @@ type Server struct {
 	searches  *platform.ResultCounter // see CountResults, nil counts nothing
 	lookups   *platform.ResultCounter
 	skillGets *platform.SkillGetCounter // see CountSkillGets, nil counts nothing
+	itemUses  *platform.ItemUseCounter  // see CountItemUses, nil counts nothing
 	fed       *Federation               // see FederateActivity, nil serves ?replicas=all as the local stream
 	fedOpen   atomic.Int32              // merged streams open, at most MaxFederatedSubscribers
 	fedDown   downSet                   // peers already logged as down
@@ -275,6 +276,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			contract.ArticleMissHint)), nil
 	}
+	noteItemHit(ctx, engine.KindArticle, a.ID, a.Scope, proj)
 	status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 	return contract.GetArticle200JSONResponse{
 		Id:         a.ID,
