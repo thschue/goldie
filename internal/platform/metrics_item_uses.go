@@ -45,14 +45,6 @@ func (ic *ItemUseCounter) Add(ctx context.Context, u ItemUse) {
 	if ic == nil || ic.c == nil {
 		return
 	}
-	scope := "project"
-	if u.Global {
-		scope = "global"
-	}
-	via := u.Via
-	if via != "cli" && via != "mcp" {
-		via = "other"
-	}
 	project := u.Project
 	if project == "" {
 		project = "unregistered"
@@ -62,6 +54,6 @@ func (ic *ItemUseCounter) Add(ctx context.Context, u ItemUse) {
 		principal = "anonymous"
 	}
 	ic.c.Add(ctx, 1, metric.WithAttributeSet(attribute.NewSet(
-		attribute.String("kind", u.Kind), attribute.String("name", u.Name), attribute.String("scope", scope),
-		attribute.String("via", via), attribute.String("project", project), attribute.String("principal", principal))))
+		attribute.String("kind", u.Kind), attribute.String("name", u.Name), attribute.String("scope", scopeLabel(u.Global)),
+		attribute.String("via", viaLabel(u.Via)), attribute.String("project", project), attribute.String("principal", principal))))
 }

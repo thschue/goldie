@@ -276,7 +276,7 @@ func (s *Server) GetArticle(ctx context.Context, req contract.GetArticleRequestO
 		return contract.GetArticle404JSONResponse(envelope("not_found", "no such article",
 			contract.ArticleMissHint)), nil
 	}
-	noteItemHit(ctx, "article", a.ID, a.Scope, proj)
+	noteItemHit(ctx, engine.KindArticle, a.ID, a.Scope, proj)
 	status, replacedBy := lifecycle(a.Status, a.ReplacedBy)
 	return contract.GetArticle200JSONResponse{
 		Id:         a.ID,

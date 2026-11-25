@@ -79,7 +79,7 @@ func (s *Server) record(next contract.StrictHandlerFunc, _ string) contract.Stri
 		latency := time.Since(start)
 		if got.kind != "" {
 			via := clientVia(r.Header)
-			if got.kind == "skill" {
+			if got.kind == engine.KindSkill {
 				s.skillGets.Add(ctx, got.name, got.global, via)
 			}
 			principal, _ := TokenName(ctx)
