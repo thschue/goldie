@@ -133,6 +133,31 @@ Operation ID: `getAgent`
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/agents/{name}/usage`
+
+Read how often one agent was used on this replica
+
+Returns the uses of the agent that answered lookups or gets counted on this
+replica since it started (`source` is `this-replica`, `since` is the
+process start). It counts the events `goldie.item.uses` counts, by client,
+without needing metrics, and reading the usage is no use. The numbers
+restart with the process and are not summed across replicas. The agent
+is resolved as `getAgent` resolves it; a agent that is not visible to the
+caller's Project view is the same 404 as a missing one.
+
+Operation ID: `getAgentUsage`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The uses of the agent on this replica. | `application/json` (`ItemUsage`) |
+| `400` | For the agent usage read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the agent usage read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `404` | No agent of this name is visible in the view. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/articles`
 
 List the articles of a view
@@ -173,6 +198,31 @@ Operation ID: `getArticle`
 | `401` | No bearer token, or a wrong one. | `application/json` (`ErrorEnvelope`) |
 | `403` | The lookup asked for drafts with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No article has this id; the hint points to search. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/articles/{id}/usage`
+
+Read how often one article was used on this replica
+
+Returns the uses of the article that answered lookups or gets counted on this
+replica since it started (`source` is `this-replica`, `since` is the
+process start). It counts the events `goldie.item.uses` counts, by client,
+without needing metrics, and reading the usage is no use. The numbers
+restart with the process and are not summed across replicas. The article
+is resolved as `getArticle` resolves it; a article that is not visible to the
+caller's Project view is the same 404 as a missing one.
+
+Operation ID: `getArticleUsage`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The uses of the article on this replica. | `application/json` (`ItemUsage`) |
+| `400` | For the article usage read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the article usage read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `404` | No article of this name is visible in the view. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -320,6 +370,31 @@ Operation ID: `getLoop`
 | `401` | For the loop read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | For the loop read, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No loop has this name in the view; the hint points to the loop list. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/loops/{name}/usage`
+
+Read how often one loop was used on this replica
+
+Returns the uses of the loop that answered lookups or gets counted on this
+replica since it started (`source` is `this-replica`, `since` is the
+process start). It counts the events `goldie.item.uses` counts, by client,
+without needing metrics, and reading the usage is no use. The numbers
+restart with the process and are not summed across replicas. The loop
+is resolved as `getLoop` resolves it; a loop that is not visible to the
+caller's Project view is the same 404 as a missing one.
+
+Operation ID: `getLoopUsage`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The uses of the loop on this replica. | `application/json` (`ItemUsage`) |
+| `400` | For the loop usage read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the loop usage read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `404` | No loop of this name is visible in the view. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -591,6 +666,31 @@ Operation ID: `getSkillFile`
 | `401` | For the skill file, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
 | `403` | For the skill file, drafts were asked for with a token whose role is not operator. | `application/json` (`ErrorEnvelope`) |
 | `404` | No such skill, or the path is not a file of its bundle; the hint points to the skill list and the skill's files. | `application/json` (`ErrorEnvelope`) |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/skills/{name}/usage`
+
+Read how often one skill was used on this replica
+
+Returns the uses of the skill that answered lookups or gets counted on this
+replica since it started (`source` is `this-replica`, `since` is the
+process start). It counts the events `goldie.item.uses` counts, by client,
+without needing metrics, and reading the usage is no use. The numbers
+restart with the process and are not summed across replicas. The skill
+is resolved as `getSkill` resolves it; a skill that is not visible to the
+caller's Project view is the same 404 as a missing one.
+
+Operation ID: `getSkillUsage`
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The uses of the skill on this replica. | `application/json` (`ItemUsage`) |
+| `400` | For the skill usage read, 'project' is not a 'ProjectId'. | `application/json` (`ErrorEnvelope`) |
+| `401` | For the skill usage read, no bearer token was sent, or it is wrong. | `application/json` (`ErrorEnvelope`) |
+| `404` | No skill of this name is visible in the view. | `application/json` (`ErrorEnvelope`) |
 | `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
 | `429` | The token sent more requests than 'GOLDIE_RATE_LIMIT' allows. The limit is per token name and per server process; requests without a valid token are rejected with 401 first and never count. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `503` | The server has not loaded its content yet, so it cannot answer; the error code is 'not_ready'. Retry shortly. Once this server process has loaded its content it never answers this again, even if a later load fails; a restarted or new process starts unloaded. | `application/json` (`ErrorEnvelope`) |
@@ -896,6 +996,17 @@ An Item's lifecycle when it is not published: `deprecated` (still
 served; read `replaced_by` instead when present) or `draft` (only with
 `drafts=true`, for operators). Absent for a published Item. Clients
 ignore values they do not know.
+
+### `ItemUsage`
+
+The uses of one Item on the replica that answered, from an in-process tally
+that restarts with the process (#900).
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `since` | `string` | yes | When this process started, in RFC 3339. |
+| `source` | `string` | yes |  |
+| `uses` | `object` | yes | Answered lookups and gets by client; every key is always present. |
 
 ### `Loop`
 

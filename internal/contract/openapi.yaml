@@ -749,6 +749,278 @@ paths:
           $ref: "#/components/responses/NotReady"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/articles/{id}/usage:
+    get:
+      operationId: getArticleUsage
+      tags:
+        - articles
+      summary: Read how often one article was used on this replica
+      description: |
+        Returns the uses of the article that answered lookups or gets counted on this
+        replica since it started (`source` is `this-replica`, `since` is the
+        process start). It counts the events `goldie.item.uses` counts, by client,
+        without needing metrics, and reading the usage is no use. The numbers
+        restart with the process and are not summed across replicas. The article
+        is resolved as `getArticle` resolves it; a article that is not visible to the
+        caller's Project view is the same 404 as a missing one.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "The article id, as for `getArticle`: one path segment, a `/` sent as `%2F`."
+          schema:
+            type: string
+            minLength: 1
+          example: platform/deploy
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the article for this Project (ADR 0020), as `getArticle` does. A
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The uses of the article on this replica.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemUsage"
+              example:
+                source: this-replica
+                since: "2026-11-25T08:00:00Z"
+                uses: {cli: 12, mcp: 3, other: 1}
+        "400":
+          description: 'For the article usage read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the article usage read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No article of this name is visible in the view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/skills/{name}/usage:
+    get:
+      operationId: getSkillUsage
+      tags:
+        - skills
+      summary: Read how often one skill was used on this replica
+      description: |
+        Returns the uses of the skill that answered lookups or gets counted on this
+        replica since it started (`source` is `this-replica`, `since` is the
+        process start). It counts the events `goldie.item.uses` counts, by client,
+        without needing metrics, and reading the usage is no use. The numbers
+        restart with the process and are not summed across replicas. The skill
+        is resolved as `getSkill` resolves it; a skill that is not visible to the
+        caller's Project view is the same 404 as a missing one.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The skill name, one path segment.
+          schema:
+            type: string
+            minLength: 1
+          example: deploy
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the skill for this Project (ADR 0020), as `getSkill` does. A
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The uses of the skill on this replica.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemUsage"
+              example:
+                source: this-replica
+                since: "2026-11-25T08:00:00Z"
+                uses: {cli: 12, mcp: 3, other: 1}
+        "400":
+          description: 'For the skill usage read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the skill usage read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No skill of this name is visible in the view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/agents/{name}/usage:
+    get:
+      operationId: getAgentUsage
+      tags:
+        - agents
+      summary: Read how often one agent was used on this replica
+      description: |
+        Returns the uses of the agent that answered lookups or gets counted on this
+        replica since it started (`source` is `this-replica`, `since` is the
+        process start). It counts the events `goldie.item.uses` counts, by client,
+        without needing metrics, and reading the usage is no use. The numbers
+        restart with the process and are not summed across replicas. The agent
+        is resolved as `getAgent` resolves it; a agent that is not visible to the
+        caller's Project view is the same 404 as a missing one.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The agent name, one path segment.
+          schema:
+            type: string
+            minLength: 1
+          example: reviewer
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the agent for this Project (ADR 0020), as `getAgent` does. A
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The uses of the agent on this replica.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemUsage"
+              example:
+                source: this-replica
+                since: "2026-11-25T08:00:00Z"
+                uses: {cli: 12, mcp: 3, other: 1}
+        "400":
+          description: 'For the agent usage read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the agent usage read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No agent of this name is visible in the view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/loops/{name}/usage:
+    get:
+      operationId: getLoopUsage
+      tags:
+        - loops
+      summary: Read how often one loop was used on this replica
+      description: |
+        Returns the uses of the loop that answered lookups or gets counted on this
+        replica since it started (`source` is `this-replica`, `since` is the
+        process start). It counts the events `goldie.item.uses` counts, by client,
+        without needing metrics, and reading the usage is no use. The numbers
+        restart with the process and are not summed across replicas. The loop
+        is resolved as `getLoop` resolves it; a loop that is not visible to the
+        caller's Project view is the same 404 as a missing one.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The loop name, one path segment.
+          schema:
+            type: string
+            minLength: 1
+          example: nightly
+        - name: project
+          in: query
+          required: false
+          description: |
+            Resolve the loop for this Project (ADR 0020), as `getLoop` does. A
+            value that is not a `ProjectId` is a 400.
+          schema:
+            $ref: "#/components/schemas/ProjectId"
+      responses:
+        "200":
+          description: The uses of the loop on this replica.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemUsage"
+              example:
+                source: this-replica
+                since: "2026-11-25T08:00:00Z"
+                uses: {cli: 12, mcp: 3, other: 1}
+        "400":
+          description: 'For the loop usage read, `project` is not a `ProjectId`.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 'For the loop usage read, no bearer token was sent, or it is wrong.'
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: No loop of this name is visible in the view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/NotReady"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/decisions:
     get:
       operationId: listDecisions
@@ -1797,6 +2069,37 @@ components:
           description: The file's size in bytes.
           examples:
             - 18
+    ItemUsage:
+      type: object
+      description: |
+        The uses of one Item on the replica that answered, from an in-process tally
+        that restarts with the process (#900).
+      required: [source, since, uses]
+      properties:
+        source:
+          type: string
+          enum: [this-replica]
+          example: this-replica
+        since:
+          type: string
+          format: date-time
+          description: When this process started, in RFC 3339.
+          example: "2026-11-25T08:00:00Z"
+        uses:
+          type: object
+          description: Answered lookups and gets by client; every key is always present.
+          example: {cli: 12, mcp: 3, other: 1}
+          required: [cli, mcp, other]
+          properties:
+            cli:
+              type: integer
+              minimum: 0
+            mcp:
+              type: integer
+              minimum: 0
+            other:
+              type: integer
+              minimum: 0
     Skill:
       type: object
       description: One skill bundle.
