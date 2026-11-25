@@ -164,9 +164,10 @@ Check in CI that the committed block is current (set `GOLDIE_ADDR` and `GOLDIE_T
 goldie instructions check --target agents   # exits non-zero if missing, outdated or edited
 ```
 
-`goldie pull [--target claude] [--dry-run | --check]` writes the skills and agents that apply to the
-detected Project (`--project` overrides it) into the repository root of the working directory, from any
-subdirectory: each skill to `.claude/skills/goldie-<name>/` with its files, each agent to
+`goldie pull [--target claude] [--dry-run | --check] [--quiet] [--if-pulled]` writes the skills and
+agents that apply to the detected Project (`--project` overrides it) into the repository root of the
+working directory, from any subdirectory: each skill to `.claude/skills/goldie-<name>/` with its
+files, each agent to
 `.claude/agents/goldie-<name>.md`, and each loop's entry skill to `.claude/skills/goldie-loop-<name>/SKILL.md`
 (its description, iteration prompt and stop condition; the loop's agents and skills come with the rest). A
 pull then prints `Start a loop in Claude Code:` and `/loop <interval> /goldie-loop-<name>` for each loop,
@@ -186,7 +187,11 @@ ones back, so a failed pull leaves the project as it was. `--dry-run` lists what
 removed and writes nothing. `--check` writes nothing and exits non-zero, telling you to run
 `goldie pull`, when the namespace was never pulled, the set changed or a pulled file was edited or
 deleted. `--dry-run` and `--check` cannot be
-combined. `pull` takes no `--json`.
+combined. `--quiet` prints nothing on stdout when the pull succeeds (errors still go to stderr and
+exit non-zero) and cannot be combined with `--dry-run` (exit 2). `--if-pulled` does nothing and
+succeeds, sending no request, when the repository has no usable stamp, so a session hook can run
+`goldie pull --quiet --if-pulled` and touch only repositories that took part. With a stamp it pulls as
+usual. `pull` takes no `--json`.
 
 ```sh
 goldie pull --check   # in CI or a hook: exits non-zero if never pulled or stale

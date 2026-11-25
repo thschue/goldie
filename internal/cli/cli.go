@@ -83,6 +83,7 @@ type settings struct {
 	target               string // instructions: claude or agents
 	force                bool   // instructions apply: replace a hand-edited block
 	dryRun, check        bool   // pull: list what would change; fail when stale
+	quiet, ifPulled      bool   // pull: print nothing on success; do nothing without a stamp
 	file                 string // skills show: the file of the skill to print
 	fileSet              bool   // --file was given, even empty
 	json                 bool
@@ -99,6 +100,8 @@ func Command(name string, fs *flag.FlagSet) func(ctx context.Context, pos []stri
 		fs.StringVar(&f.s.target, "target", "claude", "layout to write: claude (.claude/skills and .claude/agents)")
 		fs.BoolVar(&f.s.dryRun, "dry-run", false, "list the files a pull would write or remove, and write nothing")
 		fs.BoolVar(&f.s.check, "check", false, "exit non-zero when the namespace was never pulled or is stale, and write nothing")
+		fs.BoolVar(&f.s.quiet, "quiet", false, "print nothing on stdout when the pull succeeds (errors still go to stderr)")
+		fs.BoolVar(&f.s.ifPulled, "if-pulled", false, "do nothing, and succeed, when this repository was never pulled (no usable stamp)")
 	}
 	if name == "instructions" {
 		fs.StringVar(&f.s.target, "target", "claude", "file to manage: claude (CLAUDE.md) or agents (AGENTS.md)")
