@@ -250,12 +250,12 @@ export interface paths {
         };
         /**
          * Read how often one article was used on this replica
-         * @description Returns the uses of the article that answered lookups or gets counted on this
+         * @description Returns the uses of the article (answered lookups or gets) counted on this
          *     replica since it started (`source` is `this-replica`, `since` is the
          *     process start). It counts the events `goldie.item.uses` counts, by client,
          *     without needing metrics, and reading the usage is no use. The numbers
          *     restart with the process and are not summed across replicas. The article
-         *     is resolved as `getArticle` resolves it; a article that is not visible to the
+         *     is resolved as `getArticle` resolves it; an article that is not visible to the
          *     caller's Project view is the same 404 as a missing one.
          */
         get: operations["getArticleUsage"];
@@ -276,7 +276,7 @@ export interface paths {
         };
         /**
          * Read how often one skill was used on this replica
-         * @description Returns the uses of the skill that answered lookups or gets counted on this
+         * @description Returns the uses of the skill (answered lookups or gets) counted on this
          *     replica since it started (`source` is `this-replica`, `since` is the
          *     process start). It counts the events `goldie.item.uses` counts, by client,
          *     without needing metrics, and reading the usage is no use. The numbers
@@ -302,12 +302,12 @@ export interface paths {
         };
         /**
          * Read how often one agent was used on this replica
-         * @description Returns the uses of the agent that answered lookups or gets counted on this
+         * @description Returns the uses of the agent (answered lookups or gets) counted on this
          *     replica since it started (`source` is `this-replica`, `since` is the
          *     process start). It counts the events `goldie.item.uses` counts, by client,
          *     without needing metrics, and reading the usage is no use. The numbers
          *     restart with the process and are not summed across replicas. The agent
-         *     is resolved as `getAgent` resolves it; a agent that is not visible to the
+         *     is resolved as `getAgent` resolves it; an agent that is not visible to the
          *     caller's Project view is the same 404 as a missing one.
          */
         get: operations["getAgentUsage"];
@@ -328,7 +328,7 @@ export interface paths {
         };
         /**
          * Read how often one loop was used on this replica
-         * @description Returns the uses of the loop that answered lookups or gets counted on this
+         * @description Returns the uses of the loop (answered lookups or gets) counted on this
          *     replica since it started (`source` is `this-replica`, `since` is the
          *     process start). It counts the events `goldie.item.uses` counts, by client,
          *     without needing metrics, and reading the usage is no use. The numbers

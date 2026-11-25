@@ -1707,12 +1707,12 @@ type ClientInterface interface {
 
 	// GetAgentUsage Read how often one agent was used on this replica
 	//
-	// Returns the uses of the agent that answered lookups or gets counted on this
+	// Returns the uses of the agent (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
 	// restart with the process and are not summed across replicas. The agent
-	// is resolved as `getAgent` resolves it; a agent that is not visible to the
+	// is resolved as `getAgent` resolves it; an agent that is not visible to the
 	// caller's Project view is the same 404 as a missing one.
 	//
 	// Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
@@ -1740,12 +1740,12 @@ type ClientInterface interface {
 
 	// GetArticleUsage Read how often one article was used on this replica
 	//
-	// Returns the uses of the article that answered lookups or gets counted on this
+	// Returns the uses of the article (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
 	// restart with the process and are not summed across replicas. The article
-	// is resolved as `getArticle` resolves it; a article that is not visible to the
+	// is resolved as `getArticle` resolves it; an article that is not visible to the
 	// caller's Project view is the same 404 as a missing one.
 	//
 	// Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
@@ -1828,7 +1828,7 @@ type ClientInterface interface {
 
 	// GetLoopUsage Read how often one loop was used on this replica
 	//
-	// Returns the uses of the loop that answered lookups or gets counted on this
+	// Returns the uses of the loop (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
@@ -2034,7 +2034,7 @@ type ClientInterface interface {
 
 	// GetSkillUsage Read how often one skill was used on this replica
 	//
-	// Returns the uses of the skill that answered lookups or gets counted on this
+	// Returns the uses of the skill (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
@@ -2202,12 +2202,12 @@ func (c *Client) GetAgent(ctx context.Context, name string, params *GetAgentPara
 
 // GetAgentUsage Read how often one agent was used on this replica
 //
-// Returns the uses of the agent that answered lookups or gets counted on this
+// Returns the uses of the agent (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
 // restart with the process and are not summed across replicas. The agent
-// is resolved as `getAgent` resolves it; a agent that is not visible to the
+// is resolved as `getAgent` resolves it; an agent that is not visible to the
 // caller's Project view is the same 404 as a missing one.
 //
 // Corresponds with GET /api/v1/agents/{name}/usage (the `GetAgentUsage` operationId).
@@ -2265,12 +2265,12 @@ func (c *Client) GetArticle(ctx context.Context, id string, params *GetArticlePa
 
 // GetArticleUsage Read how often one article was used on this replica
 //
-// Returns the uses of the article that answered lookups or gets counted on this
+// Returns the uses of the article (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
 // restart with the process and are not summed across replicas. The article
-// is resolved as `getArticle` resolves it; a article that is not visible to the
+// is resolved as `getArticle` resolves it; an article that is not visible to the
 // caller's Project view is the same 404 as a missing one.
 //
 // Corresponds with GET /api/v1/articles/{id}/usage (the `GetArticleUsage` operationId).
@@ -2423,7 +2423,7 @@ func (c *Client) GetLoop(ctx context.Context, name string, params *GetLoopParams
 
 // GetLoopUsage Read how often one loop was used on this replica
 //
-// Returns the uses of the loop that answered lookups or gets counted on this
+// Returns the uses of the loop (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
@@ -2759,7 +2759,7 @@ func (c *Client) GetSkillFile(ctx context.Context, name string, path string, par
 
 // GetSkillUsage Read how often one skill was used on this replica
 //
-// Returns the uses of the skill that answered lookups or gets counted on this
+// Returns the uses of the skill (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
@@ -4633,12 +4633,12 @@ type ClientWithResponsesInterface interface {
 
 	// GetAgentUsageWithResponse Read how often one agent was used on this replica
 	//
-	// Returns the uses of the agent that answered lookups or gets counted on this
+	// Returns the uses of the agent (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
 	// restart with the process and are not summed across replicas. The agent
-	// is resolved as `getAgent` resolves it; a agent that is not visible to the
+	// is resolved as `getAgent` resolves it; an agent that is not visible to the
 	// caller's Project view is the same 404 as a missing one.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4672,12 +4672,12 @@ type ClientWithResponsesInterface interface {
 
 	// GetArticleUsageWithResponse Read how often one article was used on this replica
 	//
-	// Returns the uses of the article that answered lookups or gets counted on this
+	// Returns the uses of the article (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
 	// restart with the process and are not summed across replicas. The article
-	// is resolved as `getArticle` resolves it; a article that is not visible to the
+	// is resolved as `getArticle` resolves it; an article that is not visible to the
 	// caller's Project view is the same 404 as a missing one.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4774,7 +4774,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetLoopUsageWithResponse Read how often one loop was used on this replica
 	//
-	// Returns the uses of the loop that answered lookups or gets counted on this
+	// Returns the uses of the loop (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
@@ -5002,7 +5002,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetSkillUsageWithResponse Read how often one skill was used on this replica
 	//
-	// Returns the uses of the skill that answered lookups or gets counted on this
+	// Returns the uses of the skill (answered lookups or gets) counted on this
 	// replica since it started (`source` is `this-replica`, `since` is the
 	// process start). It counts the events `goldie.item.uses` counts, by client,
 	// without needing metrics, and reading the usage is no use. The numbers
@@ -7846,12 +7846,12 @@ func (c *ClientWithResponses) GetAgentWithResponse(ctx context.Context, name str
 
 // GetAgentUsageWithResponse Read how often one agent was used on this replica
 //
-// Returns the uses of the agent that answered lookups or gets counted on this
+// Returns the uses of the agent (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
 // restart with the process and are not summed across replicas. The agent
-// is resolved as `getAgent` resolves it; a agent that is not visible to the
+// is resolved as `getAgent` resolves it; an agent that is not visible to the
 // caller's Project view is the same 404 as a missing one.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -7903,12 +7903,12 @@ func (c *ClientWithResponses) GetArticleWithResponse(ctx context.Context, id str
 
 // GetArticleUsageWithResponse Read how often one article was used on this replica
 //
-// Returns the uses of the article that answered lookups or gets counted on this
+// Returns the uses of the article (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
 // restart with the process and are not summed across replicas. The article
-// is resolved as `getArticle` resolves it; a article that is not visible to the
+// is resolved as `getArticle` resolves it; an article that is not visible to the
 // caller's Project view is the same 404 as a missing one.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -8047,7 +8047,7 @@ func (c *ClientWithResponses) GetLoopWithResponse(ctx context.Context, name stri
 
 // GetLoopUsageWithResponse Read how often one loop was used on this replica
 //
-// Returns the uses of the loop that answered lookups or gets counted on this
+// Returns the uses of the loop (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
@@ -8353,7 +8353,7 @@ func (c *ClientWithResponses) GetSkillFileWithResponse(ctx context.Context, name
 
 // GetSkillUsageWithResponse Read how often one skill was used on this replica
 //
-// Returns the uses of the skill that answered lookups or gets counted on this
+// Returns the uses of the skill (answered lookups or gets) counted on this
 // replica since it started (`source` is `this-replica`, `since` is the
 // process start). It counts the events `goldie.item.uses` counts, by client,
 // without needing metrics, and reading the usage is no use. The numbers
