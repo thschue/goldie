@@ -506,6 +506,65 @@ Operation ID: `postSession`
 | `429` | This remote address made too many failed sign-ins. The answer is the same for a valid and an invalid token. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
 | `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
 
+### `GET /api/v1/session/github`
+
+Start signing in with GitHub
+
+Redirects the browser to GitHub's authorization page with an `S256`
+PKCE challenge and a random `state`, and sets a signed pre-login cookie
+(`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+prefix except on the plain-http dev server) that holds the `state`, the
+PKCE verifier and `next` for 10 minutes. Only the GitHub server
+configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+`next` is the same-site path to return to; anything else (an absolute
+URL, `//host`, a backslash or a control character) ends at
+`/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+A server without GitHub sign-in answers 501 in the error envelope.
+A remote address that made too many failed sign-ins is refused with a
+429 here too.
+
+Operation ID: `getSessionGithub`
+
+| Status | Description | Body |
+|---|---|---|
+| `302` | Redirect to GitHub, or to '/signin?error=&lt;code&gt;' when 'next' is refused. The pre-login cookie is in 'Set-Cookie'. | none |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | The sign-in limit for this remote address is spent. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `501` | GitHub sign-in is not configured on this server. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
+### `GET /api/v1/session/github/callback`
+
+Finish signing in with GitHub
+
+GitHub redirects the browser here. The request must carry the pre-login
+cookie and a `state` equal to the one in it; the cookie is cleared
+whatever the outcome, so a `state` works once. The `code` is exchanged
+with the PKCE verifier, the user is mapped to a Role from the
+configured organisations and teams, and the session cookie is set (the
+login, the Role and the times under the session signature, 30 minutes
+without use and 1 hour after sign-in at the latest, ADR 0032). The
+browser is redirected to the `next` path signed into the pre-login
+cookie. This is the one session operation a cross-site navigation may
+reach, since GitHub sends the browser here; the `state`, the cookie and
+the PKCE verifier are what bind it to the browser that started. Every
+failure ends at `/signin?error=<code>` with a fixed code
+(`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+`invalid_next`) and no session; GitHub's text is
+never echoed. Only failed code exchanges (`exchange_failed`) count against
+the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
+
+Operation ID: `getSessionGithubCallback`
+
+| Status | Description | Body |
+|---|---|---|
+| `302` | Redirect to 'next' with the session cookie, or to '/signin?error=&lt;code&gt;' with none. | none |
+| `426` | The request named a goldie client older than 'GOLDIE_MIN_CLIENT_VERSION' in its 'X-Goldie-Client: goldie/&lt;version&gt;' header. The hint names the minimum version: upgrade goldie, then retry. Requests without the header, or whose header is not 'goldie/&lt;semver&gt;', are not refused; requests without a valid token are rejected with 401 first, and a refused request does not count against the rate limit. 'goldie mcp' and the server's '/mcp' add 'X-Goldie-Via: mcp', which the gate does not read. | `application/json` (`ErrorEnvelope`) |
+| `429` | This remote address made too many failed sign-ins. Wait the seconds in 'Retry-After', then retry. | `application/json` (`ErrorEnvelope`) |
+| `501` | This server has no GitHub sign-in, so there is nothing to call back to. | `application/json` (`ErrorEnvelope`) |
+| `default` | An error, in the error envelope. | `application/json` (`ErrorEnvelope`) |
+
 ### `GET /api/v1/session/providers`
 
 Read which sign-in providers the server offers
@@ -1025,7 +1084,7 @@ Who a session signs in.
 | Property | Type | Required | Description |
 |---|---|---|---|
 | `grafana_url` | `string` | no | The Grafana dashboard of the activity view (GOLDIE_GRAFANA_URL, an http or https URL). Sent to the operator role only, and omitted when unset. |
-| `name` | `string` | yes | The name of the token behind the session. |
+| `name` | `string` | yes | The name of the token behind the session, or 'github:&lt;role&gt;' for a GitHub sign-in (never the login). |
 | `role` | `string` | yes | The token's role, read from the configuration now. Clients ignore values they do not know. |
 | `swagger_ui` | `boolean` | yes | True when the server serves Swagger UI at /swagger-ui, so a client may link to it. |
 | `trace_url_template` | `string` | no | The trace link of the activity view (GOLDIE_TRACE_URL_TEMPLATE, an http or https URL) with {trace_id} where a trace's ID goes. Sent to the operator role only, and omitted when unset. |

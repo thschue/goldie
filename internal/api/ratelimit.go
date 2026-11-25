@@ -9,9 +9,11 @@ import (
 	"time"
 )
 
-// RateLimiter limits requests per token name (TokenName) with one token
-// bucket each, held in memory. It never keys on an address or a header the
-// client controls. The buckets are a GCRA: each name has a theoretical
+// RateLimiter limits requests per principal with one token bucket each, held
+// in memory: per token name (TokenName), or per login for a GitHub session,
+// whose name is only github:<role>. Rejections are counted under the name, so
+// no login reaches a metric. It never keys on an address or a header the
+// client controls. The buckets are a GCRA: each key has a theoretical
 // arrival time that every allowed request moves one interval ahead, and a
 // request is rejected while that time is more than the burst tolerance in the
 // future. Its methods are safe for concurrent use.
@@ -54,7 +56,11 @@ func (l *RateLimiter) Limit(next http.Handler) http.Handler {
 			responseError(w, r, nil)
 			return
 		}
-		wait, allowed := l.take(name)
+		key, ok := r.Context().Value(limitKeyKey{}).(string)
+		if !ok {
+			key = name
+		}
+		wait, allowed := l.take(key, name)
 		if !allowed {
 			secs := max(int64((wait+time.Second-1)/time.Second), 1)
 			w.Header().Set("Retry-After", strconv.FormatInt(secs, 10))
@@ -66,18 +72,18 @@ func (l *RateLimiter) Limit(next http.Handler) http.Handler {
 	})
 }
 
-// take spends one request from name's bucket, or reports how long until it
-// may send again and counts the rejection.
-func (l *RateLimiter) take(name string) (time.Duration, bool) {
+// take spends one request from key's bucket, or reports how long until it
+// may send again and counts the rejection under name.
+func (l *RateLimiter) take(key, name string) (time.Duration, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Since(l.start)
-	tat := max(l.tat[name], now)
+	tat := max(l.tat[key], now)
 	if ahead := tat - now; ahead > l.tolerance {
 		l.rejections[name]++
 		return ahead - l.tolerance, false
 	}
-	l.tat[name] = tat + l.interval
+	l.tat[key] = tat + l.interval
 	return 0, true
 }
 

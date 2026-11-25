@@ -54,7 +54,7 @@ tags:
   - name: activity
     description: The live view of recent searches and lookups, for operators.
   - name: session
-    description: Browser sign-in with a token, as a signed session cookie.
+    description: Browser sign-in with a token or with GitHub, as a signed session cookie.
 paths:
   /api/v1/search:
     get:
@@ -1366,6 +1366,135 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
         default:
           $ref: "#/components/responses/Error"
+  /api/v1/session/github:
+    get:
+      operationId: getSessionGithub
+      security: []
+      tags:
+        - session
+      summary: Start signing in with GitHub
+      description: |
+        Redirects the browser to GitHub's authorization page with an `S256`
+        PKCE challenge and a random `state`, and sets a signed pre-login cookie
+        (`SameSite=Lax`, `HttpOnly`, `Path=/`, `Secure` with the `__Host-`
+        prefix except on the plain-http dev server) that holds the `state`, the
+        PKCE verifier and `next` for 10 minutes. Only the GitHub server
+        configured with `GOLDIE_GITHUB_URL` is ever the target, and the
+        callback URL is built from `GOLDIE_PUBLIC_URL`, never from the request.
+        `next` is the same-site path to return to; anything else (an absolute
+        URL, `//host`, a backslash or a control character) ends at
+        `/signin?error=invalid_next`. The response is `Cache-Control: no-store`.
+        A server without GitHub sign-in answers 501 in the error envelope.
+        A remote address that made too many failed sign-ins is refused with a
+        429 here too.
+      parameters:
+        - name: next
+          in: query
+          required: false
+          description: The same-site path to open after sign-in. Defaults to `/`.
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "302":
+          description: Redirect to GitHub, or to `/signin?error=<code>` when `next` is refused. The pre-login cookie is in `Set-Cookie`.
+          headers:
+            Location:
+              description: GitHub's authorization URL, or `/signin?error=invalid_next`.
+              schema:
+                type: string
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          description: The sign-in limit for this remote address is spent. Wait the seconds in `Retry-After`, then retry.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "501":
+          description: GitHub sign-in is not configured on this server.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
+  /api/v1/session/github/callback:
+    get:
+      operationId: getSessionGithubCallback
+      security: []
+      tags:
+        - session
+      summary: Finish signing in with GitHub
+      description: |
+        GitHub redirects the browser here. The request must carry the pre-login
+        cookie and a `state` equal to the one in it; the cookie is cleared
+        whatever the outcome, so a `state` works once. The `code` is exchanged
+        with the PKCE verifier, the user is mapped to a Role from the
+        configured organisations and teams, and the session cookie is set (the
+        login, the Role and the times under the session signature, 30 minutes
+        without use and 1 hour after sign-in at the latest, ADR 0032). The
+        browser is redirected to the `next` path signed into the pre-login
+        cookie. This is the one session operation a cross-site navigation may
+        reach, since GitHub sends the browser here; the `state`, the cookie and
+        the PKCE verifier are what bind it to the browser that started. Every
+        failure ends at `/signin?error=<code>` with a fixed code
+        (`state_invalid`, `exchange_failed`, `not_a_member`, `access_denied`,
+        `invalid_next`) and no session; GitHub's text is
+        never echoed. Only failed code exchanges (`exchange_failed`) count against
+        the same per-address cap as failed sign-ins. The response is `Cache-Control: no-store`.
+      parameters:
+        - name: code
+          in: query
+          required: false
+          description: The authorization code GitHub issued.
+          schema:
+            type: string
+            maxLength: 512
+        - name: state
+          in: query
+          required: false
+          description: The `state` from the redirect to GitHub.
+          schema:
+            type: string
+            maxLength: 512
+        - name: error
+          in: query
+          required: false
+          description: GitHub's error code when the user declined. Only its presence is used.
+          schema:
+            type: string
+            maxLength: 512
+      responses:
+        "302":
+          description: Redirect to `next` with the session cookie, or to `/signin?error=<code>` with none.
+          headers:
+            Location:
+              description: The same-site path, or `/signin?error=<code>`.
+              schema:
+                type: string
+        "426":
+          $ref: "#/components/responses/UpgradeRequired"
+        "429":
+          description: This remote address made too many failed sign-ins. Wait the seconds in `Retry-After`, then retry.
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "501":
+          description: This server has no GitHub sign-in, so there is nothing to call back to.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        default:
+          $ref: "#/components/responses/Error"
   /api/v1/sync:
     get:
       operationId: getSync
@@ -2481,7 +2610,7 @@ components:
       properties:
         name:
           type: string
-          description: The name of the token behind the session.
+          description: The name of the token behind the session, or `github:<role>` for a GitHub sign-in (never the login).
           examples:
             - ci-reader
         role:

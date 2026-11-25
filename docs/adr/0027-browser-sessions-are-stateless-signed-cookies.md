@@ -10,19 +10,21 @@ then read the API without holding the token.
 
 ## Decision
 
-This is the first slice of the session layer ADR 0008 calls for; refresh, CSRF protection and
-per-session revocation arrive with GitHub sign-in (#25).
+This is the first slice of the session layer ADR 0008 calls for; ADR 0028 owns CSRF protection, and
+ADR 0032 drops refresh and per-session revocation.
 
 `POST /api/v1/session` exchanges a configured API token for a session cookie. The cookie is
 `HttpOnly`, `SameSite=Strict` and scoped to the whole site, and it carries the token's name and its
-issue and expiry times under an HMAC. It never carries the token or its Role. The server keeps no
+issue and expiry times under an HMAC. A token session's cookie never carries the token or its Role. See ADR 0032 for the GitHub form. The server keeps no
 session store: it looks the token name up in the current configuration, then checks the HMAC, which
 covers the name and the digest of the token's value. So the Role is always the configured one, and a
 token removed from the configuration, or given a new value under the same name, ends its sessions at
 once.
 
 - The cookie authenticates `GET` and `HEAD` only. An unsafe method with only a cookie is refused
-  (403), so a cookie cannot be used to change anything. A bearer token beats a cookie.
+  (403), so a cookie cannot be used to change anything. A bearer token beats a cookie. The cookie
+  also authenticates `GET` on `/mcp`, `/openapi.*` and `/swagger-ui`, as a bearer token does. (ADR
+  0032 adds a GitHub form of the cookie.)
 - Sign-in and sign-out take no bearer token; a cross-origin request to them is refused. They are
   outside the per-token rate limiter, which needs a token name. Failed sign-ins are capped per
   remote address instead (then 429 with Retry-After; #489). The trade-off: the key is the

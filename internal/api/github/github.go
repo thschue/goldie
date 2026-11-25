@@ -138,6 +138,17 @@ func New(opts Options) (*Client, error) {
 func (c *Client) String() string   { return "github.Client" }
 func (c *Client) GoString() string { return "github.Client" }
 
+// AuthorizeURL is where the browser goes to sign in: GitHub's authorization page
+// for this OAuth app, with the PKCE S256 challenge and the state. The org scope
+// is what the membership lookups need.
+func (c *Client) AuthorizeURL(redirectURI, challenge, state string) string {
+	q := url.Values{
+		"client_id": {c.clientID}, "redirect_uri": {redirectURI}, "scope": {"read:org"},
+		"state": {state}, "code_challenge": {challenge}, "code_challenge_method": {"S256"},
+	}
+	return c.oauthURL + "/login/oauth/authorize?" + q.Encode()
+}
+
 // Exchange trades an OAuth code (with its PKCE verifier and redirect URI) for
 // the user's login, then maps their memberships to a Role. It returns
 // ErrNotMember when no active membership earns one. Any other failure is a
@@ -152,6 +163,7 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, redirectURI strin
 	if err != nil {
 		return Identity{}, err
 	}
+	defer c.revoke(ctx, token)
 	var user struct {
 		Login string `json:"login"`
 	}
@@ -232,6 +244,32 @@ func (c *Client) token(ctx context.Context, code, verifier, redirectURI string) 
 		return "", errors.New("github: the code exchange was refused")
 	}
 	return out.AccessToken, nil
+}
+
+// revoke deletes the access token at GitHub once the Role is mapped
+// (DELETE /applications/{client_id}/token, authenticated as the OAuth app), so
+// no token outlives the Exchange that needed it. It is best effort: a failure
+// changes nothing for the user and the token is never stored or logged. It
+// outlives a cancelled request, bounded by the client timeout.
+func (c *Client) revoke(ctx context.Context, token string) {
+	body, err := json.Marshal(map[string]string{"access_token": token})
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodDelete,
+		c.apiURL+"/applications/"+url.PathEscape(c.clientID)+"/token", strings.NewReader(string(body)))
+	if err != nil {
+		return
+	}
+	req.SetBasicAuth(c.clientID, c.clientSecret)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxAnswerBytes))
+	_ = resp.Body.Close()
 }
 
 func (c *Client) getJSON(ctx context.Context, token, path string, out any) error {
