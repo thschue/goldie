@@ -110,7 +110,29 @@ func (c *commander) initProject(ctx context.Context) error {
 		}
 		return c.initGuided(ctx, root, proj, newPrompter(c.env.In, c.errOut))
 	}
-	return c.initPlain(ctx, root, proj, true)
+	return c.initPlainSteps(ctx, root, proj, true)
+}
+
+// initPlainSteps is initPlain followed by the steps the flags ask for: the
+// instruction block, then the hook. Both steps run; their errors are joined.
+func (c *commander) initPlainSteps(ctx context.Context, root string, proj project.Detected, withProject bool) error {
+	if err := c.initPlain(ctx, root, proj, withProject); err != nil {
+		return err
+	}
+	var instrErr error
+	if c.s.initInstructions {
+		instrErr = c.applyInstructions(ctx, "claude")
+	}
+	return errors.Join(instrErr, c.installHooks())
+}
+
+// installHooks is goldie hooks install, run for init --hooks; it does
+// nothing without the flag.
+func (c *commander) installHooks() error {
+	if !c.s.initHooks {
+		return nil
+	}
+	return HooksInstall([]string{"install"}, c.out)
 }
 
 // initPlain is init without questions: the Project line (when withProject),
@@ -167,7 +189,7 @@ func (c *commander) initGuided(ctx context.Context, root string, proj project.De
 	use, err := p.confirm("Use this Project?")
 	switch {
 	case errors.Is(err, errPromptEOF): // the question was never shown
-		return c.initPlain(ctx, root, proj, false)
+		return c.initPlainSteps(ctx, root, proj, false)
 	case errors.Is(err, errPromptCut):
 		return errors.New(errInitStopped)
 	case err != nil:
@@ -187,9 +209,16 @@ func (c *commander) initGuided(ctx context.Context, root string, proj project.De
 	c.s.addr = addr
 	list, why := c.reportServer(ctx)
 	say(c.out, "%s", registeredLines(proj.ID, list, why, isLoopback(addr)))
-	applied, err := c.offerInstructions(ctx, p, why == "")
+	var applied bool
+	if c.s.initInstructions { // the flag is the answer: the question is not asked
+		err = c.applyInstructions(ctx, "claude")
+		applied = err == nil
+	} else {
+		applied, err = c.offerInstructions(ctx, p, why == "")
+	}
+	hookErr := c.installHooks()
 	say(c.out, "%s", c.nextBlock(addr, why == tokenRejectedWhy, applied))
-	return err
+	return errors.Join(err, hookErr)
 }
 
 // offerInstructions asks to add goldie's block to CLAUDE.md, only when the

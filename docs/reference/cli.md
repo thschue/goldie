@@ -95,16 +95,16 @@ A `200 OK` that is not a goldie API answer, such as a proxy's login page, is rep
 server's answer isn't a goldie API answer; check the address", by the CLI and by `mcp` alike, and
 nothing of the page is shown.
 
-`goldie init [--project ID]` sets a repository up: it finds the Project as `status` does and writes
-`project: <id>` to `.goldie/config.yaml` at the repository root (the nearest directory with a
-`.git`), then prints the Project and how it was found, the file it wrote, and whether the server
-has the Project registered (`yes`, `no` with a hint on how to register it, or `not checked` with the
-reason: no address, no token, a rejected token, or a server that is unreachable, redirects, answers
-with an error status, or whose answer couldn't be read). The check is one `GET /api/v1/projects` and
-ignores case; without a token it sends no request. `init` takes no `--json`. It never overwrites an
-existing `.goldie/config.yaml`, never follows a symlinked `.goldie` or `config.yaml`, and refuses to
-run outside a git repository or in a Source repository (`global/articles` or `projects/` at its
-root); a refusal writes nothing.
+`goldie init [--project ID] [--instructions] [--hooks]` sets a repository up: it finds the Project
+as `status` does and writes `project: <id>` to `.goldie/config.yaml` at the repository root (the
+nearest directory with a `.git`), then prints the Project and how it was found, the file it wrote,
+and whether the server has the Project registered (`yes`, `no` with a hint on how to register it, or
+`not checked` with the reason: no address, no token, a rejected token, or a server that is
+unreachable, redirects, answers with an error status, or whose answer couldn't be read). The check
+is one `GET /api/v1/projects` and ignores case; without a token it sends no request. `init` takes no
+`--json`. It never overwrites an existing `.goldie/config.yaml`, never follows a symlinked `.goldie`
+or `config.yaml`, and refuses to run outside a git repository or in a Source repository
+(`global/articles` or `projects/` at its root); a refusal writes nothing.
 
 On a terminal, `goldie init` guides you. It prints the Project and asks `Use this Project? [Y/n]`
 (`n` stops and names `--project`), writes the config, asks for the server address (the default is
@@ -140,6 +140,15 @@ pipe, `</dev/null`, CI), or when the input is already at its end, `init` asks no
 what is described above. Ctrl-D at a question that was shown stops with `init stopped; nothing more
 was changed`, exit 1; at the Project question nothing is written, at a later one the config already
 written stays.
+
+With `--instructions`, `init` also runs `goldie instructions apply` (the `claude` target, no `--force`),
+and with `--hooks` it also runs `goldie hooks install`, each after init's own lines and with that
+command's messages unchanged. Nothing is installed without the flag: the hook runs a command for everyone
+who clones the repository. `--instructions` needs the server and a token, as the command does; `--hooks`
+needs neither. A failing step goes to stderr, `.goldie/config.yaml` stays, the other step still runs and
+`init` exits 1. On a terminal the flag answers the question: `--instructions` skips `Add goldie's
+instruction block to CLAUDE.md?` and applies the block, and a block edited by hand is then an error,
+not a skipped offer.
 
 `goldie instructions apply [--target claude|agents] [--force]` writes goldie's instruction block
 between `<!-- goldie:begin digest=sha256:… -->` and `<!-- goldie:end -->` in `CLAUDE.md` (the default)
