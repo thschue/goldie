@@ -88,8 +88,17 @@ reads them through `GOLDIE_API_TOKEN_FILE` and `GOLDIE_SESSION_KEY_FILE` (PC-05)
 `docker compose run --rm --no-deps --entrypoint cat init /secrets/api-token` and sign in with it.
 To serve your own directory, mount it over `/content`. To serve your own git repository, the image's
 `GOLDIE_CONTENT_DIR=/content` must go, because `GOLDIE_GIT_URL` alone conflicts with it: set it to empty in a
-`compose.override.yaml` next to `compose.yaml` (`services: {goldie: {environment: {GOLDIE_CONTENT_DIR: "", GOLDIE_GIT_URL:
-https://github.com/your-org/your-content.git}}}`). `docker compose down -v` removes the volume and with it the token. The healthcheck is
+`compose.override.yaml` next to `compose.yaml`:
+
+```yaml
+services:
+  goldie:
+    environment:
+      GOLDIE_CONTENT_DIR: ""
+      GOLDIE_GIT_URL: https://github.com/your-org/your-content.git
+```
+
+`docker compose down -v` removes the volume and with it the token. The healthcheck is
 `goldie health --ready`, which asks `/readyz`. `./run compose-smoke` runs this whole path.
 
 ## goldie server --dev
