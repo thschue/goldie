@@ -1056,7 +1056,7 @@ test.describe('the live header', () => {
 // - the Project filter is the URL's `project`: only that Project's events are rows, and a button in
 //   main named /remove.*<project>/i is its chip; pressing it drops `project` from the URL.
 const tiles = (page: Page) => main(page).getByRole('region', { name: /last five minutes/i });
-const tile = (page: Page, label: string) => tiles(page).getByRole('listitem').filter({ hasText: label });
+const tile = (page: Page, label: string | RegExp) => tiles(page).getByRole('listitem').filter({ hasText: label });
 
 test.describe('the last five minutes', () => {
   test.use({ viewport: { width: 1280, height: 800 } });
@@ -1075,8 +1075,11 @@ test.describe('the last five minutes', () => {
     await expect(tiles(page).getByRole('listitem')).toHaveCount(5);
     // 601 requests in five minutes is 120 a minute, though the feed keeps 500 rows; the replayed
     // one is older than five minutes and the skewed one counts as now.
-    await expect(tile(page, 'Requests')).toContainText(/\b120\b/);
+    // The Misses sub-line reads "of requests", so the Requests tile is found by its leading label.
+    await expect(tile(page, /^\s*Requests\b/)).toContainText(/\b120\b/);
+    await expect(tile(page, /^\s*Requests\b/)).toContainText(/per minute/i);
     await expect(tile(page, 'Misses')).toContainText(/\b10\s*%/);
+    await expect(tile(page, 'Misses')).toContainText(/of requests/i);
     await expect(tile(page, 'Projects asking')).toContainText(/\b3\b/);
   });
 
@@ -1341,8 +1344,9 @@ test.describe('the Busiest surface and Latency tiles', () => {
     await expect(tile(page, 'Busiest surface')).toContainText(/mcp/i);
     expect(await text(tile(page, 'Busiest surface'))).not.toContain('—');
     const l = await text(tile(page, 'Latency'));
-    expect(l).toMatch(/p50/i);
-    expect(l).toMatch(/p95/i);
+    // The p50 is the tile's value, with no label; the p95 sits under it (#879).
+    expect(l, 'the p50 value has no label').not.toMatch(/p50/i);
+    expect(l).toMatch(/p95\s*96\.0/i);
     expect(l.indexOf('51.0'), 'p50 is 51.0 ms').toBeGreaterThan(-1);
     expect(l.indexOf('96.0'), 'p95 is 96.0 ms').toBeGreaterThan(l.indexOf('51.0'));
     expect(l).toMatch(/\bms\b/);
