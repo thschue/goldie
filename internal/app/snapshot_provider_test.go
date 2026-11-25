@@ -56,15 +56,27 @@ func writeArticle(t *testing.T, root, id, name, body string) {
 	}
 }
 
+// isAnonymousRead reports whether a path item's GET declares an explicit empty
+// security list (`security: []`). A missing marker is not anonymous.
+func isAnonymousRead(item any) bool {
+	get, _ := item.(map[string]any)["get"].(map[string]any)
+	sec, ok := get["security"].([]any)
+	return ok && len(sec) == 0
+}
+
 // readOperationPaths are the concrete paths of every /api/v1 GET operation,
 // found from the spec so a new read is covered without editing this test.
 func readOperationPaths(t *testing.T) []string {
 	t.Helper()
 	var out []string
+	specPaths, _ := specDoc(t)["paths"].(map[string]any)
 	for _, o := range specOperations(t) {
 		method, path, _ := strings.Cut(o, " ")
 		if method != "GET" || !strings.HasPrefix(path, "/api/v1/") {
 			continue
+		}
+		if isAnonymousRead(specPaths[path]) {
+			continue // an anonymous browser redirect, not a snapshot-backed read
 		}
 		if strings.Contains(path, "{") {
 			c, err := contracttest.ExamplePath(method, path)
@@ -198,6 +210,9 @@ func TestSpecDeclaresNotReadyOnEveryRead(t *testing.T) {
 	paths, _ := specDoc(t)["paths"].(map[string]any)
 	for path, item := range paths {
 		if !strings.HasPrefix(path, "/api/v1/") {
+			continue
+		}
+		if isAnonymousRead(item) {
 			continue
 		}
 		get, _ := item.(map[string]any)["get"].(map[string]any)
