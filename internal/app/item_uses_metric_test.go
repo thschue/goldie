@@ -60,6 +60,7 @@ func itemUsesServer(t *testing.T, tokens string) (*httptest.Server, *platform.Te
 		"OTEL_TRACES_EXPORTER":        "none",
 		"OTEL_LOGS_EXPORTER":          "none",
 		"OTEL_METRICS_EXPORTER":       "otlp",
+		"OTEL_METRIC_EXPORT_INTERVAL": "3600000",
 	}
 	tel, err := platform.SetupTelemetry(context.Background(), func(k string) (string, bool) { v, ok := env[k]; return v, ok })
 	if err != nil || !tel.Enabled() {
