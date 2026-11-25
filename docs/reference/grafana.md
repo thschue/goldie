@@ -3,8 +3,8 @@
 goldie ships a Grafana dashboard and Prometheus alert rules for the metrics in
 [Metrics goldie emits](configuration.md#metrics-goldie-emits). Both are files in the repository:
 
-- `deploy/grafana/goldie-dashboard.json`: the dashboard.
-- `deploy/grafana/goldie-alerts.yaml`: the alert rules.
+- `docs/grafana/goldie-dashboard.json`: the dashboard.
+- `docs/grafana/goldie-alerts.yaml`: the alert rules.
 
 A Go test (`internal/app/grafana_dashboards_test.go`) runs a server, reads its OTLP metric export and fails
 when the dashboard or an alert queries a metric or label goldie does not emit.
